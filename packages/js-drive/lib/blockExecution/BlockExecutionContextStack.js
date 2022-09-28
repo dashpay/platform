@@ -48,21 +48,12 @@ class BlockExecutionContextStack {
   }
 
   /**
-   * Get the latest context from the stack
-   *
-   * @return {BlockExecutionContext}
-   */
-  getLatest() {
-    return this.#contexts[this.#contexts.length - 1];
-  }
-
-  /**
    * Remove the last context from the stack
    *
    * @return {BlockExecutionContextStack}
    */
-  removeLatest() {
-    this.#contexts.pop();
+  removeFirst() {
+    this.#contexts.shift();
 
     return this;
   }

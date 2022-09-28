@@ -20,6 +20,7 @@ const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTr
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;
@@ -30,6 +31,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
+  let validatePublicKeySignaturesMock;
 
   beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
@@ -59,12 +61,16 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
     validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
+    validatePublicKeySignaturesMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
     validateIdentityCreateTransitionBasic = validateIdentityCreateTransitionBasicFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
       validatePublicKeysInIdentityCreateTransition,
       proofValidationFunctionsByTypeMock,
       validateProtocolVersionMock,
+      validatePublicKeySignaturesMock,
     );
 
     stateTransition = getIdentityCreateTransitionFixture();
@@ -194,10 +200,13 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
         assetLockError,
       ]);
 
+      const executionContext = new StateTransitionExecutionContext();
+
       proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectValidationError(result);
@@ -209,6 +218,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
         .to.be.calledOnceWithExactly(
           rawStateTransition.assetLockProof,
+          executionContext,
         );
     });
   });
@@ -297,7 +307,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       expect(error).to.equal(publicKeysError);
 
-      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+      expect(validatePublicKeysMock)
+        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
     });
 
     it('should have at least 1 master key', async () => {
@@ -320,6 +331,25 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       expect(validatePublicKeysInIdentityCreateTransition)
         .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+    });
+
+    it('should have valid signatures', async () => {
+      const publicKeysError = new SomeConsensusError('test');
+      const publicKeysResult = new ValidationResult([
+        publicKeysError,
+      ]);
+
+      validatePublicKeySignaturesMock.resolves(publicKeysResult);
+
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(publicKeysError);
     });
   });
 

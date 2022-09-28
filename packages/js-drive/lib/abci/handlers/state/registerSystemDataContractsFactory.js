@@ -4,19 +4,23 @@
  * @param {registerTopLevelDomain} registerTopLevelDomain
  * @param {Identifier} dpnsContractId
  * @param {Identifier} dpnsOwnerId
- * @param {PublicKey} dpnsOwnerPublicKey
+ * @param {PublicKey} dpnsOwnerMasterPublicKey
+ * @param {PublicKey} dpnsOwnerSecondPublicKey
  * @param {Object} dpnsDocuments
  * @param {Identifier} featureFlagsContractId
  * @param {Identifier} featureFlagsOwnerId
- * @param {PublicKey} featureFlagsOwnerPublicKey
+ * @param {PublicKey} featureFlagsOwnerMasterPublicKey
+ * @param {PublicKey} featureFlagsOwnerSecondPublicKey
  * @param {Object} featureFlagsDocuments
  * @param {Identifier} masternodeRewardSharesContractId
  * @param {Identifier} masternodeRewardSharesOwnerId
- * @param {PublicKey} masternodeRewardSharesOwnerPublicKey
+ * @param {PublicKey} masternodeRewardSharesOwnerMasterPublicKey
+ * @param {PublicKey} masternodeRewardSharesOwnerSecondPublicKey
  * @param {Object} masternodeRewardSharesDocuments
  * @param {Identifier} dashpayContractId
  * @param {Identifier} dashpayOwnerId
- * @param {PublicKey} dashpayOwnerPublicKey
+ * @param {PublicKey} dashpayOwnerMasterPublicKey
+ * @param {PublicKey} dashpayOwnerSecondPublicKey
  * @param {Object} dashpayDocuments
  *
  * @return {registerSystemDataContracts}
@@ -26,19 +30,23 @@ function registerSystemDataContractsFactory(
   registerTopLevelDomain,
   dpnsContractId,
   dpnsOwnerId,
-  dpnsOwnerPublicKey,
+  dpnsOwnerMasterPublicKey,
+  dpnsOwnerSecondPublicKey,
   dpnsDocuments,
   featureFlagsContractId,
   featureFlagsOwnerId,
-  featureFlagsOwnerPublicKey,
+  featureFlagsOwnerMasterPublicKey,
+  featureFlagsOwnerSecondPublicKey,
   featureFlagsDocuments,
   masternodeRewardSharesContractId,
   masternodeRewardSharesOwnerId,
-  masternodeRewardSharesOwnerPublicKey,
+  masternodeRewardSharesOwnerMasterPublicKey,
+  masternodeRewardSharesOwnerSecondPublicKey,
   masternodeRewardSharesDocuments,
   dashpayContractId,
   dashpayOwnerId,
-  dashpayOwnerPublicKey,
+  dashpayOwnerMasterPublicKey,
+  dashpayOwnerSecondPublicKey,
   dashpayDocuments,
 ) {
   /**
@@ -54,14 +62,16 @@ function registerSystemDataContractsFactory(
     contextLogger.trace({
       ownerId: featureFlagsOwnerId,
       contractId: featureFlagsContractId,
-      publicKey: featureFlagsOwnerPublicKey,
+      masterPublicKey: featureFlagsOwnerMasterPublicKey,
+      secondPublicKey: featureFlagsOwnerSecondPublicKey,
     });
 
     // Registering feature flags data contract
     await registerSystemDataContract(
       featureFlagsOwnerId,
       featureFlagsContractId,
-      featureFlagsOwnerPublicKey,
+      featureFlagsOwnerMasterPublicKey,
+      featureFlagsOwnerSecondPublicKey,
       featureFlagsDocuments,
     );
 
@@ -69,14 +79,16 @@ function registerSystemDataContractsFactory(
     contextLogger.trace({
       ownerId: dpnsOwnerId,
       contractId: dpnsContractId,
-      publicKey: dpnsOwnerPublicKey,
+      masterPublicKey: dpnsOwnerMasterPublicKey,
+      secondPublicKey: dpnsOwnerSecondPublicKey,
     });
 
     // Registering DPNS data contract
     const dpnsContract = await registerSystemDataContract(
       dpnsOwnerId,
       dpnsContractId,
-      dpnsOwnerPublicKey,
+      dpnsOwnerMasterPublicKey,
+      dpnsOwnerSecondPublicKey,
       dpnsDocuments,
     );
 
@@ -90,14 +102,16 @@ function registerSystemDataContractsFactory(
     contextLogger.trace({
       ownerId: masternodeRewardSharesOwnerId,
       contractId: masternodeRewardSharesContractId,
-      publicKey: masternodeRewardSharesOwnerPublicKey,
+      masterPublicKey: masternodeRewardSharesOwnerMasterPublicKey,
+      secondPublicKey: masternodeRewardSharesOwnerSecondPublicKey,
     });
 
     // Registering masternode reward sharing data contract
     await registerSystemDataContract(
       masternodeRewardSharesOwnerId,
       masternodeRewardSharesContractId,
-      masternodeRewardSharesOwnerPublicKey,
+      masternodeRewardSharesOwnerMasterPublicKey,
+      masternodeRewardSharesOwnerSecondPublicKey,
       masternodeRewardSharesDocuments,
     );
 
@@ -105,14 +119,16 @@ function registerSystemDataContractsFactory(
     contextLogger.trace({
       ownerId: dashpayOwnerId,
       contractId: dashpayContractId,
-      publicKey: dashpayOwnerPublicKey,
+      masterPublicKey: dashpayOwnerMasterPublicKey,
+      secondPublicKey: dashpayOwnerSecondPublicKey,
     });
 
     // Registering masternode reward sharing data contract
     await registerSystemDataContract(
       dashpayOwnerId,
       dashpayContractId,
-      dashpayOwnerPublicKey,
+      dashpayOwnerMasterPublicKey,
+      dashpayOwnerSecondPublicKey,
       dashpayDocuments,
     );
   }

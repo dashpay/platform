@@ -1,16 +1,13 @@
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
-const TransactionOkResult = require('./transactionResult/TransactionOkResult');
 
 /**
  * @param {waitForTransactionResult} waitForTransactionResult
  * @param {getExistingTransactionResult} getExistingTransactionResult
- * @param {waitForHeight} waitForHeight
  * @return {waitForTransactionToBeProvable}
  */
 function waitForTransactionToBeProvableFactory(
   waitForTransactionResult,
   getExistingTransactionResult,
-  waitForHeight,
 ) {
   /**
    * Returns result for a transaction or rejects after a timeout
@@ -38,28 +35,22 @@ function waitForTransactionToBeProvableFactory(
         return result;
       }).catch((error) => {
         // Do not resolve promise and wait for results if transaction is not found
-        if (error.code === -32603 && error.data === `tx (${hashString}) not found`) {
+        if (error.code === -32603 && error.data.startsWith(`tx (${hashString}) not found`)) {
           return new Promise(() => {});
         }
 
         return Promise.reject(error);
       }),
 
-      // Wait for upcoming results if transaction result doesn't not exist yet
+      // Wait for upcoming results if transaction is not executed yet and result is not present
       waitForTransactionResultPromise,
     ]);
 
     return Promise.race([
-      // Wait for transaction results and commitment
-      transactionResultPromise.then(async (result) => {
-        if (result instanceof TransactionOkResult) {
-          await waitForHeight(result.getHeight() + 1);
-        }
+      // Get transaction result
+      transactionResultPromise,
 
-        return result;
-      }),
-
-      // Throw wait period exceeded error after timeout
+      // Throw an error when wait period exceeded
       new Promise((resolve, reject) => {
         setTimeout(() => {
           // Detaching handlers

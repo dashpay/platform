@@ -15,6 +15,8 @@ const WrongPublicKeyPurposeError = require('./errors/WrongPublicKeyPurposeError'
 const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPublicKeyTypeError');
 const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
 const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
+const PublicKeyIsDisabledError = require('./errors/PublicKeyIsDisabledError');
+const InvalidSignaturePublicKeySecurityLevelError = require('./errors/InvalidSignaturePublicKeySecurityLevelError');
 
 /**
  * @abstract
@@ -55,6 +57,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     let pubKeyBase;
 
     this.verifyPublicKeyLevelAndPurpose(identityPublicKey);
+    this.verifyPublicKeyIsEnabled(identityPublicKey);
 
     switch (identityPublicKey.getType()) {
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
@@ -113,11 +116,24 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
   /**
    * @private
+   * @param {IdentityPublicKey} publicKey
    *
    * Verifies that the supplied public key has the correct security level
    * and purpose to sign this state transition
    */
   verifyPublicKeyLevelAndPurpose(publicKey) {
+    // If state transition requires MASTER security level it must be sign only with MASTER key
+    if (
+      publicKey.isMaster()
+      && this.getKeySecurityLevelRequirement() !== IdentityPublicKey.SECURITY_LEVELS.MASTER
+    ) {
+      throw new InvalidSignaturePublicKeySecurityLevelError(
+        IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        this.getKeySecurityLevelRequirement(),
+      );
+    }
+
+    // Otherwise, key security level should be less than MASTER but more or equal than required
     if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {
       throw new PublicKeySecurityLevelNotMetError(
         publicKey.getSecurityLevel(),
@@ -134,6 +150,16 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   }
 
   /**
+   * @private
+   * @param {IdentityPublicKey} publicKey
+   */
+  verifyPublicKeyIsEnabled(publicKey) {
+    if (publicKey.getDisabledAt()) {
+      throw new PublicKeyIsDisabledError(publicKey);
+    }
+  }
+
+  /**
    * Verify signature
    *
    * @param {IdentityPublicKey} publicKey
@@ -141,6 +167,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    */
   async verifySignature(publicKey) {
     this.verifyPublicKeyLevelAndPurpose(publicKey);
+    this.verifyPublicKeyIsEnabled(publicKey);
 
     const signature = this.getSignature();
     if (!signature) {
@@ -206,18 +233,18 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * @return {number}
    */
   getKeySecurityLevelRequirement() {
-    return IdentityPublicKey.SECURITY_LEVELS.MASTER;
+    return IdentityPublicKey.SECURITY_LEVELS.HIGH;
   }
 }
 
 /**
  * @typedef {RawStateTransition & Object} RawStateTransitionIdentitySigned
- * @property {Buffer} [signaturePublicKeyId]
+ * @property {number} [signaturePublicKeyId]
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonStateTransitionIdentitySigned
- * @property {string} [signaturePublicKeyId]
+ * @property {number} [signaturePublicKeyId]
  */
 
 module.exports = AbstractStateTransitionIdentitySigned;

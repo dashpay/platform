@@ -13,6 +13,7 @@ const { hash } = require('../../../../lib/util/hash');
 
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const Identifier = require('../../../../lib/identifier/Identifier');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createDomainDataTrigger', () => {
   let parentDocumentTransition;
@@ -24,6 +25,7 @@ describe('createDomainDataTrigger', () => {
   let stateRepositoryMock;
   let dataContract;
   let topLevelIdentity;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     dataContract = getDpnsContractFixture();
@@ -94,10 +96,13 @@ describe('createDomainDataTrigger', () => {
       )
       .resolves({ confirmations: 10 });
 
+    executionContext = new StateTransitionExecutionContext();
+
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
       records.dashUniqueIdentityId,
       dataContract,
+      executionContext,
     );
 
     topLevelIdentity = context.getOwnerId();
@@ -174,6 +179,7 @@ describe('createDomainDataTrigger', () => {
           ['normalizedLabel', '==', 'parent'],
         ],
       },
+      executionContext,
     );
   });
 
@@ -347,6 +353,30 @@ describe('createDomainDataTrigger', () => {
       parentDocumentTransition, context, topLevelIdentity,
     );
 
+    expect(result.isOk()).to.be.true();
+  });
+
+  it('should return DataTriggerExecutionResult om dry run', async () => {
+    context.getStateTransitionExecutionContext().enableDryRun();
+
+    childDocument = getChildDocumentFixture({ normalizedLabel: childDocument.getData().label });
+    stateRepositoryMock.fetchTransaction
+      .withArgs(
+        childDocument.getData().records.dashUniqueIdentityId,
+      )
+      .resolves({ confirmations: 10 });
+
+    [childDocumentTransition] = getDocumentTransitionFixture({
+      create: [childDocument],
+    });
+
+    const result = await createDomainDataTrigger(
+      childDocumentTransition, context, topLevelIdentity,
+    );
+
+    context.getStateTransitionExecutionContext().disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.true();
   });
 });

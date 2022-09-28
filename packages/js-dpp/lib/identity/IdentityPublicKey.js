@@ -31,6 +31,14 @@ class IdentityPublicKey {
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'readOnly')) {
       this.setReadOnly(rawIdentityPublicKey.readOnly);
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'disabledAt')) {
+      this.setDisabledAt(rawIdentityPublicKey.disabledAt);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'signature')) {
+      this.setSignature(rawIdentityPublicKey.signature);
+    }
   }
 
   /**
@@ -153,16 +161,65 @@ class IdentityPublicKey {
   /**
    * Get readOnly flag
    *
-   * @return boolean
+   * @return {boolean}
    */
-  getReadOnly() {
+  isReadOnly() {
     return this.readOnly;
+  }
+
+  /**
+   * Set disabledAt timestamp
+   *
+   * @param {number} disabledAt
+   * @return {IdentityPublicKey}
+   */
+  setDisabledAt(disabledAt) {
+    this.disabledAt = disabledAt;
+
+    return this;
+  }
+
+  /**
+   * Get disabledAt timestamp
+   *
+   * @return {number}
+   */
+  getDisabledAt() {
+    return this.disabledAt;
+  }
+
+  /**
+   * Is public key disabled
+   */
+  isDisabled() {
+    return this.getDisabledAt() !== undefined;
+  }
+
+  /**
+   * Set signature
+   *
+   * @param {Buffer} signature
+   * @returns {IdentityPublicKey}
+   */
+  setSignature(signature) {
+    this.signature = signature;
+
+    return this;
+  }
+
+  /**
+   * Get signature
+   *
+   * @returns {Buffer}
+   */
+  getSignature() {
+    return this.signature;
   }
 
   /**
    * Get the original public key hash
    *
-   * @returns {Buffer}
+   * @return {Buffer}
    */
   hash() {
     if (!this.getData()) {
@@ -175,6 +232,7 @@ class IdentityPublicKey {
         return Hash.sha256ripemd160(this.getData());
       }
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
+      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
         return this.getData();
       default:
         throw new InvalidIdentityPublicKeyTypeError(this.getType());
@@ -184,17 +242,30 @@ class IdentityPublicKey {
   /**
    * Get a plain object representation
    *
+   * @param {Object} [options]
+   * @param {Object} [options.skipSignature=false]
+   *
    * @return {RawIdentityPublicKey}
    */
-  toObject() {
-    return {
+  toObject(options = {}) {
+    const result = {
       id: this.getId(),
       type: this.getType(),
       purpose: this.getPurpose(),
       securityLevel: this.getSecurityLevel(),
       data: this.getData(),
-      readOnly: this.getReadOnly(),
+      readOnly: this.isReadOnly(),
     };
+
+    if (this.getDisabledAt() !== undefined) {
+      result.disabledAt = this.getDisabledAt();
+    }
+
+    if (!options.skipSignature && this.signature !== undefined) {
+      result.signature = this.signature;
+    }
+
+    return result;
   }
 
   /**
@@ -203,10 +274,25 @@ class IdentityPublicKey {
    * @return {JsonIdentityPublicKey}
    */
   toJSON() {
-    return {
+    const result = {
       ...this.toObject(),
       data: this.getData().toString('base64'),
     };
+
+    if (this.signature) {
+      result.signature = this.signature.toString('base64');
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if public ket security level is MASTER
+   *
+   * @returns {boolean}
+   */
+  isMaster() {
+    return this.getSecurityLevel() === IdentityPublicKey.SECURITY_LEVELS.MASTER;
   }
 }
 
@@ -218,6 +304,8 @@ class IdentityPublicKey {
  * @property {number} securityLevel
  * @property {Buffer} data
  * @property {boolean} readOnly
+ * @property {number} [disabledAt]
+ * @property {Buffer} [signature]
  */
 
 /**
@@ -228,18 +316,22 @@ class IdentityPublicKey {
  * @property {number} type
  * @property {string} data
  * @property {boolean} readOnly
+ * @property {number} [disabledAt]
+ * @property {string} [signature]
  */
 
 IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
   BLS12_381: 1,
   ECDSA_HASH160: 2,
+  BIP13_SCRIPT_HASH: 3,
 };
 
 IdentityPublicKey.PURPOSES = {
   AUTHENTICATION: 0,
   ENCRYPTION: 1,
   DECRYPTION: 2,
+  WITHDRAW: 3,
 };
 
 IdentityPublicKey.SECURITY_LEVELS = {
@@ -261,6 +353,9 @@ IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.ENCRYPTION]
 ];
 IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.DECRYPTION] = [
   IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.WITHDRAW] = [
+  IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
 ];
 
 module.exports = IdentityPublicKey;

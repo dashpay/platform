@@ -33,7 +33,7 @@
       "type": "array",
       "byteArray": true,
       "minItems": 65,
-      "maxItems": 65
+      "maxItems": 96
     }
   },
   "additionalProperties": false,

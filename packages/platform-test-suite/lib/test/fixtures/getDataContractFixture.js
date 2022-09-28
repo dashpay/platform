@@ -65,7 +65,7 @@ module.exports = function getDataContractFixture(
           name: 'index1',
           properties: [
             { $ownerId: 'asc' },
-            { firstName: 'desc' },
+            { firstName: 'asc' },
           ],
           unique: true,
         },
@@ -73,7 +73,7 @@ module.exports = function getDataContractFixture(
           name: 'index2',
           properties: [
             { $ownerId: 'asc' },
-            { lastName: 'desc' },
+            { lastName: 'asc' },
           ],
           unique: true,
         },

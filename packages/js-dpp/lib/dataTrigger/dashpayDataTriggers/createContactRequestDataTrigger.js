@@ -12,11 +12,15 @@ const BLOCKS_WINDOW_SIZE = 8;
  * @return {Promise<DataTriggerExecutionResult>}
  */
 async function createContactRequestDataTrigger(documentTransition, context) {
+  const result = new DataTriggerExecutionResult();
+
+  if (context.getStateTransitionExecutionContext().isDryRun()) {
+    return result;
+  }
+
   const {
     coreHeightCreatedAt,
   } = documentTransition.getData();
-
-  const result = new DataTriggerExecutionResult();
 
   if (coreHeightCreatedAt === undefined) {
     return result;

@@ -9,25 +9,23 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
  * @param {fetchDocuments} fetchSignedDocuments
+ * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
+  proveSignedDocuments,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef {documentQueryHandler}
@@ -56,47 +54,37 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      const response = new GetDocumentsResponse();
-
-      response.setMetadata(new ResponseMetadata());
-
-      return new ResponseQuery({
-        value: response.serializeBinary(),
-      });
-    }
-
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
-    let documents;
+    const options = {
+      where,
+      orderBy,
+      limit,
+      startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
+      startAt: startAt ? Buffer.from(startAt) : startAt,
+    };
 
     try {
-      documents = await fetchSignedDocuments(contractId, type, {
-        where,
-        orderBy,
-        limit,
-        startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
-        startAt: startAt ? Buffer.from(startAt) : startAt,
-      });
+      if (request.prove) {
+        const proof = await proveSignedDocuments(contractId, type, options);
+
+        response.getProof().setMerkleProof(proof.getValue());
+      } else {
+        const documentsResult = await fetchSignedDocuments(contractId, type, options);
+
+        const documents = documentsResult.getValue();
+
+        response.setDocumentsList(
+          documents.map((document) => document.toBuffer()),
+        );
+      }
     } catch (e) {
       if (e instanceof InvalidQueryError) {
-        throw new InvalidArgumentAbciError(
-          `Invalid query: ${e.getErrors()[0].message}`,
-          { errors: e.getErrors() },
-        );
+        throw new InvalidArgumentAbciError(`Invalid query: ${e.message}`);
       }
 
       throw e;
     }
-
-    response.setDocumentsList(
-      documents.map((document) => document.toBuffer()),
-    );
 
     return new ResponseQuery({
       value: response.serializeBinary(),

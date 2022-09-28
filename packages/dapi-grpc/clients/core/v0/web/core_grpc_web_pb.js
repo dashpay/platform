@@ -25,7 +25,7 @@ proto.org.dash.platform.dapi.v0 = require('./core_pb.js');
 /**
  * @param {string} hostname
  * @param {?Object} credentials
- * @param {?Object} options
+ * @param {?grpc.web.ClientOptions} options
  * @constructor
  * @struct
  * @final
@@ -33,7 +33,7 @@ proto.org.dash.platform.dapi.v0 = require('./core_pb.js');
 proto.org.dash.platform.dapi.v0.CoreClient =
     function(hostname, credentials, options) {
   if (!options) options = {};
-  options['format'] = 'text';
+  options.format = 'text';
 
   /**
    * @private @const {!grpc.web.GrpcWebClientBase} The client
@@ -51,7 +51,7 @@ proto.org.dash.platform.dapi.v0.CoreClient =
 /**
  * @param {string} hostname
  * @param {?Object} credentials
- * @param {?Object} options
+ * @param {?grpc.web.ClientOptions} options
  * @constructor
  * @struct
  * @final
@@ -59,7 +59,7 @@ proto.org.dash.platform.dapi.v0.CoreClient =
 proto.org.dash.platform.dapi.v0.CorePromiseClient =
     function(hostname, credentials, options) {
   if (!options) options = {};
-  options['format'] = 'text';
+  options.format = 'text';
 
   /**
    * @private @const {!grpc.web.GrpcWebClientBase} The client
@@ -97,30 +97,11 @@ const methodDescriptor_Core_getStatus = new grpc.web.MethodDescriptor(
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.GetStatusRequest,
- *   !proto.org.dash.platform.dapi.v0.GetStatusResponse>}
- */
-const methodInfo_Core_getStatus = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.GetStatusResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.GetStatusRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.GetStatusResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.GetStatusRequest} request The
  *     request proto
  * @param {?Object<string, string>} metadata User defined
  *     call metadata
- * @param {function(?grpc.web.Error, ?proto.org.dash.platform.dapi.v0.GetStatusResponse)}
+ * @param {function(?grpc.web.RpcError, ?proto.org.dash.platform.dapi.v0.GetStatusResponse)}
  *     callback The callback function(error, response)
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.GetStatusResponse>|undefined}
  *     The XHR Node Readable Stream
@@ -139,7 +120,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.getStatus =
 /**
  * @param {!proto.org.dash.platform.dapi.v0.GetStatusRequest} request The
  *     request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!Promise<!proto.org.dash.platform.dapi.v0.GetStatusResponse>}
  *     Promise that resolves to the response
@@ -177,30 +158,11 @@ const methodDescriptor_Core_getBlock = new grpc.web.MethodDescriptor(
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.GetBlockRequest,
- *   !proto.org.dash.platform.dapi.v0.GetBlockResponse>}
- */
-const methodInfo_Core_getBlock = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.GetBlockResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.GetBlockRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.GetBlockResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.GetBlockRequest} request The
  *     request proto
  * @param {?Object<string, string>} metadata User defined
  *     call metadata
- * @param {function(?grpc.web.Error, ?proto.org.dash.platform.dapi.v0.GetBlockResponse)}
+ * @param {function(?grpc.web.RpcError, ?proto.org.dash.platform.dapi.v0.GetBlockResponse)}
  *     callback The callback function(error, response)
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.GetBlockResponse>|undefined}
  *     The XHR Node Readable Stream
@@ -219,7 +181,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.getBlock =
 /**
  * @param {!proto.org.dash.platform.dapi.v0.GetBlockRequest} request The
  *     request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!Promise<!proto.org.dash.platform.dapi.v0.GetBlockResponse>}
  *     Promise that resolves to the response
@@ -257,30 +219,11 @@ const methodDescriptor_Core_broadcastTransaction = new grpc.web.MethodDescriptor
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.BroadcastTransactionRequest,
- *   !proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse>}
- */
-const methodInfo_Core_broadcastTransaction = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.BroadcastTransactionRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.BroadcastTransactionRequest} request The
  *     request proto
  * @param {?Object<string, string>} metadata User defined
  *     call metadata
- * @param {function(?grpc.web.Error, ?proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse)}
+ * @param {function(?grpc.web.RpcError, ?proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse)}
  *     callback The callback function(error, response)
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse>|undefined}
  *     The XHR Node Readable Stream
@@ -299,7 +242,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.broadcastTransaction =
 /**
  * @param {!proto.org.dash.platform.dapi.v0.BroadcastTransactionRequest} request The
  *     request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!Promise<!proto.org.dash.platform.dapi.v0.BroadcastTransactionResponse>}
  *     Promise that resolves to the response
@@ -337,30 +280,11 @@ const methodDescriptor_Core_getTransaction = new grpc.web.MethodDescriptor(
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.GetTransactionRequest,
- *   !proto.org.dash.platform.dapi.v0.GetTransactionResponse>}
- */
-const methodInfo_Core_getTransaction = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.GetTransactionResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.GetTransactionRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.GetTransactionResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.GetTransactionRequest} request The
  *     request proto
  * @param {?Object<string, string>} metadata User defined
  *     call metadata
- * @param {function(?grpc.web.Error, ?proto.org.dash.platform.dapi.v0.GetTransactionResponse)}
+ * @param {function(?grpc.web.RpcError, ?proto.org.dash.platform.dapi.v0.GetTransactionResponse)}
  *     callback The callback function(error, response)
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.GetTransactionResponse>|undefined}
  *     The XHR Node Readable Stream
@@ -379,7 +303,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.getTransaction =
 /**
  * @param {!proto.org.dash.platform.dapi.v0.GetTransactionRequest} request The
  *     request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!Promise<!proto.org.dash.platform.dapi.v0.GetTransactionResponse>}
  *     Promise that resolves to the response
@@ -417,30 +341,11 @@ const methodDescriptor_Core_getEstimatedTransactionFee = new grpc.web.MethodDesc
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest,
- *   !proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse>}
- */
-const methodInfo_Core_getEstimatedTransactionFee = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest} request The
  *     request proto
  * @param {?Object<string, string>} metadata User defined
  *     call metadata
- * @param {function(?grpc.web.Error, ?proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse)}
+ * @param {function(?grpc.web.RpcError, ?proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse)}
  *     callback The callback function(error, response)
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse>|undefined}
  *     The XHR Node Readable Stream
@@ -459,7 +364,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.getEstimatedTransactionFee 
 /**
  * @param {!proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest} request The
  *     request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!Promise<!proto.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse>}
  *     Promise that resolves to the response
@@ -497,27 +402,8 @@ const methodDescriptor_Core_subscribeToBlockHeadersWithChainLocks = new grpc.web
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest,
- *   !proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse>}
- */
-const methodInfo_Core_subscribeToBlockHeadersWithChainLocks = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest} request The request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse>}
  *     The XHR Node Readable Stream
@@ -534,7 +420,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.subscribeToBlockHeadersWith
 
 /**
  * @param {!proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest} request The request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse>}
  *     The XHR Node Readable Stream
@@ -572,27 +458,8 @@ const methodDescriptor_Core_subscribeToTransactionsWithProofs = new grpc.web.Met
 
 
 /**
- * @const
- * @type {!grpc.web.AbstractClientBase.MethodInfo<
- *   !proto.org.dash.platform.dapi.v0.TransactionsWithProofsRequest,
- *   !proto.org.dash.platform.dapi.v0.TransactionsWithProofsResponse>}
- */
-const methodInfo_Core_subscribeToTransactionsWithProofs = new grpc.web.AbstractClientBase.MethodInfo(
-  proto.org.dash.platform.dapi.v0.TransactionsWithProofsResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.TransactionsWithProofsRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.TransactionsWithProofsResponse.deserializeBinary
-);
-
-
-/**
  * @param {!proto.org.dash.platform.dapi.v0.TransactionsWithProofsRequest} request The request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.TransactionsWithProofsResponse>}
  *     The XHR Node Readable Stream
@@ -609,7 +476,7 @@ proto.org.dash.platform.dapi.v0.CoreClient.prototype.subscribeToTransactionsWith
 
 /**
  * @param {!proto.org.dash.platform.dapi.v0.TransactionsWithProofsRequest} request The request proto
- * @param {?Object<string, string>} metadata User defined
+ * @param {?Object<string, string>=} metadata User defined
  *     call metadata
  * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.TransactionsWithProofsResponse>}
  *     The XHR Node Readable Stream

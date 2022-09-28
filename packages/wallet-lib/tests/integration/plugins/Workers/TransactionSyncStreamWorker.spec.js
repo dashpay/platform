@@ -127,7 +127,6 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(transactionsInStorage.length).to.be.equal(3);
       expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
     });
-
     it('should reconnect to the historical stream when gap limit is filled', async function () {
       const lastSavedBlockHeight = 40;
       const bestBlockHeight = 42;

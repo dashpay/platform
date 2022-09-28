@@ -7,7 +7,7 @@ class WrongPublicKeyPurposeError extends DPPError {
    * @param {number} keyPurposeRequirement
    */
   constructor(publicKeyPurpose, keyPurposeRequirement) {
-    super(`State transition must be signed with a key that has purpose ${keyPurposeRequirement}, but got ${publicKeyPurpose}`);
+    super(`Invalid identity key purpose ${publicKeyPurpose}. This state transition requires ${keyPurposeRequirement}`);
 
     this.publicKeyPurpose = publicKeyPurpose;
     this.keyPurposeRequirement = keyPurposeRequirement;

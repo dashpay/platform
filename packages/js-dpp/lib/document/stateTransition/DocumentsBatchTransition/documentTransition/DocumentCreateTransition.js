@@ -59,6 +59,15 @@ class DocumentCreateTransition extends AbstractDataDocumentTransition {
   }
 
   /**
+   * Get revision
+   *
+   * @return {number}
+   */
+  getRevision() {
+    return DocumentCreateTransition.INITIAL_REVISION;
+  }
+
+  /**
    * Get plain object representation
    *
    * @param {Object} [options]

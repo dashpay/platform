@@ -6,7 +6,7 @@
     "documentProperties": {
       "type": "object",
       "patternProperties": {
-        "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
+        "^[a-zA-Z0-9-_]{1,64}$": {
           "type": "object",
           "allOf": [
             {
@@ -17,7 +17,7 @@
         }
       },
       "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
       },
       "minProperties": 1,
       "maxProperties": 100
@@ -359,7 +359,7 @@
     "documents": {
       "type": "object",
       "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
       },
       "additionalProperties": {
         "type": "object",
@@ -381,11 +381,11 @@
                       "items": {
                         "type": "object",
                         "propertyNames": {
-                          "pattern": "^[a-zA-Z$][a-zA-Z0-9-_.]{1,62}[a-zA-Z0-9]$"
+                          "maxLength": 256
                         },
                         "additionalProperties": {
                           "type": "string",
-                          "enum": ["asc", "desc"]
+                          "enum": ["asc"]
                         },
                         "minProperties": 1,
                         "maxProperties": 1
@@ -409,12 +409,11 @@
               "signatureSecurityLevelRequirement": {
                 "type": "integer",
                 "enum": [
-                  0,
                   1,
                   2,
                   3
                 ],
-                "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
+                "description": "Public key security level. 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
               }
             }
           },

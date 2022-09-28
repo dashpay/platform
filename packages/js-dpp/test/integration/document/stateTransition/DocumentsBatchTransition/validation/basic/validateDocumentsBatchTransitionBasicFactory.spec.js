@@ -35,6 +35,7 @@ const InvalidIdentifierError = require('../../../../../../../lib/errors/consensu
 const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
 const DuplicateDocumentTransitionsWithIdsError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIdsError');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;
@@ -51,6 +52,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let documentTransitions;
   let validatePartialCompoundIndicesMock;
   let validateProtocolVersionMock;
+  let executionContext;
 
   beforeEach(async function beforeEach() {
     dataContract = getDataContractFixture();
@@ -61,6 +63,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,
     });
+
+    executionContext = new StateTransitionExecutionContext();
 
     stateTransition = new DocumentsBatchTransition({
       protocolVersion: protocolVersion.latestVersion,
@@ -110,7 +114,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.protocolVersion;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -124,7 +131,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.protocolVersion = '1';
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -144,7 +154,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       validateProtocolVersionMock.returns(protocolVersionResult);
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectValidationError(result, SomeConsensusError);
 
@@ -162,7 +175,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.type;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -176,7 +192,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be equal 1', async () => {
       rawStateTransition.type = 666;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -194,6 +213,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -210,6 +230,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result, 2);
@@ -227,6 +248,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -242,6 +264,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -259,6 +282,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -275,6 +299,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -290,6 +315,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -304,7 +330,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should have no more than 10 elements', async () => {
       rawStateTransition.transitions = Array(11).fill({});
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -318,7 +347,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should have objects as elements', async () => {
       rawStateTransition.transitions = [1];
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -335,7 +367,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           delete documentTransition.$id;
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectJsonSchemaError(result);
 
@@ -351,7 +386,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           documentTransition.$id = new Array(32).fill('string');
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectJsonSchemaError(result, 2);
 
@@ -368,7 +406,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           documentTransition.$id = Buffer.alloc(31);
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectJsonSchemaError(result);
 
@@ -384,7 +425,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           documentTransition.$id = Buffer.alloc(33);
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectJsonSchemaError(result);
 
@@ -400,7 +444,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           findDuplicatesByIdMock.returns(duplicates);
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, DuplicateDocumentTransitionsWithIdsError);
 
@@ -413,6 +460,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
           expect(enrichSpy).to.have.been.calledThrice();
           expect(findDuplicatesByIdMock).to.have.been.calledOnceWithExactly(
@@ -430,7 +478,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           delete firstDocumentTransition.$dataContractId;
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, MissingDataContractIdError);
 
@@ -440,6 +491,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -457,7 +509,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           firstDocumentTransition.$dataContractId = 'something';
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, InvalidIdentifierError);
 
@@ -472,6 +527,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -487,7 +543,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         it('should exists in the state', async () => {
           stateRepositoryMock.fetchDataContract.resolves(undefined);
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, DataContractNotPresentError);
 
@@ -498,6 +557,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
 
           expect(enrichSpy).to.have.not.been.called();
@@ -512,7 +572,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           delete firstDocumentTransition.$type;
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, MissingDocumentTransitionTypeError);
 
@@ -522,6 +585,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -534,7 +598,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           firstDocumentTransition.$type = 'wrong';
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, InvalidDocumentTypeError);
 
@@ -548,6 +615,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -562,7 +630,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           delete firstDocumentTransition.$action;
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectValidationError(result, MissingDocumentTransitionActionError);
 
@@ -572,6 +643,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
             dataContract.getId(),
+            executionContext,
           );
 
           expect(enrichSpy).to.have.been.calledThrice();
@@ -585,7 +657,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           firstDocumentTransition.$action = 4;
 
           try {
-            await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidDocumentTransitionActionError);
             expect(e.getAction()).to.equal(firstDocumentTransition.$action);
@@ -610,7 +685,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const expectedId = firstTransition.$id;
             firstTransition.$id = generateRandomIdentifier();
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectValidationError(result, InvalidDocumentTransitionIdError);
 
@@ -626,6 +704,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
               dataContract.getId(),
+              executionContext,
             );
 
             expect(enrichSpy).to.have.been.calledThrice();
@@ -641,7 +720,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             delete documentTransition.$entropy;
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -657,7 +739,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             documentTransition.$entropy = new Array(32).fill('string');
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result, 2);
 
@@ -674,7 +759,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             documentTransition.$entropy = Buffer.alloc(31);
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -690,7 +778,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             documentTransition.$entropy = Buffer.alloc(33);
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -728,7 +819,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             delete documentTransition.$revision;
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -743,7 +837,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             documentTransition.$revision = '1';
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -758,7 +855,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             documentTransition.$revision = 1.2;
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -773,7 +873,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
             documentTransition.$revision = 0;
 
-            const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+            const result = await validateDocumentsBatchTransitionBasic(
+              rawStateTransition,
+              executionContext,
+            );
 
             expectJsonSchemaError(result);
 
@@ -810,7 +913,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
           delete documentTransition.$id;
 
-          const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+          const result = await validateDocumentsBatchTransitionBasic(
+            rawStateTransition,
+            executionContext,
+          );
 
           expectJsonSchemaError(result);
 
@@ -826,7 +932,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
         findDuplicatesByIndicesMock.returns(duplicates);
 
-        const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+        const result = await validateDocumentsBatchTransitionBasic(
+          rawStateTransition,
+          executionContext,
+        );
 
         expectValidationError(result, DuplicateDocumentTransitionsWithIndicesError);
 
@@ -840,6 +949,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
         expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
           dataContract.getId(),
+          executionContext,
         );
         expect(enrichSpy).to.have.been.calledThrice();
         expect(findDuplicatesByIdMock).to.have.been.calledOnceWithExactly(
@@ -857,7 +967,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           new ValidationResult([consensusError]),
         );
 
-        const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+        const result = await validateDocumentsBatchTransitionBasic(
+          rawStateTransition,
+          executionContext,
+        );
 
         expectValidationError(result);
 
@@ -873,6 +986,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
         expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
           dataContract.getId(),
+          executionContext,
         );
         expect(enrichSpy).to.have.been.calledThrice();
       });
@@ -883,7 +997,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.signature;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -897,7 +1014,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be a byte array', async () => {
       rawStateTransition.signature = new Array(65).fill('string');
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 2);
 
@@ -912,7 +1032,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be not less than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -923,10 +1046,13 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       expect(error.getParams().limit).to.equal(65);
     });
 
-    it('should be not longer than 65 bytes', async () => {
-      rawStateTransition.signature = Buffer.alloc(66);
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -934,7 +1060,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       expect(error.instancePath).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
-      expect(error.getParams().limit).to.equal(65);
+      expect(error.getParams().limit).to.equal(96);
     });
   });
 
@@ -942,7 +1068,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.signaturePublicKeyId = 1.4;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 1);
 
@@ -955,7 +1084,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     it('should not be < 0', async () => {
       rawStateTransition.signaturePublicKeyId = -1;
 
-      const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+      const result = await validateDocumentsBatchTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 1);
 
@@ -967,13 +1099,17 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateDocumentsBatchTransitionBasic(rawStateTransition);
+    const result = await validateDocumentsBatchTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      executionContext,
     );
 
     expect(enrichSpy).to.have.been.calledThrice();
@@ -984,6 +1120,27 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
     expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
       rawStateTransition.transitions, dataContract,
+    );
+  });
+
+  it('should not validate Document transitions on dry run', async () => {
+    stateRepositoryMock.fetchDataContract.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await validateDocumentsBatchTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
+
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+
+    expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
     );
   });
 });
