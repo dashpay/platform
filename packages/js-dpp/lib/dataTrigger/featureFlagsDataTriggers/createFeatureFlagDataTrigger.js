@@ -12,6 +12,10 @@ const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 async function createFeatureFlagDataTrigger(documentTransition, context, topLevelIdentityId) {
   const result = new DataTriggerExecutionResult();
 
+  if (context.getStateTransitionExecutionContext().isDryRun()) {
+    return result;
+  }
+
   const stateRepository = context.getStateRepository();
 
   const { height: blockHeight } = await stateRepository.fetchLatestPlatformBlockHeader();

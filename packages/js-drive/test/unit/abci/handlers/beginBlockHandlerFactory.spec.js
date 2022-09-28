@@ -35,6 +35,7 @@ describe('beginBlockHandlerFactory', () => {
   let groveDBStoreMock;
   let blockExecutionContextStackMock;
   let executionTimerMock;
+  let rsAbciMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -52,19 +53,27 @@ describe('beginBlockHandlerFactory', () => {
 
     updateSimplifiedMasternodeListMock = this.sinon.stub().resolves(false);
     waitForChainLockedHeightMock = this.sinon.stub();
-    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub().resolves({
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+      fromHeight: 1,
+      toHeight: 42,
+    });
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
-    blockExecutionContextStackMock.getLatest.returns({
-      getHeader: this.sinon.stub(),
-    });
+    const getHeaderMock = this.sinon.stub();
 
     executionTimerMock = {
+      clearTimer: this.sinon.stub(),
       startTimer: this.sinon.stub(),
-      endTimer: this.sinon.stub(),
-      isStarted: this.sinon.stub(),
+      stopTimer: this.sinon.stub(),
+    };
+
+    rsAbciMock = {
+      blockBegin: this.sinon.stub(),
     };
 
     beginBlockHandler = beginBlockHandlerFactory(
@@ -79,10 +88,10 @@ describe('beginBlockHandlerFactory', () => {
       synchronizeMasternodeIdentitiesMock,
       loggerMock,
       executionTimerMock,
+      rsAbciMock,
     );
 
-    blockHeight = 2;
-    blockHeight = 1;
+    blockHeight = new Long(1);
 
     header = {
       version: {
@@ -93,7 +102,10 @@ describe('beginBlockHandlerFactory', () => {
         seconds: Math.ceil(new Date().getTime() / 1000),
       },
       coreChainLockedHeight,
+      proposerProTxHash: Buffer.alloc(32, 1),
     };
+
+    getHeaderMock.returns(header);
 
     lastCommitInfo = {};
 
@@ -112,7 +124,6 @@ describe('beginBlockHandlerFactory', () => {
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
 
     // Reset block execution context
-    expect(blockExecutionContextMock.getHeader).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
     expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
@@ -181,11 +192,15 @@ describe('beginBlockHandlerFactory', () => {
       },
     });
 
-    blockExecutionContextStackMock.getLatest.returns({
+    blockExecutionContextStackMock.getFirst.returns({
       getHeader: this.sinon.stub().returns(
         {
           height: {
             equals: this.sinon.stub().returns(true),
+            toNumber: this.sinon.stub().returns(1000),
+          },
+          time: {
+            seconds: Math.ceil(new Date().getTime() / 1000),
           },
         },
       ),
@@ -198,7 +213,7 @@ describe('beginBlockHandlerFactory', () => {
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
 
     expect(groveDBStoreMock.abortTransaction).to.be.calledOnceWithExactly();
-    expect(blockExecutionContextStackMock.removeLatest).to.be.calledOnceWithExactly();
+    expect(blockExecutionContextStackMock.removeFirst).to.be.calledOnceWithExactly();
 
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);

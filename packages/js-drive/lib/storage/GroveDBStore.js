@@ -1,4 +1,8 @@
 const { createHash } = require('crypto');
+const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/WriteOperation');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DeleteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/DeleteOperation');
+const StorageResult = require('./StorageResult');
 
 class GroveDBStore {
   /**
@@ -19,22 +23,27 @@ class GroveDBStore {
    * @param {Buffer} value
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
    */
   async put(path, key, value, options = {}) {
     const method = options.skipIfExists ? 'insertIfNotExists' : 'insert';
 
     try {
-      await this.db[method](
-        path,
-        key,
-        {
-          type: 'item',
-          value,
-        },
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        await this.db[method](
+          path,
+          key,
+          {
+            type: 'item',
+            epoch: 0,
+            value,
+          },
+          options.useTransaction || false,
+        );
+      }
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -56,7 +65,10 @@ class GroveDBStore {
       }
     }
 
-    return this;
+    return new StorageResult(
+      undefined,
+      [new WriteOperation(key.length, value.length)],
+    );
   }
 
   /**
@@ -67,22 +79,26 @@ class GroveDBStore {
    * @param {Buffer[]} referencePath
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
    */
   async putReference(path, key, referencePath, options = {}) {
     const method = options.skipIfExists ? 'insertIfNotExists' : 'insert';
 
     try {
-      await this.db[method](
-        path,
-        key,
-        {
-          type: 'reference',
-          value: referencePath,
-        },
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        await this.db[method](
+          path,
+          key,
+          {
+            type: 'reference',
+            epoch: 0,
+            value: referencePath,
+          },
+          options.useTransaction || false,
+        );
+      }
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -109,7 +125,15 @@ class GroveDBStore {
       }
     }
 
-    return this;
+    return new StorageResult(
+      undefined,
+      [
+        new WriteOperation(
+          key.length,
+          referencePath.reduce((size, pathItem) => size + pathItem.length, 0),
+        ),
+      ],
+    );
   }
 
   /**
@@ -119,22 +143,26 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
    */
   async createTree(path, key, options = { }) {
     const method = options.skipIfExists ? 'insertIfNotExists' : 'insert';
 
     try {
-      await this.db[method](
-        path,
-        key,
-        {
-          type: 'tree',
-          value: Buffer.alloc(32),
-        },
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        await this.db[method](
+          path,
+          key,
+          {
+            type: 'tree',
+            epoch: 0,
+            value: Buffer.alloc(32),
+          },
+          options.useTransaction || false,
+        );
+      }
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -156,7 +184,15 @@ class GroveDBStore {
       }
     }
 
-    return this;
+    return new StorageResult(
+      undefined,
+      [
+        new WriteOperation(
+          key.length,
+          32,
+        ),
+      ],
+    );
   }
 
   /**
@@ -166,35 +202,135 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Buffer|null}
+   * @param {boolean} [options.dryRun=false]
+   * @param {number} [options.predictedValueSize]
+   * @return {Promise<StorageResult<Buffer|null>>}
    */
   async get(path, key, options = { }) {
     let type;
     let value;
 
     try {
-      ({ type, value } = await this.db.get(
-        path,
-        key,
-        options.useTransaction || false,
-      ));
+      if (!options.dryRun) {
+        ({
+          type,
+          value,
+        } = await this.db.get(
+          path,
+          key,
+          options.useTransaction || false,
+        ));
+      }
     } catch (e) {
-      if (e.message.startsWith('path key not found') || e.message.startsWith('path not found')) {
-        return null;
+      if (
+        e.message.startsWith('path key not found')
+        || e.message.startsWith('path not found')
+      ) {
+        return new StorageResult(
+          null,
+          [new ReadOperation(0)],
+        );
       }
 
       throw e;
     }
 
     if (type === undefined) {
-      return null;
+      const valueSize = options.dryRun ? (options.predictedValueSize || 0) : 0;
+
+      return new StorageResult(
+        null,
+        [new ReadOperation(valueSize)],
+      );
     }
 
     if (type !== 'item') {
       throw new Error('Key should point to item element type');
     }
 
-    return value;
+    return new StorageResult(
+      value,
+      [new ReadOperation(value.length)],
+    );
+  }
+
+  /**
+   * Query keys and values
+   *
+   * @param {PathQuery} query
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<Buffer|null>>}
+   */
+  async query(query, options = { }) {
+    let items;
+
+    try {
+      if (!options.dryRun) {
+        [items] = await this.db.query(
+          query,
+          options.useTransaction || false,
+        );
+      }
+    } catch (e) {
+      if (
+        e.message.startsWith('path key not found')
+        || e.message.startsWith('path not found')
+      ) {
+        return new StorageResult(
+          null,
+          [new ReadOperation(0)],
+        );
+      }
+
+      throw e;
+    }
+
+    return new StorageResult(
+      items,
+      [new ReadOperation(0)],
+    );
+  }
+
+  /**
+   * Prove query
+   *
+   * @param {PathQuery} query
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @return {Promise<StorageResult<Buffer>>}
+   * */
+  async proveQuery(query, options = {}) {
+    const proof = await this.db.proveQuery(
+      query,
+      options.useTransaction || false,
+    );
+
+    return new StorageResult(
+      proof,
+      [new ReadOperation(0)],
+    );
+  }
+
+  /**
+   * Prove many queries
+   *
+   * @param {PathQuery[]} queries
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @return {Promise<StorageResult<Buffer>>}
+   * */
+  async proveQueryMany(queries, options = {}) {
+    const proof = await this.db.proveQueryMany(
+      queries,
+      options.useTransaction || false,
+    );
+
+    return new StorageResult(
+      proof,
+      [new ReadOperation(0)],
+    );
   }
 
   /**
@@ -204,15 +340,18 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
    */
   async delete(path, key, options = {}) {
     try {
-      await this.db.delete(
-        path,
-        key,
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        await this.db.delete(
+          path,
+          key,
+          options.useTransaction || false,
+        );
+      }
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -229,7 +368,10 @@ class GroveDBStore {
       }
     }
 
-    return this;
+    return new StorageResult(
+      undefined,
+      [new DeleteOperation(key.length, 0)],
+    );
   }
 
   /**
@@ -238,24 +380,45 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.dryRun=false]
+   * @param {boolean} [options.predictedValueSize]
+   * @return {Promise<StorageResult<Buffer|null>>}
    */
   async getAux(key, options = {}) {
-    let result;
+    let result = null;
+
     try {
-      result = await this.db.getAux(
-        key,
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        result = await this.db.getAux(
+          key,
+          options.useTransaction || false,
+        );
+      }
     } catch (e) {
       if (e.message.startsWith('path key not found')) {
-        return null;
+        return new StorageResult(
+          null,
+          [
+            new ReadOperation(result ? result.length : 0),
+          ],
+        );
       }
 
       throw e;
     }
 
-    return result;
+    let valueSize = result ? result.length : 0;
+
+    if (options.dryRun) {
+      valueSize = options.predictedValueSize;
+    }
+
+    return new StorageResult(
+      result,
+      [
+        new ReadOperation(valueSize),
+      ],
+    );
   }
 
   /**
@@ -265,15 +428,18 @@ class GroveDBStore {
    * @param {Buffer} value
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
    */
   async putAux(key, value, options = {}) {
     try {
-      await this.db.putAux(
-        key,
-        value,
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        await this.db.putAux(
+          key,
+          value,
+          options.useTransaction || false,
+        );
+      }
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -289,7 +455,12 @@ class GroveDBStore {
       }
     }
 
-    return this;
+    return new StorageResult(
+      undefined,
+      [
+        new WriteOperation(key.length, value.length),
+      ],
+    );
   }
 
   /**
@@ -298,14 +469,17 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Promise<GroveDBStore>}
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
    */
   async deleteAux(key, options = {}) {
     try {
-      await this.db.deleteAux(
-        key,
-        options.useTransaction || false,
-      );
+      if (!options.dryRun) {
+        await this.db.deleteAux(
+          key,
+          options.useTransaction || false,
+        );
+      }
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -317,7 +491,12 @@ class GroveDBStore {
       }
     }
 
-    return this;
+    return new StorageResult(
+      undefined,
+      [
+        new DeleteOperation(key.length, 0),
+      ],
+    );
   }
 
   /**

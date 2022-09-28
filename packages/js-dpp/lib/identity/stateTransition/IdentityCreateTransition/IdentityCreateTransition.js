@@ -123,7 +123,7 @@ class IdentityCreateTransition extends AbstractStateTransition {
       ...super.toObject(options),
       assetLockProof: this.getAssetLockProof().toObject(),
       publicKeys: this.getPublicKeys()
-        .map((publicKey) => publicKey.toObject()),
+        .map((publicKey) => publicKey.toObject(options)),
     };
   }
 

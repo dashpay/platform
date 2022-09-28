@@ -13,23 +13,20 @@ describe('createQueryResponseFactory', () => {
   let createQueryResponse;
   let metadata;
   let lastCommitInfo;
-  let signedBlockExecutionContext;
   let blockExecutionContextMock;
 
   beforeEach(function beforeEach() {
-    signedBlockExecutionContext = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-
-    blockExecutionContextStackMock.getLast.returns(signedBlockExecutionContext);
-    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
-
     metadata = {
       height: 1,
       coreChainLockedHeight: 1,
     };
 
-    signedBlockExecutionContext.getHeader.returns(metadata);
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextMock.getHeader.returns(metadata);
+
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+
+    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),

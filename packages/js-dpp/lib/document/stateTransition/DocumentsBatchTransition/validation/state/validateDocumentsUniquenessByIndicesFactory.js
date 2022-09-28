@@ -9,16 +9,18 @@ const AbstractDocumentTransition = require('../../documentTransition/AbstractDoc
 function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
   /**
    * @typedef validateDocumentsUniquenessByIndices
-   * @param {string} ownerId
+   * @param {Identifier} ownerId
    * @param {DocumentCreateTransition[]
    *         |DocumentReplaceTransition[]} documentTransitions
    * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {ValidationResult}
    */
   async function validateDocumentsUniquenessByIndices(
     ownerId,
     documentTransitions,
     dataContract,
+    executionContext,
   ) {
     const result = new ValidationResult();
 
@@ -93,6 +95,7 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
           dataContract.getId(),
           type,
           { where },
+          executionContext,
         );
 
         return Object.assign(doc, {
@@ -102,6 +105,10 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
       });
 
     const fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
+
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     // 3. Create errors if duplicates found
     fetchedDocumentsByIndices

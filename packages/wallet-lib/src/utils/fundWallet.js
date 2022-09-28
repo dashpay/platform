@@ -32,7 +32,6 @@ function waitForTransaction(walletAccount, id) {
 async function fundWallet(faucetWallet, recipientWallet, amount) {
   const faucetAccount = await faucetWallet.getAccount();
   const recipientAccount = await recipientWallet.getAccount();
-
   const transaction = await faucetAccount.createTransaction({
     satoshis: amount,
     recipient: recipientAccount.getAddress().address,

@@ -7,7 +7,7 @@ class PublicKeySecurityLevelNotMetError extends DPPError {
    * @param {number} requiredSecurityLevel
    */
   constructor(publicKeySecurityLevel, requiredSecurityLevel) {
-    super(`State transition is signed with a key with security level ${publicKeySecurityLevel}, but expected at least ${requiredSecurityLevel}`);
+    super(`Invalid key security level ${publicKeySecurityLevel}. This state transition requires at least ${requiredSecurityLevel}`);
 
     this.publicKeySecurityLevel = publicKeySecurityLevel;
     this.requiredSecurityLevel = requiredSecurityLevel;

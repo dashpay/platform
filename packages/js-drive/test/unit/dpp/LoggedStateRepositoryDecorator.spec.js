@@ -83,26 +83,26 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.storeIdentity.resolves(response);
+      stateRepositoryMock.createIdentity.resolves(response);
 
-      await loggedStateRepositoryDecorator.storeIdentity(identity);
+      await loggedStateRepositoryDecorator.createIdentity(identity);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeIdentity',
+          method: 'createIdentity',
           parameters: { identity },
           response,
         },
-      }, 'StateRepository#storeIdentity');
+      }, 'StateRepository#createIdentity');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.storeIdentity.throws(error);
+      stateRepositoryMock.createIdentity.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.storeIdentity(identity);
+        await loggedStateRepositoryDecorator.createIdentity(identity);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -111,11 +111,57 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeIdentity',
+          method: 'createIdentity',
           parameters: { identity },
           response: undefined,
         },
-      }, 'StateRepository#storeIdentity');
+      }, 'StateRepository#createIdentity');
+    });
+  });
+
+  describe('#updateIdentity', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.updateIdentity.resolves(response);
+
+      await loggedStateRepositoryDecorator.updateIdentity(identity);
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateIdentity',
+          parameters: { identity },
+          response,
+        },
+      }, 'StateRepository#updateIdentity');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.updateIdentity.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.updateIdentity(identity);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateIdentity',
+          parameters: { identity },
+          response: undefined,
+        },
+      }, 'StateRepository#updateIdentity');
     });
   });
 
@@ -369,7 +415,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeDocument', () => {
+  describe('#createDocument', () => {
     let document;
 
     beforeEach(() => {
@@ -379,26 +425,26 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.storeDocument.resolves(response);
+      stateRepositoryMock.createDocument.resolves(response);
 
-      await loggedStateRepositoryDecorator.storeDocument(document);
+      await loggedStateRepositoryDecorator.createDocument(document);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeDocument',
+          method: 'createDocument',
           parameters: { document },
           response,
         },
-      }, 'StateRepository#storeDocument');
+      }, 'StateRepository#createDocument');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.storeDocument.throws(error);
+      stateRepositoryMock.createDocument.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.storeDocument(document);
+        await loggedStateRepositoryDecorator.createDocument(document);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -407,21 +453,67 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeDocument',
+          method: 'createDocument',
           parameters: { document },
           response: undefined,
         },
-      }, 'StateRepository#storeDocument');
+      }, 'StateRepository#createDocument');
+    });
+  });
+
+  describe('#updateDocument', () => {
+    let document;
+
+    beforeEach(() => {
+      [document] = getDocumentsFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.updateDocument.resolves(response);
+
+      await loggedStateRepositoryDecorator.updateDocument(document);
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateDocument',
+          parameters: { document },
+          response,
+        },
+      }, 'StateRepository#updateDocument');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.updateDocument.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.updateDocument(document);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateDocument',
+          parameters: { document },
+          response: undefined,
+        },
+      }, 'StateRepository#updateDocument');
     });
   });
 
   describe('#removeDocument', () => {
-    let contractId;
+    let dataContract;
     let type;
     let id;
 
     beforeEach(() => {
-      contractId = generateRandomIdentifier();
+      dataContract = getDataContractFixture();
       type = 'type';
       id = generateRandomIdentifier();
     });
@@ -431,12 +523,12 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       stateRepositoryMock.removeDocument.resolves(response);
 
-      await loggedStateRepositoryDecorator.removeDocument(contractId, type, id);
+      await loggedStateRepositoryDecorator.removeDocument(dataContract, type, id);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'removeDocument',
-          parameters: { contractId, type, id },
+          parameters: { dataContract, type, id },
           response,
         },
       }, 'StateRepository#removeDocument');
@@ -448,7 +540,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       stateRepositoryMock.removeDocument.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.removeDocument(contractId, type, id);
+        await loggedStateRepositoryDecorator.removeDocument(dataContract, type, id);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -458,7 +550,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'removeDocument',
-          parameters: { contractId, type, id },
+          parameters: { dataContract, type, id },
           response: undefined,
         },
       }, 'StateRepository#removeDocument');

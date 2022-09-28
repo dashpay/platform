@@ -1,3 +1,5 @@
+const StorageResult = require('../storage/StorageResult');
+
 class SpentAssetLockTransactionsRepository {
   /**
    * @param {GroveDBStore} groveDBStore
@@ -10,60 +12,78 @@ class SpentAssetLockTransactionsRepository {
    * Store the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
-   * @return {SpentAssetLockTransactionsRepository}
+   * @return {Promise<StorageResult<void>>}
    */
-  async store(outPointBuffer, useTransaction = false) {
+  async store(outPointBuffer, options = {}) {
     const emptyValue = Buffer.from([0]);
 
-    await this.storage.put(
+    const result = await this.storage.put(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
       emptyValue,
-      { useTransaction },
+      options,
     );
 
-    return this;
+    return new StorageResult(
+      undefined,
+      result.getOperations(),
+    );
   }
 
   /**
    * Fetch the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryTun=false]
    *
-   * @return {null|Buffer}
+   * @return {Promise<StorageResult<null|Buffer>>}
    */
-  async fetch(outPointBuffer, useTransaction = false) {
-    return this.storage.get(
+  async fetch(outPointBuffer, options = {}) {
+    const result = await this.storage.get(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
-      { useTransaction },
+      options,
+    );
+
+    return new StorageResult(
+      result.getValue(),
+      result.getOperations(),
     );
   }
 
   /**
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
    *
-   * @return {Promise<SpentAssetLockTransactionsRepository>}
+   * @return {Promise<StorageResult<void>>}
    */
   async createTree(options = {}) {
-    await this.storage.createTree(
-      [SpentAssetLockTransactionsRepository.TREE_PATH[0]],
-      SpentAssetLockTransactionsRepository.TREE_PATH[1],
+    const rootTreePath = [SpentAssetLockTransactionsRepository.TREE_PATH[0]];
+    const treePath = SpentAssetLockTransactionsRepository.TREE_PATH[1];
+
+    const result = await this.storage.createTree(
+      rootTreePath,
+      treePath,
       options,
     );
 
-    return this;
+    return new StorageResult(
+      undefined,
+      result.getOperations(),
+    );
   }
 }
 
 SpentAssetLockTransactionsRepository.TREE_PATH = [
   Buffer.from([3]),
-  Buffer.from([0]),
 ];
 
 module.exports = SpentAssetLockTransactionsRepository;

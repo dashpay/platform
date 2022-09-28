@@ -55,21 +55,17 @@ const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 const GroveDBStore = require('./storage/GroveDBStore');
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
-const PublicKeyToIdentityIdStoreRepository = require(
-  './identity/PublicKeyToIdentityIdStoreRepository',
+const PublicKeyToIdentitiesStoreRepository = require(
+  './identity/PublicKeyToIdentitiesStoreRepository',
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-const findConflictingConditions = require('./document/query/findConflictingConditions');
-const findThreesomeOfIndexedProperties = require('./document/query/findThreesomeOfIndexedProperties');
-const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
-const findIndexedPropertiesSince = require('./document/query/findIndexedPropertiesSince');
-const validateQueryFactory = require('./document/query/validateQueryFactory');
 
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
+const proveDocumentsFactory = require('./document/proveDocumentsFactory');
+const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 
-const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
@@ -83,7 +79,6 @@ const documentQueryHandlerFactory = require('./abci/handlers/query/documentQuery
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
 
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
-const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
 
 const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
 
@@ -107,7 +102,6 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
-const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
@@ -119,8 +113,6 @@ const createQueryResponseFactory = require('./abci/handlers/query/response/creat
 const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
 const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
-const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
-const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -131,11 +123,15 @@ const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handle
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
+const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
+const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
+const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
 
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
+const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 
 /**
  *
@@ -154,9 +150,13 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.NETWORK
  * @param {string} options.DPNS_MASTER_PUBLIC_KEY
+ * @param {string} options.DPNS_SECOND_PUBLIC_KEY
  * @param {string} options.DASHPAY_MASTER_PUBLIC_KEY
+ * @param {string} options.DASHPAY_SECOND_PUBLIC_KEY
  * @param {string} options.FEATURE_FLAGS_MASTER_PUBLIC_KEY
+ * @param {string} options.FEATURE_FLAGS_SECOND_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
+ * @param {string} options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.TENDERDASH_P2P_PORT
@@ -174,17 +174,32 @@ function createDIContainer(options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
+  if (!options.DPNS_SECOND_PUBLIC_KEY) {
+    throw new Error('DPNS_SECOND_PUBLIC_KEY must be set');
+  }
 
   if (!options.DASHPAY_MASTER_PUBLIC_KEY) {
     throw new Error('DASHPAY_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.DASHPAY_SECOND_PUBLIC_KEY) {
+    throw new Error('DASHPAY_SECOND_PUBLIC_KEY must be set');
   }
 
   if (!options.FEATURE_FLAGS_MASTER_PUBLIC_KEY) {
     throw new Error('FEATURE_FLAGS_MASTER_PUBLIC_KEY must be set');
   }
 
+  if (!options.FEATURE_FLAGS_SECOND_PUBLIC_KEY) {
+    throw new Error('FEATURE_FLAGS_SECOND_PUBLIC_KEY must be set');
+  }
+
   if (!options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY) {
     throw new Error('MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY) {
+    throw new Error('MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY must be set');
   }
 
   const container = createAwilixContainer({
@@ -249,9 +264,14 @@ function createDIContainer(options) {
     masternodeRewardSharesOwnerId: asValue(
       Identifier.from(masternodeRewardsSystemIds.ownerId),
     ),
-    masternodeRewardSharesOwnerPublicKey: asValue(
+    masternodeRewardSharesOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    masternodeRewardSharesOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY,
       ),
     ),
     masternodeRewardSharesDocuments: asValue(
@@ -263,25 +283,40 @@ function createDIContainer(options) {
     featureFlagsOwnerId: asValue(
       Identifier.from(featureFlagsSystemIds.ownerId),
     ),
-    featureFlagsOwnerPublicKey: asValue(
+    featureFlagsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.FEATURE_FLAGS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    featureFlagsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.FEATURE_FLAGS_SECOND_PUBLIC_KEY,
       ),
     ),
     featureFlagsDocuments: asValue(featureFlagsDocuments),
     dpnsContractId: asValue(Identifier.from(dpnsSystemIds.contractId)),
     dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
-    dpnsOwnerPublicKey: asValue(
+    dpnsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DPNS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    dpnsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.DPNS_SECOND_PUBLIC_KEY,
       ),
     ),
     dpnsDocuments: asValue(dpnsDocuments),
     dashpayContractId: asValue(Identifier.from(dashpaySystemIds.contractId)),
     dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
-    dashpayOwnerPublicKey: asValue(
+    dashpayOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DASHPAY_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    dashpayOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.DASHPAY_SECOND_PUBLIC_KEY,
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
@@ -406,7 +441,10 @@ function createDIContainer(options) {
           fs.rmSync(options.GROVEDB_LATEST_FILE, { recursive: true });
         }
       }).singleton(),
+
     groveDB: asFunction((rsDrive) => rsDrive.getGroveDB()).singleton(),
+
+    rsAbci: asFunction((rsDrive) => rsDrive.getAbci()).singleton(),
 
     groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
 
@@ -426,15 +464,17 @@ function createDIContainer(options) {
       decodeProtocolEntity,
     ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
-    publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
+    publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
 
-    signedPublicKeyToIdentityIdRepository: asFunction((
+    signedPublicKeyToIdentitiesRepository: asFunction((
       signedGroveDBStore,
     ) => (
-      new PublicKeyToIdentityIdStoreRepository(signedGroveDBStore)
+      new PublicKeyToIdentitiesStoreRepository(signedGroveDBStore)
     )).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
+
+    lastSyncedCoreHeightRepository: asClass(LastSyncedCoreHeightRepository).singleton(),
 
     createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
 
@@ -445,6 +485,13 @@ function createDIContainer(options) {
     handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
 
     handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
+
+    handleUpdatedScriptPayout: asFunction(handleUpdatedScriptPayoutFactory).singleton(),
+
+    getWithdrawPubKeyTypeFromPayoutScript: asFunction(getWithdrawPubKeyTypeFromPayoutScriptFactory)
+      .singleton(),
+
+    getPublicKeyFromPayoutScript: asValue(getPublicKeyFromPayoutScript),
   });
 
   /**
@@ -487,54 +534,44 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    sortWhereClausesAccordingToIndex: asValue(sortWhereClausesAccordingToIndex),
-    findAppropriateIndex: asValue(findAppropriateIndex),
-
     documentRepository: asFunction((
       groveDBStore,
-      validateQuery,
-    ) => new DocumentRepository(groveDBStore, validateQuery)).singleton(),
+    ) => new DocumentRepository(groveDBStore)).singleton(),
 
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
-      validateQuery,
     ) => (new DocumentRepository(
       signedGroveDBStore,
-      validateQuery,
     ))).singleton(),
 
-    findConflictingConditions: asValue(findConflictingConditions),
-    findThreesomeOfIndexedProperties: asValue(findThreesomeOfIndexedProperties),
-    findIndexedPropertiesSince: asValue(findIndexedPropertiesSince),
-    validateQuery: asFunction(validateQueryFactory).singleton(),
-
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
-
-    fetchSignedDocuments: asFunction((
-      signedDocumentRepository,
+    fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
+    proveDocuments: asFunction(proveDocumentsFactory).singleton(),
+    fetchSignedDataContract: asFunction((
       signedDataContractRepository,
       signedDataContractCache,
     ) => (
-      fetchDocumentsFactory(
-        signedDocumentRepository,
+      fetchDataContractFactory(
         signedDataContractRepository,
         signedDataContractCache,
       )
     )).singleton(),
-  });
-
-  /**
-   * Register credits distribution pool
-   */
-  container.register({
-    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolRepository)
-      .singleton(),
-
-    signedCreditsDistributionPoolRepository: asFunction((
-      signedGroveDBStore,
-    ) => (new CreditsDistributionPoolRepository(signedGroveDBStore))).singleton(),
-
-    creditsDistributionPool: asValue(new CreditsDistributionPool()),
+    fetchSignedDocuments: asFunction((
+      signedDocumentRepository,
+      fetchSignedDataContract,
+    ) => (
+      fetchDocumentsFactory(
+        signedDocumentRepository,
+        fetchSignedDataContract,
+      )
+    )).singleton(),
+    proveSignedDocuments: asFunction((
+      signedDocumentRepository,
+    ) => (
+      proveDocumentsFactory(
+        signedDocumentRepository,
+      )
+    )).singleton(),
   });
 
   /**
@@ -554,7 +591,7 @@ function createDIContainer(options) {
 
     stateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentityIdRepository,
+      publicKeyToIdentitiesRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -566,7 +603,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentityIdRepository,
+        publicKeyToIdentitiesRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -574,7 +611,6 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        dataContractCache,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -585,7 +621,7 @@ function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentityIdRepository,
+      publicKeyToIdentitiesRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -598,7 +634,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentityIdRepository,
+        publicKeyToIdentitiesRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -606,7 +642,6 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        dataContractCache,
         {
           useTransaction: true,
         },
@@ -685,7 +720,6 @@ function createDIContainer(options) {
    * State
    */
   container.register({
-    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
@@ -709,8 +743,6 @@ function createDIContainer(options) {
     getProofsQueryHandler: asFunction(getProofsQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
-    identityIdsByPublicKeyHashesQueryHandler:
-      asFunction(identityIdsByPublicKeyHashesQueryHandlerFactory).singleton(),
     verifyChainLockQueryHandler: asFunction(verifyChainLockQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
@@ -718,7 +750,6 @@ function createDIContainer(options) {
       dataContractQueryHandler,
       documentQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
-      identityIdsByPublicKeyHashesQueryHandler,
       verifyChainLockQueryHandler,
       getProofsQueryHandler,
     ) => {
@@ -731,7 +762,6 @@ function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/proofs', getProofsQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
-      router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
       router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
 
       return router;

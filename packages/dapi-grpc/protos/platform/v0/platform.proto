@@ -8,7 +8,6 @@ service Platform {
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
-  rpc getIdentityIdsByPublicKeyHashes (GetIdentityIdsByPublicKeyHashesRequest) returns (GetIdentityIdsByPublicKeyHashesResponse);
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
 }
@@ -90,17 +89,6 @@ message GetIdentitiesByPublicKeyHashesRequest {
 
 message GetIdentitiesByPublicKeyHashesResponse {
   repeated bytes identities = 1;
-  Proof proof = 2;
-  ResponseMetadata metadata = 3;
-}
-
-message GetIdentityIdsByPublicKeyHashesRequest {
-  repeated bytes public_key_hashes = 1;
-  bool prove = 2;
-}
-
-message GetIdentityIdsByPublicKeyHashesResponse {
-  repeated bytes identity_ids = 1;
   Proof proof = 2;
   ResponseMetadata metadata = 3;
 }

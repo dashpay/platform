@@ -18,6 +18,7 @@ import getContract from "./methods/contracts/get";
 import getIdentity from "./methods/identities/get";
 import registerIdentity from "./methods/identities/register";
 import topUpIdentity from "./methods/identities/topUp";
+import updateIdentity from "./methods/identities/update";
 import createIdentityCreateTransition from "./methods/identities/internal/createIdentityCreateTransition";
 import createIdentityTopUpTransition from "./methods/identities/internal/createIdnetityTopUpTransition";
 import createAssetLockProof from "./methods/identities/internal/createAssetLockProof";
@@ -71,12 +72,13 @@ interface Identities {
     get: Function,
     register: Function,
     topUp: Function,
+    update: Function,
     utils: {
-        createAssetLockTransaction: Function
-        createAssetLockProof: Function
-        createIdentityCreateTransition: Function
-        createIdentityTopUpTransition: Function
-        waitForCoreChainLockedHeight: Function
+      createAssetLockTransaction: Function
+      createAssetLockProof: Function
+      createIdentityCreateTransition: Function
+      createIdentityTopUpTransition: Function
+      waitForCoreChainLockedHeight: Function
     }
 }
 
@@ -157,6 +159,7 @@ export class Platform {
             register: registerIdentity.bind(this),
             get: getIdentity.bind(this),
             topUp: topUpIdentity.bind(this),
+            update: updateIdentity.bind(this),
             utils: {
                 createAssetLockProof: createAssetLockProof.bind(this),
                 createAssetLockTransaction: createAssetLockTransaction.bind(this),

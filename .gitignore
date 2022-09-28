@@ -3,6 +3,7 @@
 
 # ignore JetBrains IDE project specific files
 .idea
+.fleet
 
 # ignore VSCode project specific files
 .vscode
@@ -29,3 +30,5 @@ node_modules
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+faucet-wallet-*

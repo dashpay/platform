@@ -16,8 +16,7 @@ function ensureHomeDirFactory() {
   function ensureHomeDir() {
     if (fs.existsSync(HOME_DIR_PATH)) {
       try {
-        // eslint-disable-next-line no-bitwise
-        fs.accessSync(__dirname, fs.constants.R_OK | fs.constants.W_OK);
+        fs.accessSync(HOME_DIR_PATH, fs.constants.R_OK | fs.constants.W_OK);
       } catch (e) {
         throw new HomeDirIsNotWritableError(HOME_DIR_PATH);
       }

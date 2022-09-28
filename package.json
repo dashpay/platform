@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.22.15",
+  "version": "0.23.0-dev.9",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -20,7 +20,6 @@
     "test:dpp": "ultra -r test",
     "test:drive": "ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
     "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
-    "test:browsers": "ultra -r --filter '@dashevo/platform-test-suite' test:browsers",
     "test:suite": "yarn workspace @dashevo/platform-test-suite test",
     "test:suite:browsers": "yarn workspace @dashevo/platform-test-suite test:browsers",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
@@ -35,7 +34,8 @@
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "yarn exec packages/dashmate/bin/dashmate",
-    "release": "yarn exec ./scripts/release/release.sh"
+    "release": "yarn exec ./scripts/release/release.sh",
+    "bench": "yarn workspace @dashevo/bench-suite bench"
   },
   "packageManager": "yarn@3.2.2",
   "ultra": {
@@ -53,6 +53,7 @@
   },
   "workspaces": [
     "packages/js-grpc-common",
+    "packages/bench-suite",
     "packages/dapi-grpc",
     "packages/js-abci",
     "packages/js-dpp",
@@ -70,7 +71,8 @@
     "packages/dash-spv"
   ],
   "resolutions": {
-    "elliptic": "6.5.3",
-    "bn.js": "4.12.0"
+    "elliptic": "^6.5.4",
+    "bn.js": "4.12.0",
+    "ejs": "^3.1.7"
   }
 }

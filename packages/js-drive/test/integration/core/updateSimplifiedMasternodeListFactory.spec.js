@@ -8,6 +8,11 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
 
   let container;
   let dashCore;
+  let dashCoreOptions;
+
+  beforeEach(() => {
+    dashCoreOptions = { container: { image: 'dashpay/dashd:18.1.0-alpha.2' } };
+  });
 
   after(async () => {
     if (dashCore) {
@@ -22,7 +27,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   });
 
   it('should wait until SML will be retrieved', async () => {
-    dashCore = await startDashCore();
+    dashCore = await startDashCore(dashCoreOptions);
 
     container = await createTestDIContainer(dashCore);
 
@@ -43,9 +48,17 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   });
 
   it('should synchronizeMasternodeIdentities by smlMaxListsLimit number of blocks', async () => {
-    dashCore = await startDashCore();
+    dashCore = await startDashCore(dashCoreOptions);
 
     container = await createTestDIContainer(dashCore);
+
+    // Create misc tree
+    const groveDBStore = container.resolve('groveDBStore');
+    await groveDBStore.createTree(
+      [],
+      Buffer.from([5]),
+      { useTransaction: true },
+    );
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
     const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');

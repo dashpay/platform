@@ -26,7 +26,7 @@ class ListDAPIAddressProvider {
     const liveAddress = sample(liveAddresses);
 
     if (liveAddress === undefined) {
-      return liveAddress;
+      return undefined;
     }
 
     // This is a temporary fix for a localhost masternode.
@@ -34,7 +34,11 @@ class ListDAPIAddressProvider {
     // not really possible to bind to that address, so that workaround is introduced.
     const network = networks.get(this.options.network);
     if (network && network.regtestEnabled) {
+      const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
+
       liveAddress.host = '127.0.0.1';
+      liveAddress.httpPort = 3000 + randomNodeIndex * 100;
+      liveAddress.grpcPort = 3010 + randomNodeIndex * 100;
     }
 
     return liveAddress;

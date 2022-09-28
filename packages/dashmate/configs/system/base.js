@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.0.1',
+      image: 'dashpay/dashd:18.1.0-alpha.2',
     },
     p2p: {
       port: 20001,
@@ -72,7 +72,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.16-latest',
+          image: 'envoyproxy/envoy:v1.22-latest',
         },
         http: {
           port: 3000,
@@ -89,14 +89,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.22',
+          image: 'dashpay/dapi:0.23-dev',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.22',
+          image: 'dashpay/drive:0.23-dev',
         },
         log: {
           stdout: {
@@ -117,7 +117,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.7',
+          image: 'dashpay/tenderdash:0.8.0-dev.10',
         },
         p2p: {
           port: 26656,
@@ -155,12 +155,14 @@ module.exports = {
       },
       ownerId: dpnsOwnerId,
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     dashpay: {
       contract: {
         id: dashpayContractId,
       },
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     featureFlags: {
       contract: {
@@ -168,6 +170,7 @@ module.exports = {
       },
       ownerId: featureFlagsOwnerId,
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
@@ -175,6 +178,7 @@ module.exports = {
         id: masternodeRewardSharesContractId,
       },
       masterPublicKey: null,
+      secondPublicKey: null,
     },
   },
   externalIp: null,

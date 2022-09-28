@@ -22,20 +22,25 @@ function applyIdentityCreateTransitionFactory(
    * @return {Promise<void>}
    */
   async function applyIdentityCreateTransition(stateTransition) {
-    const output = await fetchAssetLockTransactionOutput(stateTransition.getAssetLockProof());
-    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
+    const executionContext = stateTransition.getExecutionContext();
+
+    const output = await fetchAssetLockTransactionOutput(
+      stateTransition.getAssetLockProof(),
+      executionContext,
+    );
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
     const identity = new Identity({
       protocolVersion: stateTransition.getProtocolVersion(),
       id: stateTransition.getIdentityId().toBuffer(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
+      publicKeys: stateTransition.getPublicKeys()
+        .map((key) => key.toObject({ skipSignature: true })),
       balance: creditsAmount,
       revision: 0,
     });
 
-    await stateRepository.storeIdentity(identity);
+    await stateRepository.createIdentity(identity, executionContext);
 
     const publicKeyHashes = identity
       .getPublicKeys()
@@ -44,9 +49,12 @@ function applyIdentityCreateTransitionFactory(
     await stateRepository.storeIdentityPublicKeyHashes(
       identity.getId(),
       publicKeyHashes,
+      executionContext,
     );
 
-    await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint);
+    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
+
+    await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint, executionContext);
   }
 
   return applyIdentityCreateTransition;

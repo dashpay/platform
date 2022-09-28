@@ -1,7 +1,7 @@
 # Dashmate
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases/latest)
+[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation
@@ -30,13 +30,10 @@ Distribution package for Dash Masternode installation
 
 ### Dependencies
 
-* [Docker](https://docs.docker.com/engine/installation/) (v18.06.0+)
-* [Docker Compose](https://docs.docker.com/compose/install/) (v1.25.0+)
-* [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
+* [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
+* [Node.js](https://nodejs.org/en/download/) (v16.0+, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
-
-**Note that Docker Compose v2 is not yet supported. Docker Desktop will automatically enable Docker Compose v2 under Windows and macOS, please go to "Settings -> General -> Use Docker Compose V2" and disable the checkbox to use Dashmate.**
 
 ### Distribution package
 
@@ -390,10 +387,10 @@ If you want to use Docker Compose directly, you will need to pass a configuratio
 $ dashmate config envs --config=testnet --output-file .env.testnet
 ```
 
-Then specify the created dotenv file as an option for the `docker-compose` command:
+Then specify the created dotenv file as an option for the `docker compose` command:
 
 ```bash
-$ docker-compose --env-file=.env.testnet up -d
+$ docker compose --env-file=.env.testnet up -d
 ```
 
 ## Contributing

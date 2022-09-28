@@ -5,12 +5,12 @@ const protocolVersion = require('../../version/protocolVersion');
 const Identity = require('../../identity/Identity');
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 
-const id = generateRandomIdentifier();
+const staticId = generateRandomIdentifier();
 
 /**
  * @return {Identity}
  */
-module.exports = function getIdentityFixture() {
+module.exports = function getIdentityFixture(id = staticId) {
   const rawIdentity = {
     protocolVersion: protocolVersion.latestVersion,
     id: id.toBuffer(),
