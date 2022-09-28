@@ -4,6 +4,7 @@ const Consensus = require('./consensus');
 const utils = require('./utils');
 
 const SpvChain = class {
+  // eslint-disable-next-line default-param-last
   constructor(chainType, confirms = 100, startBlock) {
     this.root = null;
     this.allBranches = [];
@@ -318,7 +319,8 @@ const SpvChain = class {
           throw new Error('Some headers are invalid');
         }
         return acc && true;
-      }, true,
+      },
+      true,
     );
     if (!allValid) {
       throw new Error('Some headers are invalid');

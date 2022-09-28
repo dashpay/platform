@@ -32,7 +32,9 @@ function isValidBlockHeader(newHeader, previousHeaders, network = 'mainnet') {
       && newHeader.validTimestamp()
       && hasGreaterThanMedianTimestamp(newHeader, previousHeaders)
       && hasValidTarget(
-        utils.getDgwBlock(newHeader), previousHeaders.map((h) => utils.getDgwBlock(h)), network,
+        utils.getDgwBlock(newHeader),
+        previousHeaders.map((h) => utils.getDgwBlock(h)),
+        network,
       );
   }
   return newHeader.validProofOfWork()

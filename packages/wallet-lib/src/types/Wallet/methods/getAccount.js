@@ -11,7 +11,9 @@ const EVENTS = require('../../../EVENTS');
 
 async function getAccount(accountOpts = {}) {
   if (!this.storage.configured) {
-    await new Promise((resolve) => this.storage.once(EVENTS.CONFIGURED, resolve));
+    await new Promise((resolve) => {
+      this.storage.once(EVENTS.CONFIGURED, resolve);
+    });
   }
 
   if (is.num(accountOpts)) {

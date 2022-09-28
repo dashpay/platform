@@ -400,7 +400,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     context.getStateTransitionExecutionContext().disableDryRun();

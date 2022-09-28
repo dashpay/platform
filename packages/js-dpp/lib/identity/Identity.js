@@ -234,7 +234,8 @@ class Identity {
    */
   getPublicKeyMaxId() {
     return this.publicKeys.reduce(
-      (result, publicKey) => (result > publicKey.getId() ? result : publicKey.getId()), 0,
+      (result, publicKey) => (result > publicKey.getId() ? result : publicKey.getId()),
+      0,
     );
   }
 }

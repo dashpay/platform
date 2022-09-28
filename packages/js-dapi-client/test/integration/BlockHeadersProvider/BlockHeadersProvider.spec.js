@@ -4,7 +4,9 @@ const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture'
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
 
-const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
+const sleep = (time) => new Promise((resolve) => {
+  setTimeout(resolve, time);
+});
 const sleepOneTick = () => new Promise((resolve) => {
   if (typeof setImmediate === 'undefined') {
     setTimeout(resolve, 10);

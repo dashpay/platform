@@ -93,7 +93,9 @@ describe('createFeatureFlagDataTrigger', () => {
     contextMock.getStateTransitionExecutionContext().enableDryRun();
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition,
+      contextMock,
+      topLevelIdentityId,
     );
 
     contextMock.getStateTransitionExecutionContext().disableDryRun();

@@ -94,7 +94,8 @@ describe('createContactRequestDataTrigger', () => {
     context.getStateTransitionExecutionContext().enableDryRun();
 
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+      documentTransition,
+      context,
     );
 
     context.getStateTransitionExecutionContext().disableDryRun();
