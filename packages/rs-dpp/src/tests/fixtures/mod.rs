@@ -31,6 +31,8 @@ pub use get_masternode_reward_shares_documents_fixture::*;
 mod get_masternode_reward_shares_contract_fixture;
 pub use get_masternode_reward_shares_contract_fixture::*;
 
+pub use get_documents_fixture::*;
+
 mod get_data_contract;
 mod get_documents_fixture;
 mod get_dpp;

@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use super::{
-    OperationLike, OperationType, STORAGE_CREDIT_PER_BYTE, STORAGE_PROCESSING_CREDIT_PER_BYTE,
+use super::OperationLike;
+use crate::state_transition::fee::constants::{
+    PROCESSING_CREDIT_PER_BYTE, STORAGE_CREDIT_PER_BYTE, WRITE_BASE_PROCESSING_COST,
 };
-
-pub const BASE_PROCESSING_COST: i64 = 60000;
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -24,15 +23,11 @@ impl WriteOperation {
 
 impl OperationLike for WriteOperation {
     fn get_processing_cost(&self) -> i64 {
-        BASE_PROCESSING_COST
-            + ((self.key_size + self.value_size) as i64 * STORAGE_PROCESSING_CREDIT_PER_BYTE)
+        WRITE_BASE_PROCESSING_COST
+            + ((self.key_size + self.value_size) as i64 * PROCESSING_CREDIT_PER_BYTE)
     }
 
     fn get_storage_cost(&self) -> i64 {
         (self.key_size + self.value_size) as i64 * STORAGE_CREDIT_PER_BYTE
-    }
-
-    fn get_type(&self) -> OperationType {
-        OperationType::Write
     }
 }

@@ -1,4 +1,4 @@
-use super::fees::operations::Operation;
+use super::fee::operations::Operation;
 
 #[derive(Debug, Clone, Default)]
 

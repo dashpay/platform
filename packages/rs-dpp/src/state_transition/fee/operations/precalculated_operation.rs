@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{OperationLike, OperationType};
-
-pub const BASE_PROCESSING_COST: i64 = 20000;
+use super::OperationLike;
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -27,9 +25,5 @@ impl OperationLike for PreCalculatedOperation {
 
     fn get_storage_cost(&self) -> i64 {
         self.storage_cost
-    }
-
-    fn get_type(&self) -> OperationType {
-        OperationType::PreCalculated
     }
 }

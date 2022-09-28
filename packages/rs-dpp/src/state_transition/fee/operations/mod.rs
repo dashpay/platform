@@ -30,8 +30,6 @@ pub trait OperationLike {
     fn get_processing_cost(&self) -> i64;
     /// Get storage cost of the operation
     fn get_storage_cost(&self) -> i64;
-    /// Get operation type
-    fn get_type(&self) -> OperationType;
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -73,10 +71,6 @@ impl OperationLike for Operation {
     fn get_storage_cost(&self) -> i64 {
         call_method!(self, get_storage_cost)
     }
-
-    fn get_type(&self) -> OperationType {
-        call_method!(self, get_type)
-    }
 }
 
 impl Operation {
@@ -104,7 +98,7 @@ impl Operation {
 #[cfg(test)]
 mod test {
     use super::{DeleteOperation, Operation, PreCalculatedOperation, ReadOperation};
-    use crate::state_transition::fees::operations::WriteOperation;
+    use crate::state_transition::fee::operations::WriteOperation;
     use serde_json::json;
 
     struct TestCase {

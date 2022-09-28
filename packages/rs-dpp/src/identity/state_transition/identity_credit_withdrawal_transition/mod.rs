@@ -133,10 +133,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         self.signature = signature
     }
 
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        unimplemented!()
-    }
-
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context
     }
