@@ -30,7 +30,9 @@ module.exports = {
     network: {
       subnet: '172.24.24.0/24',
     },
-    timeout: 30
+    stop: {
+      timeout: 30
+    }
   },
   core: {
     docker: {
@@ -141,12 +143,8 @@ module.exports = {
           },
           format: 'plain',
         },
-        nodeKey: {
-
-        },
-        genesis: {
-
-        },
+        nodeKey: {},
+        genesis: {},
         nodeId: null,
       },
     },

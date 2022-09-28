@@ -99,12 +99,19 @@ module.exports = {
           additionalProperties: false,
           required: ['subnet'],
         },
-        timeout: {
-          type: 'number'
+        stop: {
+          type: 'object',
+          properties: {
+            timeout: {
+              type: 'number',
+            },
+          },
+          additionalProperties: false,
+          required: ['timeout'],
         },
       },
       additionalProperties: false,
-      required: ['network', 'timeout'],
+      required: ['network', 'stop'],
     },
     core: {
       type: 'object',
