@@ -46,6 +46,11 @@ function startCoreFactory(
       coreCommand.push('--addressindex=1');
     }
 
+    if (options.wallet) {
+      config.set('core.masternode.enable', 0)
+      config.set('core.masternode.operator.privateKey', null)
+    }
+
     const coreContainer = await dockerCompose.runService(
       config.toEnvs(),
       'core',
