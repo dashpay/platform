@@ -241,13 +241,16 @@ $ dashmate reset
 
 ### Reindex dashcore chain data
 
+The `reindex` command rebuilds the block chain index using the downloaded block data.
+
 Sometimes you need to make a process of reindex for your core container, in case you imported new private keys, or your core data corrupted. The command `reindex` put your node in the reindex mode.
 
-It modifies the configuration and run the core container in `reindex=1` mode, wait until it fully resyncs, and brings it back in normal mode.
+It modifies the configuration, runs the core container in `reindex=1` mode, waits until it fully resynces, and returns it to the normal mode.
 
-The process is interactive (shows progress) and can be interrupted any time, but you cannot start your configuration until resync is fully complete.
+The process is interactive (shows progress) and can be interrupted any time, but you cannot start your configuration until the resync is fully complete.
 
-Command is working both for regular and local configurations
+The `reindex` command works for regular and local configurations.
+
 ```
 Reindex core container
 
