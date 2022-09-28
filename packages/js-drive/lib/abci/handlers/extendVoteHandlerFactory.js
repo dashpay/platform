@@ -3,13 +3,11 @@ const {
     abci: {
       ResponseExtendVote,
     },
+    types: {
+      VoteExtensionType,
+    }
   },
 } = require('@dashevo/abci/types');
-
-const VOTE_EXTENSION_TYPES = {
-  DEFAULT: 0,
-  TRESHOLD: 1,
-};
 
 /**
  * @param {BlockExecutionContext} blockExecutionContext
@@ -22,12 +20,14 @@ function extendVoteHandlerFactory(blockExecutionContext) {
    * @return {Promise<abci.ResponseExtendVote>}
    */
   async function extendVoteHandler() {
-    const withdrawalTransactions = blockExecutionContext.getWithdrawalTransactions();
+    const unsignedWithdrawalTransactionsMap = blockExecutionContext.getWithdrawalTransactionsMap();
 
-    const voteExtentions = withdrawalTransactions.map((txBytes) => ({
-      type: VOTE_EXTENSION_TYPES.TRESHOLD,
-      extension: txBytes,
-    }));
+    const voteExtentions = Object.keys(unsignedWithdrawalTransactionsMap)
+      .sort()
+      .map((txHashHex) => ({
+        type: VoteExtensionType.THRESHOLD_RECOVER,
+        extension: Buffer.from(txHashHex, 'hex'),
+      }));
 
     return new ResponseExtendVote({
       vote_extensions: voteExtentions,

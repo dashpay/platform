@@ -71,11 +71,23 @@ function commitFactory(
     }
 
     // Send withdrawal transactions to Core
+    const unsignedWithdrawalTransactionsMap = blockExecutionContext.getWithdrawalTransactionsMap();
+
     const { vote_extenstions: voteExtentions } = lastCommitInfo;
 
     for (const { extension, signature } of voteExtentions) {
-      const transactionBytes = Buffer.concat(extension, signature);
+      const withdrawalTransactionHash = extension.toString('hex');
 
+      const unsignedWithdrawalTransactionBytes = unsignedWithdrawalTransactionsMap[
+        withdrawalTransactionHash
+      ];
+
+      const transactionBytes = Buffer.concat(
+        unsignedWithdrawalTransactionBytes,
+        signature,
+      );
+
+      // TODO: think about Core error handling
       await coreRPCClient.sendRawTransaction(transactionBytes.toString('hex'));
     }
 

@@ -248,21 +248,21 @@ class BlockExecutionContext {
   }
 
   /**
-   * Set withdrawal transactions
+   * Set withdrawal transactions hash map
    * 
-   * @param {Buffer[]} withdrawalTransactions 
+   * @param {Object} withdrawalTransactionsMap 
    */
-  setWithdrawalTransactions(withdrawalTransactions) {
-    this.withdrawalTransactions = withdrawalTransactions;
+  setWithdrawalTransactionsMap(withdrawalTransactionsMap) {
+    this.withdrawalTransactionsMap = withdrawalTransactionsMap;
   }
 
   /**
-   * Get withdrawal transactions
+   * Get withdrawal transactions hash map
    *
-   * @return {Buffer[]}
+   * @return {Object}
    */
-  getWithdrawalTransactions() {
-    return this.withdrawalTransactions;
+  getWithdrawalTransactionsMap() {
+    return this.withdrawalTransactionsMap;
   }
 
   /**
@@ -280,7 +280,7 @@ class BlockExecutionContext {
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
-    this.withdrawalTransactions = [];
+    this.withdrawalTransactionsMap = {};
   }
 
   /**
@@ -309,7 +309,7 @@ class BlockExecutionContext {
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
-    this.withdrawalTransactions = blockExecutionContext.withdrawalTransactions;
+    this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
   }
 
   /**
@@ -336,7 +336,7 @@ class BlockExecutionContext {
     this.height = Long.fromNumber(object.height);
     this.coreChainLockedHeight = object.coreChainLockedHeight;
     this.version = Consensus.fromObject(object.version);
-    this.withdrawalTransactions = object.withdrawalTransactions;
+    this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
   }
 
   /**
@@ -353,7 +353,7 @@ class BlockExecutionContext {
    *  cumulativeStorageFee: number,
    *  coreChainLockedHeight: number,
    *  lastCommitInfo: number,
-   *  withdrawalTransactions: Buffer[],
+   *  withdrawalTransactionsMap: Object,
    * }}
    */
   toObject(options = {}) {
@@ -375,7 +375,7 @@ class BlockExecutionContext {
       lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
-      withdrawalTransactions: this.withdrawalTransactions,
+      withdrawalTransactionsMap: this.withdrawalTransactionsMap,
     };
 
     if (!options.skipConsensusLogger) {
