@@ -1,11 +1,12 @@
 use dpp::dashcore::anyhow;
 pub use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::js_buffer::JsBuffer;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
+use dpp::ProtocolError;
 use dpp::util::string_encoding::Encoding;
 use wasm_bindgen::{JsCast, JsObject};
 use wasm_bindgen::describe::WasmDescribe;
@@ -79,6 +80,7 @@ impl From<&JsPublicKey> for IdentityPublicKey {
 // }
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IdentityPublicKeyWasm(IdentityPublicKey);
 
 // TODO
@@ -87,10 +89,9 @@ pub struct IdentityPublicKeyWasm(IdentityPublicKey);
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
-        let streng = String::from(js_sys::JSON::stringify(&raw_public_key)?);
-        // let js_public_key: JsPublicKey = serde_wasm_bindgen::from_value(raw_public_key)?;
+        let pk_json_string  = String::from(js_sys::JSON::stringify(&raw_public_key)?);
         let js_public_key: JsPublicKey =
-            serde_json::from_str(&streng).map_err(|e| e.to_string())?;
+            serde_json::from_str(&pk_json_string).map_err(|e| e.to_string())?;
         let pk = IdentityPublicKey::from(js_public_key);
         Ok(pk.into())
     }
@@ -209,5 +210,19 @@ impl IdentityPublicKeyWasm {
 impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
     fn from(v: IdentityPublicKey) -> Self {
         IdentityPublicKeyWasm(v)
+    }
+}
+
+impl TryFrom<JsValue> for IdentityPublicKeyWasm {
+    type Error = JsValue;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
+    fn from(pk: IdentityPublicKeyWasm) -> Self {
+        pk.0.to_owned()
     }
 }

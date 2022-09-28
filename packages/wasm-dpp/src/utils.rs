@@ -1,3 +1,4 @@
+use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 pub fn to_vec_js<T>(iter: impl IntoIterator<Item = T>) -> Vec<JsValue>
@@ -14,4 +15,11 @@ where
     iter.iter()
         .map(|v| v.into_serde().expect("data malformed"))
         .collect()
+}
+
+pub fn into_vec<T: TryFrom<JsValue>>(values: Vec<JsValue>) -> Result<Vec<T>, <JsValue as TryInto<T>>::Error> {
+    values.into_iter().map(JsValue::try_into).collect::<Result<
+        Vec<T>,
+        <JsValue as TryInto<T>>::Error,
+    >>()
 }

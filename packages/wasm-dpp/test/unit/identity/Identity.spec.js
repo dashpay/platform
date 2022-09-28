@@ -15,10 +15,10 @@ describe('Identity', () => {
   let metadataFixture;
   let Identity;
   let Metadata;
-  // let IdentityPublicKeyWasm;
+  let IdentityPublicKeyWasm;
 
   before(async () => {
-    ({ Identity, Metadata /* IdentityPublicKey: IdentityPublicKeyWasm */ } = await loadWasmDpp());
+    ({ Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
@@ -44,6 +44,8 @@ describe('Identity', () => {
     metadataFixture = new Metadata(42, 0);
 
     identity.setMetadata(metadataFixture);
+
+    metadataFixture = new Metadata(42, 0);
 
     encodeMock = this.sinonSandbox.stub(serializer, 'encode');
     hashMock = this.sinonSandbox.stub(hash, 'hash');
@@ -202,39 +204,57 @@ describe('Identity', () => {
   describe('#setMetadata', () => {
     it('should set metadata', () => {
       const otherMetadata = new Metadata(43, 1);
+      const expectedMetadata = new Metadata(43, 1);
 
       identity.setMetadata(otherMetadata);
 
-      expect(identity.getMetadata()).to.deep.equal(otherMetadata);
+      expect(identity.getMetadata().toObject()).to.deep.equal(expectedMetadata.toObject());
     });
   });
 
   describe('#getMetadata', () => {
     it('should get metadata', () => {
-      expect(identity.getMetadata()).to.deep.equal(metadataFixture);
+      expect(identity.getMetadata().toObject()).to.deep.equal(metadataFixture.toObject());
     });
   });
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
-      identity.publicKeys.push(
-        new IdentityPublicKey({
-          id: 99,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-          readOnly: false,
-        }),
-        new IdentityPublicKey({
-          id: 50,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-          readOnly: false,
-        }),
-      );
+      console.log(1);
+      identity.addPublicKey(new IdentityPublicKeyWasm({
+        id: 99,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.alloc(36).fill('a'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+      }));
+      identity.addPublicKey(new IdentityPublicKeyWasm({
+        id: 50,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.alloc(36).fill('a'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+      }));
+      // identity.addPublicKeys([
+      //   new IdentityPublicKeyWasm({
+      //     id: 99,
+      //     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      //     data: Buffer.alloc(36).fill('a'),
+      //     purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      //     securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      //     readOnly: false,
+      //   }),
+      //   new IdentityPublicKeyWasm({
+      //     id: 50,
+      //     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      //     data: Buffer.alloc(36).fill('a'),
+      //     purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      //     securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      //     readOnly: false,
+      //   })
+      // ]);
 
       const maxId = identity.getPublicKeyMaxId();
 
