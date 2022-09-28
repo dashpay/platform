@@ -5,6 +5,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const serializer = require('@dashevo/dpp/lib/util/serializer');
+const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const hash = require('@dashevo/dpp/lib/util/hash');
 
 describe('Identity', () => {
@@ -121,11 +122,7 @@ describe('Identity', () => {
 
   describe('#hash', () => {
     it('should return hex string of a buffer return by serialize', () => {
-      const buffer = Buffer.from('someString');
-
-      encodeMock.returns(buffer);
-      hashMock.returns(buffer);
-
+      const expected_hash = hashFunction(identity.toBuffer());
       const result = identity.hash();
 
       const identityDataToEncode = identity.toObject();
@@ -134,7 +131,7 @@ describe('Identity', () => {
       const protocolVersionUInt32 = Buffer.alloc(4);
       protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
 
-      expect(result).to.deep.equal(buffer);
+      expect(result).to.deep.equal(expected_hash);
     });
   });
 
@@ -237,29 +234,12 @@ describe('Identity', () => {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
       }));
-      // identity.addPublicKeys([
-      //   new IdentityPublicKeyWasm({
-      //     id: 99,
-      //     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      //     data: Buffer.alloc(36).fill('a'),
-      //     purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      //     securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      //     readOnly: false,
-      //   }),
-      //   new IdentityPublicKeyWasm({
-      //     id: 50,
-      //     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      //     data: Buffer.alloc(36).fill('a'),
-      //     purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      //     securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      //     readOnly: false,
-      //   })
-      // ]);
 
       const maxId = identity.getPublicKeyMaxId();
 
       const publicKeyIds = identity.getPublicKeys().map((publicKey) => publicKey.getId());
 
+      expect(Math.max(...publicKeyIds)).to.equal(99);
       expect(Math.max(...publicKeyIds)).to.equal(maxId);
     });
   });
