@@ -1,8 +1,10 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const CachedStateRepositoryDecorator = require('../../../lib/dpp/CachedStateRepositoryDecorator');
+const DataContractCacheItem = require('../../../lib/dataContract/DataContractCacheItem');
 
 describe('CachedStateRepositoryDecorator', () => {
   let stateRepositoryMock;
@@ -24,18 +26,7 @@ describe('CachedStateRepositoryDecorator', () => {
       get: this.sinon.stub(),
     };
 
-    stateRepositoryMock = {
-      fetchIdentity: this.sinon.stub(),
-      fetchDocuments: this.sinon.stub(),
-      fetchTransaction: this.sinon.stub(),
-      fetchDataContract: this.sinon.stub(),
-      storeIdentity: this.sinon.stub(),
-      storeDocument: this.sinon.stub(),
-      removeDocument: this.sinon.stub(),
-      storeIdentityPublicKeyHashes: this.sinon.stub(),
-      fetchLatestPlatformBlockHeader: this.sinon.stub(),
-      fetchIdentityIdsByPublicKeyHashes: this.sinon.stub(),
-    };
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     cachedStateRepository = new CachedStateRepositoryDecorator(
       stateRepositoryMock,
@@ -54,11 +45,19 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeIdentity', () => {
+  describe('#createIdentity', () => {
     it('should store identity to repository', async () => {
-      await cachedStateRepository.storeIdentity(identity);
+      await cachedStateRepository.createIdentity(identity);
 
-      expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
+      expect(stateRepositoryMock.createIdentity).to.be.calledOnceWith(identity);
+    });
+  });
+
+  describe('#updateIdentity', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.updateIdentity(identity);
+
+      expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
     });
   });
 
@@ -73,7 +72,7 @@ describe('CachedStateRepositoryDecorator', () => {
 
       expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
         identity.getId(),
-        publicKeyHashes,
+        publicKeyHashes, undefined,
       );
     });
   });
@@ -93,6 +92,7 @@ describe('CachedStateRepositoryDecorator', () => {
 
       expect(stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.be.calledOnceWithExactly(
         publicKeys.map((pk) => pk.hash()),
+        undefined,
       );
       expect(result).to.deep.equal({
         [publicKeys[0].hash()]: identity.getId(),
@@ -116,24 +116,33 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeDocument', () => {
-    it('should store document in repository', async () => {
+  describe('#createDocument', () => {
+    it('should create document in repository', async () => {
       const [document] = documents;
 
-      await cachedStateRepository.storeDocument(document);
+      await cachedStateRepository.createDocument(document);
 
-      expect(stateRepositoryMock.storeDocument).to.be.calledOnceWith(document);
+      expect(stateRepositoryMock.createDocument).to.be.calledOnceWith(document);
+    });
+  });
+
+  describe('#updateDocument', () => {
+    it('should update document in repository', async () => {
+      const [document] = documents;
+
+      await cachedStateRepository.updateDocument(document);
+
+      expect(stateRepositoryMock.updateDocument).to.be.calledOnceWith(document);
     });
   });
 
   describe('#removeDocument', () => {
     it('should delete document from repository', async () => {
-      const contractId = 'contractId';
       const type = 'documentType';
 
-      await cachedStateRepository.removeDocument(contractId, type, id);
+      await cachedStateRepository.removeDocument(dataContract, type, id);
 
-      expect(stateRepositoryMock.removeDocument).to.be.calledOnceWith(contractId, type, id);
+      expect(stateRepositoryMock.removeDocument).to.be.calledOnceWith(dataContract, type, id);
     });
   });
 
@@ -150,7 +159,9 @@ describe('CachedStateRepositoryDecorator', () => {
 
   describe('#fetchDataContract', () => {
     it('should fetch data contract from cache', async () => {
-      dataContractCacheMock.get.returns(dataContract);
+      const cacheItem = new DataContractCacheItem(dataContract, []);
+
+      dataContractCacheMock.get.returns(cacheItem);
 
       const result = await cachedStateRepository.fetchDataContract(id);
 
@@ -165,9 +176,11 @@ describe('CachedStateRepositoryDecorator', () => {
 
       const result = await cachedStateRepository.fetchDataContract(id);
 
+      const cacheItem = new DataContractCacheItem(dataContract, []);
+
       expect(result).to.equal(dataContract);
       expect(dataContractCacheMock.get).to.be.calledOnceWith(id);
-      expect(dataContractCacheMock.set).to.be.calledOnceWith(id, dataContract);
+      expect(dataContractCacheMock.set).to.be.calledOnceWith(id, cacheItem);
       expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
     });
 

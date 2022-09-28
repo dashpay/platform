@@ -1,4 +1,4 @@
-const { Command, Flags } = require('@oclif/core');
+const { Command, Flags, settings } = require('@oclif/core');
 
 const { asValue } = require('awilix');
 
@@ -114,7 +114,7 @@ class BaseCommand extends Command {
       await stopAllContainers(
         startedContainers.getContainers(),
         {
-          remove: !this.config.debug,
+          remove: !settings.debug,
         },
       );
     }

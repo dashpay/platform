@@ -9,6 +9,7 @@ const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getD
 
 const getDashPayContractFixture = require('../../../../lib/test/fixtures/getDashPayContractFixture');
 const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtures/getDashPayDocumentFixture');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createContactRequestDataTrigger', () => {
   let context;
@@ -34,6 +35,7 @@ describe('createContactRequestDataTrigger', () => {
       stateRepositoryMock,
       contactRequestDocument.getOwnerId(),
       dataContract,
+      new StateTransitionExecutionContext(),
     );
   });
 
@@ -81,5 +83,24 @@ describe('createContactRequestDataTrigger', () => {
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal('Core height 10 is out of block height window from 34 to 50');
+  });
+
+  it('should successfully execute on dry run', async () => {
+    contactRequestDocument.data.coreHeightCreatedAt = 10;
+    [documentTransition] = getDocumentTransitionFixture({
+      create: [contactRequestDocument],
+    });
+
+    context.getStateTransitionExecutionContext().enableDryRun();
+
+    const result = await createContactRequestDataTrigger(
+      documentTransition, context, dashPayIdentity,
+    );
+
+    context.getStateTransitionExecutionContext().disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(result.isOk()).to.be.true();
   });
 });

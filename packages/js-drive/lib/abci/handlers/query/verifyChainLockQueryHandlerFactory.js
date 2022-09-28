@@ -58,7 +58,18 @@ function verifyChainLockQueryHandlerFactory(
       // Invalid signature format
       // Parse error
       if ([-8, -32700].includes(e.code)) {
-        return false;
+        logger.debug(
+          {
+            err: e,
+            chainLock: data.toString('hex'),
+          },
+          `Chainlock verification failed using verifyChainLock method: ${e.message}`,
+        );
+
+        return new ResponseQuery({
+          code: e.code,
+          log: `Chainlock verification failed using verifyChainLock method: ${e.message}`,
+        });
       }
 
       throw e;

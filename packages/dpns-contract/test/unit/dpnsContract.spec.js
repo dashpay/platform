@@ -348,7 +348,7 @@ describe('DPNS Contract', () => {
         });
 
         it('should follow pattern', async () => {
-          rawDomainDocument.normalizedParentDomainName = '&'.repeat(100);
+          rawDomainDocument.normalizedParentDomainName = '&'.repeat(50);
 
           try {
             dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);

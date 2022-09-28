@@ -1,11 +1,15 @@
 const _ = require('lodash');
 const EventEmitter = require('events');
 const logger = require('../../logger');
-const { WALLET_TYPES } = require('../../CONSTANTS');
+const { WALLET_TYPES, BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
 const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
 const Wallet = require('../Wallet/Wallet');
 const { simpleDescendingAccumulator } = require('../../utils/coinSelections/strategies');
+const {
+  TxMetadataTimeoutError,
+  InstantLockTimeoutError,
+} = require('../../errors');
 
 function getNextUnusedAccountIndexForWallet(wallet) {
   if (wallet && wallet.accounts) {
@@ -53,7 +57,10 @@ class Account extends EventEmitter {
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
 
+    logger.debug(`Loading up wallet ${this.walletId}`);
+
     this.identities = wallet.identities;
+    this.chainSyncMediator = wallet.chainSyncMediator;
 
     this.state = {
       isInitialized: false,
@@ -66,6 +73,7 @@ class Account extends EventEmitter {
     // if (this.debug) process.env.LOG_LEVEL = 'debug';
 
     this.waitForInstantLockTimeout = wallet.waitForInstantLockTimeout;
+    this.waitForTxMetadataTimeout = wallet.waitForTxMetadataTimeout;
 
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
@@ -90,7 +98,6 @@ class Account extends EventEmitter {
     // If transport is null or invalid, we won't try to fetch anything
     this.transport = wallet.transport;
 
-    this.store = wallet.storage.store;
     this.storage = wallet.storage;
 
     // Forward all storage event
@@ -100,6 +107,9 @@ class Account extends EventEmitter {
     this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
+    this.storage.on(EVENTS.TX_METADATA, (ev) => {
+      this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
+    });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCKHEIGHT_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCK, (ev) => this.emit(ev.type, ev));
@@ -114,29 +124,59 @@ class Account extends EventEmitter {
     }
     switch (this.walletType) {
       case WALLET_TYPES.HDWALLET:
-      case WALLET_TYPES.HDPUBLIC:
-        this.storage.createAccount(
-          this.walletId,
-          this.BIP44PATH,
-          this.network,
-          this.label,
-        );
+        this.accountPath = getBIP44Path(this.network, this.index);
         break;
+      case WALLET_TYPES.HDPUBLIC:
       case WALLET_TYPES.PRIVATEKEY:
       case WALLET_TYPES.PUBLICKEY:
       case WALLET_TYPES.ADDRESS:
       case WALLET_TYPES.SINGLE_ADDRESS:
-        this.storage.createSingleAddress(
-          this.walletId,
-          this.network,
-          this.label,
-        );
+        this.accountPath = 'm/0';
         break;
       default:
         throw new Error(`Invalid wallet type ${this.walletType}`);
     }
 
-    this.keyChain = wallet.keyChain;
+    this.storage
+      .getWalletStore(this.walletId)
+      .createPathState(this.accountPath);
+
+    let keyChainStorePath = this.index;
+    const keyChainStoreOpts = {};
+
+    switch (this.walletType) {
+      case WALLET_TYPES.HDPUBLIC:
+        keyChainStorePath = this.accountPath;
+        keyChainStoreOpts.lookAheadOpts = {
+          paths: {
+            'm/0': BIP44_ADDRESS_GAP,
+          },
+        };
+        break;
+      case WALLET_TYPES.HDWALLET:
+      case WALLET_TYPES.HDPRIVATE:
+        keyChainStorePath = this.BIP44PATH;
+        keyChainStoreOpts.lookAheadOpts = {
+          paths: {
+            'm/0': BIP44_ADDRESS_GAP,
+            'm/1': BIP44_ADDRESS_GAP,
+          },
+        };
+        break;
+      default:
+        break;
+    }
+
+    this.keyChainStore = wallet
+      .keyChainStore
+      .makeChildKeyChainStore(keyChainStorePath, keyChainStoreOpts);
+
+    // This forces keychainStore to set to issued key what is already its masterkey
+    if ([WALLET_TYPES.PUBLICKEY, WALLET_TYPES.PRIVATEKEY].includes(this.walletType)) {
+      this.keyChainStore
+        .getMasterKeyChain()
+        .getForPath('0', { isWatched: true });
+    }
 
     this.cacheTx = (opts.cacheTx) ? opts.cacheTx : defaultOptions.cacheTx;
     this.cacheBlockHeaders = (opts.cacheBlockHeaders)
@@ -149,32 +189,15 @@ class Account extends EventEmitter {
       watchers: {},
     };
 
-    // Handle import of cache
-    if (opts.cache) {
-      if (opts.cache.addresses) {
-        try {
-          this.storage.importAddresses(opts.cache.addresses, this.walletId);
-        } catch (e) {
-          this.disconnect();
-          throw e;
-        }
-      }
-      if (opts.cache.transactions) {
-        try {
-          this.storage.importTransactions(opts.cache.transactions);
-        } catch (e) {
-          this.disconnect();
-          throw e;
-        }
-      }
-    }
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
 
     /**
-     * Stores promise that waits for the IS lock of the particular transaction
+     * Stores promise that waits for the transaction FETCH event
      * @type {Promise<void>}
      */
-    this.txISLockListener = null;
+    this.txFetchListener = null;
+
+    this.broadcastRetryAttempts = 0;
 
     // Increases a limit of max listeners for transactions related events
     // 25 - mempool limit
@@ -227,7 +250,8 @@ class Account extends EventEmitter {
    * @param {InstantLock} instantLock
    */
   importInstantLock(instantLock) {
-    this.storage.importInstantLock(instantLock);
+    const chainStore = this.storage.getChainStore(this.network);
+    chainStore.importInstantLock(instantLock);
     this.emit(Account.getInstantLockTopicName(instantLock.txid), instantLock);
   }
 
@@ -236,38 +260,128 @@ class Account extends EventEmitter {
    * @param {function} callback
    */
   subscribeToTransactionInstantLock(transactionHash, callback) {
-    this.once(Account.getInstantLockTopicName(transactionHash), callback);
+    const eventName = Account.getInstantLockTopicName(transactionHash);
+
+    this.once(eventName, callback);
+
+    return () => {
+      this.removeListener(eventName, callback);
+    };
+  }
+
+  /**
+   * @param {string} transactionHash
+   * @param {function} callback
+   * @returns {function} - cancel subscription
+   */
+  subscribeToTxMetadata(transactionHash, callback) {
+    const eventName = `${EVENTS.TX_METADATA}:${transactionHash}`;
+
+    this.once(eventName, callback);
+
+    return () => {
+      this.removeListener(eventName, callback);
+    };
   }
 
   /**
    * Waits for instant lock for a transaction or throws after a timeout
    * @param {string} transactionHash - instant lock to wait for
    * @param {number} timeout - in milliseconds before throwing an error if the lock didn't arrive
-   * @return {Promise<InstantLock>}
+   * @return {{promise: Promise<InstantLock>, cancel: Function}}
    */
   waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
+    // Return instant lock immediately if already exists
+    const chainStore = this.storage.getChainStore(this.network);
+    const instantLock = chainStore.getInstantLock(transactionHash);
+    if (instantLock != null) {
+      return {
+        promise: Promise.resolve(instantLock),
+        cancel: () => {},
+      };
+    }
+
     let rejectTimeout;
+    let cancelSubscription;
 
-    return Promise.race([
+    function cancel() {
+      cancelSubscription();
+      clearTimeout(rejectTimeout);
+    }
+
+    // Wait for upcoming instant lock
+
+    const promise = Promise.race([
       new Promise((resolve) => {
-        const instantLock = this.storage.getInstantLock(transactionHash);
-        if (instantLock != null) {
-          clearTimeout(rejectTimeout);
-          resolve(instantLock);
-          return;
-        }
+        cancelSubscription = this.subscribeToTransactionInstantLock(
+          transactionHash,
+          (instantLockData) => {
+            clearTimeout(rejectTimeout);
+            resolve(instantLockData);
+          },
+        );
+      }),
+      new Promise((resolve, reject) => {
+        rejectTimeout = setTimeout(() => {
+          cancelSubscription();
+          reject(new InstantLockTimeoutError(transactionHash));
+        }, timeout);
+      }),
+    ]);
 
-        this.subscribeToTransactionInstantLock(transactionHash, (instantLockData) => {
+    return {
+      promise,
+      cancel,
+    };
+  }
+
+  /**
+   * Waits for metadata of a transaction or throws an error after a timeout
+   * @param {string} transactionHash - metadata of tx to wait for
+   * @param {number} timeout - in ms before throwing an error if the metadata didn't arrive
+   * @return {{promise: Promise<InstantLock>, cancel: Function}}
+   */
+  waitForTxMetadata(transactionHash, timeout = this.waitForTxMetadataTimeout) {
+    // Return tx metadata immediately if already exists
+    const chainStore = this.storage.getChainStore(this.network);
+    const txWithMetadata = chainStore.getTransaction(transactionHash);
+
+    if (txWithMetadata && txWithMetadata.metadata && txWithMetadata.metadata.height) {
+      return {
+        promise: Promise.resolve(txWithMetadata.metadata),
+        cancel: () => {},
+      };
+    }
+
+    // Wait for upcoming metadata
+
+    let rejectTimeout;
+    let cancelSubscription;
+
+    function cancel() {
+      cancelSubscription();
+      clearTimeout(rejectTimeout);
+    }
+
+    const promise = Promise.race([
+      new Promise((resolve) => {
+        cancelSubscription = this.subscribeToTxMetadata(transactionHash, (metadata) => {
           clearTimeout(rejectTimeout);
-          resolve(instantLockData);
+          resolve(metadata);
         });
       }),
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
-          reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
+          cancelSubscription();
+          reject(new TxMetadataTimeoutError(transactionHash));
         }, timeout);
       }),
     ]);
+
+    return {
+      promise,
+      cancel,
+    };
   }
 }
 
@@ -301,7 +415,10 @@ Account.prototype.hasPlugins = require('./methods/hasPlugins');
 Account.prototype.injectPlugin = require('./methods/injectPlugin');
 Account.prototype.importTransactions = require('./methods/importTransactions');
 Account.prototype.importBlockHeader = require('./methods/importBlockHeader');
-
+Account.prototype.createPathsForTransactions = require('./methods/createPathsForTransactions');
+Account.prototype.generateNewPaths = require('./methods/generateNewPaths');
+Account.prototype.addPathsToStore = require('./methods/addPathsToStore');
+Account.prototype.addDefaultPaths = require('./methods/addDefaultPaths');
 Account.prototype.sign = require('./methods/sign');
 
 module.exports = Account;

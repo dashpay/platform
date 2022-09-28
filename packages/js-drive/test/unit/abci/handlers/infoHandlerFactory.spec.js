@@ -8,29 +8,28 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const NoPreviousBlockExecutionStoreTransactionsFoundError = require('../../../../lib/abci/handlers/errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
-
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 
-const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
 const packageJson = require('../../../../package.json');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
+const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
+const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;
   let lastBlockHeight;
   let lastBlockAppHash;
   let infoHandler;
-  let rootTreeMock;
   let updateSimplifiedMasternodeListMock;
   let lastCoreChainLockedHeight;
   let loggerMock;
-  let containerMock;
-  let previousBlockExecutionStoreTransactionsRepositoryMock;
-  let blockExecutionStoreTransactionsMock;
   let blockExecutionContextMock;
+  let blockExecutionContextStackMock;
+  let blockExecutionContextStackRepositoryMock;
+  let groveDBStoreMock;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
@@ -38,38 +37,35 @@ describe('infoHandlerFactory', () => {
     protocolVersion = Long.fromInt(1);
     lastCoreChainLockedHeight = 0;
 
-    rootTreeMock = new RootTreeMock(this.sinon);
-    rootTreeMock.getRootHash.returns(lastBlockAppHash);
-
     updateSimplifiedMasternodeListMock = this.sinon.stub();
 
     loggerMock = new LoggerMock(this.sinon);
 
-    containerMock = {
-      register: this.sinon.stub(),
-      hasRegistration: this.sinon.stub().withArgs('previousBlockExecutionStoreTransactions').returns(false),
-    };
-
-    blockExecutionStoreTransactionsMock = {};
-
-    previousBlockExecutionStoreTransactionsRepositoryMock = {
-      fetch: this.sinon.stub().resolves(blockExecutionStoreTransactionsMock),
-    };
-
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+    blockExecutionContextStackRepositoryMock = new BlockExecutionContextStackRepositoryMock(
+      this.sinon,
+    );
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+
+    blockExecutionContextStackRepositoryMock.fetch.resolves({
+      getContexts: this.sinon.stub(),
+    });
+
+    groveDBStoreMock.getRootHash.resolves(lastBlockAppHash);
 
     infoHandler = infoHandlerFactory(
+      blockExecutionContextStackMock,
+      blockExecutionContextStackRepositoryMock,
       blockExecutionContextMock,
       protocolVersion,
-      rootTreeMock,
       updateSimplifiedMasternodeListMock,
       loggerMock,
-      previousBlockExecutionStoreTransactionsRepositoryMock,
-      containerMock,
+      groveDBStoreMock,
     );
   });
 
-  it('should return empty info', async () => {
+  it('should return respond with genesis heights and app hash on the first run', async () => {
     const response = await infoHandler();
 
     expect(response).to.be.an.instanceOf(ResponseInfo);
@@ -81,13 +77,17 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
+    expect(blockExecutionContextStackRepositoryMock.fetch).to.be.calledOnce();
+    expect(blockExecutionContextStackMock.getFirst).to.be.calledOnce();
+    expect(blockExecutionContextMock.populate).to.not.be.called();
+    expect(blockExecutionContextMock.getHeader).to.not.be.called();
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
-
-    expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.not.be.called();
-    expect(containerMock.hasRegistration).to.not.be.called();
+    expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
   });
 
-  it('should update SML to latest core chain locked height and return stored info', async () => {
+  it('should populate context, initialize Credits Distribution Pool and update SML on subsequent runs', async () => {
+    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
+
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
 
@@ -107,34 +107,13 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
+    expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       lastCoreChainLockedHeight,
       {
         logger: loggerMock,
       },
     );
-
-    expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.be.calledWithExactly();
-    expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
-  });
-
-  it('should throw NoPreviousBlockExecutionStoreTransactionsFoundError if previous BlockExecutionStoreTransactions is not present', async () => {
-    lastBlockHeight = Long.fromInt(1);
-    lastCoreChainLockedHeight = 2;
-
-    blockExecutionContextMock.getHeader.returns({
-      height: lastBlockHeight,
-      coreChainLockedHeight: lastCoreChainLockedHeight,
-    });
-
-    previousBlockExecutionStoreTransactionsRepositoryMock.fetch.resolves(null);
-
-    try {
-      await infoHandler();
-
-      expect.fail('should throw NoPreviousBlockExecutionStoreTransactionsFoundError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NoPreviousBlockExecutionStoreTransactionsFoundError);
-    }
   });
 });

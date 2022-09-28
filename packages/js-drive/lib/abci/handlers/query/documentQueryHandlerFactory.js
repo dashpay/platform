@@ -9,37 +9,26 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
-    ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 
 /**
  *
- * @param {fetchDocuments} fetchPreviousDocuments
- * @param {RootTree} previousRootTree
- * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
- * @param {AwilixContainer} container
+ * @param {fetchDocuments} fetchSignedDocuments
+ * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
-  fetchPreviousDocuments,
-  previousRootTree,
-  previousDocumentsStoreRootTreeLeaf,
-  container,
+  fetchSignedDocuments,
+  proveSignedDocuments,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
 ) {
   /**
-   * @typedef documentQueryHandler
+   * @typedef {documentQueryHandler}
    * @param {Object} params
    * @param {Object} data
    * @param {Buffer} data.contractId
@@ -47,8 +36,8 @@ function documentQueryHandlerFactory(
    * @param {string} [data.where]
    * @param {string} [data.orderBy]
    * @param {string} [data.limit]
-   * @param {string} [data.startAfter]
-   * @param {string} [data.startAt]
+   * @param {Buffer} [data.startAfter]
+   * @param {Buffer} [data.startAt]
    * @param {RequestQuery} request
    * @return {Promise<ResponseQuery>}
    */
@@ -65,67 +54,36 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      const response = new GetDocumentsResponse();
-
-      response.setMetadata(new ResponseMetadata());
-
-      return new ResponseQuery({
-        value: response.serializeBinary(),
-      });
-    }
-
-    if (!container.hasRegistration('previousBlockExecutionStoreTransactions')) {
-      throw new UnavailableAbciError('Documents temporary unavailable');
-    }
-
-    const previousBlockExecutionTransactions = container.resolve('previousBlockExecutionStoreTransactions');
-    const dataContractTransaction = previousBlockExecutionTransactions.getTransaction('dataContracts');
-    if (!dataContractTransaction.isStarted()) {
-      throw new UnavailableAbciError('Documents temporary unavailable');
-    }
-
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
-    let documents;
+    const options = {
+      where,
+      orderBy,
+      limit,
+      startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
+      startAt: startAt ? Buffer.from(startAt) : startAt,
+    };
 
     try {
-      documents = await fetchPreviousDocuments(contractId, type, {
-        where,
-        orderBy,
-        limit,
-        startAfter,
-        startAt,
-      });
+      if (request.prove) {
+        const proof = await proveSignedDocuments(contractId, type, options);
+
+        response.getProof().setMerkleProof(proof.getValue());
+      } else {
+        const documentsResult = await fetchSignedDocuments(contractId, type, options);
+
+        const documents = documentsResult.getValue();
+
+        response.setDocumentsList(
+          documents.map((document) => document.toBuffer()),
+        );
+      }
     } catch (e) {
       if (e instanceof InvalidQueryError) {
-        throw new InvalidArgumentAbciError(
-          `Invalid query: ${e.getErrors()[0].message}`,
-          { errors: e.getErrors() },
-        );
+        throw new InvalidArgumentAbciError(`Invalid query: ${e.message}`);
       }
 
       throw e;
-    }
-
-    if (request.prove) {
-      const documentIds = documents.map((document) => document.getId());
-
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
-
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds);
-
-      storeTreeProofs.setDocumentsProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      response.setDocumentsList(documents.map((document) => document.toBuffer()));
     }
 
     return new ResponseQuery({

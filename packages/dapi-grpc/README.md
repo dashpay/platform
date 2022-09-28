@@ -1,8 +1,8 @@
 # DAPI GRPC
 
-[![Build Status](https://github.com/dashevo/dapi-grpc/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/dapi-grpc/actions/workflows/test_and_release.yml)
+[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
 [![NPM version](https://img.shields.io/npm/v/@dashevo/dapi-grpc.svg)](https://npmjs.org/package/@dashevo/dapi-grpc)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/dapi-grpc)](https://github.com/dashevo/dapi-grpc/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
 [![license](https://img.shields.io/github/license/dashevo/dapi-grpc.svg)](LICENSE)
 
 Decentralized API GRPC definition files and generated clients
@@ -125,7 +125,6 @@ Available methods :
 - getDataContract
 - getDocuments
 - getIdentitiesByPublicKeyHashes
-- getIdentityIdsByPublicKeyHashes
 - waitForStateTransitionResult
 - getConsensusParams
 - setProtocolVersion

@@ -1,16 +1,12 @@
-const StoreTreeProofs = require('./StoreTreeProofs');
-
 class Proof {
   /**
    * @param {object} properties
-   * @param {Buffer} properties.rootTreeProof
-   * @param {StoreTreeProofs} properties.storeTreeProofs
+   * @param {Buffer} properties.merkleProof
    * @param {Buffer} properties.signatureLLMQHash
    * @param {Buffer} properties.signature
    */
   constructor(properties) {
-    this.rootTreeProof = properties.rootTreeProof;
-    this.storeTreeProofs = properties.storeTreeProofs;
+    this.merkleProof = properties.merkleProof;
     this.signatureLLMQHash = properties.signatureLLMQHash;
     this.signature = properties.signature;
   }
@@ -18,15 +14,8 @@ class Proof {
   /**
    * @returns {Buffer}
    */
-  getRootTreeProof() {
-    return this.rootTreeProof;
-  }
-
-  /**
-   * @returns {StoreTreeProofs}
-   */
-  getStoreTreeProofs() {
-    return this.storeTreeProofs;
+  getMerkleProof() {
+    return this.merkleProof;
   }
 
   /**
@@ -44,27 +33,13 @@ class Proof {
   }
 
   /**
-   * @param proofProto
+   * @param {Object} proofProto
    *
    * @returns {Proof}
    */
   static createFromProto(proofProto) {
-    const rawStoreProofs = proofProto.getStoreTreeProofs();
-
-    const storeTreeProofs = new StoreTreeProofs({
-      dataContractsProof: rawStoreProofs.getDataContractsProof()
-        ? Buffer.from(rawStoreProofs.getDataContractsProof()) : null,
-      publicKeyHashesToIdentityIdsProof: rawStoreProofs.getPublicKeyHashesToIdentityIdsProof()
-        ? Buffer.from(rawStoreProofs.getPublicKeyHashesToIdentityIdsProof()) : null,
-      identitiesProof: rawStoreProofs.getIdentitiesProof()
-        ? Buffer.from(rawStoreProofs.getIdentitiesProof()) : null,
-      documentsProof: rawStoreProofs.getDocumentsProof()
-        ? Buffer.from(rawStoreProofs.getDocumentsProof()) : null,
-    });
-
     return new Proof({
-      rootTreeProof: Buffer.from(proofProto.getRootTreeProof()),
-      storeTreeProofs,
+      merkleProof: Buffer.from(proofProto.getMerkleProof()),
       signatureLLMQHash: Buffer.from(proofProto.getSignatureLlmqHash()),
       signature: Buffer.from(proofProto.getSignature()),
     });

@@ -9,29 +9,24 @@ const {
 const {
   v0: {
     GetIdentityResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
+
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
+const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
  *
- * @param {IdentityStoreRepository} previousIdentityRepository
- * @param {RootTree} previousRootTree
- * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
+ * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
-  previousIdentityRepository,
-  previousRootTree,
-  previousIdentitiesStoreRootTreeLeaf,
+  signedIdentityRepository,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -42,40 +37,31 @@ function identityQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      throw new NotFoundAbciError('Identity not found');
+    let identifier;
+    try {
+      identifier = new Identifier(id);
+    } catch (e) {
+      if (e instanceof IdentifierError) {
+        throw new InvalidArgumentAbciError('id must be a valid identifier (32 bytes long)');
+      }
+
+      throw e;
     }
 
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
-    const identity = await previousIdentityRepository.fetch(id);
-
-    let identityBuffer;
-    if (!identity && !request.prove) {
-      throw new NotFoundAbciError('Identity not found');
-    } else if (identity) {
-      identityBuffer = identity.toBuffer();
-    }
-
     if (request.prove) {
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
+      const proof = await signedIdentityRepository.prove(identifier);
 
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(
-        previousIdentitiesStoreRootTreeLeaf,
-        [id],
-      );
-
-      storeTreeProofs.setIdentitiesProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
+      response.getProof().setMerkleProof(proof.getValue());
     } else {
-      response.setIdentity(identityBuffer);
+      const identityResult = await signedIdentityRepository.fetch(identifier);
+
+      if (identityResult.isNull()) {
+        throw new NotFoundAbciError('Identity not found');
+      }
+
+      response.setIdentity(identityResult.getValue().toBuffer());
     }
 
     return new ResponseQuery({

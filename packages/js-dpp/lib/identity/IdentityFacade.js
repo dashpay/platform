@@ -5,6 +5,8 @@ const validateIdentityFactory = require('./validation/validateIdentityFactory');
 const validatePublicKeysFactory = require('./validation/validatePublicKeysFactory');
 const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
+const publicKeyJsonSchema = require('../../schema/identity/publicKey.json');
+
 const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 
@@ -15,10 +17,13 @@ const validateProtocolVersionFactory = require('../version/validateProtocolVersi
 class IdentityFacade {
   /**
    * @param {DashPlatformProtocol} dpp
+   * @param {BlsSignatures} bls
    */
-  constructor(dpp) {
+  constructor(dpp, bls) {
     const validatePublicKeys = validatePublicKeysFactory(
       dpp.getJsonSchemaValidator(),
+      publicKeyJsonSchema,
+      bls,
     );
 
     const validateProtocolVersion = validateProtocolVersionFactory(
@@ -141,6 +146,17 @@ class IdentityFacade {
       identityId,
       assetLockProof,
     );
+  }
+
+  /**
+   * Create identity update transition
+   *
+   * @param {Identity} identity
+   * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys
+   * @returns {IdentityUpdateTransition}
+   */
+  createIdentityUpdateTransition(identity, publicKeys) {
+    return this.factory.createIdentityUpdateTransition(identity, publicKeys);
   }
 }
 

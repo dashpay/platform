@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
@@ -303,8 +303,8 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       expect(error.getParams().limit).to.equal(65);
     });
 
-    it('should be not longer than 65 bytes', async () => {
-      rawStateTransition.signature = Buffer.alloc(66);
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
@@ -314,7 +314,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
-      expect(error.getParams().limit).to.equal(65);
+      expect(error.getParams().limit).to.equal(96);
     });
   });
 

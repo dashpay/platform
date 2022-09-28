@@ -1,7 +1,9 @@
+const EventEmitter = require('events');
 const getStatus = require('../../transport/FixtureTransport/methods/getStatus');
 
-class TransportMock {
+class TransportMock extends EventEmitter {
   constructor(sinonSandbox, transactionStreamMock) {
+    super();
     this.sinonSandbox = sinonSandbox;
 
     this.getBestBlockHeight = sinonSandbox.stub().returns(42);
@@ -16,9 +18,8 @@ class TransportMock {
         bits: 503385436,
         nonce: 351770,
       });
-    this.on = sinonSandbox.stub();
     this.subscribeToBlocks = sinonSandbox.stub();
-    this.getIdentityIdsByPublicKeyHash = sinonSandbox.stub().returns([null]);
+    this.getIdentitiesByPublicKeyHashes = sinonSandbox.stub().returns([]);
     this.sendTransaction = sinonSandbox.stub();
     this.getTransaction = sinonSandbox.stub();
     this.getBlockHeaderByHash = sinonSandbox.stub();

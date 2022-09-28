@@ -8,32 +8,27 @@ const {
 
 const Long = require('long');
 
-const { asValue } = require('awilix');
-
 const { version: driveVersion } = require('../../../package.json');
 
-const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
-
 /**
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {Long} latestProtocolVersion
- * @param {RootTree} rootTree
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
- * @param {
- *   PreviousBlockExecutionStoreTransactionsRepository
- * } previousBlockExecutionStoreTransactionsRepository
- * @param {AwilixContainer} container
+ * @param {GroveDBStore} groveDBStore
+ * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @return {infoHandler}
  */
 function infoHandlerFactory(
+  blockExecutionContextStack,
+  blockExecutionContextStackRepository,
   blockExecutionContext,
   latestProtocolVersion,
-  rootTree,
   updateSimplifiedMasternodeList,
   logger,
-  previousBlockExecutionStoreTransactionsRepository,
-  container,
+  groveDBStore,
 ) {
   /**
    * Info ABCI handler
@@ -51,13 +46,28 @@ function infoHandlerFactory(
     contextLogger.debug('Info ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
-    // Update CreditsDistributionPool
+    // Initialize Block Execution Contexts
 
-    const lastHeader = blockExecutionContext.getHeader();
+    const persistedBlockExecutionContextStack = await blockExecutionContextStackRepository.fetch();
+
+    blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
+
+    const previousContext = blockExecutionContextStack.getFirst();
+
+    // Populate current execution context with previous context
+    // until block begin called with a new block.
+    if (previousContext) {
+      blockExecutionContext.populate(previousContext);
+    }
+
+    // Initialize current heights
 
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
-    if (lastHeader) {
+
+    if (previousContext) {
+      const lastHeader = blockExecutionContext.getHeader();
+
       lastHeight = lastHeader.height;
       lastCoreChainLockedHeight = lastHeader.coreChainLockedHeight;
     }
@@ -66,32 +76,15 @@ function infoHandlerFactory(
       height: lastHeight.toString(),
     });
 
-    if (lastHeader) {
-      // If the current block is higher than 1 we need to obtain previous block data
-      if (!container.hasRegistration('previousBlockExecutionStoreTransactions')) {
-        // If container doesn't have previous transactions, load them from file (node cold start)
-        const previousBlockExecutionStoreTransactions = (
-          await previousBlockExecutionStoreTransactionsRepository.fetch()
-        );
-
-        if (!previousBlockExecutionStoreTransactions) {
-          throw new NoPreviousBlockExecutionStoreTransactionsFoundError();
-        }
-
-        container.register({
-          previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
-        });
-      }
-
-      // Update SML store to latest saved core chain lock to make sure
-      // that verify chain lock handler has updated SML Store to verify signatures
-
+    // Update SML store to latest saved core chain lock to make sure
+    // that verify chain lock handler has updated SML Store to verify signatures
+    if (previousContext) {
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });
     }
 
-    const appHash = rootTree.getRootHash();
+    const appHash = await groveDBStore.getRootHash();
 
     contextLogger.info(
       {
@@ -99,7 +92,7 @@ function infoHandlerFactory(
         appHash: appHash.toString('hex').toUpperCase(),
         latestProtocolVersion: latestProtocolVersion.toString(),
       },
-      `Start processing from block #${lastHeight} with appHash ${appHash.toString('hex').toUpperCase() || 'nil'}`,
+      `Start processing from block #${lastHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
     );
 
     return new ResponseInfo({

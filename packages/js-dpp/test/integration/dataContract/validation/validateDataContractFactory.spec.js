@@ -1,4 +1,5 @@
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const { getRE2Class } = require('@dashevo/wasm-re2');
+const lodashCloneDeep = require('lodash.clonedeep');
 
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
@@ -355,15 +356,23 @@ describe('validateDataContractFactory', function main() {
 
     it('should have valid property names', async () => {
       const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'ab12c', 'abc123', 'ValidName',
-        'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+        'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb',
+        '-validname', '_validname', 'validname-', 'validname_', 'a', 'ab', '1', '123', '123_', '-123', '_123'];
 
       await Promise.all(
         validNames.map(async (name) => {
-          rawDataContract.$defs[name] = {
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+          clonedDataContract.$defs = {};
+          clonedDataContract.$defs[name] = {
             type: 'string',
           };
 
-          const result = await validateDataContract(rawDataContract);
+          clonedDataContract.$defs[name] = {
+            type: 'string',
+          };
+
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 0);
         }),
@@ -371,15 +380,18 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return an invalid result if a property has invalid format', async () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abci', 'ab'];
+      const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
       await Promise.all(
         invalidNames.map(async (name) => {
-          rawDataContract.$defs[name] = {
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+          clonedDataContract.$defs = {};
+          clonedDataContract.$defs[name] = {
             type: 'string',
           };
 
-          const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 2);
 
@@ -439,9 +451,11 @@ describe('validateDataContractFactory', function main() {
 
       await Promise.all(
         validNames.map(async (name) => {
-          rawDataContract.documents[name] = rawDataContract.documents.niceDocument;
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-          const result = await validateDataContract(rawDataContract);
+          clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
+
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 0);
         }),
@@ -449,13 +463,15 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return an invalid result if a property (document type) has invalid format', async () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abc', 'ab'];
+      const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
       await Promise.all(
         invalidNames.map(async (name) => {
-          rawDataContract.documents[name] = rawDataContract.documents.niceDocument;
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-          const result = await validateDataContract(rawDataContract);
+          clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
+
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 2);
 
@@ -561,11 +577,13 @@ describe('validateDataContractFactory', function main() {
 
         await Promise.all(
           validNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties[name] = {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+            clonedDataContract.documents.niceDocument.properties[name] = {
               type: 'string',
             };
 
-            const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 0);
           }),
@@ -584,11 +602,13 @@ describe('validateDataContractFactory', function main() {
 
         await Promise.all(
           validNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties.something.properties[name] = {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+            clonedDataContract.documents.niceDocument.properties.something.properties[name] = {
               type: 'string',
             };
 
-            const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 0);
           }),
@@ -596,13 +616,15 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return an invalid result if a property has invalid format', async () => {
-        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abc', 'ab'];
+        const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
         await Promise.all(
           invalidNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties[name] = {};
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-            const result = await validateDataContract(rawDataContract);
+            clonedDataContract.documents.niceDocument.properties[name] = {};
+
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 3);
 
@@ -617,7 +639,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return an invalid result if a nested property has invalid format', async () => {
-        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
+        const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
         rawDataContract.documents.niceDocument.properties.something = {
           properties: {},
@@ -626,9 +648,11 @@ describe('validateDataContractFactory', function main() {
 
         await Promise.all(
           invalidNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties.something.properties[name] = {};
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-            const result = await validateDataContract(rawDataContract);
+            clonedDataContract.documents.niceDocument.properties.something.properties[name] = {};
+
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 4);
 
@@ -856,7 +880,7 @@ describe('validateDataContractFactory', function main() {
         expect(error.getKeyword()).to.equal('unevaluatedProperties');
       });
 
-      it('should return invalid result if remote `$ref` is used', async () => {
+      it.skip('should return invalid result if remote `$ref` is used', async () => {
         rawDataContract.documents.indexedDocument = {
           $ref: 'http://remote.com/schema#',
         };
@@ -1409,6 +1433,67 @@ describe('validateDataContractFactory', function main() {
         });
       });
 
+      describe('property names', () => {
+        it('should have valid property names (indices)', async () => {
+          const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
+            'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+
+          await Promise.all(
+            validNames.map(async (name) => {
+              const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+              clonedDataContract.documents.indexedDocument.properties[name] = { type: 'string', maxLength: 63 };
+              clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
+              clonedDataContract.documents.indexedDocument.required.push(name);
+
+              const result = await validateDataContract(clonedDataContract);
+
+              expectJsonSchemaError(result, 0);
+            }),
+          );
+        });
+
+        it('should return an invalid result if a property (indices) has invalid format', async () => {
+          const invalidNames = ['a.', '.a'];
+
+          rawDataContract.documents.indexedDocument = {
+            type: 'object',
+            properties: {
+              a: {
+                type: 'object',
+                properties: {
+                  property: {
+                    type: 'string',
+                    maxLength: 63,
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+            indices: [
+              {
+                name: 'index1',
+                properties: [],
+                unique: true,
+              },
+            ],
+            additionalProperties: false,
+          };
+
+          await Promise.all(
+            invalidNames.map(async (name) => {
+              const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+              clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
+
+              const result = await validateDataContract(clonedDataContract);
+
+              expectValidationError(result, UndefinedIndexPropertyError, 1);
+            }),
+          );
+        });
+      });
+
       it('should have "unique" flag to be of a boolean type', async () => {
         rawDataContract.documents.indexedDocument.indices[0].unique = 12;
 
@@ -1451,7 +1536,7 @@ describe('validateDataContractFactory', function main() {
 
           rawDataContract.documents.indexedDocument.properties[propertyName] = {
             type: 'string',
-            maxLength: 256,
+            maxLength: 63,
           };
 
           rawDataContract.documents.indexedDocument.indices.push({
@@ -1476,7 +1561,7 @@ describe('validateDataContractFactory', function main() {
           name: 'index_1',
           properties: [
             { $id: 'asc' },
-            { firstName: 'desc' },
+            { firstName: 'asc' },
           ],
         };
 
@@ -1549,29 +1634,35 @@ describe('validateDataContractFactory', function main() {
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
 
-      it('should return invalid result if index property is array of objects', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-
-        indexedDocumentDefinition.properties.arrayProperty = {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              something: {
-                type: 'string',
-              },
+      it('should return invalid result if index property is an array', async () => {
+        rawDataContract.documents.indexedArray = {
+          type: 'object',
+          indices: [
+            {
+              name: 'index1',
+              properties: [
+                { mentions: 'asc' },
+              ],
             },
-            additionalProperties: false,
+          ],
+          properties: {
+            mentions: {
+              type: 'array',
+              prefixItems: [
+                {
+                  type: 'string',
+                  maxLength: 100,
+                },
+              ],
+              minItems: 1,
+              maxItems: 5,
+              items: false,
+            },
           },
+          additionalProperties: false,
         };
 
-        indexedDocumentDefinition.required.push('arrayProperty');
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        indexDefinition.properties.push({
-          arrayProperty: 'asc',
-        });
+        const indexDefinition = rawDataContract.documents.indexedArray.indices[0];
 
         const result = await validateDataContract(rawDataContract);
 
@@ -1580,128 +1671,168 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('arrayProperty');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if index property is an array of different types', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-          {
-            type: 'string',
-          },
-          {
-            type: 'number',
-          },
-        ];
-
-        rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
-
-        const result = await validateDataContract(rawDataContract);
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const error = result.getFirstError();
-
-        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('mentions');
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedArray');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
 
-      it('should return invalid result if index property contained prefixItems array of arrays', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      // it('should return invalid result if index property is array of objects', async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+      //
+      //   indexedDocumentDefinition.properties.arrayProperty = {
+      //     type: 'array',
+      //     items: {
+      //       type: 'object',
+      //       properties: {
+      //         something: {
+      //           type: 'string',
+      //         },
+      //       },
+      //       additionalProperties: false,
+      //     },
+      //   };
+      //
+      //   indexedDocumentDefinition.required.push('arrayProperty');
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   indexDefinition.properties.push({
+      //     arrayProperty: 'asc',
+      //   });
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const [error] = result.getErrors();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('arrayProperty');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
 
-        const indexDefinition = indexedDocumentDefinition.indices[0];
+      // it('should return invalid result if index property is an array of different types',
+      // async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+      //     {
+      //       type: 'string',
+      //     },
+      //     {
+      //       type: 'number',
+      //     },
+      //   ];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const error = result.getFirstError();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('mentions');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
+      //
+      // it('should return invalid result if index property contained prefixItems array of arrays',
+      // async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+      //     {
+      //       type: 'array',
+      //       items: {
+      //         type: 'string',
+      //       },
+      //     },
+      //   ];
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const error = result.getFirstError();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('mentions');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
 
-        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-          {
-            type: 'array',
-            items: {
-              type: 'string',
-            },
-          },
-        ];
-
-        const result = await validateDataContract(rawDataContract);
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const error = result.getFirstError();
-
-        expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('mentions');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedArray');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if index property contained prefixItems array of objects', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-          {
-            type: 'object',
-            properties: {
-              something: {
-                type: 'string',
-              },
-            },
-            additionalProperties: false,
-          },
-        ];
-
-        const result = await validateDataContract(rawDataContract);
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const error = result.getFirstError();
-
-        expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('mentions');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedArray');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if index property is array of arrays', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-
-        indexedDocumentDefinition.properties.arrayProperty = {
-          type: 'array',
-          items: {
-            type: 'array',
-            items: {
-              type: 'string',
-            },
-          },
-        };
-
-        indexedDocumentDefinition.required.push('arrayProperty');
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        indexDefinition.properties.push({
-          arrayProperty: 'asc',
-        });
-
-        const result = await validateDataContract(rawDataContract);
-
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const [error] = result.getErrors();
-
-        expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('arrayProperty');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
+      // it('should return invalid result if index property contained prefixItems array of objects',
+      // async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+      //     {
+      //       type: 'object',
+      //       properties: {
+      //         something: {
+      //           type: 'string',
+      //         },
+      //       },
+      //       additionalProperties: false,
+      //     },
+      //   ];
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const error = result.getFirstError();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('mentions');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
+      //
+      // it('should return invalid result if index property is array of arrays', async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+      //
+      //   indexedDocumentDefinition.properties.arrayProperty = {
+      //     type: 'array',
+      //     items: {
+      //       type: 'array',
+      //       items: {
+      //         type: 'string',
+      //       },
+      //     },
+      //   };
+      //
+      //   indexedDocumentDefinition.required.push('arrayProperty');
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   indexDefinition.properties.push({
+      //     arrayProperty: 'asc',
+      //   });
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const [error] = result.getErrors();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('arrayProperty');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
 
       it('should return invalid result if index property is array with different item definitions', async () => {
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
@@ -1914,7 +2045,7 @@ describe('validateDataContractFactory', function main() {
     });
   });
 
-  it('should return invalid result with circular $ref pointer', async () => {
+  it.skip('should return invalid result with circular $ref pointer', async () => {
     rawDataContract.$defs.object = { $ref: '#/$defs/object' };
 
     const result = await validateDataContract(rawDataContract);
@@ -1940,7 +2071,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
+    expect(error.getReason()).to.equal('should be less or equal 63');
   });
 
   it('should return invalid result if indexed string property have to big maxLength', async () => {
@@ -1955,68 +2086,71 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
+    expect(error.getReason()).to.equal('should be less or equal 63');
   });
 
-  it('should return invalid result if indexed array property missing maxItems constraint', async () => {
-    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
-
-  it('should return invalid result if indexed array property have to big maxItems', async () => {
-    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
-
-  it('should return invalid result if indexed array property have string item without maxItems constraint', async () => {
-    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
-
-  it('should return invalid result if indexed array property have string item with maxItems bigger than 1024', async () => {
-    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
+  // it('should return invalid result if indexed array property missing maxItems constraint',
+  // async () => {
+  //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 63');
+  // });
+  //
+  // it('should return invalid result if indexed array property have to big maxItems', async () => {
+  //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 63');
+  // });
+  //
+  // it('should return invalid result if indexed array property
+  // have string item without maxItems constraint', async () => {
+  //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 63');
+  // });
+  //
+  // it('should return invalid result if indexed array property have
+  // string item with maxItems bigger than 1024', async () => {
+  //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 63');
+  // });
 
   it('should return invalid result if indexed byte array property missing maxItems constraint', async () => {
     delete rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems;
@@ -2030,7 +2164,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('byteArrayField');
     expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 4096');
+    expect(error.getReason()).to.equal('should be less or equal 255');
   });
 
   it('should return invalid result if indexed byte array property have to big maxItems', async () => {
@@ -2045,7 +2179,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('byteArrayField');
     expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 4096');
+    expect(error.getReason()).to.equal('should be less or equal 255');
   });
 
   it('should return valid result if Data Contract is valid', async () => {

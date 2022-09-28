@@ -3,18 +3,18 @@
 
 Parameters: 
 
-| parameters        | type    | required            | Description                                                       |  
-|-------------------|---------|------------------	| -----------------------------------------------------------------	|
+| parameters        | type    | required            | Description                                                        |  
+|-------------------|---------|------------------	|--------------------------------------------------------------------|
 | **dotLocator**    | string  | yes                 | Field of a specific application, under the form `appName.fieldName` |
-| **identity**      | Identity| yes                 | A valid [registered identity](../identities/register.md) |
-| **docOpts**       | Object  | yes                 | A valid data that match the data contract structure |
+| **identity**      | Identity| yes                 | A valid [registered identity](../identities/register.md)   |
+| **docOpts**       | Object  | yes                 | A valid data that match the data contract structure                |
 
 **Example**: 
 ```js
 const identityId = '';// Your identity identifier
 const identity = await client.platform.identities.get(identityId);
 
-const helloWorldDocument = await platform.documents.create(
+const helloWorldDocument = await client.platform.documents.create(
       // Assume a contract helloWorldContract is registered with a field note
       'helloWorldContract.note',
       identity,

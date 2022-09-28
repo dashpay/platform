@@ -28,7 +28,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       type: 'object',
       properties: {
         lastName: {
-          $ref: '#/$defs/lastName',
+          type: 'string',
         },
       },
       required: ['lastName', '$updatedAt'],
@@ -41,7 +41,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           name: 'index1',
           properties: [
             { $ownerId: 'asc' },
-            { firstName: 'desc' },
+            { firstName: 'asc' },
           ],
           unique: true,
         },
@@ -49,7 +49,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           name: 'index2',
           properties: [
             { $ownerId: 'asc' },
-            { lastName: 'desc' },
+            { lastName: 'asc' },
           ],
           unique: true,
         },
@@ -58,6 +58,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           properties: [
             { lastName: 'asc' },
           ],
+          unique: false,
         },
         {
           name: 'index4',
@@ -82,42 +83,42 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       properties: {
         firstName: {
           type: 'string',
-          maxLength: 256,
+          maxLength: 63,
         },
         lastName: {
           type: 'string',
-          maxLength: 256,
+          maxLength: 63,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
       additionalProperties: false,
     },
-    indexedArray: {
-      type: 'object',
-      indices: [
-        {
-          name: 'index1',
-          properties: [
-            { mentions: 'asc' },
-          ],
-        },
-      ],
-      properties: {
-        mentions: {
-          type: 'array',
-          prefixItems: [
-            {
-              type: 'string',
-              maxLength: 100,
-            },
-          ],
-          minItems: 1,
-          maxItems: 5,
-          items: false,
-        },
-      },
-      additionalProperties: false,
-    },
+    // indexedArray: {
+    //   type: 'object',
+    //   indices: [
+    //     {
+    //       name: 'index1',
+    //       properties: [
+    //         { mentions: 'asc' },
+    //       ],
+    //     },
+    //   ],
+    //   properties: {
+    //     mentions: {
+    //       type: 'array',
+    //       prefixItems: [
+    //         {
+    //           type: 'string',
+    //           maxLength: 100,
+    //         },
+    //       ],
+    //       minItems: 1,
+    //       maxItems: 5,
+    //       items: false,
+    //     },
+    //   },
+    //   additionalProperties: false,
+    // },
     noTimeDocument: {
       type: 'object',
       properties: {
@@ -188,26 +189,26 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       properties: {
         firstName: {
           type: 'string',
-          maxLength: 256,
+          maxLength: 63,
         },
         lastName: {
           type: 'string',
-          maxLength: 256,
+          maxLength: 63,
         },
         country: {
           type: 'string',
-          maxLength: 256,
+          maxLength: 63,
         },
         city: {
           type: 'string',
-          maxLength: 256,
+          maxLength: 63,
         },
       },
       indices: [
         {
           name: 'index1',
           properties: [
-            { firstName: 'desc' },
+            { firstName: 'asc' },
           ],
           unique: true,
         },
@@ -238,11 +239,11 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
 
   const dataContract = factory.create(ownerId, documents);
 
-  dataContract.setDefinitions({
-    lastName: {
-      type: 'string',
-    },
-  });
+  // dataContract.setDefinitions({
+  //   lastName: {
+  //     type: 'string',
+  //   },
+  // });
 
   return dataContract;
 };

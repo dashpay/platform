@@ -1,4 +1,4 @@
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
@@ -19,6 +19,8 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;
@@ -29,6 +31,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
+  let validatePublicKeySignaturesMock;
 
   beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
@@ -58,19 +61,23 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
     validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
+    validatePublicKeySignaturesMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
     validateIdentityCreateTransitionBasic = validateIdentityCreateTransitionBasicFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
       validatePublicKeysInIdentityCreateTransition,
       proofValidationFunctionsByTypeMock,
       validateProtocolVersionMock,
+      validatePublicKeySignaturesMock,
     );
 
     stateTransition = getIdentityCreateTransitionFixture();
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    stateTransition.signByPrivateKey(privateKey);
+    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     rawStateTransition = stateTransition.toObject();
   });
@@ -193,10 +200,13 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
         assetLockError,
       ]);
 
+      const executionContext = new StateTransitionExecutionContext();
+
       proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectValidationError(result);
@@ -208,6 +218,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
         .to.be.calledOnceWithExactly(
           rawStateTransition.assetLockProof,
+          executionContext,
         );
     });
   });
@@ -296,7 +307,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       expect(error).to.equal(publicKeysError);
 
-      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+      expect(validatePublicKeysMock)
+        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
     });
 
     it('should have at least 1 master key', async () => {
@@ -319,6 +331,25 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       expect(validatePublicKeysInIdentityCreateTransition)
         .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+    });
+
+    it('should have valid signatures', async () => {
+      const publicKeysError = new SomeConsensusError('test');
+      const publicKeysResult = new ValidationResult([
+        publicKeysError,
+      ]);
+
+      validatePublicKeySignaturesMock.resolves(publicKeysResult);
+
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(publicKeysError);
     });
   });
 

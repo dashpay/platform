@@ -26,9 +26,14 @@ const {
 module.exports = {
   description: 'base config for use as template',
   group: null,
+  docker: {
+    network: {
+      subnet: '172.24.24.0/24',
+    },
+  },
   core: {
     docker: {
-      image: 'dashpay/dashd:0.17',
+      image: 'dashpay/dashd:18.1.0-rc.1',
     },
     p2p: {
       port: 20001,
@@ -57,7 +62,7 @@ module.exports = {
     },
     sentinel: {
       docker: {
-        image: 'dashpay/sentinel:1.6.0',
+        image: 'dashpay/sentinel:1.7.1',
       },
     },
     debug: 0,
@@ -67,7 +72,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.16-latest',
+          image: 'envoyproxy/envoy:v1.22-latest',
         },
         http: {
           port: 3000,
@@ -84,19 +89,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.21',
+          image: 'dashpay/dapi:0.23-dev',
         },
       },
     },
     drive: {
-      mongodb: {
-        docker: {
-          image: 'mongo:4.2',
-        },
-      },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.21',
+          image: 'dashpay/drive:0.23-dev',
         },
         log: {
           stdout: {
@@ -104,11 +104,11 @@ module.exports = {
           },
           prettyFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-pretty.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-json.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-json.log'),
           },
         },
         validatorSet: {
@@ -117,7 +117,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.7.0-dev',
+          image: 'dashpay/tenderdash:0.8.0-dev.10',
         },
         p2p: {
           port: 26656,
@@ -155,12 +155,14 @@ module.exports = {
       },
       ownerId: dpnsOwnerId,
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     dashpay: {
       contract: {
         id: dashpayContractId,
       },
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     featureFlags: {
       contract: {
@@ -168,6 +170,7 @@ module.exports = {
       },
       ownerId: featureFlagsOwnerId,
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
@@ -175,6 +178,7 @@ module.exports = {
         id: masternodeRewardSharesContractId,
       },
       masterPublicKey: null,
+      secondPublicKey: null,
     },
   },
   externalIp: null,

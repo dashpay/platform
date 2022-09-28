@@ -13,12 +13,31 @@
  #import "GPBProtocolBuffers_RuntimeSupport.h"
 #endif
 
- #import "Core.pbobjc.h"
+#import <stdatomic.h>
+
+#import "Core.pbobjc.h"
 // @@protoc_insertion_point(imports)
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #pragma clang diagnostic ignored "-Wdirect-ivar-access"
+#pragma clang diagnostic ignored "-Wdollar-in-identifier-extension"
+
+#pragma mark - Objective C Class declarations
+// Forward declarations of Objective C classes that we can use as
+// static values in struct initializers.
+// We don't use [Foo class] because it is not a static value.
+GPBObjCClassDeclaration(BlockHeaders);
+GPBObjCClassDeclaration(BloomFilter);
+GPBObjCClassDeclaration(GetStatusResponse);
+GPBObjCClassDeclaration(GetStatusResponse_Chain);
+GPBObjCClassDeclaration(GetStatusResponse_Masternode);
+GPBObjCClassDeclaration(GetStatusResponse_Network);
+GPBObjCClassDeclaration(GetStatusResponse_NetworkFee);
+GPBObjCClassDeclaration(GetStatusResponse_Time);
+GPBObjCClassDeclaration(GetStatusResponse_Version);
+GPBObjCClassDeclaration(InstantSendLockMessages);
+GPBObjCClassDeclaration(RawTransactions);
 
 #pragma mark - CoreRoot
 
@@ -64,8 +83,10 @@ typedef struct GetStatusRequest__storage_ {
                                         fields:NULL
                                     fieldCount:0
                                    storageSize:sizeof(GetStatusRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -104,7 +125,7 @@ typedef struct GetStatusResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "version",
-        .dataTypeSpecific.className = GPBStringifySymbol(GetStatusResponse_Version),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Version),
         .number = GetStatusResponse_FieldNumber_Version,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, version),
@@ -113,7 +134,7 @@ typedef struct GetStatusResponse__storage_ {
       },
       {
         .name = "time",
-        .dataTypeSpecific.className = GPBStringifySymbol(GetStatusResponse_Time),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Time),
         .number = GetStatusResponse_FieldNumber_Time,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, time),
@@ -126,21 +147,21 @@ typedef struct GetStatusResponse__storage_ {
         .number = GetStatusResponse_FieldNumber_Status,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, status),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeEnum,
       },
       {
         .name = "syncProgress",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_FieldNumber_SyncProgress,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, syncProgress),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
       {
         .name = "chain",
-        .dataTypeSpecific.className = GPBStringifySymbol(GetStatusResponse_Chain),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Chain),
         .number = GetStatusResponse_FieldNumber_Chain,
         .hasIndex = 4,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, chain),
@@ -149,7 +170,7 @@ typedef struct GetStatusResponse__storage_ {
       },
       {
         .name = "masternode",
-        .dataTypeSpecific.className = GPBStringifySymbol(GetStatusResponse_Masternode),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Masternode),
         .number = GetStatusResponse_FieldNumber_Masternode,
         .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, masternode),
@@ -158,7 +179,7 @@ typedef struct GetStatusResponse__storage_ {
       },
       {
         .name = "network",
-        .dataTypeSpecific.className = GPBStringifySymbol(GetStatusResponse_Network),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Network),
         .number = GetStatusResponse_FieldNumber_Network,
         .hasIndex = 6,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, network),
@@ -173,8 +194,10 @@ typedef struct GetStatusResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -185,19 +208,19 @@ typedef struct GetStatusResponse__storage_ {
 int32_t GetStatusResponse_Status_RawValue(GetStatusResponse *message) {
   GPBDescriptor *descriptor = [GetStatusResponse descriptor];
   GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetStatusResponse_FieldNumber_Status];
-  return GPBGetMessageInt32Field(message, field);
+  return GPBGetMessageRawEnumField(message, field);
 }
 
 void SetGetStatusResponse_Status_RawValue(GetStatusResponse *message, int32_t value) {
   GPBDescriptor *descriptor = [GetStatusResponse descriptor];
   GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetStatusResponse_FieldNumber_Status];
-  GPBSetInt32IvarWithFieldInternal(message, field, value, descriptor.file.syntax);
+  GPBSetMessageRawEnumField(message, field, value);
 }
 
 #pragma mark - Enum GetStatusResponse_Status
 
 GPBEnumDescriptor *GetStatusResponse_Status_EnumDescriptor(void) {
-  static GPBEnumDescriptor *descriptor = NULL;
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
         "NotStarted\000Syncing\000Ready\000Error\000";
@@ -213,7 +236,8 @@ GPBEnumDescriptor *GetStatusResponse_Status_EnumDescriptor(void) {
                                            values:values
                                             count:(uint32_t)(sizeof(values) / sizeof(int32_t))
                                      enumVerifier:GetStatusResponse_Status_IsValidValue];
-    if (!OSAtomicCompareAndSwapPtrBarrier(nil, worker, (void * volatile *)&descriptor)) {
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
       [worker release];
     }
   }
@@ -255,29 +279,29 @@ typedef struct GetStatusResponse_Version__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "protocol",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Version_FieldNumber_Protocol,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_Version__storage_, protocol),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "software",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Version_FieldNumber_Software,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_Version__storage_, software),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "agent",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Version_FieldNumber_Agent,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse_Version__storage_, agent),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
     };
@@ -288,9 +312,11 @@ typedef struct GetStatusResponse_Version__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse_Version__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    [localDescriptor setupContainingMessageClassName:GPBStringifySymbol(GetStatusResponse)];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -321,29 +347,29 @@ typedef struct GetStatusResponse_Time__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "now",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Time_FieldNumber_Now,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_Time__storage_, now),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "offset",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Time_FieldNumber_Offset,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_Time__storage_, offset),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeInt32,
       },
       {
         .name = "median",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Time_FieldNumber_Median,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse_Time__storage_, median),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
@@ -354,9 +380,11 @@ typedef struct GetStatusResponse_Time__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse_Time__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    [localDescriptor setupContainingMessageClassName:GPBStringifySymbol(GetStatusResponse)];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -396,74 +424,74 @@ typedef struct GetStatusResponse_Chain__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "name",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_Name,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, name),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
       {
         .name = "headersCount",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_HeadersCount,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, headersCount),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "blocksCount",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_BlocksCount,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, blocksCount),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "bestBlockHash",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_BestBlockHash,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, bestBlockHash),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "difficulty",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_Difficulty,
         .hasIndex = 4,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, difficulty),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
       {
         .name = "chainWork",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_ChainWork,
         .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, chainWork),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "isSynced",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_IsSynced,
         .hasIndex = 6,
         .offset = 7,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
       {
         .name = "syncProgress",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Chain_FieldNumber_SyncProgress,
         .hasIndex = 8,
         .offset = (uint32_t)offsetof(GetStatusResponse_Chain__storage_, syncProgress),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
     };
@@ -474,9 +502,11 @@ typedef struct GetStatusResponse_Chain__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse_Chain__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    [localDescriptor setupContainingMessageClassName:GPBStringifySymbol(GetStatusResponse)];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -514,43 +544,43 @@ typedef struct GetStatusResponse_Masternode__storage_ {
         .number = GetStatusResponse_Masternode_FieldNumber_Status,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, status),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeEnum,
       },
       {
         .name = "proTxHash",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Masternode_FieldNumber_ProTxHash,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, proTxHash),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "posePenalty",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Masternode_FieldNumber_PosePenalty,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, posePenalty),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "isSynced",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Masternode_FieldNumber_IsSynced,
         .hasIndex = 3,
         .offset = 4,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
       {
         .name = "syncProgress",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Masternode_FieldNumber_SyncProgress,
         .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, syncProgress),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
     };
@@ -561,9 +591,11 @@ typedef struct GetStatusResponse_Masternode__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse_Masternode__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    [localDescriptor setupContainingMessageClassName:GPBStringifySymbol(GetStatusResponse)];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -574,19 +606,19 @@ typedef struct GetStatusResponse_Masternode__storage_ {
 int32_t GetStatusResponse_Masternode_Status_RawValue(GetStatusResponse_Masternode *message) {
   GPBDescriptor *descriptor = [GetStatusResponse_Masternode descriptor];
   GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetStatusResponse_Masternode_FieldNumber_Status];
-  return GPBGetMessageInt32Field(message, field);
+  return GPBGetMessageRawEnumField(message, field);
 }
 
 void SetGetStatusResponse_Masternode_Status_RawValue(GetStatusResponse_Masternode *message, int32_t value) {
   GPBDescriptor *descriptor = [GetStatusResponse_Masternode descriptor];
   GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetStatusResponse_Masternode_FieldNumber_Status];
-  GPBSetInt32IvarWithFieldInternal(message, field, value, descriptor.file.syntax);
+  GPBSetMessageRawEnumField(message, field, value);
 }
 
 #pragma mark - Enum GetStatusResponse_Masternode_Status
 
 GPBEnumDescriptor *GetStatusResponse_Masternode_Status_EnumDescriptor(void) {
-  static GPBEnumDescriptor *descriptor = NULL;
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
         "Unknown\000WaitingForProtx\000PoseBanned\000Remov"
@@ -608,7 +640,8 @@ GPBEnumDescriptor *GetStatusResponse_Masternode_Status_EnumDescriptor(void) {
                                            values:values
                                             count:(uint32_t)(sizeof(values) / sizeof(int32_t))
                                      enumVerifier:GetStatusResponse_Masternode_Status_IsValidValue];
-    if (!OSAtomicCompareAndSwapPtrBarrier(nil, worker, (void * volatile *)&descriptor)) {
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
       [worker release];
     }
   }
@@ -652,20 +685,20 @@ typedef struct GetStatusResponse_NetworkFee__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "relay",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_NetworkFee_FieldNumber_Relay,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_NetworkFee__storage_, relay),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
       {
         .name = "incremental",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_NetworkFee_FieldNumber_Incremental,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_NetworkFee__storage_, incremental),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
     };
@@ -676,9 +709,11 @@ typedef struct GetStatusResponse_NetworkFee__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse_NetworkFee__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    [localDescriptor setupContainingMessageClassName:GPBStringifySymbol(GetStatusResponse)];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -707,16 +742,16 @@ typedef struct GetStatusResponse_Network__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "peersCount",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_Network_FieldNumber_PeersCount,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_Network__storage_, peersCount),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "fee",
-        .dataTypeSpecific.className = GPBStringifySymbol(GetStatusResponse_NetworkFee),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_NetworkFee),
         .number = GetStatusResponse_Network_FieldNumber_Fee,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_Network__storage_, fee),
@@ -731,9 +766,11 @@ typedef struct GetStatusResponse_Network__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetStatusResponse_Network__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    [localDescriptor setupContainingMessageClassName:GPBStringifySymbol(GetStatusResponse)];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -763,7 +800,7 @@ typedef struct GetBlockRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "height",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetBlockRequest_FieldNumber_Height,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetBlockRequest__storage_, height),
@@ -772,7 +809,7 @@ typedef struct GetBlockRequest__storage_ {
       },
       {
         .name = "hash_p",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetBlockRequest_FieldNumber_Hash_p,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetBlockRequest__storage_, hash_p),
@@ -787,14 +824,16 @@ typedef struct GetBlockRequest__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetBlockRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "block",
     };
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -803,9 +842,9 @@ typedef struct GetBlockRequest__storage_ {
 @end
 
 void GetBlockRequest_ClearBlockOneOfCase(GetBlockRequest *message) {
-  GPBDescriptor *descriptor = [message descriptor];
+  GPBDescriptor *descriptor = [GetBlockRequest descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBMaybeClearOneof(message, oneof, -1, 0);
+  GPBClearOneof(message, oneof);
 }
 #pragma mark - GetBlockResponse
 
@@ -826,11 +865,11 @@ typedef struct GetBlockResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "block",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetBlockResponse_FieldNumber_Block,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetBlockResponse__storage_, block),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
     };
@@ -841,8 +880,10 @@ typedef struct GetBlockResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetBlockResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -871,29 +912,29 @@ typedef struct BroadcastTransactionRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "transaction",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BroadcastTransactionRequest_FieldNumber_Transaction,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(BroadcastTransactionRequest__storage_, transaction),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "allowHighFees",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BroadcastTransactionRequest_FieldNumber_AllowHighFees,
         .hasIndex = 1,
         .offset = 2,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
       {
         .name = "bypassLimits",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BroadcastTransactionRequest_FieldNumber_BypassLimits,
         .hasIndex = 3,
         .offset = 4,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
     };
@@ -904,8 +945,10 @@ typedef struct BroadcastTransactionRequest__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BroadcastTransactionRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -932,11 +975,11 @@ typedef struct BroadcastTransactionResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "transactionId",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BroadcastTransactionResponse_FieldNumber_TransactionId,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(BroadcastTransactionResponse__storage_, transactionId),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
     };
@@ -947,8 +990,10 @@ typedef struct BroadcastTransactionResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BroadcastTransactionResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -975,11 +1020,11 @@ typedef struct GetTransactionRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "id_p",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionRequest_FieldNumber_Id_p,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetTransactionRequest__storage_, id_p),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
     };
@@ -990,8 +1035,10 @@ typedef struct GetTransactionRequest__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetTransactionRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1026,56 +1073,56 @@ typedef struct GetTransactionResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "transaction",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionResponse_FieldNumber_Transaction,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, transaction),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "blockHash",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionResponse_FieldNumber_BlockHash,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, blockHash),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "height",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionResponse_FieldNumber_Height,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, height),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "confirmations",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionResponse_FieldNumber_Confirmations,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetTransactionResponse__storage_, confirmations),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "isInstantLocked",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionResponse_FieldNumber_IsInstantLocked,
         .hasIndex = 4,
         .offset = 5,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
       {
         .name = "isChainLocked",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetTransactionResponse_FieldNumber_IsChainLocked,
         .hasIndex = 6,
         .offset = 7,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
     };
@@ -1086,8 +1133,10 @@ typedef struct GetTransactionResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetTransactionResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1119,7 +1168,7 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "fromBlockHash",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BlockHeadersWithChainLocksRequest_FieldNumber_FromBlockHash,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksRequest__storage_, fromBlockHash),
@@ -1128,7 +1177,7 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
       },
       {
         .name = "fromBlockHeight",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BlockHeadersWithChainLocksRequest_FieldNumber_FromBlockHeight,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksRequest__storage_, fromBlockHeight),
@@ -1137,11 +1186,11 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
       },
       {
         .name = "count",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BlockHeadersWithChainLocksRequest_FieldNumber_Count,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksRequest__storage_, count),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
@@ -1152,14 +1201,16 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BlockHeadersWithChainLocksRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "fromBlock",
     };
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1168,9 +1219,9 @@ typedef struct BlockHeadersWithChainLocksRequest__storage_ {
 @end
 
 void BlockHeadersWithChainLocksRequest_ClearFromBlockOneOfCase(BlockHeadersWithChainLocksRequest *message) {
-  GPBDescriptor *descriptor = [message descriptor];
+  GPBDescriptor *descriptor = [BlockHeadersWithChainLocksRequest descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBMaybeClearOneof(message, oneof, -1, 0);
+  GPBClearOneof(message, oneof);
 }
 #pragma mark - BlockHeadersWithChainLocksResponse
 
@@ -1194,7 +1245,7 @@ typedef struct BlockHeadersWithChainLocksResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "blockHeaders",
-        .dataTypeSpecific.className = GPBStringifySymbol(BlockHeaders),
+        .dataTypeSpecific.clazz = GPBObjCClass(BlockHeaders),
         .number = BlockHeadersWithChainLocksResponse_FieldNumber_BlockHeaders,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksResponse__storage_, blockHeaders),
@@ -1203,7 +1254,7 @@ typedef struct BlockHeadersWithChainLocksResponse__storage_ {
       },
       {
         .name = "chainLock",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BlockHeadersWithChainLocksResponse_FieldNumber_ChainLock,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksResponse__storage_, chainLock),
@@ -1218,14 +1269,16 @@ typedef struct BlockHeadersWithChainLocksResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BlockHeadersWithChainLocksResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "responses",
     };
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1234,9 +1287,9 @@ typedef struct BlockHeadersWithChainLocksResponse__storage_ {
 @end
 
 void BlockHeadersWithChainLocksResponse_ClearResponsesOneOfCase(BlockHeadersWithChainLocksResponse *message) {
-  GPBDescriptor *descriptor = [message descriptor];
+  GPBDescriptor *descriptor = [BlockHeadersWithChainLocksResponse descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBMaybeClearOneof(message, oneof, -1, 0);
+  GPBClearOneof(message, oneof);
 }
 #pragma mark - BlockHeaders
 
@@ -1257,7 +1310,7 @@ typedef struct BlockHeaders__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "headersArray",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BlockHeaders_FieldNumber_HeadersArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(BlockHeaders__storage_, headersArray),
@@ -1272,8 +1325,10 @@ typedef struct BlockHeaders__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BlockHeaders__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1300,11 +1355,11 @@ typedef struct GetEstimatedTransactionFeeRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "blocks",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetEstimatedTransactionFeeRequest_FieldNumber_Blocks,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetEstimatedTransactionFeeRequest__storage_, blocks),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
@@ -1315,8 +1370,10 @@ typedef struct GetEstimatedTransactionFeeRequest__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetEstimatedTransactionFeeRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1343,11 +1400,11 @@ typedef struct GetEstimatedTransactionFeeResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "fee",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = GetEstimatedTransactionFeeResponse_FieldNumber_Fee,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetEstimatedTransactionFeeResponse__storage_, fee),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
     };
@@ -1358,8 +1415,10 @@ typedef struct GetEstimatedTransactionFeeResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetEstimatedTransactionFeeResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1394,7 +1453,7 @@ typedef struct TransactionsWithProofsRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "bloomFilter",
-        .dataTypeSpecific.className = GPBStringifySymbol(BloomFilter),
+        .dataTypeSpecific.clazz = GPBObjCClass(BloomFilter),
         .number = TransactionsWithProofsRequest_FieldNumber_BloomFilter,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(TransactionsWithProofsRequest__storage_, bloomFilter),
@@ -1403,7 +1462,7 @@ typedef struct TransactionsWithProofsRequest__storage_ {
       },
       {
         .name = "fromBlockHash",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = TransactionsWithProofsRequest_FieldNumber_FromBlockHash,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(TransactionsWithProofsRequest__storage_, fromBlockHash),
@@ -1412,7 +1471,7 @@ typedef struct TransactionsWithProofsRequest__storage_ {
       },
       {
         .name = "fromBlockHeight",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = TransactionsWithProofsRequest_FieldNumber_FromBlockHeight,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(TransactionsWithProofsRequest__storage_, fromBlockHeight),
@@ -1421,20 +1480,20 @@ typedef struct TransactionsWithProofsRequest__storage_ {
       },
       {
         .name = "count",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = TransactionsWithProofsRequest_FieldNumber_Count,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(TransactionsWithProofsRequest__storage_, count),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "sendTransactionHashes",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = TransactionsWithProofsRequest_FieldNumber_SendTransactionHashes,
         .hasIndex = 2,
         .offset = 3,  // Stored in _has_storage_ to save space.
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
     };
@@ -1445,14 +1504,16 @@ typedef struct TransactionsWithProofsRequest__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(TransactionsWithProofsRequest__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "fromBlock",
     };
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1461,9 +1522,9 @@ typedef struct TransactionsWithProofsRequest__storage_ {
 @end
 
 void TransactionsWithProofsRequest_ClearFromBlockOneOfCase(TransactionsWithProofsRequest *message) {
-  GPBDescriptor *descriptor = [message descriptor];
+  GPBDescriptor *descriptor = [TransactionsWithProofsRequest descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBMaybeClearOneof(message, oneof, -1, 0);
+  GPBClearOneof(message, oneof);
 }
 #pragma mark - BloomFilter
 
@@ -1490,38 +1551,38 @@ typedef struct BloomFilter__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "vData",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BloomFilter_FieldNumber_VData,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(BloomFilter__storage_, vData),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "nHashFuncs",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BloomFilter_FieldNumber_NHashFuncs,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(BloomFilter__storage_, nHashFuncs),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "nTweak",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BloomFilter_FieldNumber_NTweak,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(BloomFilter__storage_, nTweak),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "nFlags",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = BloomFilter_FieldNumber_NFlags,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(BloomFilter__storage_, nFlags),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
@@ -1532,8 +1593,10 @@ typedef struct BloomFilter__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BloomFilter__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1565,7 +1628,7 @@ typedef struct TransactionsWithProofsResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "rawTransactions",
-        .dataTypeSpecific.className = GPBStringifySymbol(RawTransactions),
+        .dataTypeSpecific.clazz = GPBObjCClass(RawTransactions),
         .number = TransactionsWithProofsResponse_FieldNumber_RawTransactions,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(TransactionsWithProofsResponse__storage_, rawTransactions),
@@ -1574,7 +1637,7 @@ typedef struct TransactionsWithProofsResponse__storage_ {
       },
       {
         .name = "instantSendLockMessages",
-        .dataTypeSpecific.className = GPBStringifySymbol(InstantSendLockMessages),
+        .dataTypeSpecific.clazz = GPBObjCClass(InstantSendLockMessages),
         .number = TransactionsWithProofsResponse_FieldNumber_InstantSendLockMessages,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(TransactionsWithProofsResponse__storage_, instantSendLockMessages),
@@ -1583,7 +1646,7 @@ typedef struct TransactionsWithProofsResponse__storage_ {
       },
       {
         .name = "rawMerkleBlock",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = TransactionsWithProofsResponse_FieldNumber_RawMerkleBlock,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(TransactionsWithProofsResponse__storage_, rawMerkleBlock),
@@ -1598,14 +1661,16 @@ typedef struct TransactionsWithProofsResponse__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(TransactionsWithProofsResponse__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "responses",
     };
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1614,9 +1679,9 @@ typedef struct TransactionsWithProofsResponse__storage_ {
 @end
 
 void TransactionsWithProofsResponse_ClearResponsesOneOfCase(TransactionsWithProofsResponse *message) {
-  GPBDescriptor *descriptor = [message descriptor];
+  GPBDescriptor *descriptor = [TransactionsWithProofsResponse descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBMaybeClearOneof(message, oneof, -1, 0);
+  GPBClearOneof(message, oneof);
 }
 #pragma mark - RawTransactions
 
@@ -1637,7 +1702,7 @@ typedef struct RawTransactions__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "transactionsArray",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = RawTransactions_FieldNumber_TransactionsArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(RawTransactions__storage_, transactionsArray),
@@ -1652,8 +1717,10 @@ typedef struct RawTransactions__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(RawTransactions__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;
@@ -1680,7 +1747,7 @@ typedef struct InstantSendLockMessages__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "messagesArray",
-        .dataTypeSpecific.className = NULL,
+        .dataTypeSpecific.clazz = Nil,
         .number = InstantSendLockMessages_FieldNumber_MessagesArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(InstantSendLockMessages__storage_, messagesArray),
@@ -1695,8 +1762,10 @@ typedef struct InstantSendLockMessages__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(InstantSendLockMessages__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
     descriptor = localDescriptor;
   }
   return descriptor;

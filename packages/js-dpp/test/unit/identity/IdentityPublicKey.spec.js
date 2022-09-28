@@ -110,9 +110,9 @@ describe('IdentityPublicKey', () => {
     });
   });
 
-  describe('#getReadOnly', () => {
+  describe('#isReadOnly', () => {
     it('should return readOnly', () => {
-      expect(publicKey.getReadOnly()).to.equal(rawPublicKey.readOnly);
+      expect(publicKey.isReadOnly()).to.equal(rawPublicKey.readOnly);
     });
   });
 
@@ -121,6 +121,22 @@ describe('IdentityPublicKey', () => {
       publicKey.setReadOnly(true);
 
       expect(publicKey.readOnly).to.equal(true);
+    });
+  });
+
+  describe('#setDisabledAt', () => {
+    it('should set disabledAt', () => {
+      publicKey.setDisabledAt(123);
+
+      expect(publicKey.disabledAt).to.equal(123);
+    });
+  });
+
+  describe('#getDisabledAt', () => {
+    it('should return disabledAt', () => {
+      publicKey.disabledAt = 42;
+
+      expect(publicKey.getDisabledAt()).to.equal(42);
     });
   });
 
@@ -151,7 +167,43 @@ describe('IdentityPublicKey', () => {
       expect(result).to.deep.equal(expectedHash);
     });
 
-    it('should throw invalid argument error if data was not originally provided', () => {
+    it('should return original public key hash in case BLS12_381', () => {
+      rawPublicKey = {
+        id: 0,
+        type: IdentityPublicKey.TYPES.BLS12_381,
+        data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      };
+
+      publicKey = new IdentityPublicKey(rawPublicKey);
+
+      const result = publicKey.hash();
+
+      const expectedHash = Buffer.from('1de31a0a328e8822f9cb2c25141d7d80baee26ef', 'hex');
+
+      expect(result).to.deep.equal(expectedHash);
+    });
+
+    it('should return data in case BIP13_SCRIPT_HASH', () => {
+      rawPublicKey = {
+        id: 0,
+        type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
+        data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      };
+
+      publicKey = new IdentityPublicKey(rawPublicKey);
+
+      const result = publicKey.hash();
+
+      const expectedHash = Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex');
+
+      expect(result).to.deep.equal(expectedHash);
+    });
+
+    it('should throw invalid argument error if data was not originally provided', async () => {
       publicKey = new IdentityPublicKey({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -159,6 +211,7 @@ describe('IdentityPublicKey', () => {
 
       try {
         publicKey.hash();
+
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(EmptyPublicKeyDataError);
@@ -181,6 +234,40 @@ describe('IdentityPublicKey', () => {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
       });
+    });
+
+    it('should return JSON representation with optional properties', () => {
+      publicKey.setDisabledAt(42);
+
+      const jsonPublicKey = publicKey.toJSON();
+
+      expect(jsonPublicKey).to.deep.equal({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+        disabledAt: 42,
+      });
+    });
+  });
+
+  describe('#isMaster', () => {
+    it('should return true when public key has MASTER security level', () => {
+      publicKey.securityLevel = IdentityPublicKey.SECURITY_LEVELS.MASTER;
+
+      const result = publicKey.isMaster();
+
+      expect(result).to.be.true();
+    });
+
+    it('should return false when public key doesn\'t have MASTER security level', () => {
+      publicKey.securityLevel = IdentityPublicKey.SECURITY_LEVELS.HIGH;
+
+      const result = publicKey.isMaster();
+
+      expect(result).to.be.false();
     });
   });
 });

@@ -1,7 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-const wait = require('../../lib/wait');
+const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 describe('e2e', () => {
   describe('Contacts', function contacts() {
@@ -92,12 +92,10 @@ describe('e2e', () => {
         // Create Bob wallet
         bobClient = await createClientWithFundedWallet();
 
-        bobIdentity = await bobClient.platform.identities.register(10);
+        bobIdentity = await bobClient.platform.identities.register(40000);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         expect(bobIdentity.constructor.name).to.be.equal('Identity');
       });
@@ -112,9 +110,7 @@ describe('e2e', () => {
         await bobClient.platform.contracts.publish(dataContract, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         bobClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
@@ -126,7 +122,7 @@ describe('e2e', () => {
           dataContract.getId(),
         );
 
-        expect(fetchedDataContract.toJSON()).to.be.deep.equal(dataContract.toJSON());
+        expect(fetchedDataContract.toObject()).to.be.deep.equal(dataContract.toObject());
       });
 
       it('should create profile in "Contacts" app', async () => {
@@ -141,9 +137,7 @@ describe('e2e', () => {
         }, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         // 2. Fetch and compare profiles
         const [fetchedProfile] = await bobClient.platform.documents.get(
@@ -151,7 +145,7 @@ describe('e2e', () => {
           { where: [['$id', '==', profile.getId()]] },
         );
 
-        expect(fetchedProfile.toJSON()).to.be.deep.equal(profile.toJSON());
+        expect(fetchedProfile.toObject()).to.be.deep.equal(profile.toObject());
       });
     });
 
@@ -165,12 +159,10 @@ describe('e2e', () => {
           contract: dataContract,
         });
 
-        aliceIdentity = await aliceClient.platform.identities.register(10);
+        aliceIdentity = await aliceClient.platform.identities.register(40000);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         expect(aliceIdentity.constructor.name).to.be.equal('Identity');
       });
@@ -187,9 +179,7 @@ describe('e2e', () => {
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         // 2. Fetch and compare profile
         const [fetchedProfile] = await aliceClient.platform.documents.get(
@@ -197,7 +187,7 @@ describe('e2e', () => {
           { where: [['$id', '==', aliceProfile.getId()]] },
         );
 
-        expect(fetchedProfile.toJSON()).to.be.deep.equal(aliceProfile.toJSON());
+        expect(fetchedProfile.toObject()).to.be.deep.equal(aliceProfile.toObject());
       });
 
       it('should be able to update her profile', async () => {
@@ -210,9 +200,7 @@ describe('e2e', () => {
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         // 3. Fetch and compare profile
         const [fetchedProfile] = await aliceClient.platform.documents.get(
@@ -220,8 +208,8 @@ describe('e2e', () => {
           { where: [['$id', '==', aliceProfile.getId()]] },
         );
 
-        expect(fetchedProfile.toJSON()).to.be.deep.equal({
-          ...aliceProfile.toJSON(),
+        expect(fetchedProfile.toObject()).to.be.deep.equal({
+          ...aliceProfile.toObject(),
           $revision: 2,
         });
       });
@@ -240,9 +228,7 @@ describe('e2e', () => {
         }, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         // 2. Fetch and compare contacts
         const [fetchedContactRequest] = await bobClient.platform.documents.get(
@@ -250,7 +236,7 @@ describe('e2e', () => {
           { where: [['$id', '==', bobContactRequest.getId()]] },
         );
 
-        expect(fetchedContactRequest.toJSON()).to.be.deep.equal(bobContactRequest.toJSON());
+        expect(fetchedContactRequest.toObject()).to.be.deep.equal(bobContactRequest.toObject());
       });
     });
 
@@ -271,9 +257,7 @@ describe('e2e', () => {
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         // 2. Fetch and compare contacts
         const [fetchedAliceContactAcceptance] = await aliceClient.platform.documents.get(
@@ -281,8 +265,8 @@ describe('e2e', () => {
           { where: [['$id', '==', aliceContactAcceptance.getId()]] },
         );
 
-        expect(fetchedAliceContactAcceptance.toJSON()).to.be.deep.equal(
-          aliceContactAcceptance.toJSON(),
+        expect(fetchedAliceContactAcceptance.toObject()).to.be.deep.equal(
+          aliceContactAcceptance.toObject(),
         );
       });
 
@@ -293,9 +277,7 @@ describe('e2e', () => {
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         // 2. Fetch contact documents and check it does not exists
         const [fetchedAliceContactAcceptance] = await aliceClient.platform.documents.get(

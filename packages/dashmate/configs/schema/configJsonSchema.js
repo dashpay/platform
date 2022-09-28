@@ -86,6 +86,23 @@ module.exports = {
     group: {
       type: ['string', 'null'],
     },
+    docker: {
+      type: 'object',
+      properties: {
+        network: {
+          type: 'object',
+          properties: {
+            subnet: {
+              type: 'string',
+            },
+          },
+          additionalProperties: false,
+          required: ['subnet'],
+        },
+      },
+      additionalProperties: false,
+      required: ['network'],
+    },
     core: {
       type: 'object',
       properties: {
@@ -288,16 +305,6 @@ module.exports = {
         drive: {
           type: 'object',
           properties: {
-            mongodb: {
-              type: 'object',
-              properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
-              },
-              required: ['docker'],
-              additionalProperties: false,
-            },
             abci: {
               type: 'object',
               properties: {
@@ -457,7 +464,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['mongodb', 'abci', 'tenderdash'],
+          required: ['abci', 'tenderdash'],
           additionalProperties: false,
         },
         dpns: {
@@ -482,8 +489,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         dashpay: {
@@ -504,8 +515,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'masterPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         featureFlags: {
@@ -530,8 +545,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         sourcePath: {
@@ -556,8 +575,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'masterPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
       },

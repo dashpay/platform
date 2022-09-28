@@ -1,20 +1,23 @@
-const { WALLET_TYPES } = require('../../../../CONSTANTS');
-
 /**
  * Set last synced block height
  *
  * @param  {number} blockHeight
+ * @param  {boolean} [updateWalletState=false]
  * @return {number}
  */
-module.exports = function setLastSyncedBlockHeight(blockHeight) {
-  const { walletId } = this;
-  const accountsStore = this.storage.store.wallets[walletId].accounts;
+module.exports = function setLastSyncedBlockHeight(blockHeight, updateWalletState = false) {
+  if (this.lastSyncedBlockHeight >= blockHeight) {
+    return this.lastSyncedBlockHeight;
+  }
 
-  const accountStore = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
-    ? accountsStore[this.BIP44PATH.toString()]
-    : accountsStore[this.index.toString()];
+  this.lastSyncedBlockHeight = blockHeight;
 
-  accountStore.blockHeight = blockHeight;
+  // TODO: consider getting rid of a side effect of storage update to make this a pure function
+  if (updateWalletState) {
+    const walletStore = this.storage.getWalletStore(this.walletId);
+    walletStore.updateLastKnownBlock(blockHeight);
+    this.storage.scheduleStateSave();
+  }
 
-  return accountStore.blockHeight;
+  return blockHeight;
 };

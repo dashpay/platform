@@ -5,14 +5,14 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const UnavailableAbciError = require('../../../errors/UnavailableAbciError');
+
 /**
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {createQueryResponse}
  */
 function createQueryResponseFactory(
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef {createQueryResponse}
@@ -20,16 +20,22 @@ function createQueryResponseFactory(
    * @param {boolean} [prove=false]
    */
   function createQueryResponse(ResponseClass, prove = false) {
+    const blockExecutionContext = blockExecutionContextStack.getFirst();
+
+    if (!blockExecutionContext) {
+      throw new UnavailableAbciError('data is not available');
+    }
+
     const {
-      height: previousBlockHeight,
-      coreChainLockedHeight: previousCoreChainLockedHeight,
-    } = previousBlockExecutionContext.getHeader();
+      height: signedBlockHeight,
+      coreChainLockedHeight: signedCoreChainLockedHeight,
+    } = blockExecutionContext.getHeader();
 
     const response = new ResponseClass();
 
     const metadata = new ResponseMetadata();
-    metadata.setHeight(previousBlockHeight);
-    metadata.setCoreChainLockedHeight(previousCoreChainLockedHeight);
+    metadata.setHeight(signedBlockHeight);
+    metadata.setCoreChainLockedHeight(signedCoreChainLockedHeight);
 
     response.setMetadata(metadata);
 

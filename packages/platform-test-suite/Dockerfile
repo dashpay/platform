@@ -21,6 +21,7 @@ COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 
 # Copy only necessary packages from monorepo
 COPY packages/dapi-grpc packages/dapi-grpc
+COPY packages/dash-spv packages/dash-spv
 COPY packages/dpns-contract packages/dpns-contract
 COPY packages/dashpay-contract packages/dashpay-contract
 COPY packages/feature-flags-contract packages/feature-flags-contract
@@ -50,11 +51,6 @@ LABEL description="DAPI Node.JS"
 # Install required deps
 RUN apk add --no-cache bash
 
-# Install latest yarn
-RUN yarn set version 3.1.0
-
-ENV PATH /platform/node_modules/.bin:$PATH
-
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
@@ -62,3 +58,5 @@ COPY --from=builder /platform /platform
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
+
+ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]

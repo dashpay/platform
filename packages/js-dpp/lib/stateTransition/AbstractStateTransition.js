@@ -13,7 +13,13 @@ const stateTransitionTypes = require('./stateTransitionTypes');
 const hashModule = require('../util/hash');
 const serializer = require('../util/serializer');
 
-const calculateStateTransitionFee = require('./calculateStateTransitionFee');
+const calculateStateTransitionFee = require('./fee/calculateStateTransitionFee');
+const IdentityPublicKey = require('../identity/IdentityPublicKey');
+const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPublicKeyTypeError');
+const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
+const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
+const BlsSignatures = require('../bls/bls');
+const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
 
 /**
  * @abstract
@@ -33,6 +39,8 @@ class AbstractStateTransition {
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'signature')) {
       this.signature = rawStateTransition.signature;
     }
+
+    this.executionContext = new StateTransitionExecutionContext();
   }
 
   /**
@@ -154,23 +162,62 @@ class AbstractStateTransition {
   /**
    * Sign data with private key
    * @param {string|Buffer|Uint8Array|PrivateKey} privateKey string must be hex or base58
-   * @return {AbstractStateTransition}
+   * @param {number} keyType private key type
+   * @return {Promise<AbstractStateTransition>}
    */
-  signByPrivateKey(privateKey) {
+  async signByPrivateKey(privateKey, keyType) {
     const data = this.toBuffer({ skipSignature: true });
-    const privateKeyModel = new PrivateKey(privateKey);
 
-    this.setSignature(sign(data, privateKeyModel));
+    switch (keyType) {
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
+      case IdentityPublicKey.TYPES.ECDSA_HASH160: {
+        const privateKeyModel = new PrivateKey(privateKey);
+
+        this.setSignature(sign(data, privateKeyModel));
+
+        break;
+      }
+      case IdentityPublicKey.TYPES.BLS12_381: {
+        const privateKeyModel = await blsPrivateKeyFactory(privateKey);
+        const blsSignature = privateKeyModel.sign(new Uint8Array(data)).serialize();
+
+        this.setSignature(Buffer.from(blsSignature));
+        break;
+      }
+      default:
+        throw new InvalidIdentityPublicKeyTypeError(keyType);
+    }
 
     return this;
   }
 
   /**
+   * Verify signature by public key
    *
+   * @param {Buffer} publicKey
+   * @param publicKeyType
+   *
+   * @returns {Promise<boolean>}
+   */
+  async verifyByPublicKey(publicKey, publicKeyType) {
+    switch (publicKeyType) {
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
+        return this.verifyECDSASignatureByPublicKey(publicKey);
+      case IdentityPublicKey.TYPES.ECDSA_HASH160:
+        return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKey);
+      case IdentityPublicKey.TYPES.BLS12_381:
+        return this.verifyBLSSignatureByPublicKey(publicKey);
+      default:
+        throw new InvalidIdentityPublicKeyTypeError(publicKeyType);
+    }
+  }
+
+  /**
+   * @protected
    * @param {Buffer} publicKeyHash
    * @return {boolean}
    */
-  verifySignatureByPublicKeyHash(publicKeyHash) {
+  verifyESDSAHash160SignatureByPublicKeyHash(publicKeyHash) {
     const signature = this.getSignature();
     if (!signature) {
       throw new StateTransitionIsNotSignedError(this);
@@ -190,10 +237,11 @@ class AbstractStateTransition {
 
   /**
    * Verify signature with public key
+   * @protected
    * @param {string|Buffer|Uint8Array|PublicKey} publicKey string must be hex or base58
    * @returns {boolean}
    */
-  verifySignatureByPublicKey(publicKey) {
+  verifyECDSASignatureByPublicKey(publicKey) {
     const signature = this.getSignature();
     if (!signature) {
       throw new StateTransitionIsNotSignedError(this);
@@ -211,6 +259,29 @@ class AbstractStateTransition {
     }
 
     return isSignatureVerified;
+  }
+
+  /**
+   * Verify signature with public key
+   * @protected
+   * @param {string|Buffer|Uint8Array|PublicKey} publicKey string must be hex
+   * @returns {Promise<boolean>}
+   */
+  async verifyBLSSignatureByPublicKey(publicKey) {
+    const signature = this.getSignature();
+    if (!signature) {
+      throw new StateTransitionIsNotSignedError(this);
+    }
+
+    const data = this.toBuffer({ skipSignature: true });
+
+    const publicKeyModel = await blsPublicKeyFactory(publicKey);
+
+    const { Signature: BlsSignature, AggregationInfo } = await BlsSignatures.getInstance();
+    const aggregationInfo = AggregationInfo.fromMsg(publicKeyModel, new Uint8Array(data));
+    const blsSignature = BlsSignature.fromBytesAndAggregationInfo(signature, aggregationInfo);
+
+    return blsSignature.verify();
   }
 
   /**
@@ -258,6 +329,24 @@ class AbstractStateTransition {
   isIdentityStateTransition() {
     return AbstractStateTransition.identityTransitionTypes.includes(this.getType());
   }
+
+  /**
+   * Set state transition execution context
+   *
+   * @param {StateTransitionExecutionContext} executionContext
+   */
+  setExecutionContext(executionContext) {
+    this.executionContext = executionContext;
+  }
+
+  /**
+   * Get state transition execution context
+   *
+   * @return {StateTransitionExecutionContext}
+   */
+  getExecutionContext() {
+    return this.executionContext;
+  }
 }
 
 /**
@@ -280,6 +369,7 @@ AbstractStateTransition.documentTransitionTypes = [
 AbstractStateTransition.identityTransitionTypes = [
   stateTransitionTypes.IDENTITY_CREATE,
   stateTransitionTypes.IDENTITY_TOP_UP,
+  stateTransitionTypes.IDENTITY_UPDATE,
 ];
 AbstractStateTransition.dataContractTransitionTypes = [
   stateTransitionTypes.DATA_CONTRACT_CREATE,

@@ -6,17 +6,21 @@ const fetchDocumentsFactory = require('../../../../../../../lib/document/stateTr
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
   let stateRepositoryMock;
   let documentTransitions;
   let documents;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     fetchDocuments = fetchDocumentsFactory(stateRepositoryMock);
+
+    executionContext = new StateTransitionExecutionContext();
 
     documents = getDocumentsFixture().slice(0, 5);
 
@@ -46,7 +50,7 @@ describe('fetchDocumentsFactory', () => {
       documentTransitions[3].getType(),
     ).resolves([documents[3], documents[4]]);
 
-    const fetchedDocuments = await fetchDocuments(documentTransitions);
+    const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
 
     expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
 
@@ -57,7 +61,14 @@ describe('fetchDocumentsFactory', () => {
         where: [
           ['$id', 'in', [documents[0].getId()]],
         ],
+        orderBy: [
+          [
+            '$id',
+            'asc',
+          ],
+        ],
       },
+      executionContext,
     ];
 
     const callArgsTwo = [
@@ -70,7 +81,14 @@ describe('fetchDocumentsFactory', () => {
             documents[2].getId(),
           ]],
         ],
+        orderBy: [
+          [
+            '$id',
+            'asc',
+          ],
+        ],
       },
+      executionContext,
     ];
 
     const callArgsThree = [
@@ -83,7 +101,14 @@ describe('fetchDocumentsFactory', () => {
             documents[4].getId(),
           ]],
         ],
+        orderBy: [
+          [
+            '$id',
+            'asc',
+          ],
+        ],
       },
+      executionContext,
     ];
 
     const callsArgs = [];

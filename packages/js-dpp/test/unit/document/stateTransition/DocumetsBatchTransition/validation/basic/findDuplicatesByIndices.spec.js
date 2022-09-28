@@ -19,10 +19,10 @@ describe('findDuplicatesByIndices', () => {
       indices: [
         {
           name: 'ownerIdLastName',
-          properties: {
-            $ownerId: 'asc',
-            lastName: 'asc',
-          },
+          properties: [
+            { $ownerId: 'asc' },
+            { lastName: 'asc' },
+          ],
           unique: false,
         },
       ],
@@ -41,11 +41,11 @@ describe('findDuplicatesByIndices', () => {
     contract.setDocumentSchema('singleDocument', {
       indices: [
         {
-          name: 'onwerIdLastName',
-          properties: {
-            $ownerId: 'asc',
-            lastName: 'asc',
-          },
+          name: 'ownerIdLastName',
+          properties: [
+            { $ownerId: 'asc' },
+            { lastName: 'asc' },
+          ],
           unique: true,
         },
       ],

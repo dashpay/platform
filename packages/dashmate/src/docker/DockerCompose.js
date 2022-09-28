@@ -1,12 +1,11 @@
 const path = require('path');
 
-const dockerCompose = require('docker-compose');
+const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
 
 const { exec } = require('child_process');
-const { promisify } = require('util');
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
@@ -14,8 +13,6 @@ const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
 const { HOME_DIR_PATH } = require('../constants');
-
-const execAsync = promisify(exec);
 
 class DockerCompose {
   /**
@@ -109,14 +106,10 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     try {
-      if (process.env.DOCKER_COMPOSE_V2) {
-        await execAsync(
-          'docker compose up --no-build -d',
-          this.getOptions(envs),
-        );
-      } else {
-        await dockerCompose.upAll(this.getOptions(envs));
-      }
+      await dockerCompose.upAll({
+        ...this.getOptions(envs),
+        commandOptions: ['--no-build'],
+      });
     } catch (e) {
       throw new DockerComposeError(e);
     }
@@ -260,6 +253,10 @@ class DockerCompose {
         commandOptions,
       }));
     } catch (e) {
+      if (e.err && e.err.startsWith('no such service:')) {
+        return [];
+      }
+
       throw new DockerComposeError(e);
     }
 
@@ -377,22 +374,17 @@ class DockerCompose {
       throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher`);
     }
 
-    // Check docker compose
-    if (process.env.DOCKER_COMPOSE_V2) {
-      try {
-        await execAsync('docker compose');
-      } catch (e) {
-        throw new Error('Docker Compose V2 is not installed');
-      }
-    } else {
-      if (!hasbin.sync('docker-compose')) {
-        throw new Error('Docker Compose is not installed');
-      }
+    let version;
 
-      const { out: version } = await dockerCompose.version();
-      if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
-        throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
-      }
+    // Check docker compose
+    try {
+      ({ out: version } = await dockerCompose.version());
+    } catch (e) {
+      throw new Error('Docker Compose V2 is not available in your system');
+    }
+
+    if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
+      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
     }
   }
 
@@ -415,7 +407,7 @@ class DockerCompose {
   }
 }
 
-DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '1.25.0';
+DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '2.0.0';
 DockerCompose.DOCKER_MIN_VERSION = '20.10.0';
 
 module.exports = DockerCompose;

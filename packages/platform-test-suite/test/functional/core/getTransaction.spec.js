@@ -1,36 +1,43 @@
-const {
-  Transaction,
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
+const Dash = require('dash');
 
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
-
-const createFaucetClient = require('../../../lib/test/createFaucetClient');
 const wait = require('../../../lib/wait');
+const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Core: { Transaction, PrivateKey }, DAPIClient: {
+    Errors: {
+      NotFoundError,
+    },
+  },
+} = Dash;
 
 describe('Core', () => {
   describe('getTransaction', () => {
-    let faucetClient;
+    let client;
 
-    before(() => {
-      faucetClient = createFaucetClient();
+    before(async () => {
+      client = await createClientWithFundedWallet();
+    });
+
+    after(async () => {
+      await client.disconnect();
     });
 
     it('should respond with a transaction by it\'s ID', async () => {
-      const faucetWalletAccount = await faucetClient.getWalletAccount();
+      const account = await client.getWalletAccount();
 
       await wait(5000);
 
-      const transaction = faucetWalletAccount.createTransaction({
+      const transaction = account.createTransaction({
         recipient: new PrivateKey().toAddress(process.env.NETWORK),
         satoshis: 10000,
       });
 
-      await faucetWalletAccount.broadcastTransaction(transaction);
+      await account.broadcastTransaction(transaction);
 
       await wait(5000);
 
-      const result = await faucetClient.getDAPIClient().core.getTransaction(transaction.id);
+      const result = await client.getDAPIClient().core.getTransaction(transaction.id);
       const receivedTx = new Transaction(result.getTransaction());
 
       expect(receivedTx.hash).to.deep.equal(transaction.id);
@@ -40,7 +47,7 @@ describe('Core', () => {
       const nonExistentId = Buffer.alloc(32).toString('hex');
 
       try {
-        await faucetClient.getDAPIClient().core.getTransaction(nonExistentId);
+        await client.getDAPIClient().core.getTransaction(nonExistentId);
 
         expect.fail('should throw NotFound');
       } catch (e) {

@@ -1,31 +1,23 @@
 const logger = require('../../logger');
 const EVENTS = require('../../EVENTS');
-const { WALLET_TYPES } = require('../../CONSTANTS');
 const preparePlugins = require('./_preparePlugins');
-const ensureAddressesToGapLimit = require('../../utils/bip44/ensureAddressesToGapLimit');
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
   const self = account;
+
+  account.addDefaultPaths();
+
+  // Issue additional derivation paths in case we have transactions in the store
+  // at the moment of initialization (from persistent storage)
+  account.createPathsForTransactions();
+
   // We run faster in offlineMode to speed up the process when less happens.
   const readinessIntervalTime = (account.offlineMode) ? 50 : 200;
   // TODO: perform rejection with a timeout
   // eslint-disable-next-line no-async-promise-executor
   return new Promise(async (resolve, reject) => {
     try {
-      if (account.injectDefaultPlugins) {
-        if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
-          ensureAddressesToGapLimit(
-            account.store.wallets[account.walletId],
-            account.walletType,
-            account.index,
-            account.getAddress.bind(account),
-          );
-        } else {
-          await account.getAddress('0'); // We force what is usually done by the BIP44Worker.
-        }
-      }
-
       // Will sort and inject plugins.
       await preparePlugins(account, userUnsafePlugins);
 
@@ -52,15 +44,13 @@ async function _initializeAccount(account, userUnsafePlugins) {
         watchedPlugins.forEach((pluginName) => {
           const watchedPlugin = account.plugins.watchers[pluginName];
           if (watchedPlugin.ready === true && !watchedPlugin.announced) {
-            logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
             readyPlugins += 1;
             watchedPlugin.announced = true;
             logger.debug(`Initialized ${pluginName} - ${readyPlugins}/${watchedPlugins.length} plugins`);
           }
         });
-        logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
         if (readyPlugins === watchedPlugins.length) {
-        // At this stage, our worker are initialized
+          // At this stage, our worker are initialized
           sendInitialized();
 
           // If both of the plugins are present
@@ -68,33 +58,9 @@ async function _initializeAccount(account, userUnsafePlugins) {
           // while SyncWorker fetch'em on network
           clearInterval(self.readinessInterval);
 
-          switch (account.walletType) {
-            case WALLET_TYPES.PRIVATEKEY:
-            case WALLET_TYPES.SINGLE_ADDRESS:
-              account.generateAddress(0);
-              sendReady();
-              return resolve(true);
-            case WALLET_TYPES.PUBLICKEY:
-            case WALLET_TYPES.ADDRESS:
-              account.generateAddress(0);
-              sendReady();
-              return resolve(true);
-            default:
-              break;
-          }
-
           if (!account.injectDefaultPlugins) {
             sendReady();
             return resolve(true);
-          }
-
-          if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
-            ensureAddressesToGapLimit(
-              account.store.wallets[account.walletId],
-              account.walletType,
-              account.index,
-              account.getAddress.bind(account),
-            );
           }
 
           sendReady();

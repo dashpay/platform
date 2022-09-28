@@ -1,3 +1,10 @@
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
+
+/**
+ * @implements StateRepository
+ */
 class CachedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository} stateRepository
@@ -15,21 +22,36 @@ class CachedStateRepositoryDecorator {
    * Fetch Identity by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<Identity|null>}
    */
-  async fetchIdentity(id) {
-    return this.stateRepository.fetchIdentity(id);
+  async fetchIdentity(id, executionContext = undefined) {
+    return this.stateRepository.fetchIdentity(id, executionContext);
   }
 
   /**
-   * Store identity
+   * Create identity
    *
    * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeIdentity(identity) {
-    return this.stateRepository.storeIdentity(identity);
+  async createIdentity(identity, executionContext = undefined) {
+    return this.stateRepository.createIdentity(identity, executionContext);
+  }
+
+  /**
+   * Update identity
+   *
+   * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateIdentity(identity, executionContext = undefined) {
+    return this.stateRepository.updateIdentity(identity, executionContext);
   }
 
   /**
@@ -37,11 +59,16 @@ class CachedStateRepositoryDecorator {
    *
    * @param {Identifier} identityId
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
-    return this.stateRepository.storeIdentityPublicKeyHashes(identityId, publicKeyHashes);
+  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
+    return this.stateRepository.storeIdentityPublicKeyHashes(
+      identityId,
+      publicKeyHashes,
+      executionContext,
+    );
   }
 
   /**
@@ -49,54 +76,83 @@ class CachedStateRepositoryDecorator {
    * using public key hashes
    *
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<Array<Identifier[]>>}
    */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
-    return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
+    return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(
+      publicKeyHashes,
+      executionContext,
+    );
   }
 
   /**
    * Store spent asset lock transaction
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<void>}
    */
-  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    return this.stateRepository.markAssetLockTransactionOutPointAsUsed(outPointBuffer);
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
+    return this.stateRepository.markAssetLockTransactionOutPointAsUsed(
+      outPointBuffer,
+      executionContext,
+    );
   }
 
   /**
    * Check if spent asset lock transaction is stored
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
-    return this.stateRepository.isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer);
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
+    return this.stateRepository.isAssetLockTransactionOutPointAlreadyUsed(
+      outPointBuffer,
+      executionContext,
+    );
   }
 
   /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<DataContract|null>}
    */
-  async fetchDataContract(id) {
+  async fetchDataContract(id, executionContext = undefined) {
     const idString = id.toString();
 
-    let dataContract = this.contractCache.get(idString);
+    let cacheItem = this.contractCache.get(idString);
 
-    if (dataContract !== undefined) {
-      return dataContract;
+    if (cacheItem) {
+      if (executionContext) {
+        executionContext.addOperation(...cacheItem.getOperations());
+      }
+
+      return cacheItem.getDataContract();
     }
 
-    dataContract = await this.stateRepository.fetchDataContract(id);
+    const isolatedExecutionContext = new StateTransitionExecutionContext();
+
+    const dataContract = await this.stateRepository.fetchDataContract(id, isolatedExecutionContext);
+
+    if (executionContext) {
+      executionContext.addOperation(...isolatedExecutionContext.getOperations());
+    }
 
     if (dataContract !== null) {
-      this.contractCache.set(idString, dataContract);
+      cacheItem = new DataContractCacheItem(
+        dataContract,
+        isolatedExecutionContext.getOperations(),
+      );
+
+      this.contractCache.set(idString, cacheItem);
     }
 
     return dataContract;
@@ -106,10 +162,12 @@ class CachedStateRepositoryDecorator {
    * Store Data Contract
    *
    * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract) {
-    return this.stateRepository.storeDataContract(dataContract);
+  async storeDataContract(dataContract, executionContext = undefined) {
+    return this.stateRepository.storeDataContract(dataContract, executionContext);
   }
 
   /**
@@ -118,46 +176,66 @@ class CachedStateRepositoryDecorator {
    * @param {Identifier} contractId
    * @param {string} type
    * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Document[]>}
    */
-  async fetchDocuments(contractId, type, options = {}) {
-    return this.stateRepository.fetchDocuments(contractId, type, options);
+  async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
+    return this.stateRepository.fetchDocuments(contractId, type, options, executionContext);
   }
 
   /**
-   * Store document
+   * Create document
    *
    * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDocument(document) {
-    return this.stateRepository.storeDocument(document);
+  async createDocument(document, executionContext = undefined) {
+    return this.stateRepository.createDocument(document, executionContext);
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    return this.stateRepository.updateDocument(document, executionContext);
   }
 
   /**
    * Remove document
    *
-   * @param {Identifier} contractId
+   * @param {DataContract} dataContract
    * @param {string} type
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id) {
-    return this.stateRepository.removeDocument(contractId, type, id);
+  async removeDocument(dataContract, type, id, executionContext = undefined) {
+    return this.stateRepository.removeDocument(dataContract, type, id, executionContext);
   }
 
   /**
    * Fetch transaction by ID
    *
    * @param {string} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Object|null>}
    */
-  async fetchTransaction(id) {
-    return this.stateRepository.fetchTransaction(id);
+  async fetchTransaction(id, executionContext = undefined) {
+    return this.stateRepository.fetchTransaction(id, executionContext);
   }
 
   /**
-   * Fetch latest platform block header
+   * Fetch the latest platform block header
    *
    * @return {Promise<IHeader>}
    */
@@ -169,11 +247,21 @@ class CachedStateRepositoryDecorator {
    * Verify instant lock
    *
    * @param {InstantLock} instantLock
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async verifyInstantLock(instantLock) {
-    return this.stateRepository.verifyInstantLock(instantLock);
+  async verifyInstantLock(instantLock, executionContext = undefined) {
+    return this.stateRepository.verifyInstantLock(instantLock, executionContext);
+  }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    return this.stateRepository.fetchSMLStore();
   }
 }
 

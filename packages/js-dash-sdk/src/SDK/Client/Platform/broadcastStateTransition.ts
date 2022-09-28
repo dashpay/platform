@@ -2,7 +2,6 @@ import crypto from "crypto";
 import { Platform } from "./Platform";
 import { StateTransitionBroadcastError } from "../../../errors/StateTransitionBroadcastError";
 import { IStateTransitionResult } from "./IStateTransitionResult";
-import { IPlatformStateProof } from "./IPlatformStateProof";
 
 const ResponseError = require('@dashevo/dapi-client/lib/transport/errors/response/ResponseError');
 const InvalidRequestDPPError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError');
@@ -13,21 +12,30 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 
 /**
  * @param {Platform} platform
+ * @param {Object} [options]
+ * @param {boolean} [options.skipValidation=false]
+ *
  * @param stateTransition
  */
-export default async function broadcastStateTransition(platform: Platform, stateTransition: any): Promise<IPlatformStateProof|void> {
+export default async function broadcastStateTransition(
+  platform: Platform,
+  stateTransition: any,
+  options: { skipValidation?: boolean; } = {},
+): Promise<IStateTransitionResult|void> {
     const { client, dpp } = platform;
 
-    const result = await dpp.stateTransition.validateBasic(stateTransition);
+    if (!options.skipValidation) {
+      const result = await dpp.stateTransition.validateBasic(stateTransition);
 
-    if (!result.isValid()) {
+      if (!result.isValid()) {
         const consensusError = result.getFirstError();
 
         throw new StateTransitionBroadcastError(
-            consensusError.getCode(),
-            consensusError.message,
-            consensusError,
+          consensusError.getCode(),
+          consensusError.message,
+          consensusError,
         );
+      }
     }
 
     // Subscribing to future result
@@ -83,5 +91,5 @@ export default async function broadcastStateTransition(platform: Platform, state
         );
     }
 
-    return stateTransitionResult.proof;
+    return stateTransitionResult;
 }

@@ -16,7 +16,7 @@ const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHa
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
+const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('endBlockHandlerFactory', () => {
   let endBlockHandler;
@@ -31,13 +31,18 @@ describe('endBlockHandlerFactory', () => {
   let chainLockMock;
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
-  let blockExecutionStoreTransactionsMock;
+  let blockExecutionContextStackMock;
+  let rsAbciMock;
+  let blockEndMock;
 
   beforeEach(function beforeEach() {
     headerMock = {
       coreChainLockedHeight: 2,
       version: {
         app: Long.fromInt(1),
+      },
+      time: {
+        seconds: Math.ceil(new Date().getTime() / 1000),
       },
     };
 
@@ -50,6 +55,12 @@ describe('endBlockHandlerFactory', () => {
     blockExecutionContextMock.hasDataContract.returns(true);
     blockExecutionContextMock.getHeader.returns(headerMock);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
+
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+
+    const getHeaderMock = this.sinon.stub();
+
+    getHeaderMock.returns(headerMock);
 
     chainLockMock = {
       height: 1,
@@ -72,18 +83,28 @@ describe('endBlockHandlerFactory', () => {
 
     createValidatorSetUpdateMock = this.sinon.stub();
 
-    blockExecutionStoreTransactionsMock = new BlockExecutionDBTransactionsMock(this.sinon);
-
     getFeatureFlagForHeightMock = this.sinon.stub().resolves(null);
+
+    blockEndMock = this.sinon.stub();
+
+    rsAbciMock = {
+      blockEnd: blockEndMock,
+    };
+
+    blockEndMock.resolves({
+      currentEpochIndex: 42,
+      isEpochChange: true,
+    });
 
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
+      blockExecutionContextStackMock,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       loggerMock,
       getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
+      rsAbciMock,
     );
 
     requestMock = {
@@ -91,17 +112,7 @@ describe('endBlockHandlerFactory', () => {
     };
   });
 
-  it('should return a response', async () => {
-    endBlockHandler = endBlockHandlerFactory(
-      blockExecutionContextMock,
-      latestCoreChainLockMock,
-      validatorSetMock,
-      createValidatorSetUpdateMock,
-      loggerMock,
-      getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
-    );
-
+  it('should finalize a block', async () => {
     const response = await endBlockHandler(requestMock);
 
     expect(response).to.be.an.instanceOf(ResponseEndBlock);
@@ -197,7 +208,6 @@ describe('endBlockHandlerFactory', () => {
       },
     });
 
-    expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnce();
     expect(getFeatureFlagForHeightMock).to.be.calledOnce();
   });
 });

@@ -4,8 +4,8 @@
     {
       "blockHash": "00000c1e4556add15119392ed36ec6af2640569409abfa23a9972bc3be1b3717",
       "height": 558036,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -13,8 +13,8 @@
     {
       "blockHash": "00000221952c2a60adcb929de837f659308cb5c6bb7783016479381fb550fbad",
       "height": 557481,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -22,8 +22,8 @@
     {
       "blockHash": "000001deee9f99e8219a9abcaaea135dbaae8a9b0f1ea214e6b6a37a5c5b115d",
       "height": 555506,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -31,8 +31,8 @@
     {
       "blockHash": "00000084b4d9e887a6ad3f37c576a17d79c35ec9301e55210eded519e8cdcd3a",
       "height": 558102,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -40,8 +40,8 @@
     {
       "blockHash": "000000b6006c758eda23ec7e2a640a0bf2c6a0c44827be216faff6bf4fd388e8",
       "height": 555507,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -49,8 +49,8 @@
     {
       "blockHash": "0000012cf6377c6cf2b317a4deed46573c09f04f6880dca731cc9ccea6691e19",
       "height": 555508,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -58,8 +58,8 @@
     {
       "blockHash": "000001953ea0bbb8ad04a9a1a2a707fef207ad22a712d7d3c619f0f9b63fa98c",
       "height": 558229,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -67,8 +67,8 @@
     {
       "blockHash": "000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5",
       "height": 558230,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -76,8 +76,8 @@
     {
       "blockHash": "000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7",
       "height": 558242,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -85,8 +85,8 @@
     {
       "blockHash": "000001f9c5de4d2b258a975bfbf7b9a3346890af6389512bea3cb6926b9be330",
       "height": 558246,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ],
   [
@@ -94,8 +94,8 @@
     {
       "blockHash": "0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde",
       "height": 558236,
-      "instantLocked": true,
-      "chainLocked": true
+      "isInstantLocked": true,
+      "isChainLocked": true
     }
   ]
 ]

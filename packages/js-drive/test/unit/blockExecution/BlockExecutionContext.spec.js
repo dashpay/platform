@@ -19,7 +19,8 @@ describe('BlockExecutionContext', () => {
   let lastCommitInfo;
   let header;
   let logger;
-  let cumulativeFees;
+  let cumulativeProcessingFee;
+  let cumulativeStorageFee;
   let plainObject;
   let validTxs;
   let invalidTxs;
@@ -36,7 +37,8 @@ describe('BlockExecutionContext', () => {
     header = Header.fromObject(plainObject.header);
 
     logger = plainObject.consensusLogger;
-    cumulativeFees = plainObject.cumulativeFees;
+    cumulativeProcessingFee = plainObject.cumulativeProcessingFee;
+    cumulativeStorageFee = plainObject.cumulativeStorageFee;
     validTxs = plainObject.validTxs;
     invalidTxs = plainObject.invalidTxs;
   });
@@ -82,29 +84,57 @@ describe('BlockExecutionContext', () => {
     });
   });
 
-  describe('#getCumulativeFees', () => {
+  describe('#getCumulativeProcessingFee', () => {
     it('should get cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeFees();
+      let result = blockExecutionContext.getCumulativeProcessingFee();
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.cumulativeFees = cumulativeFees;
+      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
 
-      result = blockExecutionContext.getCumulativeFees();
+      result = blockExecutionContext.getCumulativeProcessingFee();
 
-      expect(result).to.equal(cumulativeFees);
+      expect(result).to.equal(cumulativeProcessingFee);
     });
   });
 
-  describe('#incrementCumulativeFees', () => {
-    it('should increment cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeFees();
+  describe('#getCumulativeStorageFee', () => {
+    it('should get cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeStorageFee();
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.incrementCumulativeFees(15);
+      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
 
-      result = blockExecutionContext.getCumulativeFees();
+      result = blockExecutionContext.getCumulativeStorageFee();
+
+      expect(result).to.equal(cumulativeStorageFee);
+    });
+  });
+
+  describe('#incrementCumulativeProcessingFee', () => {
+    it('should increment cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeProcessingFee();
+
+      expect(result).to.equal(0);
+
+      blockExecutionContext.incrementCumulativeProcessingFee(15);
+
+      result = blockExecutionContext.getCumulativeProcessingFee();
+
+      expect(result).to.equal(15);
+    });
+  });
+
+  describe('#incrementCumulativeStorageFee', () => {
+    it('should increment cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeStorageFee();
+
+      expect(result).to.equal(0);
+
+      blockExecutionContext.incrementCumulativeStorageFee(15);
+
+      result = blockExecutionContext.getCumulativeStorageFee();
 
       expect(result).to.equal(15);
     });
@@ -166,7 +196,8 @@ describe('BlockExecutionContext', () => {
 
       anotherBlockExecutionContext.dataContracts = [dataContract];
       anotherBlockExecutionContext.lastCommitInfo = lastCommitInfo;
-      anotherBlockExecutionContext.cumulativeFees = cumulativeFees;
+      anotherBlockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
+      anotherBlockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
       anotherBlockExecutionContext.header = header;
       anotherBlockExecutionContext.validTxs = validTxs;
       anotherBlockExecutionContext.invalidTxs = invalidTxs;
@@ -180,8 +211,11 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.lastCommitInfo).to.equal(
         anotherBlockExecutionContext.lastCommitInfo,
       );
-      expect(blockExecutionContext.cumulativeFees).to.equal(
-        anotherBlockExecutionContext.cumulativeFees,
+      expect(blockExecutionContext.cumulativeProcessingFee).to.equal(
+        anotherBlockExecutionContext.cumulativeProcessingFee,
+      );
+      expect(blockExecutionContext.cumulativeStorageFee).to.equal(
+        anotherBlockExecutionContext.cumulativeStorageFee,
       );
       expect(blockExecutionContext.header).to.equal(
         anotherBlockExecutionContext.header,
@@ -202,7 +236,8 @@ describe('BlockExecutionContext', () => {
     it('should return a plain object', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeFees = cumulativeFees;
+      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
+      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
       blockExecutionContext.header = header;
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
@@ -214,7 +249,8 @@ describe('BlockExecutionContext', () => {
     it('should skipConsensusLogger if the option passed', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeFees = cumulativeFees;
+      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
+      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
       blockExecutionContext.header = header;
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
@@ -232,9 +268,16 @@ describe('BlockExecutionContext', () => {
     it('should populate instance from a plain object', () => {
       blockExecutionContext.fromObject(plainObject);
 
-      expect(blockExecutionContext.dataContracts).to.deep.equal([dataContract]);
+      if (blockExecutionContext.dataContracts[0].$defs === undefined) {
+        blockExecutionContext.dataContracts[0].$defs = {};
+      }
+
+      expect(blockExecutionContext.dataContracts).to.have.deep.members(
+        [dataContract],
+      );
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
-      expect(blockExecutionContext.cumulativeFees).to.equal(cumulativeFees);
+      expect(blockExecutionContext.cumulativeProcessingFee).to.equal(cumulativeProcessingFee);
+      expect(blockExecutionContext.cumulativeStorageFee).to.equal(cumulativeStorageFee);
       expect(blockExecutionContext.header).to.deep.equal(header);
       expect(blockExecutionContext.validTxs).to.equal(validTxs);
       expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);

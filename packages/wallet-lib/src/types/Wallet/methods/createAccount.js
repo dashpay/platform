@@ -1,10 +1,15 @@
 const { WALLET_TYPES } = require('../../../CONSTANTS');
+const EVENTS = require('../../../EVENTS');
 /**
  * Will derivate to a new account.
  * @param {object} accountOpts - options to pass, will autopopulate some
  * @return {Account} - account object
  */
 async function createAccount(accountOpts) {
+  if (!this.storage.configured) {
+    await new Promise((resolve) => this.storage.once(EVENTS.CONFIGURED, resolve));
+  }
+
   /**
    *   Wallet.createAccount calls Account that depends on Wallet.
    *   In order to avoid a cyclic dependency issue we put this require here and

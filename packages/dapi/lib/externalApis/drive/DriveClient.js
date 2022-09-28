@@ -102,8 +102,8 @@ class DriveClient {
    * @param {Object} options.where - Mongo-like query
    * @param {Object} options.orderBy - Mongo-like sort field
    * @param {number} options.limit - how many objects to fetch
-   * @param {number} options.startAt - number of objects to skip
-   * @param {number} options.startAfter - exclusive skip
+   * @param {Buffer} options.startAt - skip documents up to specific document ID
+   * @param {Buffer} options.startAfter - exclusive skip
    * @param {boolean} prove - include proofs into the response
    *
    * @return {Promise<Buffer[]>}
@@ -177,16 +177,16 @@ class DriveClient {
   /**
    *  Fetch proofs by ids
    *
-   * @param {Buffer[]} [documentIds]
+   * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} [documents]
    * @param {Buffer[]} [identityIds]
    * @param {Buffer[]} [dataContractIds]
    * @return {Promise<{data: Buffer}>}
    */
-  async fetchProofs({ documentIds, identityIds, dataContractIds }) {
+  async fetchProofs({ documents, identityIds, dataContractIds }) {
     return this.requestCbor(
       '/proofs',
       {
-        documentIds,
+        documents,
         identityIds,
         dataContractIds,
       },

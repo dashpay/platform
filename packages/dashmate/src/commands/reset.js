@@ -21,6 +21,7 @@ class ResetCommand extends ConfigBaseCommand {
     {
       verbose: isVerbose,
       hard: isHardReset,
+      force: isForce,
       'platform-only': isPlatformOnlyReset,
     },
     isSystemConfig,
@@ -57,6 +58,7 @@ class ResetCommand extends ConfigBaseCommand {
       await tasks.run({
         isHardReset,
         isPlatformOnlyReset,
+        isForce,
         isVerbose,
       });
     } catch (e) {
@@ -73,7 +75,9 @@ Reset node data
 ResetCommand.flags = {
   ...ConfigBaseCommand.flags,
   hard: Flags.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
+  force: Flags.boolean({ char: 'f', description: 'skip running services check', default: false }),
   'platform-only': Flags.boolean({ char: 'p', description: 'reset platform data only', default: false }),
+  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
 module.exports = ResetCommand;

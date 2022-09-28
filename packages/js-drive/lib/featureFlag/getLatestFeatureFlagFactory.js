@@ -13,11 +13,11 @@ function getLatestFeatureFlagFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
-   * @param {DocumentsIndexedTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Document|null>}
    */
-  async function getLatestFeatureFlag(flagType, blockHeight, transaction = undefined) {
+  async function getLatestFeatureFlag(flagType, blockHeight, useTransaction = false) {
     if (!featureFlagsContractId) {
       return null;
     }
@@ -32,12 +32,16 @@ function getLatestFeatureFlagFactory(
       limit: 1,
     };
 
-    const [document] = await fetchDocuments(
+    const result = await fetchDocuments(
       featureFlagsContractId,
       flagType,
-      query,
-      transaction,
+      {
+        ...query,
+        useTransaction,
+      },
     );
+
+    const [document] = result.getValue();
 
     return document;
   }

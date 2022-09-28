@@ -1,7 +1,7 @@
 # Dashmate
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases/latest)
+[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation
@@ -30,13 +30,10 @@ Distribution package for Dash Masternode installation
 
 ### Dependencies
 
-* [Docker](https://docs.docker.com/engine/installation/) (v18.06.0+)
-* [Docker Compose](https://docs.docker.com/compose/install/) (v1.25.0+)
+* [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
 * [Node.js](https://nodejs.org/en/download/) (v16.0+, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
-
-**Note that Docker Compose v2 is not yet supported. Docker Desktop will automatically enable Docker Compose v2 under Windows and macOS, please go to "Settings -> General -> Use Docker Compose V2" and disable the checkbox to use Dashmate.**
 
 ### Distribution package
 
@@ -47,6 +44,7 @@ $ npm install -g dashmate
 
 ## Update
 
+The `update` command is used to quickly get the latest patches for dashmate components. It is necessary to restart the node after the update is complete.
 ```bash
 $ dashmate stop
 $ npm update -g dashmate
@@ -130,13 +128,13 @@ DESCRIPTION
   Display configuration options for default config
 
 COMMANDS
-  config:create   Create config
-  config:default  Manage default config
-  config:envs     Export config to envs
-  config:get      Get config option
-  config:list     List available configs
-  config:remove   Remove config
-  config:set      Set config option
+  config create   Create config
+  config default  Manage default config
+  config envs     Export config to envs
+  config get      Get config option
+  config list     List available configs
+  config remove   Remove config
+  config set      Set config option
 ```
 
 ### Start node
@@ -167,6 +165,7 @@ USAGE
   $ dashmate stop
 
 OPTIONS
+  -f, --force      force stop nodes (skips running check)
   -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 ```
@@ -202,11 +201,11 @@ OPTIONS
   --config=config  configuration name to use
 
 COMMANDS
-  status:core        Show core status details
-  status:host        Show host status details
-  status:masternode  Show masternode status details
-  status:platform    Show platform status details
-  status:services    Show service status details
+  status core        Show core status details
+  status host        Show host status details
+  status masternode  Show masternode status details
+  status platform    Show platform status details
+  status services    Show service status details
 ```
 
 To show the host status:
@@ -220,13 +219,17 @@ The `reset` command removes all data corresponding to the specified config and a
 
 ```
 USAGE
-  $ dashmate reset
+  $ dashmate reset [--config <value>] [-v] [-h] [-f] [-p]
 
-OPTIONS
-  -v, --verbose        use verbose mode for output
-  --config=config      configuration name to use
+FLAGS
+  -f, --force          skip running services check
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
+  -v, --verbose        use verbose mode for output
+  --config=<value>     configuration name to use
+
+DESCRIPTION
+  Reset node data
 ```
 
 With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
@@ -265,7 +268,7 @@ OPTIONS
 
 #### List group configs
 
-The `group:list` command outputs a list of group configs.
+The `group list` command outputs a list of group configs.
 
 ```
 USAGE
@@ -278,7 +281,7 @@ OPTIONS
 
 #### Start group nodes
 
-The `group:start` command is used to start a group of nodes belonging to the default group or a specified group.
+The `group start` command is used to start a group of nodes belonging to the default group or a specified group.
 
 ```
 USAGE
@@ -292,20 +295,21 @@ OPTIONS
 
 #### Stop group nodes
 
-The `group:stop` command is used to stop group nodes belonging to the default group or a specified group.
+The `group stop` command is used to stop group nodes belonging to the default group or a specified group.
 
 ```
 USAGE
   $ dashmate group stop
 
 OPTIONS
+  -f, --force    force stop nodes (skips running check)
   -v, --verbose  use verbose mode for output
   --group=group  group name to use
 ```
 
 #### Restart group nodes
 
-The `group:restart` command is used to restart group nodes belonging to the default group or a specified group.
+The `group restart` command is used to restart group nodes belonging to the default group or a specified group.
 
 ```
 USAGE
@@ -318,7 +322,7 @@ OPTIONS
 
 #### Show group status
 
-The `group:status` command outputs group status information.
+The `group status` command outputs group status information.
 
 ```
 USAGE
@@ -331,17 +335,21 @@ OPTIONS
 
 #### Reset group nodes
 
-The `group:reset` command removes all data corresponding to the specified group and allows you to start group nodes from scratch.
+The `group reset` command removes all data corresponding to the specified group and allows you to start group nodes from scratch.
 
 ```
 USAGE
-  $ dashmate group reset
+  $ dashmate group reset [--group <value>] [-v] [--hard] [-f] [-p]
 
-OPTIONS
-  -h, --hard           reset config as well as data
+FLAGS
+  -f, --force          reset even running node
   -p, --platform-only  reset platform data only
   -v, --verbose        use verbose mode for output
-  --group=group        group name to use
+  --group=<value>      group name to use
+  --hard               reset config as well as data
+
+DESCRIPTION
+  Reset group nodes
 ```
 
 With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#setup-node) is required.
@@ -379,10 +387,10 @@ If you want to use Docker Compose directly, you will need to pass a configuratio
 $ dashmate config envs --config=testnet --output-file .env.testnet
 ```
 
-Then specify the created dotenv file as an option for the `docker-compose` command:
+Then specify the created dotenv file as an option for the `docker compose` command:
 
 ```bash
-$ docker-compose --env-file=.env.testnet up -d
+$ docker compose --env-file=.env.testnet up -d
 ```
 
 ## Contributing

@@ -1,123 +1,106 @@
 const { expect } = require('chai');
-const mockedStore = require('../../../../fixtures/sirentonight-fullstore-snapshot-1562711703');
 const getTransaction = require('./getTransaction');
-const searchTransaction = require('../../Storage/methods/searchTransaction');
-const searchTransactionMetadata = require('../../Storage/methods/searchTransactionMetadata');
+const getFixtureHDAccountWithStorage = require("../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
 
-let mockedWallet;
+let mockedAccount;
 let fetchTransactionInfoCalledNb = 0;
 describe('Account - getTransaction', function suite() {
   this.timeout(10000);
   before(() => {
-    const storageHDW = {
-      store: mockedStore,
-      getStore: () => mockedStore,
-      mappedAddress: {},
-      searchTransaction,
-      searchTransactionMetadata,
-      importTransactions: () => null,
-    };
-    const walletId = Object.keys(mockedStore.wallets)[0];
-    mockedWallet = {
-      walletId,
-      index: 0,
-      storage: storageHDW,
-      transport: {
-        getTransaction: () => {fetchTransactionInfoCalledNb += 1; return null},
+    mockedAccount = getFixtureHDAccountWithStorage();
+
+    mockedAccount.transport = {
+      getTransaction: () => {
+        fetchTransactionInfoCalledNb += 1;
+        return null
       },
-    };
+    }
   });
   it('should correctly get a existing transaction', async () => {
-    const tx = await getTransaction.call(mockedWallet, '92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5');
-    expect(tx.transaction).to.deep.equal(expectedTx);
+    const tx = await getTransaction.call(mockedAccount, 'a43845e580ad01f31bc06ce47ab39674e40316c4c6b765b6e54d6d35777ef456');
+
+    expect(tx.transaction.toObject()).to.deep.equal(expectedTx);
+
     expect(tx.metadata).to.deep.equal({
-      hash: "92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5",
-      blockHash: '000000c5d6ca463ebbfddffe9a0a135312b6d8fc4eae2787b82b0fca9de7a554',
-      height: 29197,
-      instantLocked: false,
-      chainLocked: false
+      "blockHash": "000001deee9f99e8219a9abcaaea135dbaae8a9b0f1ea214e6b6a37a5c5b115d",
+      "height": 555506,
+      "isInstantLocked": true,
+      "isChainLocked": true
     });
   });
+
   it('should correctly try to fetch un unexisting transaction', async () => {
     expect(fetchTransactionInfoCalledNb).to.equal(0);
-    const tx = await getTransaction.call(mockedWallet, '92151f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5');
+    const tx = await getTransaction.call(mockedAccount, '92151f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5');
     expect(fetchTransactionInfoCalledNb).to.equal(1);
     expect(tx).to.equal(null);
   });
 });
 
 const expectedTx = {
-  hash: '92150f239013c961db15bc91d904404d2ae0520929969b59b69b17493569d0d5',
-  blockhash: '000000c5d6ca463ebbfddffe9a0a135312b6d8fc4eae2787b82b0fca9de7a554',
-  blockheight: 29197,
-  blocktime: 1562060795,
-  fees: 522,
-  size: 521,
-  vout: [{
-    value: '0.99990990',
-    n: 0,
-    scriptPubKey: {
-      hex: '76a914ba84943e63925288d2972cd5d0c2e1e06873c7c688ac',
-      asm: 'OP_DUP OP_HASH160 ba84943e63925288d2972cd5d0c2e1e06873c7c6 OP_EQUALVERIFY OP_CHECKSIG',
-      addresses: ['ydKfMe2n4vWsrzvgfSieQsFFxM9XMoWBff'],
-      type: 'pubkeyhash',
+  "hash": "a43845e580ad01f31bc06ce47ab39674e40316c4c6b765b6e54d6d35777ef456",
+  "version": 2,
+  "inputs": [
+    {
+      "prevTxId": "11802a0d6221636a93023f73750946ace488a79d3074ba93abb4edc19bf91efd",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "483045022100dfb220a840d597179abdf49692ad64c1c0da785041975b00aee03c9625639cf202204d06eade5cca19fab1e10b1d6e1b67c77626a0e88bb4d5f61bd57293b4b64217012102295ecb812ccf52deaf304bebfe3a59a644f05bac81241ea1e3a2f8750064cbf6",
+      "scriptString": "72 0x3045022100dfb220a840d597179abdf49692ad64c1c0da785041975b00aee03c9625639cf202204d06eade5cca19fab1e10b1d6e1b67c77626a0e88bb4d5f61bd57293b4b6421701 33 0x02295ecb812ccf52deaf304bebfe3a59a644f05bac81241ea1e3a2f8750064cbf6"
     },
-    spentTxId: 'eabe39ada39b58d70c03e0e79b7d2c767ed1239dda436bbc5a58954285421acc',
-    spentIndex: 1,
-    spentHeight: 30969,
-  }, {
-    value: '1000.00000000',
-    n: 1,
-    scriptPubKey: {
-      hex: '76a91485ada58442067249829d52ddd6c99c97a112749188ac',
-      asm: 'OP_DUP OP_HASH160 85ada58442067249829d52ddd6c99c97a1127491 OP_EQUALVERIFY OP_CHECKSIG',
-      addresses: ['yYWGjtb7XJqbXsUPfkaTWQKzcPYfmMp1Co'],
-      type: 'pubkeyhash',
+    {
+      "prevTxId": "19953851c7a425045d3b6b4f56b7d5116fc1648444e5c37eba29ea65ee264269",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "483045022100beff3263b7c99720e99af9ec146c818701efb0130603f1570f427b74aef8521802202e660bb9f7ea156f91addd5fe47cbd2c2bf388cc6e1eff3a39adffd89d26d346012102c33942799f7cbf4a7d12f1b3e52cb80cc4de083b997d3e63915df9973d5bce2a",
+      "scriptString": "72 0x3045022100beff3263b7c99720e99af9ec146c818701efb0130603f1570f427b74aef8521802202e660bb9f7ea156f91addd5fe47cbd2c2bf388cc6e1eff3a39adffd89d26d34601 33 0x02c33942799f7cbf4a7d12f1b3e52cb80cc4de083b997d3e63915df9973d5bce2a"
     },
-    spentTxId: '5a5626c59f3830d5d9e7261bed5ced2694a343100c18d4a730b26639f5832944',
-    spentIndex: 0,
-    spentHeight: 29197,
-  }],
-  vin: [{
-    hash: '0c25c534aeef8a151e8ce325882f80af647621b9f0a54f995f75c0d2994966ad',
-    vout: 0,
-    sequence: 4294967294,
-    n: 0,
-    scriptSig: {
-      hex: '483045022100b24c95914f666ecb3ac41048110d7732b890b0d3fac9a9ff05560913e530430a022006660d72df91158f4d4710b75b9b05502a1332b5afca1ab5f98d012119f62553012103a6592040a30bf9254306a9d1086803cd450ae817ed5b4ba34e3e1b43d48bb783',
-      asm: '3045022100b24c95914f666ecb3ac41048110d7732b890b0d3fac9a9ff05560913e530430a022006660d72df91158f4d4710b75b9b05502a1332b5afca1ab5f98d012119f62553[ALL] 03a6592040a30bf9254306a9d1086803cd450ae817ed5b4ba34e3e1b43d48bb783',
+    {
+      "prevTxId": "2dc8e2adfb30902269fa77dbf0de94f1f04ab3e8b1dbe1dd074a39a864993e96",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "483045022100ff67776932e7a32520aa131f76bdfd6737650ad3b11edbdf466cca83f691b0e60220633bcbedebacffd53ceb7e9cdbd47928d7c2849f49ac1f8efb9f384c1a4ee46301210371c0bc42e08de059a8829730abb16f3d40cff87e5ad85d65c4a0a949d9c4b524",
+      "scriptString": "72 0x3045022100ff67776932e7a32520aa131f76bdfd6737650ad3b11edbdf466cca83f691b0e60220633bcbedebacffd53ceb7e9cdbd47928d7c2849f49ac1f8efb9f384c1a4ee46301 33 0x0371c0bc42e08de059a8829730abb16f3d40cff87e5ad85d65c4a0a949d9c4b524"
     },
-    addr: 'yXzZsVfpPxjewfVd7oa2D6tBMHW7JbonBr',
-    valueSat: 99991512,
-    value: 0.99991512,
-    doubleSpentTxID: null,
-  }, {
-    hash: '92056b727a3e37f5946dc18aa4f497ba9c0e3a328105e743175629bf7c8f3d37',
-    vout: 0,
-    sequence: 4294967294,
-    n: 1,
-    scriptSig: {
-      hex: '483045022100fe69fdb70c0550b900960e9fbfd7254726a237c8b5688e5c9a7fba15947638fa02206ba0463b51922b56d0064c06b55c21328a39aa81312cf25ec982fa5c1eed9214012103353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844',
-      asm: '3045022100fe69fdb70c0550b900960e9fbfd7254726a237c8b5688e5c9a7fba15947638fa02206ba0463b51922b56d0064c06b55c21328a39aa81312cf25ec982fa5c1eed9214[ALL] 03353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844',
+    {
+      "prevTxId": "40cf2327c923487ce9789c58a1273ddd9bb87a8d30975dc298335c125065e11f",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "483045022100cca348c7ab16fac28b3bba502be54a9e3766b7da9821a90605f370b75840569702207d082510aa493988e09da046355b018781718208f8a954e14ea33d608ae59625012103699b9402e109ed9d0c67c6a45be5cf5f1236c44bb9fc4b07a2f3392ba0b64172",
+      "scriptString": "72 0x3045022100cca348c7ab16fac28b3bba502be54a9e3766b7da9821a90605f370b75840569702207d082510aa493988e09da046355b018781718208f8a954e14ea33d608ae5962501 33 0x03699b9402e109ed9d0c67c6a45be5cf5f1236c44bb9fc4b07a2f3392ba0b64172"
     },
-    addr: 'yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5',
-    valueSat: 50000000000,
-    value: 500,
-    doubleSpentTxID: null,
-  }, {
-    hash: 'be27a3dae2742aaca103fea0967edd9a6d0ef5cf90159af39f80ad5a7a50b7d6',
-    vout: 0,
-    sequence: 4294967294,
-    n: 2,
-    scriptSig: {
-      hex: '47304402205d30afd97e5efbec984faae5be922a487d7adce1518a3214966198a5423c150d02204ea0e15a5fcf5b8034294c9d2b9d6fc638f75506fcac3530c91b960eaf2e6859012103353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844',
-      asm: '304402205d30afd97e5efbec984faae5be922a487d7adce1518a3214966198a5423c150d02204ea0e15a5fcf5b8034294c9d2b9d6fc638f75506fcac3530c91b960eaf2e6859[ALL] 03353b4deb77923b026278d116e2007d6f97a058e42d35f1fd39efd5314705f844',
+    {
+      "prevTxId": "4bb38b9207953d4658c64e6ad986eab05a42e50c72bd0f3bf07d7dd8b31f25ce",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "47304402203ae564ff74b08b1f96bf857f51448434418d747a02039ec1ee109a4f5d8e8106022072f8769bd175416d22f44011f7e67aec301f08573c9937be7e4a09c394c7396601210311bae874933a4503a61d1c8c2e5b57b1a278d28d4892af4bd79ab8a731495265",
+      "scriptString": "71 0x304402203ae564ff74b08b1f96bf857f51448434418d747a02039ec1ee109a4f5d8e8106022072f8769bd175416d22f44011f7e67aec301f08573c9937be7e4a09c394c7396601 33 0x0311bae874933a4503a61d1c8c2e5b57b1a278d28d4892af4bd79ab8a731495265"
     },
-    addr: 'yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5',
-    valueSat: 50000000000,
-    value: 500,
-    doubleSpentTxID: null,
-  }],
-  txlock: false,
-  spendable: false,
-};
+    {
+      "prevTxId": "b21e8513b29a43b3169b857c466cc626859d76e374fc5dc7771f4a0df8fe2daf",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "47304402200b49b7059064efb57df453dc2d20002f09b5266bc825760ef81624771f13920802200782616b8c4fb7b5eff94fdf865e6ddc4530d3932b97fdc3a747e8c451f0314c012103a94131f28f8efd67f47f2496ff6e8d9069a3a7df97202a33e90e16f257d03729",
+      "scriptString": "71 0x304402200b49b7059064efb57df453dc2d20002f09b5266bc825760ef81624771f13920802200782616b8c4fb7b5eff94fdf865e6ddc4530d3932b97fdc3a747e8c451f0314c01 33 0x03a94131f28f8efd67f47f2496ff6e8d9069a3a7df97202a33e90e16f257d03729"
+    },
+    {
+      "prevTxId": "d6fd2b6ea7d186a2211076188594cacb61df415051876fa198ca4c2205ef4f34",
+      "outputIndex": 0,
+      "sequenceNumber": 4294967294,
+      "script": "47304402202a24d1123775641269c6f748d3e4dad08a682e4e334a9b73c7df84f6c22e8e7d022022c0cc2225d3f14cb58a6fb3e4bf23c0f33252d9040a9ca9ef66eb17742a476f01210347301de4c9ba7f46b0f27cb82ae70a73749821e2951d3c87c2f0d56648635d1c",
+      "scriptString": "71 0x304402202a24d1123775641269c6f748d3e4dad08a682e4e334a9b73c7df84f6c22e8e7d022022c0cc2225d3f14cb58a6fb3e4bf23c0f33252d9040a9ca9ef66eb17742a476f01 33 0x0347301de4c9ba7f46b0f27cb82ae70a73749821e2951d3c87c2f0d56648635d1c"
+    }
+  ],
+  "outputs": [
+    {
+      "satoshis": 1823313,
+      "script": "76a91440ca54360086cc0fbd69d862db58ab2b6d22805888ac"
+    },
+    {
+      "satoshis": 187980000,
+      "script": "76a914538da44e7136cc994023d89a7b4b3d02ac0e573988ac"
+    }
+  ],
+  "nLockTime": 555505
+}
+

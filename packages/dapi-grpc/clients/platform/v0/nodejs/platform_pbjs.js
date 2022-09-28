@@ -1,7 +1,7 @@
 /*eslint-disable block-scoped-var, id-length, no-control-regex, no-magic-numbers, no-prototype-builtins, no-redeclare, no-shadow, no-var, sort-vars*/
 "use strict";
 
-var $protobuf = require("protobufjs/minimal");
+var $protobuf = require("@dashevo/protobufjs/minimal");
 
 // Common aliases
 var $Reader = $protobuf.Reader, $Writer = $protobuf.Writer, $util = $protobuf.util;
@@ -252,39 +252,6 @@ $root.org = (function() {
                          */
 
                         /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityIdsByPublicKeyHashes}.
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef getIdentityIdsByPublicKeyHashesCallback
-                         * @type {function}
-                         * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse} [response] GetIdentityIdsByPublicKeyHashesResponse
-                         */
-
-                        /**
-                         * Calls getIdentityIdsByPublicKeyHashes.
-                         * @function getIdentityIdsByPublicKeyHashes
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesRequest} request GetIdentityIdsByPublicKeyHashesRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.getIdentityIdsByPublicKeyHashesCallback} callback Node-style callback called with the error, if any, and GetIdentityIdsByPublicKeyHashesResponse
-                         * @returns {undefined}
-                         * @variation 1
-                         */
-                        Object.defineProperty(Platform.prototype.getIdentityIdsByPublicKeyHashes = function getIdentityIdsByPublicKeyHashes(request, callback) {
-                            return this.rpcCall(getIdentityIdsByPublicKeyHashes, $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest, $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse, request, callback);
-                        }, "name", { value: "getIdentityIdsByPublicKeyHashes" });
-
-                        /**
-                         * Calls getIdentityIdsByPublicKeyHashes.
-                         * @function getIdentityIdsByPublicKeyHashes
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesRequest} request GetIdentityIdsByPublicKeyHashesRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse>} Promise
-                         * @variation 2
-                         */
-
-                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#waitForStateTransitionResult}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef waitForStateTransitionResultCallback
@@ -353,304 +320,13 @@ $root.org = (function() {
                         return Platform;
                     })();
 
-                    v0.StoreTreeProofs = (function() {
-
-                        /**
-                         * Properties of a StoreTreeProofs.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IStoreTreeProofs
-                         * @property {Uint8Array|null} [identitiesProof] StoreTreeProofs identitiesProof
-                         * @property {Uint8Array|null} [publicKeyHashesToIdentityIdsProof] StoreTreeProofs publicKeyHashesToIdentityIdsProof
-                         * @property {Uint8Array|null} [dataContractsProof] StoreTreeProofs dataContractsProof
-                         * @property {Uint8Array|null} [documentsProof] StoreTreeProofs documentsProof
-                         */
-
-                        /**
-                         * Constructs a new StoreTreeProofs.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a StoreTreeProofs.
-                         * @implements IStoreTreeProofs
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs=} [properties] Properties to set
-                         */
-                        function StoreTreeProofs(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * StoreTreeProofs identitiesProof.
-                         * @member {Uint8Array} identitiesProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.identitiesProof = $util.newBuffer([]);
-
-                        /**
-                         * StoreTreeProofs publicKeyHashesToIdentityIdsProof.
-                         * @member {Uint8Array} publicKeyHashesToIdentityIdsProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.publicKeyHashesToIdentityIdsProof = $util.newBuffer([]);
-
-                        /**
-                         * StoreTreeProofs dataContractsProof.
-                         * @member {Uint8Array} dataContractsProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.dataContractsProof = $util.newBuffer([]);
-
-                        /**
-                         * StoreTreeProofs documentsProof.
-                         * @member {Uint8Array} documentsProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.documentsProof = $util.newBuffer([]);
-
-                        /**
-                         * Creates a new StoreTreeProofs instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs instance
-                         */
-                        StoreTreeProofs.create = function create(properties) {
-                            return new StoreTreeProofs(properties);
-                        };
-
-                        /**
-                         * Encodes the specified StoreTreeProofs message. Does not implicitly {@link org.dash.platform.dapi.v0.StoreTreeProofs.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs} message StoreTreeProofs message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        StoreTreeProofs.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.identitiesProof != null && Object.hasOwnProperty.call(message, "identitiesProof"))
-                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesProof);
-                            if (message.publicKeyHashesToIdentityIdsProof != null && Object.hasOwnProperty.call(message, "publicKeyHashesToIdentityIdsProof"))
-                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.publicKeyHashesToIdentityIdsProof);
-                            if (message.dataContractsProof != null && Object.hasOwnProperty.call(message, "dataContractsProof"))
-                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.dataContractsProof);
-                            if (message.documentsProof != null && Object.hasOwnProperty.call(message, "documentsProof"))
-                                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.documentsProof);
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified StoreTreeProofs message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.StoreTreeProofs.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs} message StoreTreeProofs message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        StoreTreeProofs.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a StoreTreeProofs message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        StoreTreeProofs.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.StoreTreeProofs();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.identitiesProof = reader.bytes();
-                                    break;
-                                case 2:
-                                    message.publicKeyHashesToIdentityIdsProof = reader.bytes();
-                                    break;
-                                case 3:
-                                    message.dataContractsProof = reader.bytes();
-                                    break;
-                                case 4:
-                                    message.documentsProof = reader.bytes();
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a StoreTreeProofs message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        StoreTreeProofs.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a StoreTreeProofs message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        StoreTreeProofs.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof"))
-                                if (!(message.identitiesProof && typeof message.identitiesProof.length === "number" || $util.isString(message.identitiesProof)))
-                                    return "identitiesProof: buffer expected";
-                            if (message.publicKeyHashesToIdentityIdsProof != null && message.hasOwnProperty("publicKeyHashesToIdentityIdsProof"))
-                                if (!(message.publicKeyHashesToIdentityIdsProof && typeof message.publicKeyHashesToIdentityIdsProof.length === "number" || $util.isString(message.publicKeyHashesToIdentityIdsProof)))
-                                    return "publicKeyHashesToIdentityIdsProof: buffer expected";
-                            if (message.dataContractsProof != null && message.hasOwnProperty("dataContractsProof"))
-                                if (!(message.dataContractsProof && typeof message.dataContractsProof.length === "number" || $util.isString(message.dataContractsProof)))
-                                    return "dataContractsProof: buffer expected";
-                            if (message.documentsProof != null && message.hasOwnProperty("documentsProof"))
-                                if (!(message.documentsProof && typeof message.documentsProof.length === "number" || $util.isString(message.documentsProof)))
-                                    return "documentsProof: buffer expected";
-                            return null;
-                        };
-
-                        /**
-                         * Creates a StoreTreeProofs message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs
-                         */
-                        StoreTreeProofs.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.StoreTreeProofs)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.StoreTreeProofs();
-                            if (object.identitiesProof != null)
-                                if (typeof object.identitiesProof === "string")
-                                    $util.base64.decode(object.identitiesProof, message.identitiesProof = $util.newBuffer($util.base64.length(object.identitiesProof)), 0);
-                                else if (object.identitiesProof.length >= 0)
-                                    message.identitiesProof = object.identitiesProof;
-                            if (object.publicKeyHashesToIdentityIdsProof != null)
-                                if (typeof object.publicKeyHashesToIdentityIdsProof === "string")
-                                    $util.base64.decode(object.publicKeyHashesToIdentityIdsProof, message.publicKeyHashesToIdentityIdsProof = $util.newBuffer($util.base64.length(object.publicKeyHashesToIdentityIdsProof)), 0);
-                                else if (object.publicKeyHashesToIdentityIdsProof.length >= 0)
-                                    message.publicKeyHashesToIdentityIdsProof = object.publicKeyHashesToIdentityIdsProof;
-                            if (object.dataContractsProof != null)
-                                if (typeof object.dataContractsProof === "string")
-                                    $util.base64.decode(object.dataContractsProof, message.dataContractsProof = $util.newBuffer($util.base64.length(object.dataContractsProof)), 0);
-                                else if (object.dataContractsProof.length >= 0)
-                                    message.dataContractsProof = object.dataContractsProof;
-                            if (object.documentsProof != null)
-                                if (typeof object.documentsProof === "string")
-                                    $util.base64.decode(object.documentsProof, message.documentsProof = $util.newBuffer($util.base64.length(object.documentsProof)), 0);
-                                else if (object.documentsProof.length >= 0)
-                                    message.documentsProof = object.documentsProof;
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a StoreTreeProofs message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.StoreTreeProofs} message StoreTreeProofs
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        StoreTreeProofs.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (options.defaults) {
-                                if (options.bytes === String)
-                                    object.identitiesProof = "";
-                                else {
-                                    object.identitiesProof = [];
-                                    if (options.bytes !== Array)
-                                        object.identitiesProof = $util.newBuffer(object.identitiesProof);
-                                }
-                                if (options.bytes === String)
-                                    object.publicKeyHashesToIdentityIdsProof = "";
-                                else {
-                                    object.publicKeyHashesToIdentityIdsProof = [];
-                                    if (options.bytes !== Array)
-                                        object.publicKeyHashesToIdentityIdsProof = $util.newBuffer(object.publicKeyHashesToIdentityIdsProof);
-                                }
-                                if (options.bytes === String)
-                                    object.dataContractsProof = "";
-                                else {
-                                    object.dataContractsProof = [];
-                                    if (options.bytes !== Array)
-                                        object.dataContractsProof = $util.newBuffer(object.dataContractsProof);
-                                }
-                                if (options.bytes === String)
-                                    object.documentsProof = "";
-                                else {
-                                    object.documentsProof = [];
-                                    if (options.bytes !== Array)
-                                        object.documentsProof = $util.newBuffer(object.documentsProof);
-                                }
-                            }
-                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof"))
-                                object.identitiesProof = options.bytes === String ? $util.base64.encode(message.identitiesProof, 0, message.identitiesProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesProof) : message.identitiesProof;
-                            if (message.publicKeyHashesToIdentityIdsProof != null && message.hasOwnProperty("publicKeyHashesToIdentityIdsProof"))
-                                object.publicKeyHashesToIdentityIdsProof = options.bytes === String ? $util.base64.encode(message.publicKeyHashesToIdentityIdsProof, 0, message.publicKeyHashesToIdentityIdsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.publicKeyHashesToIdentityIdsProof) : message.publicKeyHashesToIdentityIdsProof;
-                            if (message.dataContractsProof != null && message.hasOwnProperty("dataContractsProof"))
-                                object.dataContractsProof = options.bytes === String ? $util.base64.encode(message.dataContractsProof, 0, message.dataContractsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractsProof) : message.dataContractsProof;
-                            if (message.documentsProof != null && message.hasOwnProperty("documentsProof"))
-                                object.documentsProof = options.bytes === String ? $util.base64.encode(message.documentsProof, 0, message.documentsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentsProof) : message.documentsProof;
-                            return object;
-                        };
-
-                        /**
-                         * Converts this StoreTreeProofs to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        StoreTreeProofs.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        return StoreTreeProofs;
-                    })();
-
                     v0.Proof = (function() {
 
                         /**
                          * Properties of a Proof.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IProof
-                         * @property {Uint8Array|null} [rootTreeProof] Proof rootTreeProof
-                         * @property {org.dash.platform.dapi.v0.IStoreTreeProofs|null} [storeTreeProofs] Proof storeTreeProofs
+                         * @property {Uint8Array|null} [merkleProof] Proof merkleProof
                          * @property {Uint8Array|null} [signatureLlmqHash] Proof signatureLlmqHash
                          * @property {Uint8Array|null} [signature] Proof signature
                          */
@@ -671,20 +347,12 @@ $root.org = (function() {
                         }
 
                         /**
-                         * Proof rootTreeProof.
-                         * @member {Uint8Array} rootTreeProof
+                         * Proof merkleProof.
+                         * @member {Uint8Array} merkleProof
                          * @memberof org.dash.platform.dapi.v0.Proof
                          * @instance
                          */
-                        Proof.prototype.rootTreeProof = $util.newBuffer([]);
-
-                        /**
-                         * Proof storeTreeProofs.
-                         * @member {org.dash.platform.dapi.v0.IStoreTreeProofs|null|undefined} storeTreeProofs
-                         * @memberof org.dash.platform.dapi.v0.Proof
-                         * @instance
-                         */
-                        Proof.prototype.storeTreeProofs = null;
+                        Proof.prototype.merkleProof = $util.newBuffer([]);
 
                         /**
                          * Proof signatureLlmqHash.
@@ -726,14 +394,12 @@ $root.org = (function() {
                         Proof.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
-                            if (message.rootTreeProof != null && Object.hasOwnProperty.call(message, "rootTreeProof"))
-                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.rootTreeProof);
-                            if (message.storeTreeProofs != null && Object.hasOwnProperty.call(message, "storeTreeProofs"))
-                                $root.org.dash.platform.dapi.v0.StoreTreeProofs.encode(message.storeTreeProofs, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            if (message.merkleProof != null && Object.hasOwnProperty.call(message, "merkleProof"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.merkleProof);
                             if (message.signatureLlmqHash != null && Object.hasOwnProperty.call(message, "signatureLlmqHash"))
-                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signatureLlmqHash);
+                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.signatureLlmqHash);
                             if (message.signature != null && Object.hasOwnProperty.call(message, "signature"))
-                                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.signature);
+                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signature);
                             return writer;
                         };
 
@@ -769,15 +435,12 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.rootTreeProof = reader.bytes();
+                                    message.merkleProof = reader.bytes();
                                     break;
                                 case 2:
-                                    message.storeTreeProofs = $root.org.dash.platform.dapi.v0.StoreTreeProofs.decode(reader, reader.uint32());
-                                    break;
-                                case 3:
                                     message.signatureLlmqHash = reader.bytes();
                                     break;
-                                case 4:
+                                case 3:
                                     message.signature = reader.bytes();
                                     break;
                                 default:
@@ -815,14 +478,9 @@ $root.org = (function() {
                         Proof.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
-                            if (message.rootTreeProof != null && message.hasOwnProperty("rootTreeProof"))
-                                if (!(message.rootTreeProof && typeof message.rootTreeProof.length === "number" || $util.isString(message.rootTreeProof)))
-                                    return "rootTreeProof: buffer expected";
-                            if (message.storeTreeProofs != null && message.hasOwnProperty("storeTreeProofs")) {
-                                var error = $root.org.dash.platform.dapi.v0.StoreTreeProofs.verify(message.storeTreeProofs);
-                                if (error)
-                                    return "storeTreeProofs." + error;
-                            }
+                            if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
+                                if (!(message.merkleProof && typeof message.merkleProof.length === "number" || $util.isString(message.merkleProof)))
+                                    return "merkleProof: buffer expected";
                             if (message.signatureLlmqHash != null && message.hasOwnProperty("signatureLlmqHash"))
                                 if (!(message.signatureLlmqHash && typeof message.signatureLlmqHash.length === "number" || $util.isString(message.signatureLlmqHash)))
                                     return "signatureLlmqHash: buffer expected";
@@ -844,16 +502,11 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.Proof)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.Proof();
-                            if (object.rootTreeProof != null)
-                                if (typeof object.rootTreeProof === "string")
-                                    $util.base64.decode(object.rootTreeProof, message.rootTreeProof = $util.newBuffer($util.base64.length(object.rootTreeProof)), 0);
-                                else if (object.rootTreeProof.length >= 0)
-                                    message.rootTreeProof = object.rootTreeProof;
-                            if (object.storeTreeProofs != null) {
-                                if (typeof object.storeTreeProofs !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.Proof.storeTreeProofs: object expected");
-                                message.storeTreeProofs = $root.org.dash.platform.dapi.v0.StoreTreeProofs.fromObject(object.storeTreeProofs);
-                            }
+                            if (object.merkleProof != null)
+                                if (typeof object.merkleProof === "string")
+                                    $util.base64.decode(object.merkleProof, message.merkleProof = $util.newBuffer($util.base64.length(object.merkleProof)), 0);
+                                else if (object.merkleProof.length >= 0)
+                                    message.merkleProof = object.merkleProof;
                             if (object.signatureLlmqHash != null)
                                 if (typeof object.signatureLlmqHash === "string")
                                     $util.base64.decode(object.signatureLlmqHash, message.signatureLlmqHash = $util.newBuffer($util.base64.length(object.signatureLlmqHash)), 0);
@@ -882,13 +535,12 @@ $root.org = (function() {
                             var object = {};
                             if (options.defaults) {
                                 if (options.bytes === String)
-                                    object.rootTreeProof = "";
+                                    object.merkleProof = "";
                                 else {
-                                    object.rootTreeProof = [];
+                                    object.merkleProof = [];
                                     if (options.bytes !== Array)
-                                        object.rootTreeProof = $util.newBuffer(object.rootTreeProof);
+                                        object.merkleProof = $util.newBuffer(object.merkleProof);
                                 }
-                                object.storeTreeProofs = null;
                                 if (options.bytes === String)
                                     object.signatureLlmqHash = "";
                                 else {
@@ -904,10 +556,8 @@ $root.org = (function() {
                                         object.signature = $util.newBuffer(object.signature);
                                 }
                             }
-                            if (message.rootTreeProof != null && message.hasOwnProperty("rootTreeProof"))
-                                object.rootTreeProof = options.bytes === String ? $util.base64.encode(message.rootTreeProof, 0, message.rootTreeProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.rootTreeProof) : message.rootTreeProof;
-                            if (message.storeTreeProofs != null && message.hasOwnProperty("storeTreeProofs"))
-                                object.storeTreeProofs = $root.org.dash.platform.dapi.v0.StoreTreeProofs.toObject(message.storeTreeProofs, options);
+                            if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
+                                object.merkleProof = options.bytes === String ? $util.base64.encode(message.merkleProof, 0, message.merkleProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.merkleProof) : message.merkleProof;
                             if (message.signatureLlmqHash != null && message.hasOwnProperty("signatureLlmqHash"))
                                 object.signatureLlmqHash = options.bytes === String ? $util.base64.encode(message.signatureLlmqHash, 0, message.signatureLlmqHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.signatureLlmqHash) : message.signatureLlmqHash;
                             if (message.signature != null && message.hasOwnProperty("signature"))
@@ -2701,8 +2351,8 @@ $root.org = (function() {
                          * @property {Uint8Array|null} [where] GetDocumentsRequest where
                          * @property {Uint8Array|null} [orderBy] GetDocumentsRequest orderBy
                          * @property {number|null} [limit] GetDocumentsRequest limit
-                         * @property {number|null} [startAfter] GetDocumentsRequest startAfter
-                         * @property {number|null} [startAt] GetDocumentsRequest startAt
+                         * @property {Uint8Array|null} [startAfter] GetDocumentsRequest startAfter
+                         * @property {Uint8Array|null} [startAt] GetDocumentsRequest startAt
                          * @property {boolean|null} [prove] GetDocumentsRequest prove
                          */
 
@@ -2763,19 +2413,19 @@ $root.org = (function() {
 
                         /**
                          * GetDocumentsRequest startAfter.
-                         * @member {number} startAfter
+                         * @member {Uint8Array} startAfter
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
-                        GetDocumentsRequest.prototype.startAfter = 0;
+                        GetDocumentsRequest.prototype.startAfter = $util.newBuffer([]);
 
                         /**
                          * GetDocumentsRequest startAt.
-                         * @member {number} startAt
+                         * @member {Uint8Array} startAt
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
-                        GetDocumentsRequest.prototype.startAt = 0;
+                        GetDocumentsRequest.prototype.startAt = $util.newBuffer([]);
 
                         /**
                          * GetDocumentsRequest prove.
@@ -2834,9 +2484,9 @@ $root.org = (function() {
                             if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
                                 writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.limit);
                             if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
-                                writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.startAfter);
+                                writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.startAfter);
                             if (message.startAt != null && Object.hasOwnProperty.call(message, "startAt"))
-                                writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.startAt);
+                                writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.startAt);
                             if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                 writer.uint32(/* id 8, wireType 0 =*/64).bool(message.prove);
                             return writer;
@@ -2889,10 +2539,10 @@ $root.org = (function() {
                                     message.limit = reader.uint32();
                                     break;
                                 case 6:
-                                    message.startAfter = reader.uint32();
+                                    message.startAfter = reader.bytes();
                                     break;
                                 case 7:
-                                    message.startAt = reader.uint32();
+                                    message.startAt = reader.bytes();
                                     break;
                                 case 8:
                                     message.prove = reader.bool();
@@ -2950,15 +2600,15 @@ $root.org = (function() {
                                     return "limit: integer expected";
                             if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
                                 properties.start = 1;
-                                if (!$util.isInteger(message.startAfter))
-                                    return "startAfter: integer expected";
+                                if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                    return "startAfter: buffer expected";
                             }
                             if (message.startAt != null && message.hasOwnProperty("startAt")) {
                                 if (properties.start === 1)
                                     return "start: multiple values";
                                 properties.start = 1;
-                                if (!$util.isInteger(message.startAt))
-                                    return "startAt: integer expected";
+                                if (!(message.startAt && typeof message.startAt.length === "number" || $util.isString(message.startAt)))
+                                    return "startAt: buffer expected";
                             }
                             if (message.prove != null && message.hasOwnProperty("prove"))
                                 if (typeof message.prove !== "boolean")
@@ -2998,9 +2648,15 @@ $root.org = (function() {
                             if (object.limit != null)
                                 message.limit = object.limit >>> 0;
                             if (object.startAfter != null)
-                                message.startAfter = object.startAfter >>> 0;
+                                if (typeof object.startAfter === "string")
+                                    $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                else if (object.startAfter.length >= 0)
+                                    message.startAfter = object.startAfter;
                             if (object.startAt != null)
-                                message.startAt = object.startAt >>> 0;
+                                if (typeof object.startAt === "string")
+                                    $util.base64.decode(object.startAt, message.startAt = $util.newBuffer($util.base64.length(object.startAt)), 0);
+                                else if (object.startAt.length >= 0)
+                                    message.startAt = object.startAt;
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
                             return message;
@@ -3056,12 +2712,12 @@ $root.org = (function() {
                             if (message.limit != null && message.hasOwnProperty("limit"))
                                 object.limit = message.limit;
                             if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
-                                object.startAfter = message.startAfter;
+                                object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
                                 if (options.oneofs)
                                     object.start = "startAfter";
                             }
                             if (message.startAt != null && message.hasOwnProperty("startAt")) {
-                                object.startAt = message.startAt;
+                                object.startAt = options.bytes === String ? $util.base64.encode(message.startAt, 0, message.startAt.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAt) : message.startAt;
                                 if (options.oneofs)
                                     object.start = "startAt";
                             }
@@ -3835,497 +3491,6 @@ $root.org = (function() {
                         };
 
                         return GetIdentitiesByPublicKeyHashesResponse;
-                    })();
-
-                    v0.GetIdentityIdsByPublicKeyHashesRequest = (function() {
-
-                        /**
-                         * Properties of a GetIdentityIdsByPublicKeyHashesRequest.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetIdentityIdsByPublicKeyHashesRequest
-                         * @property {Array.<Uint8Array>|null} [publicKeyHashes] GetIdentityIdsByPublicKeyHashesRequest publicKeyHashes
-                         * @property {boolean|null} [prove] GetIdentityIdsByPublicKeyHashesRequest prove
-                         */
-
-                        /**
-                         * Constructs a new GetIdentityIdsByPublicKeyHashesRequest.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetIdentityIdsByPublicKeyHashesRequest.
-                         * @implements IGetIdentityIdsByPublicKeyHashesRequest
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesRequest=} [properties] Properties to set
-                         */
-                        function GetIdentityIdsByPublicKeyHashesRequest(properties) {
-                            this.publicKeyHashes = [];
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * GetIdentityIdsByPublicKeyHashesRequest publicKeyHashes.
-                         * @member {Array.<Uint8Array>} publicKeyHashes
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.prototype.publicKeyHashes = $util.emptyArray;
-
-                        /**
-                         * GetIdentityIdsByPublicKeyHashesRequest prove.
-                         * @member {boolean} prove
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.prototype.prove = false;
-
-                        /**
-                         * Creates a new GetIdentityIdsByPublicKeyHashesRequest instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} GetIdentityIdsByPublicKeyHashesRequest instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.create = function create(properties) {
-                            return new GetIdentityIdsByPublicKeyHashesRequest(properties);
-                        };
-
-                        /**
-                         * Encodes the specified GetIdentityIdsByPublicKeyHashesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesRequest} message GetIdentityIdsByPublicKeyHashesRequest message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.publicKeyHashes != null && message.publicKeyHashes.length)
-                                for (var i = 0; i < message.publicKeyHashes.length; ++i)
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.publicKeyHashes[i]);
-                            if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
-                                writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified GetIdentityIdsByPublicKeyHashesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesRequest} message GetIdentityIdsByPublicKeyHashesRequest message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a GetIdentityIdsByPublicKeyHashesRequest message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} GetIdentityIdsByPublicKeyHashesRequest
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    if (!(message.publicKeyHashes && message.publicKeyHashes.length))
-                                        message.publicKeyHashes = [];
-                                    message.publicKeyHashes.push(reader.bytes());
-                                    break;
-                                case 2:
-                                    message.prove = reader.bool();
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a GetIdentityIdsByPublicKeyHashesRequest message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} GetIdentityIdsByPublicKeyHashesRequest
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a GetIdentityIdsByPublicKeyHashesRequest message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            if (message.publicKeyHashes != null && message.hasOwnProperty("publicKeyHashes")) {
-                                if (!Array.isArray(message.publicKeyHashes))
-                                    return "publicKeyHashes: array expected";
-                                for (var i = 0; i < message.publicKeyHashes.length; ++i)
-                                    if (!(message.publicKeyHashes[i] && typeof message.publicKeyHashes[i].length === "number" || $util.isString(message.publicKeyHashes[i])))
-                                        return "publicKeyHashes: buffer[] expected";
-                            }
-                            if (message.prove != null && message.hasOwnProperty("prove"))
-                                if (typeof message.prove !== "boolean")
-                                    return "prove: boolean expected";
-                            return null;
-                        };
-
-                        /**
-                         * Creates a GetIdentityIdsByPublicKeyHashesRequest message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} GetIdentityIdsByPublicKeyHashesRequest
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest();
-                            if (object.publicKeyHashes) {
-                                if (!Array.isArray(object.publicKeyHashes))
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest.publicKeyHashes: array expected");
-                                message.publicKeyHashes = [];
-                                for (var i = 0; i < object.publicKeyHashes.length; ++i)
-                                    if (typeof object.publicKeyHashes[i] === "string")
-                                        $util.base64.decode(object.publicKeyHashes[i], message.publicKeyHashes[i] = $util.newBuffer($util.base64.length(object.publicKeyHashes[i])), 0);
-                                    else if (object.publicKeyHashes[i].length >= 0)
-                                        message.publicKeyHashes[i] = object.publicKeyHashes[i];
-                            }
-                            if (object.prove != null)
-                                message.prove = Boolean(object.prove);
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a GetIdentityIdsByPublicKeyHashesRequest message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} message GetIdentityIdsByPublicKeyHashesRequest
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (options.arrays || options.defaults)
-                                object.publicKeyHashes = [];
-                            if (options.defaults)
-                                object.prove = false;
-                            if (message.publicKeyHashes && message.publicKeyHashes.length) {
-                                object.publicKeyHashes = [];
-                                for (var j = 0; j < message.publicKeyHashes.length; ++j)
-                                    object.publicKeyHashes[j] = options.bytes === String ? $util.base64.encode(message.publicKeyHashes[j], 0, message.publicKeyHashes[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.publicKeyHashes[j]) : message.publicKeyHashes[j];
-                            }
-                            if (message.prove != null && message.hasOwnProperty("prove"))
-                                object.prove = message.prove;
-                            return object;
-                        };
-
-                        /**
-                         * Converts this GetIdentityIdsByPublicKeyHashesRequest to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        GetIdentityIdsByPublicKeyHashesRequest.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        return GetIdentityIdsByPublicKeyHashesRequest;
-                    })();
-
-                    v0.GetIdentityIdsByPublicKeyHashesResponse = (function() {
-
-                        /**
-                         * Properties of a GetIdentityIdsByPublicKeyHashesResponse.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetIdentityIdsByPublicKeyHashesResponse
-                         * @property {Array.<Uint8Array>|null} [identityIds] GetIdentityIdsByPublicKeyHashesResponse identityIds
-                         * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityIdsByPublicKeyHashesResponse proof
-                         * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityIdsByPublicKeyHashesResponse metadata
-                         */
-
-                        /**
-                         * Constructs a new GetIdentityIdsByPublicKeyHashesResponse.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetIdentityIdsByPublicKeyHashesResponse.
-                         * @implements IGetIdentityIdsByPublicKeyHashesResponse
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesResponse=} [properties] Properties to set
-                         */
-                        function GetIdentityIdsByPublicKeyHashesResponse(properties) {
-                            this.identityIds = [];
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * GetIdentityIdsByPublicKeyHashesResponse identityIds.
-                         * @member {Array.<Uint8Array>} identityIds
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.prototype.identityIds = $util.emptyArray;
-
-                        /**
-                         * GetIdentityIdsByPublicKeyHashesResponse proof.
-                         * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.prototype.proof = null;
-
-                        /**
-                         * GetIdentityIdsByPublicKeyHashesResponse metadata.
-                         * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.prototype.metadata = null;
-
-                        /**
-                         * Creates a new GetIdentityIdsByPublicKeyHashesResponse instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse} GetIdentityIdsByPublicKeyHashesResponse instance
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.create = function create(properties) {
-                            return new GetIdentityIdsByPublicKeyHashesResponse(properties);
-                        };
-
-                        /**
-                         * Encodes the specified GetIdentityIdsByPublicKeyHashesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesResponse} message GetIdentityIdsByPublicKeyHashesResponse message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.identityIds != null && message.identityIds.length)
-                                for (var i = 0; i < message.identityIds.length; ++i)
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityIds[i]);
-                            if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
-                            if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
-                                $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified GetIdentityIdsByPublicKeyHashesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentityIdsByPublicKeyHashesResponse} message GetIdentityIdsByPublicKeyHashesResponse message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a GetIdentityIdsByPublicKeyHashesResponse message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse} GetIdentityIdsByPublicKeyHashesResponse
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    if (!(message.identityIds && message.identityIds.length))
-                                        message.identityIds = [];
-                                    message.identityIds.push(reader.bytes());
-                                    break;
-                                case 2:
-                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
-                                    break;
-                                case 3:
-                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a GetIdentityIdsByPublicKeyHashesResponse message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse} GetIdentityIdsByPublicKeyHashesResponse
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a GetIdentityIdsByPublicKeyHashesResponse message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            if (message.identityIds != null && message.hasOwnProperty("identityIds")) {
-                                if (!Array.isArray(message.identityIds))
-                                    return "identityIds: array expected";
-                                for (var i = 0; i < message.identityIds.length; ++i)
-                                    if (!(message.identityIds[i] && typeof message.identityIds[i].length === "number" || $util.isString(message.identityIds[i])))
-                                        return "identityIds: buffer[] expected";
-                            }
-                            if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
-                            }
-                            if (message.metadata != null && message.hasOwnProperty("metadata")) {
-                                var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
-                                if (error)
-                                    return "metadata." + error;
-                            }
-                            return null;
-                        };
-
-                        /**
-                         * Creates a GetIdentityIdsByPublicKeyHashesResponse message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse} GetIdentityIdsByPublicKeyHashesResponse
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse();
-                            if (object.identityIds) {
-                                if (!Array.isArray(object.identityIds))
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse.identityIds: array expected");
-                                message.identityIds = [];
-                                for (var i = 0; i < object.identityIds.length; ++i)
-                                    if (typeof object.identityIds[i] === "string")
-                                        $util.base64.decode(object.identityIds[i], message.identityIds[i] = $util.newBuffer($util.base64.length(object.identityIds[i])), 0);
-                                    else if (object.identityIds[i].length >= 0)
-                                        message.identityIds[i] = object.identityIds[i];
-                            }
-                            if (object.proof != null) {
-                                if (typeof object.proof !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse.proof: object expected");
-                                message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
-                            }
-                            if (object.metadata != null) {
-                                if (typeof object.metadata !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse.metadata: object expected");
-                                message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a GetIdentityIdsByPublicKeyHashesResponse message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse} message GetIdentityIdsByPublicKeyHashesResponse
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (options.arrays || options.defaults)
-                                object.identityIds = [];
-                            if (options.defaults) {
-                                object.proof = null;
-                                object.metadata = null;
-                            }
-                            if (message.identityIds && message.identityIds.length) {
-                                object.identityIds = [];
-                                for (var j = 0; j < message.identityIds.length; ++j)
-                                    object.identityIds[j] = options.bytes === String ? $util.base64.encode(message.identityIds[j], 0, message.identityIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identityIds[j]) : message.identityIds[j];
-                            }
-                            if (message.proof != null && message.hasOwnProperty("proof"))
-                                object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
-                            if (message.metadata != null && message.hasOwnProperty("metadata"))
-                                object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
-                            return object;
-                        };
-
-                        /**
-                         * Converts this GetIdentityIdsByPublicKeyHashesResponse to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        GetIdentityIdsByPublicKeyHashesResponse.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        return GetIdentityIdsByPublicKeyHashesResponse;
                     })();
 
                     v0.WaitForStateTransitionResultRequest = (function() {

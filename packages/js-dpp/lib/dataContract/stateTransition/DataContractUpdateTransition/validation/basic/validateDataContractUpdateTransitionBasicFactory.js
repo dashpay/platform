@@ -17,7 +17,7 @@ const Identifier = require('../../../../../identifier/Identifier');
  * @param {validateProtocolVersion} validateProtocolVersion
  * @param {StateRepository} stateRepository
  * @param {DiffValidator} diffValidator
- * @param {validateIndicesAreNotChanged} validateIndicesAreNotChanged
+ * @param {validateIndicesAreBackwardCompatible} validateIndicesAreBackwardCompatible
  * @param {JsonPatch} jsonPatch
  *
  * @return {validateDataContractUpdateTransitionBasic}
@@ -28,15 +28,16 @@ function validateDataContractUpdateTransitionBasicFactory(
   validateProtocolVersion,
   stateRepository,
   diffValidator,
-  validateIndicesAreNotChanged,
+  validateIndicesAreBackwardCompatible,
   jsonPatch,
 ) {
   /**
    * @typedef validateDataContractUpdateTransitionBasic
    * @param {RawDataContractUpdateTransition} rawStateTransition
-   * @return {ValidationResult}
+   * @param {StateTransitionExecutionContext} executionContext
+   * @return {Promise<ValidationResult>}
    */
-  async function validateDataContractUpdateTransitionBasic(rawStateTransition) {
+  async function validateDataContractUpdateTransitionBasic(rawStateTransition, executionContext) {
     const result = jsonSchemaValidator.validate(
       dataContractUpdateTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
@@ -68,7 +69,14 @@ function validateDataContractUpdateTransitionBasicFactory(
     const dataContractId = Identifier.from(rawDataContract.$id);
 
     // Data contract should exist
-    const existingDataContract = await stateRepository.fetchDataContract(dataContractId);
+    const existingDataContract = await stateRepository.fetchDataContract(
+      dataContractId,
+      executionContext,
+    );
+
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     if (!existingDataContract) {
       result.addError(
@@ -127,7 +135,7 @@ function validateDataContractUpdateTransitionBasicFactory(
 
     // check indices are not changed
     result.merge(
-      validateIndicesAreNotChanged(
+      validateIndicesAreBackwardCompatible(
         existingDataContract.getDocuments(),
         rawDataContract.documents,
       ),

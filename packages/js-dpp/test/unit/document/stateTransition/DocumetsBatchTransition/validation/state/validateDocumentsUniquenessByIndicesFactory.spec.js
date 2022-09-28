@@ -10,6 +10,7 @@ const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/c
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
 const DuplicateUniqueIndexError = require('../../../../../../../lib/errors/consensus/state/document/DuplicateUniqueIndexError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMock;
@@ -18,6 +19,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
   let documentTransitions;
   let dataContract;
   let ownerId;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     ({ ownerId } = getDocumentsFixture);
@@ -30,6 +32,8 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDocuments.resolves([]);
+
+    executionContext = new StateTransitionExecutionContext();
 
     validateDocumentsUniquenessByIndices = verifyDocumentsUniquenessByIndicesFactory(
       stateRepositoryMock,
@@ -46,6 +50,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ownerId,
       noIndexDocumentTransitions,
       dataContract,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -86,6 +91,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ownerId,
       documentTransitions,
       dataContract,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -153,6 +159,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ownerId,
       documentTransitions,
       dataContract,
+      executionContext,
     );
 
     expectValidationError(result, DuplicateUniqueIndexError, 4);
@@ -213,6 +220,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ownerId,
       indexedDocumentTransitions,
       dataContract,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -242,8 +250,30 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ownerId,
       uniqueDatesDocumentTransitions,
       dataContract,
+      executionContext,
     );
 
     expect(result.isValid()).to.be.true();
+  });
+
+  it('should return invalid result on dry run', async () => {
+    const [niceDocument] = documents;
+    const noIndexDocumentTransitions = getDocumentTransitionsFixture({
+      create: [niceDocument],
+    });
+
+    executionContext.enableDryRun();
+
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId,
+      noIndexDocumentTransitions,
+      dataContract,
+      executionContext,
+    );
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+    expect(stateRepositoryMock.fetchDocuments).to.have.not.been.called();
   });
 });

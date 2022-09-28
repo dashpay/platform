@@ -1,10 +1,13 @@
 const { expect } = require('chai');
+const EventEmitter = require('events');
 const Dashcore = require('@dashevo/dashcore-lib');
+
 const broadcastTransaction = require('./broadcastTransaction');
+const EVENTS = require('../../../EVENTS');
 const validRawTxs = require('../../../../fixtures/rawtx').valid;
 const invalidRawTxs = require('../../../../fixtures/rawtx').invalid;
-const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
-
+const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
+const ChainStore = require('../../ChainStore/ChainStore');
 const { PrivateKey } = Dashcore;
 
 describe('Account - broadcastTransaction', function suite() {
@@ -14,14 +17,18 @@ describe('Account - broadcastTransaction', function suite() {
   let keysToSign;
   let oneToOneTx;
   let fee;
+
+  const chainStore = new ChainStore('testnet');
+  chainStore.state.fees.minRelay = 888;
+  chainStore.importAddress('yTBXsrcGw74yMUsK34fBKAWJx3RNCq97Aq');
   const storage = {
-    getStore: ()=>({
-      chains:{
-          "testnet": { fees: { minRelay: 888 }}
-      }
-    })
+    getChainStore:()=> chainStore
   }
-  beforeEach(() => {
+
+  let self;
+  let sendCalled = 0;
+
+  beforeEach(function () {
     utxos = [
       {
         address: 'yj8sq7ogzz6JtaxpBQm5Hg9YaB5cKExn5T',
@@ -34,137 +41,96 @@ describe('Account - broadcastTransaction', function suite() {
     fee = 680;
     address = 'yTBXsrcGw74yMUsK34fBKAWJx3RNCq97Aq';
     keysToSign = [
-        new PrivateKey('26d6b24119d1a71de6372ea2d3dc22a014d37e4828b43db6936cb41ea461cce8')
+      new PrivateKey('26d6b24119d1a71de6372ea2d3dc22a014d37e4828b43db6936cb41ea461cce8')
     ];
     oneToOneTx = new Dashcore.Transaction()
-        .from(utxos)
-        .to(address, 138)
-        .fee(fee);
+      .from(utxos)
+      .to(address, 138)
+      .fee(fee);
     oneToOneTx.sign(keysToSign);
-  });
 
-  it('should throw error on missing transport', async () => {
-    const expectedException1 = 'A transport layer is needed to perform a broadcast';
-    const self = {
-      transport: null,
-      storage,
-      network: 'testnet'
+    sendCalled = 0;
+    self = new EventEmitter();
+    self.removeListener = this.sinonSandbox.spy();
+    self.transport = {
+      sendTransaction: (txHex) => {
+        const transaction = new Dashcore.Transaction(txHex)
+        self.emit(EVENTS.FETCHED_CONFIRMED_TRANSACTION, {
+          payload: {
+            transaction
+          }
+        });
+
+        sendCalled += 1;
+        return transaction.hash
+      },
     };
-    expectThrowsAsync(async () => await broadcastTransaction.call(self, validRawTxs.tx2to2Testnet), expectedException1);
-
-    // return broadcastTransaction
-    //   .call(self, validRawTxs.tx2to2Testnet)
-    //   .then(
-    //     (e) => Promise.reject(new Error('Expected method to reject.'+e)),
-    //     err => expect(err).to.be.a('Error').with.property('message', expectedException1),
-    //   );
+    self.network = 'testnet';
+    self.storage = storage;
   });
+
+
+  it('should throw error on missing transport', async function () {
+    const expectedException1 = 'A transport layer is needed to perform a broadcast';
+    self.transport = null;
+
+    await expect(broadcastTransaction.call(self, validRawTxs.tx2to2Testnet))
+      .to.be.rejectedWith(expectedException1);
+
+    expect(self.removeListener).to.have.been.calledOnceWith(EVENTS.FETCHED_CONFIRMED_TRANSACTION);
+  });
+
   it('should throw error on invalid rawtx (string)', async () => {
     const expectedException1 = 'A valid transaction object or it\'s hex representation is required';
-    const self = {
-      transport: { },
-      storage,
-      network: 'testnet'
-    };
 
-    expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.notRelatedString), expectedException1);
+    await expect(broadcastTransaction.call(self, invalidRawTxs.notRelatedString))
+      .to.be.rejectedWith(expectedException1);
+    expect(self.removeListener).to.have.been.calledOnceWith(EVENTS.FETCHED_CONFIRMED_TRANSACTION);
   });
+
   it('should throw error on invalid rawtx (hex)', async () => {
     const expectedException1 = 'A valid transaction object or it\'s hex representation is required';
-    const self = {
-      transport: { },
-      storage,
-      network: 'testnet'
-    };
 
-    expectThrowsAsync(async () => await broadcastTransaction.call(self, invalidRawTxs.truncatedRawTx), expectedException1);
+    await expect(broadcastTransaction.call(self, invalidRawTxs.truncatedRawTx))
+      .to.be.rejectedWith(expectedException1);
+    expect(self.removeListener).to.have.been.calledOnceWith(EVENTS.FETCHED_CONFIRMED_TRANSACTION);
   });
+
   it('should work on valid Transaction object', async () => {
-    let sendCalled = +1;
-    let searchCalled = +1;
-    const self = {
-      transport: {
-        sendTransaction: () => sendCalled = +1,
-      },
-      network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
-    };
-
-    const tx = oneToOneTx;
-    return broadcastTransaction
-      .call(self, tx)
-      .then(
-        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
-      );
-  });
-  it('should update affected tx', () => {
-    let sendCalled = +1;
-    let searchCalled = +1;
-    const self = {
-      transport: {
-        sendTransaction: () => sendCalled = +1,
-      },
-      network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: (affectedTxId) => { searchCalled = +1; return { results: [] }; },
-      },
-    };
-
     return broadcastTransaction
       .call(self, oneToOneTx)
       .then(
-        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
+        () => expect(sendCalled).to.equal(1)
       );
   });
-  it('should throw error on fee not met', function () {
+
+  it('should throw error on fee not met', async function () {
     const expectedException1 = 'Expected minimum fee for transaction 149. Current: 0';
 
-    let sendCalled = +1;
-    let searchCalled = +1;
-    const self = {
-      transport: {
-        sendTransaction: () => sendCalled = +1,
-      },
-      network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
-    };
+    oneToOneTx.fee(0);
 
-    const tx = oneToOneTx;
-    tx.fee(0);
-    expectThrowsAsync(async () => await broadcastTransaction.call(self, tx), expectedException1);
+    await expect(broadcastTransaction.call(self, oneToOneTx))
+      .to.be.rejectedWith(expectedException1);
+    expect(self.removeListener).to.have.been.calledOnceWith(EVENTS.FETCHED_CONFIRMED_TRANSACTION);
   });
-  it('should broadcast when force and fee not met', function () {
-    let sendCalled = +1;
-    let searchCalled = +1;
-    const self = {
-      transport: {
-        sendTransaction: () => sendCalled = +1,
-      },
-      network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
-    };
 
-    const tx = oneToOneTx;
-    tx.fee(0);
+  it('should broadcast when force and fee not met', function () {
+    oneToOneTx.fee(0);
 
     return broadcastTransaction
-        .call(self, tx, {skipFeeValidation: true})
-        .then(
-            () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
-        );
+      .call(self, oneToOneTx, { skipFeeValidation: true })
+      .then(
+        () => expect(sendCalled).to.equal(1)
+      );
+  });
+
+  it('should throw mempool propagation timeout error', async function () {
+    self.transport.sendTransaction = () => new Promise(() => {})
+
+    await expect(broadcastTransaction.call(self, oneToOneTx, {
+      mempoolPropagationTimeout: 1
+    })).to.be.rejectedWith(MempoolPropagationTimeoutError);
+
+    expect(self.removeListener).to.have.been.calledOnceWith(EVENTS.FETCHED_CONFIRMED_TRANSACTION);
   });
 });

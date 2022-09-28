@@ -1,20 +1,30 @@
+const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
+
+/**
+ * @implements StateRepository
+ */
 class DriveStateRepository {
+  #options = {};
+
   /**
    * @param {IdentityStoreRepository} identityRepository
-   * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+   * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToToIdentitiesRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
-   * @param {DocumentIndexedStoreRepository} documentRepository
+   * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {getLatestFeatureFlag} getLatestFeatureFlag
-   * @param {BlockExecutionStoreTransactions} [blockExecutionStoreTransactions]
+   * @param {Object} [options]
+   * @param {Object} [options.useTransaction=false]
    */
   constructor(
     identityRepository,
-    publicKeyToIdentityIdRepository,
+    publicKeyToToIdentitiesRepository,
     dataContractRepository,
     fetchDocuments,
     documentRepository,
@@ -22,45 +32,77 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
-    getLatestFeatureFlag,
-    blockExecutionStoreTransactions = undefined,
+    options = {},
   ) {
     this.identityRepository = identityRepository;
-    this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
+    this.publicKeyToIdentitiesRepository = publicKeyToToIdentitiesRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionStoreTransactions = blockExecutionStoreTransactions;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
-    this.getLatestFeatureFlag = getLatestFeatureFlag;
+    this.#options = options;
   }
 
   /**
    * Fetch Identity by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<Identity|null>}
    */
-  async fetchIdentity(id) {
-    const transaction = this.getDBTransaction('identities');
+  async fetchIdentity(id, executionContext = undefined) {
+    const result = await this.identityRepository.fetch(
+      id,
+      this.#createRepositoryOptions(executionContext),
+    );
 
-    return this.identityRepository.fetch(id, transaction);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
   }
 
   /**
-   * Store identity
+   * Create identity
    *
    * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeIdentity(identity) {
-    const transaction = this.getDBTransaction('identities');
+  async createIdentity(identity, executionContext = undefined) {
+    const result = await this.identityRepository.create(
+      identity,
+      this.#createRepositoryOptions(executionContext),
+    );
 
-    await this.identityRepository.store(identity, transaction);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update identity
+   *
+   * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateIdentity(identity, executionContext = undefined) {
+    const result = await this.identityRepository.update(
+      identity,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
@@ -68,96 +110,136 @@ class DriveStateRepository {
    *
    * @param {Identifier} identityId
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
-    const transaction = this.getDBTransaction('publicKeyToIdentityId');
+  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
+    for (const publicKeyHash of publicKeyHashes) {
+      const result = await this.publicKeyToIdentitiesRepository.store(
+        publicKeyHash,
+        identityId,
+        this.#createRepositoryOptions(executionContext),
+      );
 
-    await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
-        .store(publicKeyHash, identityId, transaction)),
-    );
+      if (executionContext) {
+        executionContext.addOperation(...result.getOperations());
+      }
+    }
   }
 
   /**
    * Store spent asset lock transaction
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<void>}
    */
-  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    const transaction = this.getDBTransaction('assetLockTransactions');
-
-    this.spentAssetLockTransactionsRepository.store(
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
+    const result = await this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
-      transaction,
+      this.#createRepositoryOptions(executionContext),
     );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
    * Check if spent asset lock transaction is stored
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
-    const transaction = this.getDBTransaction('assetLockTransactions');
-
-    const result = this.spentAssetLockTransactionsRepository.fetch(
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
+    const result = await this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
-      transaction,
+      this.#createRepositoryOptions(executionContext),
     );
 
-    return result !== null;
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return !result.isNull();
   }
 
   /**
    * Fetch identity ids by related public key hashes
    *
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<Array<Identifier[]>>}
    */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
-    const transaction = this.getDBTransaction('publicKeyToIdentityId');
-
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
     // Keep await here.
     // noinspection UnnecessaryLocalVariableJS
-    const identityIds = await Promise.all(
+    const results = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
-        this.publicKeyToIdentityIdRepository.fetch(publicKeyHash, transaction)
+        this.publicKeyToIdentitiesRepository.fetch(
+          publicKeyHash,
+          this.#createRepositoryOptions(executionContext),
+        )
       )),
     );
 
-    return identityIds;
+    return results.map((result) => {
+      if (executionContext) {
+        executionContext.addOperation(...result.getOperations());
+      }
+
+      return result.getValue();
+    });
   }
 
   /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<DataContract|null>}
    */
-  async fetchDataContract(id) {
-    // Data Contracts should be already committed before use
-    // so we don't need transaction here
+  async fetchDataContract(id, executionContext = undefined) {
+    const result = await this.dataContractRepository.fetch(
+      id,
+      {
+        dryRun: executionContext ? executionContext.isDryRun() : false,
+        // Transaction is not using since Data Contract
+        // should be always committed to use
+        useTransaction: false,
+      },
+    );
 
-    return this.dataContractRepository.fetch(id);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
   }
 
   /**
    * Store Data Contract
    *
    * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract) {
-    const transaction = this.getDBTransaction('dataContracts');
+  async storeDataContract(dataContract, executionContext = undefined) {
+    const result = await this.dataContractRepository.store(
+      dataContract,
+      this.#createRepositoryOptions(executionContext),
+    );
 
-    await this.dataContractRepository.store(dataContract, transaction);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
@@ -166,52 +248,121 @@ class DriveStateRepository {
    * @param {Identifier} contractId
    * @param {string} type
    * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Document[]>}
    */
-  async fetchDocuments(contractId, type, options = {}) {
-    const transaction = this.getDBTransaction('documents');
+  async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
+    const result = await this.fetchDocumentsFunction(
+      contractId,
+      type,
+      {
+        ...options,
+        ...this.#createRepositoryOptions(executionContext),
+      },
+    );
 
-    return this.fetchDocumentsFunction(contractId, type, options, transaction);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
   }
 
   /**
-   * Store document
+   * Create document
    *
    * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDocument(document) {
-    const transaction = this.getDBTransaction('documents');
+  async createDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.create(
+      document,
+      this.#createRepositoryOptions(executionContext),
+    );
 
-    await this.documentRepository.store(document, transaction);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.update(
+      document,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
    * Remove document
    *
-   * @param {Identifier} contractId
+   * @param {DataContract} dataContract
    * @param {string} type
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id) {
-    const transaction = this.getDBTransaction('documents');
+  async removeDocument(dataContract, type, id, executionContext = undefined) {
+    const result = await this.documentRepository.delete(
+      dataContract,
+      type,
+      id,
+      this.#createRepositoryOptions(executionContext),
+    );
 
-    await this.documentRepository.delete(contractId, type, id, transaction);
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
    * Fetch Core transaction by ID
    *
-   * @param {string} id
+   * @param {string} id - Transaction ID hex
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Object|null>}
    */
-  async fetchTransaction(id) {
+  async fetchTransaction(id, executionContext = undefined) {
+    if (executionContext && executionContext.isDryRun()) {
+      executionContext.addOperation(
+        new ReadOperation(512),
+      );
+
+      return {
+        data: Buffer.alloc(0),
+        height: 1,
+      };
+    }
+
     try {
       const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
 
+      const data = Buffer.from(transaction.hex, 'hex');
+
+      if (executionContext) {
+        executionContext.addOperation(
+          new ReadOperation(data.length),
+        );
+      }
+
       return {
-        data: Buffer.from(transaction.hex, 'hex'),
+        data,
         height: transaction.height,
       };
     } catch (e) {
@@ -237,11 +388,27 @@ class DriveStateRepository {
    * Verify instant lock
    *
    * @param {InstantLock} instantLock
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async verifyInstantLock(instantLock) {
-    const header = await this.blockExecutionContext.getHeader();
+  // eslint-disable-next-line no-unused-vars
+  async verifyInstantLock(instantLock, executionContext = undefined) {
+    const header = this.blockExecutionContext.getHeader();
+
+    if (header === null) {
+      return false;
+    }
+
+    if (executionContext) {
+      executionContext.addOperation(
+        new SignatureVerificationOperation(TYPES.ECDSA_SECP256K1),
+      );
+
+      if (executionContext.isDryRun()) {
+        return true;
+      }
+    }
 
     const {
       coreChainLockedHeight,
@@ -269,27 +436,24 @@ class DriveStateRepository {
   }
 
   /**
-   * @private
-   * @param {string} name
-   * @return {MerkDbTransaction|DocumentsIndexedTransaction}
-   */
-  getDBTransaction(name) {
-    let transaction;
-
-    if (this.blockExecutionStoreTransactions) {
-      transaction = this.blockExecutionStoreTransactions.getTransaction(name);
-    }
-
-    return transaction;
-  }
-
-  /**
    * Fetch Simplified Masternode List Store
    *
    * @return {Promise<SimplifiedMNListStore>}
    */
   async fetchSMLStore() {
     return this.simplifiedMasternodeList.getStore();
+  }
+
+  /**
+   * @private
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @return {{dryRun: boolean, useTransaction: boolean}}
+   */
+  #createRepositoryOptions(executionContext) {
+    return {
+      useTransaction: this.#options.useTransaction || false,
+      dryRun: executionContext ? executionContext.isDryRun() : false,
+    };
   }
 }
 

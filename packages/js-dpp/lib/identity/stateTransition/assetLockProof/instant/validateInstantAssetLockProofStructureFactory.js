@@ -3,9 +3,10 @@ const DashCoreLib = require('@dashevo/dashcore-lib');
 const instantAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json');
 
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
+
 const InvalidInstantAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
+const InvalidInstantAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -21,9 +22,12 @@ function validateInstantAssetLockProofStructureFactory(
   /**
    * @typedef {validateInstantAssetLockProofStructure}
    * @param {RawInstantAssetLockProof} rawAssetLockProof
+   * @param {StateTransitionExecutionContext} executionContext
+   * @returns {Promise<ValidationResult>}
    */
   async function validateInstantAssetLockProofStructure(
     rawAssetLockProof,
+    executionContext,
   ) {
     const result = jsonSchemaValidator.validate(
       instantAssetLockProofSchema,
@@ -49,8 +53,10 @@ function validateInstantAssetLockProofStructureFactory(
       return result;
     }
 
-    if (!await stateRepository.verifyInstantLock(instantLock)) {
-      result.addError(new InvalidIdentityAssetLockProofSignatureError());
+    const isValid = await stateRepository.verifyInstantLock(instantLock, executionContext);
+
+    if (!isValid) {
+      result.addError(new InvalidInstantAssetLockProofSignatureError());
 
       return result;
     }
@@ -58,6 +64,7 @@ function validateInstantAssetLockProofStructureFactory(
     const validateAssetLockTransactionResult = await validateAssetLockTransaction(
       rawAssetLockProof.transaction,
       rawAssetLockProof.outputIndex,
+      executionContext,
     );
 
     result.merge(validateAssetLockTransactionResult);

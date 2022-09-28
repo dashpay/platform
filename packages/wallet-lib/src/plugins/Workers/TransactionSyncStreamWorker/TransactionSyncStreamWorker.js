@@ -3,13 +3,13 @@ const {
 } = require('@dashevo/dashcore-lib');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
 const sleep = require('../../../utils/sleep');
 
 const Worker = require('../../Worker');
 const isBrowser = require('../../../utils/isBrowser');
 
 const logger = require('../../../logger');
+const ChainSyncMediator = require('../../../types/Wallet/ChainSyncMediator');
 
 class TransactionSyncStreamWorker extends Worker {
   constructor(options) {
@@ -25,6 +25,7 @@ class TransactionSyncStreamWorker extends Worker {
         'importBlockHeader',
         'importInstantLock',
         'storage',
+        'keyChainStore',
         'transport',
         'walletId',
         'getAddress',
@@ -32,6 +33,7 @@ class TransactionSyncStreamWorker extends Worker {
         'index',
         'BIP44PATH',
         'walletType',
+        'chainSyncMediator',
       ],
       ...options,
     });
@@ -41,6 +43,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.incomingSyncPromise = null;
     this.pendingRequest = {};
     this.delayedRequests = {};
+    this.lastSyncedBlockHeight = -1;
   }
 
   /**
@@ -49,7 +52,7 @@ class TransactionSyncStreamWorker extends Worker {
    * @param {string[]} addressList
    * @param {string} network
    */
-  static filterWalletTransactions(transactions, addressList, network) {
+  static filterAddressesTransactions(transactions, addressList, network) {
     const spentOutputs = [];
     const unspentOutputs = [];
     const filteredTransactions = transactions.filter((tx) => {
@@ -135,23 +138,32 @@ class TransactionSyncStreamWorker extends Worker {
     const {
       skipSynchronizationBeforeHeight,
       skipSynchronization,
-    } = (this.storage.store.syncOptions || {});
+    } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      const bestBlockHeight = this.storage.store.chains[this.network.toString()].blockHeight;
-      this.setLastSyncedBlockHeight(bestBlockHeight);
+      const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
+      this.setLastSyncedBlockHeight(bestBlockHeight, true);
       return;
     }
 
-    if (skipSynchronizationBeforeHeight) {
+    const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
+    const skipSyncBefore = typeof skipSynchronizationBeforeHeight === 'number'
+      ? skipSynchronizationBeforeHeight
+      : parseInt(skipSynchronizationBeforeHeight, 10);
+
+    if (skipSyncBefore > lastKnownBlock.height) {
       this.setLastSyncedBlockHeight(
         skipSynchronizationBeforeHeight,
       );
+    } else if (lastKnownBlock.height !== -1) {
+      this.setLastSyncedBlockHeight(lastKnownBlock.height);
     }
 
+    this.chainSyncMediator.state = ChainSyncMediator.STATES.HISTORICAL_SYNC;
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
+    await this.storage.saveState();
   }
 
   /**
@@ -165,8 +177,12 @@ class TransactionSyncStreamWorker extends Worker {
     // We shouldn't block workers execution process with transaction syncing
     // it should proceed in background
 
+    this.chainSyncMediator.state = ChainSyncMediator.STATES.CONTINUOUS_SYNC;
     // noinspection ES6MissingAwait
-    this.incomingSyncPromise = this.startIncomingSync();
+    this.incomingSyncPromise = this.startIncomingSync().catch((e) => {
+      logger.error('Error syncing incoming transactions', e);
+      this.emit('error', e);
+    });
   }
 
   /**
@@ -242,25 +258,13 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   setLastSyncedBlockHash(hash) {
-    const { walletId } = this;
-    const accountsStore = this.storage.store.wallets[walletId].accounts;
-
-    const accountStore = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
-      ? accountsStore[this.BIP44PATH.toString()]
-      : accountsStore[this.index.toString()];
-
-    accountStore.blockHash = hash;
-
-    return accountStore.blockHash;
+    const applicationStore = this.storage.application;
+    applicationStore.blockHash = hash;
+    return applicationStore.blockHash;
   }
 
   getLastSyncedBlockHash() {
-    const { walletId } = this;
-    const accountsStore = this.storage.store.wallets[walletId].accounts;
-
-    const { blockHash } = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
-      ? accountsStore[this.BIP44PATH.toString()]
-      : accountsStore[this.index.toString()];
+    const { blockHash } = this.storage.application;
 
     return blockHash;
   }

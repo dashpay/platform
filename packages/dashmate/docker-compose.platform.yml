@@ -1,26 +1,15 @@
 version: '3.7'
 
 services:
-  drive_mongodb:
-    image: ${PLATFORM_DRIVE_MONGODB_DOCKER_IMAGE:?err}
-    restart: unless-stopped
-    volumes:
-      - drive_mongodb_data:/data/db
-      - ./docker/mongodb/initiate_mongodb_replica.js:/docker-entrypoint-initdb.d/initiate_mongodb_replica.js
-    extra_hosts:
-      - "drive_mongodb:127.0.0.1"
-    command: mongod --replSet driveDocumentIndices --bind_ip_all
-
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     restart: unless-stopped
     depends_on:
-      - drive_mongodb
       - core
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}:/var/log/drive-pretty.log
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}:/var/log/drive-json.log
+      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/pretty
+      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/json
     environment:
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
@@ -28,17 +17,20 @@ services:
       - CORE_JSON_RPC_PORT=${CORE_RPC_PORT:?err}
       - CORE_ZMQ_HOST=core
       - CORE_ZMQ_PORT=29998
-      - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
       - DPNS_MASTER_PUBLIC_KEY=${PLATFORM_DPNS_MASTER_PUBLIC_KEY}
+      - DPNS_SECOND_PUBLIC_KEY=${PLATFORM_DPNS_SECOND_PUBLIC_KEY}
       - DASHPAY_MASTER_PUBLIC_KEY=${PLATFORM_DASHPAY_MASTER_PUBLIC_KEY}
+      - DASHPAY_SECOND_PUBLIC_KEY=${PLATFORM_DASHPAY_SECOND_PUBLIC_KEY}
       - FEATURE_FLAGS_MASTER_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_MASTER_PUBLIC_KEY}
+      - FEATURE_FLAGS_SECOND_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_SECOND_PUBLIC_KEY}
       - MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY}
+      - MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY}
       - NODE_ENV=${ENVIRONMENT:?err}
       - LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
       - LOG_PRETTY_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
-      - LOG_PRETTY_FILE_PATH=/var/log/drive-pretty.log
+      - LOG_PRETTY_FILE_PATH=/var/log/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
       - LOG_JSON_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
-      - LOG_JSON_FILE_PATH=/var/log/drive-json.log
+      - LOG_JSON_FILE_PATH=/var/log/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
       - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
       - VALIDATOR_SET_LLMQ_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
       - NETWORK=${NETWORK}
@@ -77,7 +69,7 @@ services:
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
-      - TENDERMINT_RPC_PORT=26657
+      - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
     command: yarn workspace @dashevo/dapi api
 
@@ -116,5 +108,4 @@ services:
 
 volumes:
   drive_abci_data:
-  drive_mongodb_data:
   drive_tenderdash:

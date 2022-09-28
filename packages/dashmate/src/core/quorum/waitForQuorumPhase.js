@@ -26,18 +26,17 @@ async function checkDKGSessionPhase(
     const { result: dkgStatus } = await rpcClient.quorum('dkgstatus');
     const { session } = dkgStatus;
 
-    if (!Object.prototype.hasOwnProperty.call(session, LLMQ_TYPE_TEST)) {
+    const llmqSession = session.find((s) => s.llmqType === LLMQ_TYPE_TEST);
+
+    if (!llmqSession) {
       continue;
     }
 
     memberCount += 1;
 
-    const llmqSession = session[LLMQ_TYPE_TEST];
+    const quorumHashDoesntMatch = llmqSession.status.quorumHash !== quorumHash;
 
-    const quorumHashDoesntMatch = llmqSession.quorumHash !== quorumHash;
-
-    const sessionPhaseDoesntMatch = !Object.prototype.hasOwnProperty.call(llmqSession, 'phase')
-      || llmqSession.phase !== phase;
+    const sessionPhaseDoesntMatch = !llmqSession.status.phase && llmqSession.status.phase !== phase;
 
     const receivedMessagesDoNotMatch = checkReceivedMessagesType
       && (llmqSession[checkReceivedMessagesType] < checkReceivedMessagesCount);

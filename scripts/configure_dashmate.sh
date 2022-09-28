@@ -17,3 +17,7 @@ yarn dashmate config set --config=${CONFIG_NAME} platform.sourcePath "$ROOT_PATH
 
 # create tenderdash blocks every 10s to speed up test suite
 yarn dashmate config set --config=${CONFIG_NAME} platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
+
+# collect drive logs for bench suite
+yarn dashmate config set --config=${CONFIG_NAME} platform.drive.abci.log.jsonFile.level "trace"
+yarn dashmate config set --config=${CONFIG_NAME} platform.drive.abci.log.jsonFile.path "${ROOT_PATH}/logs/drive.json"

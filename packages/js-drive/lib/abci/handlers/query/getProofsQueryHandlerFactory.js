@@ -7,57 +7,42 @@ const {
 } = require('@dashevo/abci/types');
 
 const cbor = require('cbor');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 /**
  *
- * @param {RootTree} previousRootTree
- * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
- * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
- * @param {DataContractsStoreRootTreeLeaf} previousDataContractsStoreRootTreeLeaf
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext,
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {IdentityStoreRepository} signedIdentityRepository
+ * @param {DataContractStoreRepository} signedDataContractRepository
+ * @param {DocumentRepository} signedDocumentRepository
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
-  previousRootTree,
-  previousDocumentsStoreRootTreeLeaf,
-  previousIdentitiesStoreRootTreeLeaf,
-  previousDataContractsStoreRootTreeLeaf,
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
+  signedIdentityRepository,
+  signedDataContractRepository,
+  signedDocumentRepository,
 ) {
   /**
    * @typedef getProofsQueryHandler
    * @param params
    * @param callArguments
-   * @param {Identifier[]} callArguments.identityIds
-   * @param {Identifier[]} callArguments.documentIds
-   * @param {Identifier[]} callArguments.dataContractIds
+   * @param {Buffer[]} callArguments.identityIds
+   * @param {Buffer[]} callArguments.dataContractIds
+   * @param {{dataContractId: Buffer, documentId: Buffer, type: string}[]} documents
    * @return {Promise<ResponseQuery>}
    */
   async function getProofsQueryHandler(params, {
     identityIds,
-    documentIds,
     dataContractIds,
+    documents,
   }) {
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      return new ResponseQuery({
-        value: await cbor.encodeAsync({
-          documentsProof: null,
-          identitiesProof: null,
-          dataContractsProof: null,
-          metadata: {
-            height: 0,
-            coreChainLockedHeight: 0,
-          },
-        }),
-      });
-    }
+    const blockExecutionContext = blockExecutionContextStack.getFirst();
 
     const {
-      height: previousBlockHeight,
-      coreChainLockedHeight: previousCoreChainLockedHeight,
-    } = previousBlockExecutionContext.getHeader();
+      height: signedBlockHeight,
+      coreChainLockedHeight: signedCoreChainLockedHeight,
+    } = blockExecutionContext.getHeader();
 
     const {
       quorumHash: signatureLlmqHash,
@@ -69,38 +54,43 @@ function getProofsQueryHandlerFactory(
       identitiesProof: null,
       dataContractsProof: null,
       metadata: {
-        height: previousBlockHeight.toNumber(),
-        coreChainLockedHeight: previousCoreChainLockedHeight,
+        height: signedBlockHeight.toNumber(),
+        coreChainLockedHeight: signedCoreChainLockedHeight,
       },
     };
 
-    if (documentIds && documentIds.length) {
+    if (documents && documents.length) {
+      const documentsProof = await signedDocumentRepository
+        .proveManyDocumentsFromDifferentContracts(documents);
+
       response.documentsProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds),
+        merkleProof: documentsProof.getValue(),
       };
     }
 
     if (identityIds && identityIds.length) {
+      const identitiesProof = await signedIdentityRepository.proveMany(
+        identityIds.map((identityId) => Identifier.from(identityId)),
+      );
+
       response.identitiesProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProofForOneLeaf(
-          previousIdentitiesStoreRootTreeLeaf,
-          identityIds,
-        ),
+        merkleProof: identitiesProof.getValue(),
       };
     }
 
     if (dataContractIds && dataContractIds.length) {
+      const dataContractsProof = await signedDataContractRepository.proveMany(
+        dataContractIds.map((dataContractId) => Identifier.from(dataContractId)),
+      );
+
       response.dataContractsProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProofForOneLeaf(
-          previousDataContractsStoreRootTreeLeaf,
-          dataContractIds,
-        ),
+        merkleProof: dataContractsProof.getValue(),
       };
     }
 

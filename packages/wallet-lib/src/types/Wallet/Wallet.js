@@ -17,6 +17,7 @@ const defaultOptions = {
   allowSensitiveOperations: false,
   unsafeOptions: {},
   waitForInstantLockTimeout: 60000,
+  waitForTxMetadataTimeout: 540000,
 };
 
 const fromMnemonic = require('./methods/fromMnemonic');
@@ -29,6 +30,7 @@ const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
 const generateNewWalletId = require('./methods/generateNewWalletId');
 
 const createTransportFromOptions = require('../../transport/createTransportFromOptions');
+const ChainSyncMediator = require('./ChainSyncMediator');
 
 /**
  * Instantiate a basic Wallet object,
@@ -68,6 +70,7 @@ class Wallet extends EventEmitter {
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.unsafeOptions = _.has(opts, 'unsafeOptions') ? opts.unsafeOptions : defaultOptions.unsafeOptions;
     this.waitForInstantLockTimeout = _.has(opts, 'waitForInstantLockTimeout') ? opts.waitForInstantLockTimeout : defaultOptions.waitForInstantLockTimeout;
+    this.waitForTxMetadataTimeout = _.has(opts, 'waitForTxMetadataTimeout') ? opts.waitForTxMetadataTimeout : defaultOptions.waitForTxMetadataTimeout;
 
     // Validate network
     const networkName = _.has(opts, 'network') ? opts.network.toString() : defaultOptions.network;
@@ -86,21 +89,21 @@ class Wallet extends EventEmitter {
         mnemonic = generateNewMnemonic();
         createdFromNewMnemonic = true;
       }
-      this.fromMnemonic(mnemonic);
+      this.fromMnemonic(mnemonic, this.network, this.passphrase);
     } else if ('seed' in opts) {
-      this.fromSeed(opts.seed);
+      this.fromSeed(opts.seed, this.network);
     } else if ('HDPrivateKey' in opts) {
       this.fromHDPrivateKey(opts.HDPrivateKey);
     } else if ('privateKey' in opts) {
       this.fromPrivateKey((opts.privateKey === null)
         ? new PrivateKey(network).toString()
-        : opts.privateKey);
+        : opts.privateKey, this.network);
     } else if ('publicKey' in opts) {
-      this.fromPublicKey(opts.publicKey);
+      this.fromPublicKey(opts.publicKey, this.network);
     } else if ('HDPublicKey' in opts) {
       this.fromHDPublicKey(opts.HDPublicKey);
     } else if ('address' in opts) {
-      this.fromAddress(opts.address);
+      this.fromAddress(opts.address, this.network);
     } else {
       this.fromMnemonic(generateNewMnemonic());
       createdFromNewMnemonic = true;
@@ -112,21 +115,21 @@ class Wallet extends EventEmitter {
     this.storage = new Storage({
       rehydrate: true,
       autosave: true,
-      network,
     });
 
+    this.storage.application.network = this.network;
     this.storage.configure({
       adapter: opts.adapter,
+      walletId: this.walletId,
+      network: this.network,
     });
-
-    this.store = this.storage.store;
 
     if (createdFromNewMnemonic) {
       // As it is pretty complicated to pass any of wallet options
       // to a specific plugin, using `store` as an options mediator
       // is easier.
 
-      this.store.syncOptions = {
+      this.storage.application.syncOptions = {
         skipSynchronization: true,
       };
 
@@ -135,7 +138,7 @@ class Wallet extends EventEmitter {
           + ' created from the new mnemonic');
       }
     } else if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
-      this.store.syncOptions = {
+      this.storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
       };
     }
@@ -173,12 +176,13 @@ class Wallet extends EventEmitter {
 
     this.accounts = [];
     this.interface = opts.interface;
-
     // Suppressed global require to avoid cyclic dependencies
     // eslint-disable-next-line global-require
     const Identities = require('../Identities/Identities');
     this.identities = new Identities(this);
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
+
+    this.chainSyncMediator = new ChainSyncMediator();
   }
 }
 

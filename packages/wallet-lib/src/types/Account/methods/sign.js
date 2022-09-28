@@ -31,5 +31,5 @@ module.exports = function sign(object, privateKeys = [], sigType = crypto.Signat
     });
   }
 
-  return this.keyChain.sign(object, privateKeys, sigType);
+  return this.keyChainStore.getMasterKeyChain().sign(object, privateKeys, sigType);
 };

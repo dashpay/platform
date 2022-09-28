@@ -26,6 +26,8 @@ const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../lib/abci/errors/DPPValidationAbciError');
 
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
+const PredictedFeeLowerThanActualError = require('../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
+const NegativeBalanceError = require('../../../../lib/abci/handlers/errors/NegativeBalanceError');
 
 describe('deliverTxHandlerFactory', () => {
   let deliverTxHandler;
@@ -40,6 +42,7 @@ describe('deliverTxHandlerFactory', () => {
   let unserializeStateTransitionMock;
   let blockExecutionContextMock;
   let validationResult;
+  let executionTimerMock;
 
   beforeEach(async function beforeEach() {
     const dataContractFixture = getDataContractFixture();
@@ -89,11 +92,20 @@ describe('deliverTxHandlerFactory', () => {
 
     const loggerMock = new LoggerMock(this.sinon);
 
+    executionTimerMock = {
+      clearTimer: this.sinon.stub(),
+      getTimer: this.sinon.stub(),
+      startTimer: this.sinon.stub(),
+      stopTimer: this.sinon.stub(),
+      isStarted: this.sinon.stub(),
+    };
+
     deliverTxHandler = deliverTxHandlerFactory(
       unserializeStateTransitionMock,
       dppMock,
       blockExecutionContextMock,
       loggerMock,
+      executionTimerMock,
     );
   });
 
@@ -118,15 +130,17 @@ describe('deliverTxHandlerFactory', () => {
 
     const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
 
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
-      documentsBatchTransitionFixture.getOwnerId(),
-    );
+    // TODO: enable once fee calculation is done
+    // expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
+    //   documentsBatchTransitionFixture.getOwnerId(),
+    // );
 
     identity.reduceBalance(stateTransitionFee);
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
+    // TODO: enable once fee calculation is done
+    // expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
 
-    expect(blockExecutionContextMock.incrementCumulativeFees).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.be.calledOnceWith(
       stateTransitionFee,
     );
   });
@@ -152,9 +166,13 @@ describe('deliverTxHandlerFactory', () => {
       dataContractCreateTransitionFixture.getDataContract(),
     );
 
-    expect(blockExecutionContextMock.incrementCumulativeFees).to.be.calledOnceWith(
+    expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.calculateFee(),
     );
+
+    expect(
+      dataContractCreateTransitionFixture.getExecutionContext().dryOperations,
+    ).to.have.length(0);
   });
 
   it('should throw DPPValidationAbciError if a state transition is invalid against state', async () => {
@@ -174,7 +192,7 @@ describe('deliverTxHandlerFactory', () => {
       expect(e.getData()).to.deep.equal({
         arguments: ['Consensus error'],
       });
-      expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
+      expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.not.be.called();
     }
   });
 
@@ -192,8 +210,44 @@ describe('deliverTxHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getMessage()).to.equal(errorMessage);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
-      expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
+      expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.not.be.called();
       expect(dppMock.stateTransition.validate).to.not.be.called();
+    }
+  });
+
+  // TODO: enable once fee calculation is done
+  it.skip('should throw PredictedFeeLowerThanActualError if actual fee > predicted fee', async function it() {
+    dataContractCreateTransitionFixture.calculateFee = this.sinon.stub().returns(0);
+
+    dataContractCreateTransitionFixture.calculateFee.onCall(1).returns(10);
+
+    unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
+
+    try {
+      await deliverTxHandler(documentRequest);
+
+      expect.fail('should throw InvalidArgumentAbciError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(PredictedFeeLowerThanActualError);
+      expect(e.getStateTransition().toBuffer())
+        .to.deep.equal(dataContractCreateTransitionFixture.toBuffer());
+    }
+  });
+
+  // TODO: enable once fee calculation is done
+  it.skip('should throw NegativeBalanceError if balance < fee', async function it() {
+    dataContractCreateTransitionFixture.calculateFee = this.sinon.stub().returns(0);
+
+    dataContractCreateTransitionFixture.calculateFee.returns(100);
+
+    unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
+
+    try {
+      await deliverTxHandler(documentRequest);
+
+      expect.fail('should throw InvalidArgumentAbciError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(NegativeBalanceError);
     }
   });
 });

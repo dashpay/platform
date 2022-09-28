@@ -3,7 +3,11 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
@@ -14,16 +18,16 @@ describe('DriveStateRepository', () => {
   let documentsRepositoryMock;
   let spentAssetLockTransactionsRepositoryMock;
   let coreRpcClientMock;
-  let blockExecutionDBTransactionsMock;
   let id;
   let identity;
   let documents;
   let dataContract;
-  let transactionMock;
   let blockExecutionContextMock;
   let simplifiedMasternodeListMock;
   let instantLockMock;
-  let getLatestFeatureFlagMock;
+  let repositoryOptions;
+  let executionContext;
+  let operations;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -43,7 +47,8 @@ describe('DriveStateRepository', () => {
 
     identityRepositoryMock = {
       fetch: this.sinon.stub(),
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
     };
 
     publicKeyIdentityIdRepositoryMock = {
@@ -51,14 +56,11 @@ describe('DriveStateRepository', () => {
       store: this.sinon.stub(),
     };
 
-    blockExecutionDBTransactionsMock = {
-      getTransaction: this.sinon.stub(),
-    };
-
     fetchDocumentsMock = this.sinon.stub();
 
     documentsRepositoryMock = {
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
       find: this.sinon.stub(),
       delete: this.sinon.stub(),
     };
@@ -77,7 +79,7 @@ describe('DriveStateRepository', () => {
       getStore: this.sinon.stub(),
     };
 
-    getLatestFeatureFlagMock = this.sinon.stub().resolves(null);
+    repositoryOptions = { useTransaction: true };
 
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
@@ -89,11 +91,8 @@ describe('DriveStateRepository', () => {
       coreRpcClientMock,
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
-      getLatestFeatureFlagMock,
-      blockExecutionDBTransactionsMock,
+      repositoryOptions,
     );
-
-    transactionMock = {};
 
     instantLockMock = {
       getRequestId: () => 'someRequestId',
@@ -102,72 +101,105 @@ describe('DriveStateRepository', () => {
       verify: this.sinon.stub(),
     };
 
-    blockExecutionDBTransactionsMock.getTransaction.returns(transactionMock);
-  });
-
-  describe('#fetchDataContract', () => {
-    it('should fetch data contract from repository', async () => {
-      dataContractRepositoryMock.fetch.resolves(dataContract);
-
-      const result = await stateRepository.fetchDataContract(id);
-
-      expect(result).to.equal(dataContract);
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(id);
-    });
-  });
-
-  describe('#storeDataContract', () => {
-    it('should store data contract to repository', async () => {
-      await stateRepository.storeDataContract(dataContract);
-
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('dataContracts');
-      expect(dataContractRepositoryMock.store).to.be.calledOnceWith(dataContract, transactionMock);
-    });
+    executionContext = new StateTransitionExecutionContext();
+    operations = [new ReadOperation(1)];
   });
 
   describe('#fetchIdentity', () => {
     it('should fetch identity from repository', async () => {
-      identityRepositoryMock.fetch.resolves(identity);
+      identityRepositoryMock.fetch.resolves(
+        new StorageResult(identity, operations),
+      );
 
-      const result = await stateRepository.fetchIdentity(id);
+      const result = await stateRepository.fetchIdentity(id, executionContext);
 
       expect(result).to.equal(identity);
-      expect(identityRepositoryMock.fetch).to.be.calledOnceWith(id, transactionMock);
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('identities');
+      expect(identityRepositoryMock.fetch).to.be.calledOnceWith(
+        id,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
-  describe('#storeIdentity', () => {
-    it('should store identity to repository', async () => {
-      await stateRepository.storeIdentity(identity);
+  describe('#createIdentity', () => {
+    it('should create identity', async () => {
+      identityRepositoryMock.create.resolves(
+        new StorageResult(undefined, operations),
+      );
 
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('identities');
-      expect(identityRepositoryMock.store).to.be.calledOnceWith(identity, transactionMock);
+      await stateRepository.createIdentity(identity, executionContext);
+
+      expect(identityRepositoryMock.create).to.be.calledOnceWith(
+        identity,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateIdentity', () => {
+    it('should update identity', async () => {
+      identityRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.updateIdentity(identity, executionContext);
+
+      expect(identityRepositoryMock.update).to.be.calledOnceWith(
+        identity,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#storeIdentityPublicKeyHashes', () => {
     it('should store public key hashes for an identity id to repository', async () => {
+      publicKeyIdentityIdRepositoryMock.store.resolves(
+        new StorageResult(undefined, operations),
+      );
+
       await stateRepository.storeIdentityPublicKeyHashes(
         identity.getId(),
         [
           identity.getPublicKeyById(0).hash(),
           identity.getPublicKeyById(1).hash(),
         ],
+        executionContext,
       );
 
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('publicKeyToIdentityId');
       expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
         identity.getPublicKeyById(0).hash(),
         identity.getId(),
-        transactionMock,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       ]);
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
         identity.getPublicKeyById(1).hash(),
         identity.getId(),
-        transactionMock,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       ]);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
     });
   });
 
@@ -181,21 +213,24 @@ describe('DriveStateRepository', () => {
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[0])
-        .resolves(identity.getId());
+        .resolves(new StorageResult(identity.getId(), operations));
 
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[1])
-        .resolves(identity.getId());
+        .resolves(new StorageResult(identity.getId(), operations));
 
       const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
         publicKeyHashes,
+        executionContext,
       );
 
       expect(result).to.have.deep.members([
         identity.getId(),
         identity.getId(),
       ]);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
     });
 
     it('should have null as value if pair was not found', async () => {
@@ -207,21 +242,65 @@ describe('DriveStateRepository', () => {
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[0])
-        .resolves(identity.getId());
+        .resolves(new StorageResult(identity.getId(), operations));
 
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[1])
-        .resolves(null);
+        .resolves(new StorageResult(null, operations));
 
       const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
         publicKeyHashes,
+        executionContext,
       );
 
       expect(result).to.have.deep.members([
         identity.getId(),
         null,
       ]);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
+    });
+  });
+
+  describe('#fetchDataContract', () => {
+    it('should fetch data contract from repository', async () => {
+      dataContractRepositoryMock.fetch.resolves(
+        new StorageResult(dataContract, operations),
+      );
+
+      const result = await stateRepository.fetchDataContract(id, executionContext);
+
+      expect(result).to.equal(dataContract);
+      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
+        id,
+        {
+          dryRun: false,
+          useTransaction: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#storeDataContract', () => {
+    it('should store data contract to repository', async () => {
+      dataContractRepositoryMock.store.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.storeDataContract(dataContract, executionContext);
+
+      expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
+        dataContract,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
@@ -230,42 +309,97 @@ describe('DriveStateRepository', () => {
       const type = 'documentType';
       const options = {};
 
-      fetchDocumentsMock.resolves(documents);
+      fetchDocumentsMock.resolves(
+        new StorageResult(documents, operations),
+      );
 
-      const result = await stateRepository.fetchDocuments(id, type, options);
+      const result = await stateRepository.fetchDocuments(
+        id,
+        type,
+        options,
+        executionContext,
+      );
 
       expect(result).to.equal(documents);
-      expect(fetchDocumentsMock).to.be.calledOnceWith(id, type, options, transactionMock);
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('documents');
+      expect(fetchDocumentsMock).to.be.calledOnceWith(
+        id,
+        type,
+        {
+          ...options,
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
-  describe('#storeDocument', () => {
-    it('should store document in repository', async () => {
+  describe('#createDocument', () => {
+    it('should create document in repository', async () => {
+      documentsRepositoryMock.create.resolves(
+        new StorageResult(undefined, operations),
+      );
+
       const [document] = documents;
-      await stateRepository.storeDocument(document);
 
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('documents');
+      await stateRepository.createDocument(document, executionContext);
 
-      expect(documentsRepositoryMock.store).to.be.calledOnceWith(document, transactionMock);
+      expect(documentsRepositoryMock.create).to.be.calledOnceWith(
+        document,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateDocument', () => {
+    it('should store document in repository', async () => {
+      documentsRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      const [document] = documents;
+
+      await stateRepository.updateDocument(document, executionContext);
+
+      expect(documentsRepositoryMock.update).to.be.calledOnceWith(
+        document,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#removeDocument', () => {
     it('should delete document from repository', async () => {
-      const contractId = generateRandomIdentifier();
+      documentsRepositoryMock.delete.resolves(
+        new StorageResult(undefined, operations),
+      );
+
       const type = 'documentType';
 
-      await stateRepository.removeDocument(contractId, type, id);
-
-      expect(blockExecutionDBTransactionsMock.getTransaction).to.be.calledOnceWith('documents');
+      await stateRepository.removeDocument(dataContract, type, id, executionContext);
 
       expect(documentsRepositoryMock.delete).to.be.calledOnceWith(
-        contractId,
+        dataContract,
         type,
         id,
-        transactionMock,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
@@ -278,13 +412,18 @@ describe('DriveStateRepository', () => {
 
       coreRpcClientMock.getRawTransaction.resolves({ result: rawTransaction });
 
-      const result = await stateRepository.fetchTransaction(id);
+      const result = await stateRepository.fetchTransaction(id, executionContext);
 
       expect(result).to.deep.equal({
         data: Buffer.from(rawTransaction.hex, 'hex'),
         height: rawTransaction.height,
       });
+
       expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWithExactly(id, 1);
+
+      const operation = new ReadOperation(Buffer.from(rawTransaction.hex, 'hex').length);
+
+      expect(executionContext.getOperations()).to.deep.equals([operation]);
     });
 
     it('should return null if core throws Invalid address or key error', async () => {
@@ -312,6 +451,21 @@ describe('DriveStateRepository', () => {
         expect(e).to.equal(error);
         expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWith(id);
       }
+    });
+
+    it('should return mocked transaction on dry run', async () => {
+      executionContext.enableDryRun();
+
+      const result = await stateRepository.fetchTransaction(id, executionContext);
+
+      executionContext.disableDryRun();
+
+      expect(result).to.deep.equal({
+        data: Buffer.alloc(0),
+        height: 1,
+      });
+
+      expect(coreRpcClientMock.getRawTransaction).to.not.be.called(id);
     });
   });
 
@@ -396,6 +550,42 @@ describe('DriveStateRepository', () => {
         42,
       );
       expect(instantLockMock.verify).to.have.not.been.called();
+    });
+
+    it('should return false if header is null', async () => {
+      blockExecutionContextMock.getHeader.returns(null);
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+
+      expect(result).to.be.false();
+    });
+
+    it('should return true on dry run', async () => {
+      const error = new Error('Some error');
+      error.code = -5;
+
+      coreRpcClientMock.verifyIsLock.throws(error);
+
+      executionContext.enableDryRun();
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock, executionContext);
+
+      executionContext.disableDryRun();
+
+      expect(result).to.be.true();
+      expect(instantLockMock.verify).to.have.not.been.called();
+      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
+    });
+  });
+
+  describe('#fetchSMLStore', () => {
+    it('should fetch SML store', async () => {
+      simplifiedMasternodeListMock.getStore.resolves('store');
+
+      const result = await stateRepository.fetchSMLStore();
+
+      expect(result).to.equal('store');
+      expect(simplifiedMasternodeListMock.getStore).to.be.calledOnce();
     });
   });
 });

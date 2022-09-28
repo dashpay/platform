@@ -4,6 +4,7 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const getFeatureFlagForHeightFactory = require('../../../lib/featureFlag/getFeatureFlagForHeightFactory');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('getFeatureFlagForHeightFactory', () => {
   let featureFlagDataContractId;
@@ -17,10 +18,9 @@ describe('getFeatureFlagForHeightFactory', () => {
 
     ([document] = getDocumentsFixture());
 
-    fetchDocumentsMock = this.sinon.stub();
-    fetchDocumentsMock.resolves([
-      document,
-    ]);
+    fetchDocumentsMock = this.sinon.stub().resolves(
+      new StorageResult([document]),
+    );
 
     featureFlagDataContractBlockHeight = 42;
 
@@ -42,8 +42,10 @@ describe('getFeatureFlagForHeightFactory', () => {
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       featureFlagDataContractId,
       'someType',
-      query,
-      undefined,
+      {
+        ...query,
+        useTransaction: false,
+      },
     );
     expect(result).to.deep.equal(document);
   });

@@ -1,3 +1,4 @@
+const { Flags } = require('@oclif/core');
 const { Listr } = require('listr2');
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
@@ -14,6 +15,7 @@ class GroupStopCommand extends GroupBaseCommand {
   async runWithDependencies(
     args,
     {
+      force: isForce,
       verbose: isVerbose,
     },
     dockerCompose,
@@ -49,6 +51,7 @@ class GroupStopCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        isForce,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -60,6 +63,11 @@ GroupStopCommand.description = 'Stop group nodes';
 
 GroupStopCommand.flags = {
   ...GroupBaseCommand.flags,
+  force: Flags.boolean({
+    char: 'f',
+    description: 'force stop even if any is running',
+    default: false,
+  }),
 };
 
 module.exports = GroupStopCommand;

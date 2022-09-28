@@ -5,6 +5,7 @@ const { expect } = require('chai');
 const Long = require('long');
 
 const getLatestFeatureFlagFactory = require('../../../lib/featureFlag/getLatestFeatureFlagFactory');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('getLatestFeatureFlagFactory', () => {
   let featureFlagDataContractId;
@@ -18,9 +19,9 @@ describe('getLatestFeatureFlagFactory', () => {
     ([document] = getDocumentsFixture());
 
     fetchDocumentsMock = this.sinon.stub();
-    fetchDocumentsMock.resolves([
-      document,
-    ]);
+    fetchDocumentsMock.resolves(
+      new StorageResult([document]),
+    );
 
     getLatestFeatureFlag = getLatestFeatureFlagFactory(
       featureFlagDataContractId,
@@ -39,13 +40,13 @@ describe('getLatestFeatureFlagFactory', () => {
         ['enableAtHeight', 'desc'],
       ],
       limit: 1,
+      useTransaction: false,
     };
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       featureFlagDataContractId,
       'someType',
       query,
-      undefined,
     );
     expect(result).to.deep.equal(document);
   });

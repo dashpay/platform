@@ -33,8 +33,6 @@ const {
             GetDocumentsResponse: PBJSGetDocumentsResponse,
             GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
             GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
-            GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
-            GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
             WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
             WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
             GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -52,7 +50,6 @@ const {
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
   GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
-  GetIdentityIdsByPublicKeyHashesResponse: ProtocGetIdentityIdsByPublicKeyHashesResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
   GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
 } = require('./platform_protoc');
@@ -91,10 +88,6 @@ class PlatformPromiseClient {
 
     this.client.getIdentitiesByPublicKeyHashes = promisify(
       this.client.getIdentitiesByPublicKeyHashes.bind(this.client),
-    );
-
-    this.client.getIdentityIdsByPublicKeyHashes = promisify(
-      this.client.getIdentityIdsByPublicKeyHashes.bind(this.client),
     );
 
     this.client.waitForStateTransitionResult = promisify(
@@ -261,41 +254,6 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentitiesByPublicKeyHashesRequest,
-            ),
-          ),
-        ],
-        ...options,
-      },
-    );
-  }
-
-  /**
-   * @param {!GetIdentityIdsByPublicKeyHashesRequest} getIdentityIdsByPublicKeyHashesRequest
-   * @param {?Object<string, string>} metadata
-   * @param {CallOptions} [options={}]
-   * @returns {Promise<!GetIdentityIdsByPublicKeyHashesResponse>}
-   */
-  getIdentityIdsByPublicKeyHashes(
-    getIdentityIdsByPublicKeyHashesRequest,
-    metadata = {},
-    options = {},
-  ) {
-    if (!isObject(metadata)) {
-      throw new Error('metadata must be an object');
-    }
-
-    return this.client.getIdentityIdsByPublicKeyHashes(
-      getIdentityIdsByPublicKeyHashesRequest,
-      convertObjectToMetadata(metadata),
-      {
-        interceptors: [
-          jsonToProtobufInterceptorFactory(
-            jsonToProtobufFactory(
-              ProtocGetIdentityIdsByPublicKeyHashesResponse,
-              PBJSGetIdentityIdsByPublicKeyHashesResponse,
-            ),
-            protobufToJsonFactory(
-              PBJSGetIdentityIdsByPublicKeyHashesRequest,
             ),
           ),
         ],

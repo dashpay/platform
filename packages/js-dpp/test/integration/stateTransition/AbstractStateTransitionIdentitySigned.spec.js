@@ -1,6 +1,7 @@
 const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
-const calculateStateTransitionFee = require('../../../lib/stateTransition/calculateStateTransitionFee');
+const crypto = require('crypto');
+const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/calculateStateTransitionFee');
 
 const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
@@ -10,6 +11,10 @@ const PublicKeySecurityLevelNotMetError = require('../../../lib/stateTransition/
 const WrongPublicKeyPurposeError = require('../../../lib/stateTransition/errors/WrongPublicKeyPurposeError');
 const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
+const BlsSignatures = require('../../../lib/bls/bls');
+const PublicKeyIsDisabledError = require('../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
+const InvalidSignaturePublicKeySecurityLevelError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
+const stateTransitionTypes = require('../../../lib/stateTransition/stateTransitionTypes');
 
 describe('AbstractStateTransitionIdentitySigned', () => {
   let stateTransition;
@@ -18,8 +23,11 @@ describe('AbstractStateTransitionIdentitySigned', () => {
   let privateKeyWIF;
   let publicKeyId;
   let identityPublicKey;
+  let blsPrivateKey;
+  let blsPrivateKeyHex;
+  let blsInstance;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const privateKeyModel = new PrivateKey();
     privateKeyWIF = privateKeyModel.toWIF();
     privateKeyHex = privateKeyModel.toBuffer().toString('hex');
@@ -32,11 +40,20 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       protocolVersion,
     });
 
+    blsInstance = await BlsSignatures.getInstance();
+    const {
+      PrivateKey: BlsPrivateKey,
+    } = blsInstance;
+
+    const randomBytes = new Uint8Array(crypto.randomBytes(256));
+    blsPrivateKey = BlsPrivateKey.fromBytes(randomBytes, true);
+    blsPrivateKeyHex = Buffer.from(blsPrivateKey.serialize()).toString('hex');
+
     identityPublicKey = new IdentityPublicKey()
       .setId(publicKeyId)
       .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
       .setData(publicKey)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER)
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH)
       .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
   });
 
@@ -98,8 +115,8 @@ describe('AbstractStateTransitionIdentitySigned', () => {
   });
 
   describe('#getSignaturePublicKeyId', () => {
-    it('should return public key ID', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should return public key ID', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       const keyId = stateTransition.getSignaturePublicKeyId();
       expect(keyId).to.be.equal(publicKeyId);
@@ -107,42 +124,42 @@ describe('AbstractStateTransitionIdentitySigned', () => {
   });
 
   describe('#sign', () => {
-    it('should sign data and validate signature with private key in hex format', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should sign data and validate signature with private key in hex format', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
-      const isValid = stateTransition.verifySignature(identityPublicKey);
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
     });
 
-    it('should sign data and validate signature with private key in buffer format', () => {
-      stateTransition.sign(identityPublicKey, privateKeyWIF);
+    it('should sign data and validate signature with private key in buffer format', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyWIF);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
-      const isValid = stateTransition.verifySignature(identityPublicKey);
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
     });
 
-    it('should sign data and validate signature with ECDSA_HASH160 identityPublicKey', () => {
+    it('should sign data and validate signature with ECDSA_HASH160 identityPublicKey', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.ECDSA_HASH160);
       identityPublicKey.setData(
         Hash.sha256ripemd160(identityPublicKey.getData()),
       );
 
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
-      const isValid = stateTransition.verifySignature(identityPublicKey);
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
     });
 
-    it('should throw an error if we try to sign with wrong public key', () => {
+    it('should throw an error if we try to sign with wrong public key', async () => {
       const publicKey = new PrivateKey()
         .toPublicKey()
         .toBuffer();
@@ -150,7 +167,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       identityPublicKey.setData(publicKey);
 
       try {
-        stateTransition.sign(identityPublicKey, privateKeyHex);
+        await stateTransition.sign(identityPublicKey, privateKeyHex);
 
         expect.fail('Should throw InvalidSignaturePublicKeyError');
       } catch (e) {
@@ -159,11 +176,11 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       }
     });
 
-    it('should throw InvalidSignatureTypeError if signature type is not equal ECDSA', () => {
+    it('should throw InvalidSignatureTypeError if signature type is not equal ECDSA', async () => {
       identityPublicKey.setType(30000);
 
       try {
-        stateTransition.sign(identityPublicKey, privateKeyHex);
+        await stateTransition.sign(identityPublicKey, privateKeyHex);
 
         expect.fail('Should throw InvalidSignatureTypeError');
       } catch (e) {
@@ -172,7 +189,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       }
     });
 
-    it('should throw an error if the key security level is not met', function () {
+    it('should throw an error if the key security level is not met', async function it() {
       stateTransition.getRequiredKeySecurityLevel = this.sinonSandbox
         .stub()
         .returns(IdentityPublicKey.SECURITY_LEVELS.MASTER);
@@ -180,7 +197,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
       try {
-        stateTransition.sign(identityPublicKey, privateKeyHex);
+        await stateTransition.sign(identityPublicKey, privateKeyHex);
 
         expect.fail('Should throw PublicKeySecurityLevelNotMetError');
       } catch (e) {
@@ -188,15 +205,15 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeySecurityLevel())
           .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
-          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
       }
     });
 
-    it('should throw an error if the key purpose is not authentication', () => {
+    it('should throw an error if the key purpose is not authentication', async () => {
       identityPublicKey.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
 
       try {
-        stateTransition.sign(identityPublicKey, privateKeyHex);
+        await stateTransition.sign(identityPublicKey, privateKeyHex);
 
         expect.fail('Should throw WrongPublicKeyPurposeError');
       } catch (e) {
@@ -206,32 +223,63 @@ describe('AbstractStateTransitionIdentitySigned', () => {
           .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
       }
     });
+
+    it('should sign data and validate signature with BLS12_381 identityPublicKey', async () => {
+      identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
+      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
+
+      await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
+
+      expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
+
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
+
+      expect(isValid).to.be.true();
+    });
   });
 
   describe('#signByPrivateKey', () => {
-    it('should sign and validate with private key', () => {
+    it('should sign and validate with private key', async () => {
       privateKeyHex = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-      stateTransition.signByPrivateKey(privateKeyHex);
+      await stateTransition.signByPrivateKey(
+        privateKeyHex,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
+    });
+
+    it('should sign and validate with BLS private key', async () => {
+      identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
+      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
+
+      await stateTransition.signByPrivateKey(blsPrivateKeyHex, IdentityPublicKey.TYPES.BLS12_381);
+
+      expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
+
+      const isValid = await stateTransition.verifyBLSSignatureByPublicKey(
+        blsPrivateKey.getPublicKey(),
+      );
+
+      expect(isValid).to.be.true();
     });
   });
 
   describe('#verifySignature', () => {
-    it('should validate signature', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should validate signature', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
-      const isValid = stateTransition.verifySignature(identityPublicKey);
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
     });
 
-    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', () => {
+    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
       try {
-        stateTransition.verifySignature(identityPublicKey);
+        await stateTransition.verifySignature(identityPublicKey);
 
         expect.fail('should throw StateTransitionIsNotSignedError');
       } catch (e) {
@@ -240,13 +288,13 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       }
     });
 
-    it('should throw an PublicKeyMismatchError error if public key id not equals public key id in state transition', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should throw an PublicKeyMismatchError error if public key id not equals public key id in state transition', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       identityPublicKey.setId(identityPublicKey.getId() + 1);
 
       try {
-        stateTransition.verifySignature(identityPublicKey);
+        await stateTransition.verifySignature(identityPublicKey);
 
         expect.fail('should throw PublicKeyMismatchError');
       } catch (e) {
@@ -255,27 +303,27 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       }
     });
 
-    it('should not verify signature with wrong public key', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should not verify signature with wrong public key', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
       const publicKey = new PrivateKey()
         .toPublicKey()
         .toBuffer();
 
       identityPublicKey.setData(publicKey);
 
-      const isValid = stateTransition.verifySignature(identityPublicKey);
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.false();
     });
 
-    it('should throw an error if the key security level is not met', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should throw an error if the key security level is not met', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       // Set key security level after the signing, since otherwise .sign method won't work
       identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
       try {
-        stateTransition.verifySignature(identityPublicKey);
+        await stateTransition.verifySignature(identityPublicKey);
 
         expect.fail('Should throw PublicKeySecurityLevelNotMetError');
       } catch (e) {
@@ -283,18 +331,18 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeySecurityLevel())
           .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
-          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
       }
     });
 
-    it('should throw an error if the key purpose is not equal to authentication', () => {
-      stateTransition.sign(identityPublicKey, privateKeyHex);
+    it('should throw an error if the key purpose is not equal to authentication', async () => {
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
 
       // Set key security level after the signing, since otherwise .sign method won't work
       identityPublicKey.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
 
       try {
-        stateTransition.verifySignature(identityPublicKey);
+        await stateTransition.verifySignature(identityPublicKey);
 
         expect.fail('Should throw WrongPublicKeyPurposeError');
       } catch (e) {
@@ -304,24 +352,67 @@ describe('AbstractStateTransitionIdentitySigned', () => {
           .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
       }
     });
-  });
 
-  describe('#verifySignatureByPublicKeyHash', () => {
-    it('should validate sign by public key hash', () => {
-      privateKeyHex = 'fdfa0d878967ac17ca3e6fa6ca7f647fea51cffac85e41424c6954fcbe97721c';
-      const publicKey = 'dLfavDCp+ARA3O0AXsOFJ0W//mg=';
+    it('should validate BLS signature', async () => {
+      identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
+      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
 
-      stateTransition.signByPrivateKey(privateKeyHex);
+      await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
 
-      const isValid = stateTransition.verifySignatureByPublicKeyHash(Buffer.from(publicKey, 'base64'));
+      expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
+
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
     });
 
-    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', () => {
+    it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
+      identityPublicKey.setDisabledAt(new Date().getTime());
+
+      try {
+        await stateTransition.sign(identityPublicKey, privateKeyHex);
+
+        expect.fail('Should throw PublicKeyIsDisabledError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
+        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+      }
+    });
+
+    it('should throw InvalidSignaturePublicKeySecurityLevelError if public key with master level is using to sign non update state transition', async () => {
+      stateTransition.type = stateTransitionTypes.DATA_CONTRACT_CREATE;
+      identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+
+      try {
+        await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
+
+        expect.fail('Should throw PublicKeyIsDisabledError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
+        expect(e.getPublicKeySecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+        expect(e.getKeySecurityLevelRequirement()).to.equal(
+          IdentityPublicKey.SECURITY_LEVELS.HIGH,
+        );
+      }
+    });
+  });
+
+  describe('#verifyESDSAHash160SignatureByPublicKeyHash', () => {
+    it('should validate sign by public key hash', async () => {
+      privateKeyHex = 'fdfa0d878967ac17ca3e6fa6ca7f647fea51cffac85e41424c6954fcbe97721c';
+      const publicKey = 'dLfavDCp+ARA3O0AXsOFJ0W//mg=';
+
+      await stateTransition.signByPrivateKey(privateKeyHex, IdentityPublicKey.TYPES.ECDSA_HASH160);
+
+      const isValid = stateTransition.verifyESDSAHash160SignatureByPublicKeyHash(Buffer.from(publicKey, 'base64'));
+
+      expect(isValid).to.be.true();
+    });
+
+    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
       const publicKey = 'dLfavDCp+ARA3O0AXsOFJ0W//mg=';
       try {
-        stateTransition.verifySignatureByPublicKeyHash(Buffer.from(publicKey, 'base64'));
+        stateTransition.verifyESDSAHash160SignatureByPublicKeyHash(Buffer.from(publicKey, 'base64'));
 
         expect.fail('should throw StateTransitionIsNotSignedError');
       } catch (e) {
@@ -331,22 +422,52 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     });
   });
 
-  describe('#verifySignatureByPublicKey', () => {
-    it('should validate sign by public key', () => {
+  describe('#verifyECDSASignatureByPublicKey', () => {
+    it('should validate sign by public key', async () => {
       privateKeyHex = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
       const publicKey = 'A1eUrJ7lM6F1m6dbIyk+vXimKfzki+QRMHMwoAmggt6L';
 
-      stateTransition.signByPrivateKey(privateKeyHex);
+      await stateTransition.signByPrivateKey(
+        privateKeyHex,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
 
-      const isValid = stateTransition.verifySignatureByPublicKey(Buffer.from(publicKey, 'base64'));
+      const isValid = stateTransition.verifyECDSASignatureByPublicKey(Buffer.from(publicKey, 'base64'));
 
       expect(isValid).to.be.true();
     });
 
-    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', () => {
+    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
       const publicKey = 'A1eUrJ7lM6F1m6dbIyk+vXimKfzki+QRMHMwoAmggt6L';
       try {
-        stateTransition.verifySignatureByPublicKey(Buffer.from(publicKey, 'base64'));
+        stateTransition.verifyECDSASignatureByPublicKey(Buffer.from(publicKey, 'base64'));
+
+        expect.fail('should throw StateTransitionIsNotSignedError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(StateTransitionIsNotSignedError);
+        expect(e.getStateTransition()).to.equal(stateTransition);
+      }
+    });
+  });
+
+  describe('#verifyBLSSignatureByPublicKey', () => {
+    it('should validate sign by public key', async () => {
+      const publicKey = blsPrivateKey.getPublicKey();
+
+      identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
+
+      await stateTransition.signByPrivateKey(blsPrivateKeyHex, IdentityPublicKey.TYPES.BLS12_381);
+
+      const isValid = await stateTransition.verifyBLSSignatureByPublicKey(publicKey);
+
+      expect(isValid).to.be.true();
+    });
+
+    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
+      const publicKey = Buffer.from(blsPrivateKey.getPublicKey().serialize());
+      try {
+        await stateTransition.verifyBLSSignatureByPublicKey(publicKey);
 
         expect.fail('should throw StateTransitionIsNotSignedError');
       } catch (e) {

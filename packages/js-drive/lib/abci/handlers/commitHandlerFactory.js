@@ -5,55 +5,31 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-
-const { asValue } = require('awilix');
-
-const DataCorruptedError = require('./errors/DataCorruptedError');
-const BlockExecutionContextRepository = require('../../blockExecution/BlockExecutionContextRepository');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
+const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 /**
- * @param {CreditsDistributionPool} creditsDistributionPool
- * @param {CreditsDistributionPoolCommonStoreRepository} creditsDistributionPoolRepository
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
- * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {DocumentDatabaseManager} documentDatabaseManager
- * @param {DocumentDatabaseManager} previousDocumentDatabaseManager
- * @param {DashPlatformProtocol} transactionalDpp
- * @param {RootTree} rootTree
- * @param {
- * PreviousBlockExecutionStoreTransactionsRepository
- * } previousBlockExecutionStoreTransactionsRepository
- * @param {populateMongoDbTransactionFromObject} populateMongoDbTransactionFromObject
- * @param {AwilixContainer} container
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
+ * @param {rotateSignedStore} rotateSignedStore
  * @param {BaseLogger} logger
- * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
- * @param {getLatestFeatureFlag} getLatestFeatureFlag
- * @param {RootTree} previousRootTree
  * @param {LRUCache} dataContractCache
+ * @param {GroveDBStore} groveDBStore
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {commitHandler}
  */
 function commitHandlerFactory(
-  creditsDistributionPool,
-  creditsDistributionPoolRepository,
-  blockExecutionStoreTransactions,
   blockExecutionContext,
-  previousBlockExecutionContext,
-  blockExecutionContextRepository,
-  documentDatabaseManager,
-  previousDocumentDatabaseManager,
-  transactionalDpp,
-  rootTree,
-  previousBlockExecutionStoreTransactionsRepository,
-  populateMongoDbTransactionFromObject,
-  container,
+  blockExecutionContextStack,
+  blockExecutionContextStackRepository,
+  rotateSignedStore,
   logger,
-  cloneToPreviousStoreTransactions,
-  getLatestFeatureFlag,
-  previousRootTree,
   dataContractCache,
+  groveDBStore,
+  executionTimer,
 ) {
   /**
    * Commit ABCI Handler
@@ -74,137 +50,55 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    let nextPreviousBlockExecutionStoreTransactions;
-    try {
-      for (const dataContract of blockExecutionContext.getDataContracts()) {
-        // Create document databases for dataContracts created in the current block
-        await documentDatabaseManager.create(dataContract);
+    // Store block execution context
+    const clonedBlockExecutionContext = new BlockExecutionContext();
+    clonedBlockExecutionContext.populate(blockExecutionContext);
 
-        // Update data contract cache with new version of
-        // commited data contract
-        const idString = dataContract.getId().toString();
+    blockExecutionContextStack.add(clonedBlockExecutionContext);
 
-        if (dataContractCache.has(idString)) {
-          dataContractCache.set(idString, dataContract);
-        }
+    blockExecutionContextStackRepository.store(
+      blockExecutionContextStack,
+      {
+        useTransaction: true,
+      },
+    );
+
+    // Commit the current block db transactions
+    await groveDBStore.commitTransaction();
+
+    // Update data contract cache with new version of
+    // committed data contract
+    for (const dataContract of blockExecutionContext.getDataContracts()) {
+      const operations = [new ReadOperation(dataContract.toBuffer().length)];
+
+      const cacheItem = new DataContractCacheItem(dataContract, operations);
+
+      if (dataContractCache.hasRegistration(cacheItem.getKey())) {
+        dataContractCache.set(cacheItem.getKey(), cacheItem);
       }
-
-      // Store ST fees from the block to distribution pool
-      creditsDistributionPool.incrementAmount(
-        blockExecutionContext.getCumulativeFees(),
-      );
-
-      const commonStoreTransaction = blockExecutionStoreTransactions.getTransaction('common');
-      await creditsDistributionPoolRepository.store(
-        creditsDistributionPool,
-        commonStoreTransaction,
-      );
-
-      // Clone changes from the current block to previous transactions
-      nextPreviousBlockExecutionStoreTransactions = await cloneToPreviousStoreTransactions(
-        blockExecutionStoreTransactions,
-      );
-
-      // Commit the current block db transactions
-      await blockExecutionStoreTransactions.commit();
-
-      // Store block execution contexts to external storage (outside of state trees, otherwise it
-      // will change appHash even if we nave no transactions inside of the block)
-      await blockExecutionContextRepository.store(
-        BlockExecutionContextRepository.KEY_PREFIX_CURRENT,
-        blockExecutionContext,
-      );
-
-      if (!previousBlockExecutionContext.isEmpty()) {
-        await blockExecutionContextRepository.store(
-          BlockExecutionContextRepository.KEY_PREFIX_PREVIOUS,
-          previousBlockExecutionContext,
-        );
-      }
-    } catch (e) {
-      // Abort DB transactions. It doesn't work since some of transaction may already be committed
-      // and will produce "transaction in not started" error.
-      if (blockExecutionStoreTransactions.isStarted()) {
-        await blockExecutionStoreTransactions.abort();
-      }
-
-      // NOTE: we're calling drop only on the newly created data contracts
-      // in case of contract update we keep any created data for now
-      const newlyCreatedDataContracts = blockExecutionContext.getDataContracts()
-        .filter((dataContract) => dataContract.getVersion() === 1);
-
-      for (const dataContract of newlyCreatedDataContracts) {
-        await documentDatabaseManager.drop(dataContract);
-      }
-
-      throw e;
     }
 
-    // rebuild root tree with committed data from the current block
-    rootTree.rebuild();
+    // Rotate signed store
+    // Create a new GroveDB checkpoint and remove the old one
+    // TODO: We do not rotate signed state for now
+    // await rotateSignedStore(blockHeight);
 
-    // Commit previous block data to previous stores if available
-    if (container.hasRegistration('previousBlockExecutionStoreTransactions')) {
-      const previousBlockExecutionStoreTransactions = container.resolve(
-        'previousBlockExecutionStoreTransactions',
-      );
-
-      // Create document databases in previous dbs
-      const previousDataContractTransaction = previousBlockExecutionStoreTransactions.getTransaction('dataContracts');
-      const { updates: previousCreatedDataContracts } = previousDataContractTransaction.toObject();
-
-      const createDatabasePromises = Object.values(previousCreatedDataContracts)
-        .map(async (serializedDataContract) => {
-          const dataContract = await transactionalDpp.dataContract.createFromBuffer(
-            serializedDataContract,
-            {
-              skipValidation: true,
-            },
-          );
-
-          await previousDocumentDatabaseManager.create(dataContract);
-        });
-
-      await Promise.all(createDatabasePromises);
-
-      // Create databases for documents
-      const previousDocumentsTransaction = previousBlockExecutionStoreTransactions.getTransaction('documents');
-
-      await populateMongoDbTransactionFromObject(
-        previousDocumentsTransaction.getMongoDbTransaction(),
-        previousDocumentsTransaction.toObject(),
-      );
-
-      // Commit previous block changes from the previous transactions to the previous stores
-      await previousBlockExecutionStoreTransactions.commit();
-
-      previousRootTree.rebuild();
-    }
-
-    // Update previous transactions with changes from the current block
-    container.register({
-      previousBlockExecutionStoreTransactions: asValue(nextPreviousBlockExecutionStoreTransactions),
-    });
-
-    // Persist previous transactions with changes from the previous block.
-    // In case of failure the block won't be committed but the current state will be updated
-    // since previous state won't have changes from H-1. info handler will provide
-    // height of the current block so data from H-1 will be just lost in previous databases.
-    try {
-      await previousBlockExecutionStoreTransactionsRepository.store(
-        nextPreviousBlockExecutionStoreTransactions,
-      );
-    } catch (e) {
-      throw new DataCorruptedError(e);
-    }
-
-    const appHash = rootTree.getRootHash();
+    const appHash = await groveDBStore.getRootHash();
 
     consensusLogger.info(
       {
         appHash: appHash.toString('hex').toUpperCase(),
       },
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
+    );
+
+    const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
+
+    consensusLogger.trace(
+      {
+        timings: blockExecutionTimings,
+      },
+      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
     );
 
     return new ResponseCommit({

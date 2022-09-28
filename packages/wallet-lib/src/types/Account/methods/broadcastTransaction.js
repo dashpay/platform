@@ -5,41 +5,51 @@ const {
   InvalidRawTransaction,
   InvalidDashcoreTransaction,
 } = require('../../../errors');
+const EVENTS = require('../../../EVENTS');
+const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
+const logger = require('../../../logger');
+const sleep = require('../../../utils/sleep');
 
-function impactAffectedInputs({ transaction, txid }) {
-  const { inputs, changeIndex } = transaction.toObject();
+const MEMPOOL_PROPAGATION_TIMEOUT = 360000;
 
+const MAX_RETRY_ATTEMPTS = 10;
+const RETRY_TIMEOUT = 500;
+
+function impactAffectedInputs({ transaction }) {
   const {
-    storage, walletId, network,
+    storage, network,
   } = this;
 
+  const { inputs, changeIndex } = transaction.toObject();
+  const txid = transaction.hash;
+
+  const addresses = storage.getChainStore(network).getAddresses();
   // We iterate out input to substract their balance.
   inputs.forEach((input) => {
-    const potentiallySelectedAddresses = storage.searchAddressesWithTx(input.prevTxId);
-    // Fixme : If you want this check, you will need to modify fixtures of our tests.
-    // if (!potentiallySelectedAddresses.found) {
-    //   throw new Error('Input is not part of that Wallet.');
-    // }
-    potentiallySelectedAddresses.results.forEach((potentiallySelectedAddress) => {
-      const { type, path } = potentiallySelectedAddress;
-      if (potentiallySelectedAddress.utxos[`${input.prevTxId}-${input.outputIndex}`]) {
-        const inputUTXO = potentiallySelectedAddress.utxos[`${input.prevTxId}-${input.outputIndex}`];
-        const address = storage.store.wallets[walletId].addresses[type][path];
+    const potentiallySelectedAddresses = [...addresses]
+      .reduce((acc, [address, { transactions }]) => {
+        if (transactions.includes(input.prevTxId)) acc.push(address);
+        return acc;
+      }, []);
+
+    potentiallySelectedAddresses.forEach((potentiallySelectedAddress) => {
+      // console.log(addresses.get(pot));
+      const addressData = addresses.get(potentiallySelectedAddress);
+      if (addressData.utxos[`${input.prevTxId}-${input.outputIndex}`]) {
+        const inputUTXO = addressData.utxos[`${input.prevTxId}-${input.outputIndex}`];
+        // const address = storage.store.wallets[walletId].addresses[type][path];
         // Todo: This modify the balance of an address, we need a std method to do that instead.
-        address.balanceSat -= inputUTXO.satoshis;
-        delete address.utxos[`${input.prevTxId}-${input.outputIndex}`];
+        addressData.balanceSat -= inputUTXO.satoshis;
+        delete addressData.utxos[`${input.prevTxId}-${input.outputIndex}`];
       }
     });
   });
 
   const changeOutput = transaction.getChangeOutput();
   if (changeOutput) {
-    const addressString = changeOutput.script.toAddress(network);
+    const addressString = changeOutput.script.toAddress(network).toString();
 
-    const mapped = storage.mappedAddress[addressString];
-
-    const { type, path } = mapped;
-    const address = storage.store.wallets[walletId].addresses[type][path];
+    const address = addresses.get(addressString);
     const utxoKey = `${txid}-${changeIndex}`;
 
     /**
@@ -68,7 +78,6 @@ function impactAffectedInputs({ transaction, txid }) {
 // eslint-disable-next-line no-underscore-dangle
 async function _broadcastTransaction(transaction, options = {}) {
   const { network, storage } = this;
-  const { chains } = storage.getStore();
   if (!this.transport) throw new ValidTransportLayerRequired('broadcast');
 
   // We still support having in rawtransaction, if this is the case
@@ -87,7 +96,7 @@ async function _broadcastTransaction(transaction, options = {}) {
     throw new Error('Transaction not signed.');
   }
 
-  const { minRelay: minRelayFeeRate } = chains[network.toString()].fees;
+  const { minRelay: minRelayFeeRate } = storage.getChainStore(network).state.fees;
 
   // eslint-disable-next-line no-underscore-dangle
   const estimateKbSize = transaction._estimateSize() / 1000;
@@ -104,9 +113,7 @@ async function _broadcastTransaction(transaction, options = {}) {
   // so we clear them out from UTXOset.
   impactAffectedInputs.call(this, {
     transaction,
-    txid,
   });
-
   return txid;
 }
 
@@ -115,29 +122,72 @@ async function _broadcastTransaction(transaction, options = {}) {
  * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
  * @param {Object} [options]
  * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
- * @return {Promise<transactionId>}
+ * @param {Number} [options.mempoolPropagationTimeout=60000] - Time to wait for mempool propagation
+ * @return {Promise<string>}
  */
-async function broadcastTransaction(transaction, options = {}) {
-  if (!this.txISLockListener) {
-    const txId = await _broadcastTransaction.call(this, transaction, options);
+async function broadcastTransaction(transaction, options = {
+  mempoolPropagationTimeout: MEMPOOL_PROPAGATION_TIMEOUT,
+}) {
+  let rejectTimeout;
+  let cancelMempoolSubscription;
 
-    this.txISLockListener = new Promise((resolve) => {
-      this.subscribeToTransactionInstantLock.call(this, txId, () => {
-        this.txISLockListener = null;
+  const mempoolPropagationPromise = new Promise((resolve) => {
+    const listener = ({ payload }) => {
+      // TODO: consider reworking to use inputs/outputs comparison
+      // to ensure that TX malleability is not a problem
+      // https://dashcore.readme.io/v18.0.0/docs/core-guide-transactions-transaction-malleability
+      if (payload.transaction.hash === transaction.hash) {
+        logger.debug(`broadcastTransaction - received from mempool TX "${transaction.hash}"`);
+        clearTimeout(rejectTimeout);
         resolve();
-      });
+      }
+    };
+    // TODO: change to FETCHED_UNCONFIRMED_TRANSACTION once this event is restored
+    this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
+    cancelMempoolSubscription = () => {
+      logger.debug(`broadcastTransaction - canceled mempool subscription for TX "${transaction.hash}"`);
+      this.removeListener(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
+    };
+  });
 
-      // TODO: Also subscribe to FETCHED_CONFIRMED_TRANSACTION
-      // to use as a fallback to resolve the promise
-      // (blocked by https://github.com/dashevo/wallet-lib/pull/340)
-    });
+  const rejectPromise = new Promise((_, reject) => {
+    rejectTimeout = setTimeout(() => {
+      reject(new MempoolPropagationTimeoutError(transaction.hash));
+    }, options.mempoolPropagationTimeout);
+  });
 
-    return txId;
+  logger.debug(`broadcastTransaction - subscribe to mempool for TX "${transaction.hash}"`);
+  const mempoolPropagationRace = Promise.race([
+    mempoolPropagationPromise, rejectPromise,
+  ]);
+
+  try {
+    await Promise.all([
+      mempoolPropagationRace,
+      _broadcastTransaction.call(this, transaction, options).then((hash) => {
+        logger.debug(`broadcastTransaction - broadcasted TX "${hash}"`);
+      }),
+    ]);
+  } catch (error) {
+    cancelMempoolSubscription();
+
+    if (error.message === 'invalid transaction: Missing inputs') {
+      if (this.broadcastRetryAttempts === MAX_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      this.broadcastRetryAttempts += 1;
+      await sleep(RETRY_TIMEOUT);
+      await broadcastTransaction.call(this, transaction, options);
+      this.broadcastRetryAttempts = 0;
+
+      return transaction.hash;
+    }
+
+    throw error;
   }
 
-  await this.txISLockListener;
-
-  return broadcastTransaction.call(this, transaction, options);
+  return transaction.hash;
 }
 
 module.exports = broadcastTransaction;

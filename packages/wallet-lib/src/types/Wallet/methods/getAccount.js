@@ -1,5 +1,6 @@
 const _ = require('lodash');
 const { is } = require('../../../utils');
+const EVENTS = require('../../../EVENTS');
 
 /**
  * Get a specific account per accounts index
@@ -9,6 +10,10 @@ const { is } = require('../../../utils');
  */
 
 async function getAccount(accountOpts = {}) {
+  if (!this.storage.configured) {
+    await new Promise((resolve) => this.storage.once(EVENTS.CONFIGURED, resolve));
+  }
+
   if (is.num(accountOpts)) {
     throw new Error('getAccount expected index integer to be a property of accountOptions');
   }

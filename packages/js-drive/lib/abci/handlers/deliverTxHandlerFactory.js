@@ -13,9 +13,11 @@ const AbstractDocumentTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition',
 );
 
+const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
 
-const DOCUMENT_ACTION_DESCRIPTONS = {
+const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
   [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
   [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
@@ -26,11 +28,14 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
   [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
 };
 
+const TIMERS = require('./timers');
+
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BaseLogger} logger
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTxHandler}
  */
@@ -39,6 +44,7 @@ function deliverTxHandlerFactory(
   transactionalDpp,
   blockExecutionContext,
   logger,
+  executionTimer,
 ) {
   /**
    * DeliverTx ABCI Handler
@@ -50,6 +56,17 @@ function deliverTxHandlerFactory(
    */
   async function deliverTxHandler({ tx: stateTransitionByteArray }) {
     const { height: blockHeight } = blockExecutionContext.getHeader();
+
+    // Start execution timer
+
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.OVERALL);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_BASIC);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_FEE);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_SIGNATURE);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.APPLY);
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.OVERALL);
 
     const stHash = crypto
       .createHash('sha256')
@@ -74,6 +91,7 @@ function deliverTxHandlerFactory(
         stateTransitionByteArray,
         {
           logger: consensusLogger,
+          executionTimer,
         },
       );
     } catch (e) {
@@ -81,6 +99,16 @@ function deliverTxHandlerFactory(
 
       throw e;
     }
+
+    // Keep only actual operations
+    const stateTransitionExecutionContext = stateTransition.getExecutionContext();
+
+    const predictedStateTransitionFee = stateTransition.calculateFee();
+    const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
+
+    stateTransitionExecutionContext.clearDryOperations();
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
     const result = await transactionalDpp.stateTransition.validateState(stateTransition);
 
@@ -98,26 +126,44 @@ function deliverTxHandlerFactory(
       throw new DPPValidationAbciError(message, result.getFirstError());
     }
 
+    executionTimer.stopTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true);
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.APPLY);
+
     // Apply state transition to the state
     await transactionalDpp.stateTransition.apply(stateTransition);
+
+    executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
     blockExecutionContext.incrementValidTxCount();
 
     // Reduce an identity balance and accumulate fees for all STs in the block
     // in order to store them in credits distribution pool
-    const stateTransitionFee = stateTransition.calculateFee();
+    const actualStateTransitionFee = stateTransition.calculateFee();
 
-    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-      stateTransition.getOwnerId(),
-    );
+    // TODO: enable once fee calculation is done
+    // if (actualStateTransitionFee > predictedStateTransitionFee) {
+    //   throw new PredictedFeeLowerThanActualError(
+    //     predictedStateTransitionFee,
+    //     actualStateTransitionFee,
+    //     stateTransition,
+    //   );
+    // }
 
-    identity.reduceBalance(stateTransitionFee);
+    // const identity = await transactionalDpp.getStateRepository().fetchIdentity(
+    //   stateTransition.getOwnerId(),
+    // );
 
-    await transactionalDpp.getStateRepository().storeIdentity(identity);
+    // const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
 
-    blockExecutionContext.incrementCumulativeFees(stateTransitionFee);
+    // if (updatedBalance < 0) {
+    //   throw new NegativeBalanceError(identity);
+    // }
+
+    // await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
+    /* istanbul ignore next */
     switch (stateTransition.getType()) {
       case stateTransitionTypes.DATA_CONTRACT_UPDATE:
       case stateTransitionTypes.DATA_CONTRACT_CREATE: {
@@ -161,9 +207,20 @@ function deliverTxHandlerFactory(
 
         break;
       }
+      case stateTransitionTypes.IDENTITY_UPDATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        consensusLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Identity updated with id: ${identityId}`,
+        );
+        break;
+      }
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         stateTransition.getTransitions().forEach((transition) => {
-          const description = DOCUMENT_ACTION_DESCRIPTONS[transition.getAction()];
+          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
           consensusLogger.info(
             {
@@ -178,6 +235,52 @@ function deliverTxHandlerFactory(
       default:
         break;
     }
+
+    const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
+
+    const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
+
+    const {
+      storageFee: actualStorageFee,
+      processingFee: actualProcessingFee,
+    } = calculateOperationFees(actualStateTransitionOperations);
+
+    blockExecutionContext.incrementCumulativeProcessingFee(actualProcessingFee);
+    blockExecutionContext.incrementCumulativeStorageFee(actualStorageFee);
+
+    const {
+      storageFee: predictedStorageFee,
+      processingFee: predictedProcessingFee,
+    } = calculateOperationFees(predictedStateTransitionOperations);
+
+    consensusLogger.trace(
+      {
+        timings: {
+          overall: deliverTxTiming,
+          validateBasic: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_BASIC, true),
+          validateFee: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_FEE, true),
+          validateSignature: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_SIGNATURE, true),
+          validateState: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true),
+          apply: executionTimer.getTimer(TIMERS.DELIVER_TX.APPLY, true),
+        },
+        fees: {
+          predicted: {
+            storage: predictedStorageFee,
+            processing: predictedProcessingFee,
+            final: predictedStateTransitionFee,
+            operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
+          actual: {
+            storage: actualStorageFee,
+            processing: actualProcessingFee,
+            final: actualStateTransitionFee,
+            operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
+        },
+        txType: stateTransition.getType(),
+      },
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFee} credits`,
+    );
 
     return new ResponseDeliverTx();
   }

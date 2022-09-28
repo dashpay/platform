@@ -9,4 +9,4 @@ Parameters:
 
 **Example**: `await client.platform.contracts.get('77w8Xqn25HwJhjodrHW133aXhjuTsTv9ozQaYpSHACE3')`
 
-Returns : Contract (or `null` if it's not a registered contract).
+Returns: Contract (or `null` if it's not a registered contract).

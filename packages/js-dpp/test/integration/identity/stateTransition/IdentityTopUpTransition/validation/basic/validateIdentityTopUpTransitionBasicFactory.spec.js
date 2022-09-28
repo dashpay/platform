@@ -1,4 +1,4 @@
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
@@ -20,6 +20,8 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let rawStateTransition;
@@ -28,6 +30,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let validateIdentityTopUpTransitionBasic;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
+  let executionContext;
 
   beforeEach(async function beforeEach() {
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
@@ -53,11 +56,13 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
       validateProtocolVersionMock,
     );
 
+    executionContext = new StateTransitionExecutionContext();
+
     stateTransition = getIdentityTopUpTransitionFixture();
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    stateTransition.signByPrivateKey(privateKey);
+    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     rawStateTransition = stateTransition.toObject();
   });
@@ -184,6 +189,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectValidationError(result);
@@ -195,6 +201,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
       expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
         .to.be.calledOnceWithExactly(
           rawStateTransition.assetLockProof,
+          executionContext,
         );
     });
   });
@@ -205,6 +212,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -221,6 +229,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result, 2);
@@ -238,6 +247,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -253,6 +263,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -268,7 +279,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.signature;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -282,7 +296,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be a byte array', async () => {
       rawStateTransition.signature = new Array(65).fill('string');
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 2);
 
@@ -297,7 +314,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be not shorter than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -310,7 +330,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be not longer than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(66);
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -322,13 +345,17 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+    const result = await validateIdentityTopUpTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
 
     expect(result.isValid()).to.be.true();
 
     expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
       .to.be.calledOnceWithExactly(
         rawStateTransition.assetLockProof,
+        executionContext,
       );
   });
 });

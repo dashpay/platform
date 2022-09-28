@@ -1,8 +1,6 @@
 import { Platform } from "../../Platform";
-import createAssetLockTransaction from "../../createAssetLockTransaction";
-import createIdentityCreateTransition from "./internal/createIdentityCreateTransition";
-import createAssetLockProof from "./internal/createAssetLockProof";
 import broadcastStateTransition from "../../broadcastStateTransition";
+import {wait} from "../../../../../utils/wait";
 
 /**
  * Register identities to the platform
@@ -12,7 +10,7 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  */
 export default async function register(
   this: Platform,
-  fundingAmount : number = 10000
+  fundingAmount : number = 100000
 ): Promise<any> {
     await this.initialize();
 
@@ -24,23 +22,50 @@ export default async function register(
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex
-    } = await createAssetLockTransaction(this, fundingAmount);
+    } = await this.identities.utils.createAssetLockTransaction(fundingAmount);
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
-    const assetLockProof = await createAssetLockProof(this, assetLockTransaction, assetLockOutputIndex);
 
-    const { identity, identityCreateTransition, identityIndex } = await createIdentityCreateTransition(
-        this, assetLockProof, assetLockPrivateKey
-    );
+    const assetLockProof = await this.identities.utils
+      .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
+
+    const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
+      .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
+
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
-    account.storage.insertIdentityIdAtIndex(
-        account.walletId,
-        identity.getId().toString(),
-        identityIndex,
+   account.storage
+    .getWalletStore(account.walletId)
+    .insertIdentityIdAtIndex(
+      identity.getId().toString(),
+      identityIndex,
     );
+
+    // Fetch identity from the network because the current identity object
+    // doesn't have metadata and balance information. Due to replication lag
+    // some nodes couldn't have it yet, so we need to try multiple times
+    const maxAttempts = 20;
+    let attempt = 0;
+    let registeredIdentity: any = null; // We don't have Identity type yet
+
+    while (registeredIdentity === null && attempt < maxAttempts) {
+      await wait(100);
+
+      registeredIdentity = await this.identities.get(identity.getId());
+      attempt++;
+    }
+
+    if (registeredIdentity === null) {
+      throw new Error(`Can't fetch created identity with id ${identity.getId()}`);
+    }
+
+    // We cannot just return registeredIdentity as we want to
+    // keep additional information (assetLockProof and transaction) instance
+    identity.setMetadata(registeredIdentity.getMetadata());
+    identity.setBalance(registeredIdentity.getBalance());
+    identity.setPublicKeys(registeredIdentity.getPublicKeys());
 
     return identity;
 }

@@ -9,29 +9,24 @@ const {
 const {
   v0: {
     GetDataContractResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
+
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
+const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
  *
- * @param {DataContractStoreRepository} previousDataContractRepository
- * @param {RootTree} previousRootTree
- * @param {DataContractsStoreRootTreeLeaf} previousDataContractsStoreRootTreeLeaf
+ * @param {DataContractStoreRepository} signedDataContractRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(
-  previousDataContractRepository,
-  previousRootTree,
-  previousDataContractsStoreRootTreeLeaf,
+  signedDataContractRepository,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
 ) {
   /**
    * @typedef dataContractQueryHandler
@@ -42,37 +37,30 @@ function dataContractQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function dataContractQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
-      throw new NotFoundAbciError('Data Contract not found');
+    let contractIdIdentifier;
+    try {
+      contractIdIdentifier = new Identifier(id);
+    } catch (e) {
+      if (e instanceof IdentifierError) {
+        throw new InvalidArgumentAbciError('id must be a valid identifier (32 bytes long)');
+      }
+
+      throw e;
     }
 
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
-    const dataContract = await previousDataContractRepository.fetch(id);
-
-    let dataContractBuffer;
-    if (!dataContract && !request.prove) {
-      throw new NotFoundAbciError('Data Contract not found');
-    } else if (dataContract) {
-      dataContractBuffer = dataContract.toBuffer();
-    }
-
     if (request.prove) {
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
+      const proof = await signedDataContractRepository.prove(contractIdIdentifier);
 
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(previousDataContractsStoreRootTreeLeaf, [id]);
-
-      storeTreeProofs.setDataContractsProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
+      response.getProof().setMerkleProof(proof.getValue());
     } else {
-      response.setDataContract(dataContractBuffer);
+      const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
+      if (dataContract.isNull()) {
+        throw new NotFoundAbciError('Data Contract not found');
+      }
+
+      response.setDataContract(dataContract.getValue().toBuffer());
     }
 
     return new ResponseQuery({

@@ -10,13 +10,16 @@ const getDAPISeeds = require('./getDAPISeeds');
 
 const createFaucetClient = require('./createFaucetClient');
 
+let faucetClient;
+
 /**
  * Create and fund DashJS client
  * @param {string} [HDPrivateKey]
- *
+ * @param {number} [amount] - amount of Duffs to fund wallet with
  * @returns {Promise<Client>}
  */
-async function createClientWithFundedWallet(HDPrivateKey = undefined) {
+async function createClientWithFundedWallet(HDPrivateKey = undefined, amount = 100000) {
+  const useFaucetWalletStorage = process.env.FAUCET_WALLET_USE_STORAGE === 'true';
   const seeds = getDAPISeeds();
 
   const clientOpts = {
@@ -29,7 +32,9 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
     },
   };
 
-  const faucetClient = createFaucetClient();
+  if (!faucetClient || (faucetClient && useFaucetWalletStorage)) {
+    faucetClient = createFaucetClient();
+  }
 
   const walletOptions = {
     waitForInstantLockTimeout: 120000,
@@ -52,9 +57,11 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
     wallet: walletOptions,
   });
 
-  const amount = 40000;
-
   await fundWallet(faucetClient.wallet, client.wallet, amount);
+
+  if (useFaucetWalletStorage) {
+    await faucetClient.wallet.disconnect();
+  }
 
   return client;
 }

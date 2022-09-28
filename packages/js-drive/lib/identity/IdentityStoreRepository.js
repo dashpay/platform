@@ -1,52 +1,172 @@
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
+
+const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
+
+const StorageResult = require('../storage/StorageResult');
+
+const MAX_IDENTITY_SIZE = getBiggestPossibleIdentity().toBuffer().length;
+
 class IdentityStoreRepository {
   /**
    *
-   * @param {MerkDbStore} identitiesStore
-   * @param {AwilixContainer} container
+   * @param {GroveDBStore} groveDBStore
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
-  constructor(identitiesStore, container) {
-    this.storage = identitiesStore;
-    this.container = container;
+  constructor(groveDBStore, decodeProtocolEntity) {
+    this.storage = groveDBStore;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
    * Store identity into database
    *
    * @param {Identity} identity
-   * @param {MerkDbTransaction} [transaction]
-   * @return {Promise<IdentityStoreRepository>}
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
    */
-  async store(identity, transaction = undefined) {
-    this.storage.put(
-      identity.getId(),
-      identity.toBuffer(),
-      transaction,
+  async create(identity, options = {}) {
+    const key = identity.getId().toBuffer();
+    const value = identity.toBuffer();
+
+    const treeResult = await this.storage.createTree(
+      IdentityStoreRepository.TREE_PATH,
+      key,
+      options,
     );
 
-    return this;
+    const identityResult = await this.storage.put(
+      IdentityStoreRepository.TREE_PATH.concat([key]),
+      IdentityStoreRepository.IDENTITY_KEY,
+      value,
+      options,
+    );
+
+    return new StorageResult(
+      undefined,
+      treeResult.getOperations().concat(identityResult.getOperations()),
+    );
+  }
+
+  /**
+   * Store identity into database
+   *
+   * @param {Identity} identity
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
+   */
+  async update(identity, options = {}) {
+    const key = identity.getId().toBuffer();
+    const value = identity.toBuffer();
+
+    const result = await this.storage.put(
+      IdentityStoreRepository.TREE_PATH.concat([key]),
+      IdentityStoreRepository.IDENTITY_KEY,
+      value,
+      options,
+    );
+
+    result.setValue(undefined);
+
+    return result;
   }
 
   /**
    * Fetch identity by id from database
    *
    * @param {Identifier} id
-   * @param {MerkDbTransaction} [transaction]
-   * @return {Promise<null|Identity>}
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<null|Identity>>}
    */
-  async fetch(id, transaction = undefined) {
-    const encodedIdentity = this.storage.get(id, transaction);
+  async fetch(id, options = { }) {
+    const encodedIdentityResult = await this.storage.get(
+      IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+      IdentityStoreRepository.IDENTITY_KEY,
+      {
+        ...options,
+        predictedValueSize: MAX_IDENTITY_SIZE,
+      },
+    );
 
-    if (!encodedIdentity) {
-      return null;
+    if (encodedIdentityResult.isNull()) {
+      return encodedIdentityResult;
     }
 
-    const dpp = this.container.resolve(transaction ? 'transactionalDpp' : 'dpp');
+    const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
+      encodedIdentityResult.getValue(),
+    );
 
-    return dpp.identity.createFromBuffer(
-      encodedIdentity,
-      { skipValidation: true },
+    rawIdentity.protocolVersion = protocolVersion;
+
+    return new StorageResult(
+      new Identity(rawIdentity),
+      encodedIdentityResult.getOperations(),
     );
   }
+
+  /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async createTree(options = {}) {
+    return this.storage.createTree(
+      [],
+      IdentityStoreRepository.TREE_PATH[0],
+      options,
+    );
+  }
+
+  /**
+   * Prove identity by id
+   *
+   * @param {Identifier} id
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<Buffer|null>>}
+   * */
+  async prove(id, options) {
+    return this.proveMany([id], options);
+  }
+
+  /**
+   * Prove identity by ids
+   *
+   * @param {Identifier[]} ids
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<Buffer>>}
+   * */
+  async proveMany(ids, options) {
+    const items = ids.map((id) => ({
+      type: 'key',
+      key: id.toBuffer(),
+    }));
+
+    return this.storage.proveQuery({
+      path: IdentityStoreRepository.TREE_PATH,
+      query: {
+        query: {
+          items,
+          subqueryKey: IdentityStoreRepository.IDENTITY_KEY,
+        },
+      },
+    }, options);
+  }
 }
+
+IdentityStoreRepository.TREE_PATH = [Buffer.from([0])];
+
+IdentityStoreRepository.IDENTITY_KEY = Buffer.from([0]);
 
 module.exports = IdentityStoreRepository;

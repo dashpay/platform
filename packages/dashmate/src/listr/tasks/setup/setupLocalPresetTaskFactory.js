@@ -31,7 +31,7 @@ function setupLocalPresetTaskFactory(
     return new Listr([
       {
         title: 'Set the number of nodes',
-        enabled: (ctx) => ctx.nodeCount === null,
+        enabled: (ctx) => ctx.nodeCount === undefined,
         task: async (ctx, task) => {
           ctx.nodeCount = await task.prompt({
             type: 'Numeral',
@@ -51,7 +51,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Enable debug logs',
-        enabled: (ctx) => ctx.debugLogs === null,
+        enabled: (ctx) => ctx.debugLogs === undefined,
         task: async (ctx, task) => {
           ctx.debugLogs = await task.prompt({
             type: 'Toggle',
@@ -64,7 +64,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Set the core miner interval',
-        enabled: (ctx) => ctx.minerInterval === null,
+        enabled: (ctx) => ctx.minerInterval === undefined,
         task: async (ctx, task) => {
           ctx.minerInterval = await task.prompt({
             type: 'input',
@@ -100,23 +100,35 @@ function setupLocalPresetTaskFactory(
 
           const {
             hdPrivateKey: dpnsPrivateKey,
-            derivedPrivateKey: dpnsDerivedPrivateKey,
-          } = await generateHDPrivateKeys(network);
+            derivedPrivateKeys: [
+              dpnsDerivedMasterPrivateKey,
+              dpnsDerivedSecondPrivateKey,
+            ],
+          } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
             hdPrivateKey: featureFlagsPrivateKey,
-            derivedPrivateKey: featureFlagsDerivedPrivateKey,
-          } = await generateHDPrivateKeys(network);
+            derivedPrivateKeys: [
+              featureFlagsDerivedMasterPrivateKey,
+              featureFlagsDerivedSecondPrivateKey,
+            ],
+          } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
             hdPrivateKey: dashpayPrivateKey,
-            derivedPrivateKey: dashpayDerivedPrivateKey,
-          } = await generateHDPrivateKeys(network);
+            derivedPrivateKeys: [
+              dashpayDerivedMasterPrivateKey,
+              dashpayDerivedSecondPrivateKey,
+            ],
+          } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
             hdPrivateKey: masternodeRewardSharesPrivateKey,
-            derivedPrivateKey: masternodeRewardSharesDerivedPrivateKey,
-          } = await generateHDPrivateKeys(network);
+            derivedPrivateKeys: [
+              masternodeRewardSharesDerivedMasterPrivateKey,
+              masternodeRewardSharesDerivedSecondPrivateKey,
+            ],
+          } = await generateHDPrivateKeys(network, [0, 1]);
 
           // eslint-disable-next-line no-param-reassign
           task.output = `DPNS Private Key: ${dpnsPrivateKey.toString()}`;
@@ -140,6 +152,8 @@ function setupLocalPresetTaskFactory(
                 config.set('core.p2p.port', 20001 + (i * 100));
                 config.set('core.rpc.port', 20002 + (i * 100));
                 config.set('externalIp', hostDockerInternalIp);
+
+                config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
 
                 // Setup Core debug logs
                 if (ctx.debugLogs) {
@@ -179,18 +193,33 @@ function setupLocalPresetTaskFactory(
                     });
                   }
 
-                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_pretty.log');
-                  const driveJsonLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_json.log');
+                  if (!config.get('platform.drive.abci.log.prettyFile.path')) {
+                    const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
+                    config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
+                  }
 
-                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
-                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+                  if (!config.get('platform.drive.abci.log.jsonFile.path')) {
+                    const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
+                    config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+                  }
 
-                  config.set('platform.dpns.masterPublicKey', dpnsDerivedPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+
+                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+
+                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+
                   config.set(
                     'platform.masternodeRewardShares.masterPublicKey',
-                    masternodeRewardSharesDerivedPrivateKey.privateKey.toPublicKey().toString(),
+                    masternodeRewardSharesDerivedMasterPrivateKey.privateKey
+                      .toPublicKey().toString(),
+                  ); config.set(
+                    'platform.masternodeRewardShares.secondPublicKey',
+                    masternodeRewardSharesDerivedSecondPrivateKey.privateKey
+                      .toPublicKey().toString(),
                   );
                 }
               },
