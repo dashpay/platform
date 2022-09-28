@@ -11,6 +11,8 @@ const { convertSatoshiToCredits } = require('../../../../../lib/identity/credits
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const ReadOperation = require('../../../../../lib/stateTransition/fee/operations/ReadOperation');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
@@ -18,11 +20,16 @@ describe('applyIdentityCreateTransitionFactory', () => {
   let stateRepositoryMock;
   let fetchAssetLockTransactionOutputMock;
   let output;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     stateTransition = getIdentityCreateTransitionFixture();
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     output = stateTransition.getAssetLockProof().getOutput();
 
@@ -35,6 +42,10 @@ describe('applyIdentityCreateTransitionFactory', () => {
   });
 
   it('should store identity created from state transition', async () => {
+    executionContext.addOperation(
+      new ReadOperation(1),
+    );
+
     await applyIdentityCreateTransition(stateTransition);
 
     const balance = convertSatoshiToCredits(
@@ -49,8 +60,9 @@ describe('applyIdentityCreateTransitionFactory', () => {
       revision: 0,
     });
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(
       identity,
+      executionContext,
     );
 
     const publicKeyHashes = identity
@@ -60,14 +72,19 @@ describe('applyIdentityCreateTransitionFactory', () => {
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
       identity.getId(),
       publicKeyHashes,
+      executionContext,
     );
 
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         stateTransition.getAssetLockProof().getOutPoint(),
+        executionContext,
       );
 
     expect(fetchAssetLockTransactionOutputMock)
-      .to.be.calledOnceWithExactly(stateTransition.getAssetLockProof());
+      .to.be.calledOnceWithExactly(
+        stateTransition.getAssetLockProof(),
+        executionContext,
+      );
   });
 });

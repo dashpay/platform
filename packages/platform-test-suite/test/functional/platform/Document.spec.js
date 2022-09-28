@@ -5,9 +5,9 @@ const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/sign
 
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
   Errors: {
@@ -30,23 +30,19 @@ describe('Platform', () => {
     let document;
 
     before(async () => {
-      client = await createClientWithFundedWallet();
+      client = await createClientWithFundedWallet(undefined, 200000);
 
-      identity = await client.platform.identities.register(10);
+      identity = await client.platform.identities.register(160000);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       dataContractFixture = getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       client.getApps().set('customContracts', {
         contractId: dataContractFixture.getId(),
@@ -151,9 +147,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const secondDocument = await client.platform.documents.create(
         'customContracts.indexedDocument',
@@ -175,8 +169,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4009);
+      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/);
     });
 
     it('should be able to create new document', async () => {
@@ -194,9 +188,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
     });
 
     it('should fetch created document', async () => {
@@ -234,9 +226,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const [fetchedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
@@ -261,23 +251,19 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       documentsBatchTransition.transitions[0].data.firstName = 'nameToProve';
       documentsBatchTransition.transitions[0].updatedAt = new Date();
       documentsBatchTransition.transitions[0].revision += 1;
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity,
+        client.platform, documentsBatchTransition, identity, 1,
       );
 
       const proof = await client.platform.broadcastStateTransition(signedTransition);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       expect(proof.rootTreeProof).to.be.an.instanceof(Uint8Array);
       expect(proof.rootTreeProof.length).to.be.greaterThan(0);
@@ -310,14 +296,12 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       documentsBatchTransition.transitions[0].updatedAt = updatedAt;
       documentsBatchTransition.transitions[0].revision += 1;
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity,
+        client.platform, documentsBatchTransition, identity, 1,
       );
 
       try {
@@ -327,14 +311,16 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4008);
+      expect(broadcastError.message).to.match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
     });
 
     it('should be able to delete a document', async () => {
       await client.platform.documents.broadcast({
         delete: [document],
       }, identity);
+
+      await waitForSTPropagated();
 
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
@@ -371,7 +357,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
+      expect(broadcastError.message).to.match(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/);
       expect(broadcastError.code).to.be.equal(4008);
     });
   });

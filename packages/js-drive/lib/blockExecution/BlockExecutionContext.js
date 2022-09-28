@@ -15,13 +15,7 @@ const Long = require('long');
 
 class BlockExecutionContext {
   constructor() {
-    this.dataContracts = [];
-    this.cumulativeFees = 0;
-    this.header = null;
-    this.lastCommitInfo = null;
-    this.validTxs = 0;
-    this.invalidTxs = 0;
-    this.consensusLogger = null;
+    this.reset();
   }
 
   /**
@@ -58,8 +52,15 @@ class BlockExecutionContext {
   /**
    * @return {number}
    */
-  getCumulativeFees() {
-    return this.cumulativeFees;
+  getCumulativeStorageFee() {
+    return this.cumulativeStorageFee;
+  }
+
+  /**
+   * @return {number}
+   */
+  getCumulativeProcessingFee() {
+    return this.cumulativeProcessingFee;
   }
 
   /**
@@ -67,8 +68,19 @@ class BlockExecutionContext {
    *
    * @param {number} fee
    */
-  incrementCumulativeFees(fee) {
-    this.cumulativeFees += fee;
+  incrementCumulativeStorageFee(fee) {
+    this.cumulativeStorageFee += fee;
+
+    return this;
+  }
+
+  /**
+   * Increment cumulative fees
+   *
+   * @param {number} fee
+   */
+  incrementCumulativeProcessingFee(fee) {
+    this.cumulativeProcessingFee += fee;
 
     return this;
   }
@@ -180,7 +192,8 @@ class BlockExecutionContext {
    */
   reset() {
     this.dataContracts = [];
-    this.cumulativeFees = 0;
+    this.cumulativeProcessingFee = 0;
+    this.cumulativeStorageFee = 0;
     this.header = null;
     this.lastCommitInfo = null;
     this.validTxs = 0;
@@ -205,7 +218,8 @@ class BlockExecutionContext {
   populate(blockExecutionContext) {
     this.dataContracts = blockExecutionContext.dataContracts;
     this.lastCommitInfo = blockExecutionContext.lastCommitInfo;
-    this.cumulativeFees = blockExecutionContext.cumulativeFees;
+    this.cumulativeProcessingFee = blockExecutionContext.cumulativeProcessingFee;
+    this.cumulativeStorageFee = blockExecutionContext.cumulativeStorageFee;
     this.header = blockExecutionContext.header;
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
@@ -215,13 +229,16 @@ class BlockExecutionContext {
   /**
    * Populate the current instance with data
    *
-   * @param object
+   * @param {Object} object
    */
   fromObject(object) {
     this.dataContracts = object.dataContracts
       .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = LastCommitInfo.fromObject(object.lastCommitInfo);
-    this.cumulativeFees = object.cumulativeFees;
+
+    this.cumulativeProcessingFee = object.cumulativeProcessingFee;
+    this.cumulativeStorageFee = object.cumulativeStorageFee;
+
     this.header = Header.fromObject(object.header);
     this.validTxs = object.validTxs;
     this.invalidTxs = object.invalidTxs;
@@ -239,7 +256,8 @@ class BlockExecutionContext {
    *  invalidTxs: number,
    *  header: null,
    *  validTxs: number,
-   *  cumulativeFees: number
+   *  cumulativeProcessingFee: number,
+   *  cumulativeStorageFee: number
    * }}
    */
   toObject(options = {}) {
@@ -250,7 +268,8 @@ class BlockExecutionContext {
 
     const object = {
       dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
-      cumulativeFees: this.cumulativeFees,
+      cumulativeProcessingFee: this.cumulativeProcessingFee,
+      cumulativeStorageFee: this.cumulativeStorageFee,
       header,
       lastCommitInfo: LastCommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,

@@ -38,7 +38,7 @@ function executeDataTriggersFactory(getDataTriggers) {
    *        |DocumentDeleteTransition[]} documentTransitions
    * @param {DataTriggerExecutionContext} context
    *
-   * @return {DataTriggerExecutionResult[]}
+   * @return {Promise<DataTriggerExecutionResult[]>}
    */
   async function executeDataTriggers(documentTransitions, context) {
     const dataContractId = context.getDataContract().getId();

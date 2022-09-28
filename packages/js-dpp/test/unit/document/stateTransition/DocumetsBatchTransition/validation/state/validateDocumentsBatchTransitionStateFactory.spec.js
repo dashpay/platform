@@ -28,6 +28,7 @@ const DocumentTimestampWindowViolationError = require('../../../../../../../lib/
 
 const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsBatchTransitionStateFactory', () => {
   let validateDocumentsBatchTransitionState;
@@ -43,6 +44,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   let abciHeader;
   let fakeTime;
   let blockTime;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -58,15 +60,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
-    const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      time: {
-        seconds: timeInSeconds,
-      },
-    });
 
     blockTime = new Date().getTime() / 1000;
 
@@ -113,6 +112,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
         dataContract.getId(),
+        new StateTransitionExecutionContext(),
       );
 
       expect(fetchDocumentsMock).to.have.not.been.called();
@@ -136,6 +136,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock.getCall(0).args[0].map((t) => t.toObject())).to.have.deep.members(
@@ -158,6 +159,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
+    stateTransition.setExecutionContext(executionContext);
+
     const result = await validateDocumentsBatchTransitionState(stateTransition);
 
     expectValidationError(result, DocumentNotFoundError);
@@ -170,10 +173,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -192,6 +197,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
+    stateTransition.setExecutionContext(executionContext);
+
     const result = await validateDocumentsBatchTransitionState(stateTransition);
 
     expectValidationError(result, DocumentNotFoundError);
@@ -204,10 +211,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -229,6 +238,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
+    stateTransition.setExecutionContext(executionContext);
+
     documents[0].setCreatedAt(replaceDocument.getCreatedAt());
     fetchDocumentsMock.resolves([documents[0]]);
 
@@ -245,10 +256,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -272,6 +285,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
+
+    stateTransition.setExecutionContext(executionContext);
 
     fetchDocumentsMock.resolves([fetchedDocument]);
 
@@ -297,10 +312,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -313,6 +330,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
+
+    stateTransition.setExecutionContext(executionContext);
 
     stateTransition.transitions[0].getAction = () => 5;
 
@@ -330,10 +349,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
         dataContract.getId(),
+        new StateTransitionExecutionContext(),
       );
 
       expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
         stateTransition.transitions,
+        executionContext,
       );
 
       expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -358,10 +379,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       stateTransition.transitions,
+      executionContext,
     );
 
     const [callOwnerId, callDocumentTransitions, callDataContract] = (
@@ -387,6 +410,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       stateRepositoryMock,
       ownerId,
       dataContract,
+      executionContext,
     );
 
     const dataTriggerExecutionError = new DataTriggerExecutionError(
@@ -411,13 +435,15 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       stateTransition.transitions,
+      executionContext,
     );
 
-    const [callOwnerId, callDocumentTransitions, callDataContract] = (
+    const [callOwnerId, callDocumentTransitions, callDataContract, callExecutionContext] = (
       validateDocumentsUniquenessByIndicesMock.getCall(0).args
     );
 
@@ -425,12 +451,14 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       callOwnerId,
       callDocumentTransitions.map((t) => t.toObject()),
       callDataContract,
+      callExecutionContext,
     ];
 
     expect(callArgs).to.have.deep.members([
       ownerId,
       documentTransitions.map((t) => t.toObject()),
       dataContract,
+      executionContext,
     ]);
 
     const [triggerCallDocumentTransitions, triggerCallDataTriggersExecutionContext] = (
@@ -572,6 +600,66 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
         expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
       });
+
+      it('should not validate time in block window on dry run', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[1]],
+        });
+
+        executeDataTriggersMock.resolves([
+          new DataTriggerExecutionResult(),
+        ]);
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toObject()),
+        }, [dataContract]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt.setMinutes(t.updatedAt.getMinutes() - 6);
+        });
+
+        stateTransition.getExecutionContext().enableDryRun();
+
+        const result = await validateDocumentsBatchTransitionState(stateTransition);
+
+        stateTransition.getExecutionContext().disableDryRun();
+
+        expect(result).to.be.an.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
+
+      it('should return valid result if timestamps mismatch on dry run', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[0]],
+        });
+
+        executeDataTriggersMock.resolves([
+          new DataTriggerExecutionResult(),
+        ]);
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toObject()),
+        }, [dataContract]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt = new Date();
+        });
+
+        stateTransition.getExecutionContext().enableDryRun();
+
+        const result = await validateDocumentsBatchTransitionState(stateTransition);
+
+        stateTransition.getExecutionContext().disableDryRun();
+
+        expect(result).to.be.an.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
     });
 
     describe('REPLACE transition', () => {
@@ -617,6 +705,43 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
         expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
       });
+
+      it('should return valid result if documents with action "replace" have violated time window on dry run', async () => {
+        executeDataTriggersMock.resolves([
+          new DataTriggerExecutionResult(),
+        ]);
+
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [],
+          replace: [documents[1]],
+        });
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toObject()),
+        }, [dataContract]);
+
+        documents[1].updatedAt.setMinutes(
+          documents[1].updatedAt.getMinutes() - 6,
+        );
+
+        fetchDocumentsMock.resolves([documents[1]]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt.setMinutes(t.updatedAt.getMinutes() - 6);
+        });
+
+        stateTransition.getExecutionContext().enableDryRun();
+
+        const result = await validateDocumentsBatchTransitionState(stateTransition);
+
+        stateTransition.getExecutionContext().disableDryRun();
+
+        expect(result).to.be.an.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
     });
   });
 
@@ -643,10 +768,13 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
+    stateTransition.setExecutionContext(executionContext);
+
     const dataTriggersExecutionContext = new DataTriggerExecutionContext(
       stateRepositoryMock,
       ownerId,
       dataContract,
+      executionContext,
     );
 
     executeDataTriggersMock.resolves([
@@ -660,16 +788,19 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       stateTransition.transitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
       ownerId,
       [documentTransitions[0]],
       dataContract,
+      executionContext,
     );
 
     expect(executeDataTriggersMock).to.have.been.calledOnceWithExactly(

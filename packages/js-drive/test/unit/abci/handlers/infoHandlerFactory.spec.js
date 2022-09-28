@@ -17,8 +17,6 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
-const CreditsDistributionPoolRepositoryMock = require('../../../../lib/test/mock/CreditsDistributionPoolRepositoryMock');
-const CreditsDistributionPoolMock = require('../../../../lib/test/mock/CreditsDistributionPoolMock');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;
@@ -32,8 +30,6 @@ describe('infoHandlerFactory', () => {
   let blockExecutionContextStackMock;
   let blockExecutionContextStackRepositoryMock;
   let groveDBStoreMock;
-  let creditsDistributionPoolRepositoryMock;
-  let creditsDistributionPoolMock;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
@@ -50,16 +46,10 @@ describe('infoHandlerFactory', () => {
     blockExecutionContextStackRepositoryMock = new BlockExecutionContextStackRepositoryMock(
       this.sinon,
     );
-    creditsDistributionPoolRepositoryMock = new CreditsDistributionPoolRepositoryMock(this.sinon);
-    creditsDistributionPoolMock = new CreditsDistributionPoolMock(this.sinon);
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
 
     blockExecutionContextStackRepositoryMock.fetch.resolves({
       getContexts: this.sinon.stub(),
-    });
-
-    creditsDistributionPoolRepositoryMock.fetch.resolves({
-      toJSON: this.sinon.stub().returns('json'),
     });
 
     groveDBStoreMock.getRootHash.resolves(lastBlockAppHash);
@@ -72,8 +62,6 @@ describe('infoHandlerFactory', () => {
       updateSimplifiedMasternodeListMock,
       loggerMock,
       groveDBStoreMock,
-      creditsDistributionPoolRepositoryMock,
-      creditsDistributionPoolMock,
     );
   });
 
@@ -90,16 +78,15 @@ describe('infoHandlerFactory', () => {
     });
 
     expect(blockExecutionContextStackRepositoryMock.fetch).to.be.calledOnce();
-    expect(blockExecutionContextStackMock.getLatest).to.be.calledOnce();
+    expect(blockExecutionContextStackMock.getFirst).to.be.calledOnce();
     expect(blockExecutionContextMock.populate).to.not.be.called();
-    expect(creditsDistributionPoolRepositoryMock.fetch).to.not.be.called();
     expect(blockExecutionContextMock.getHeader).to.not.be.called();
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
     expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
   });
 
   it('should populate context, initialize Credits Distribution Pool and update SML on subsequent runs', async () => {
-    blockExecutionContextStackMock.getLatest.returns(blockExecutionContextMock);
+    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
@@ -120,8 +107,6 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
-    expect(creditsDistributionPoolRepositoryMock.fetch).to.be.calledOnce();
-    expect(creditsDistributionPoolMock.populate).to.be.calledOnceWithExactly('json');
     expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(

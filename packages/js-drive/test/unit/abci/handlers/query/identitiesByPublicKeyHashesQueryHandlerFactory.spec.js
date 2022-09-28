@@ -6,13 +6,10 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const cbor = require('cbor');
-
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
     Proof,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -22,35 +19,23 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
 );
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
-  let signedPublicKeyToIdentityIdRepositoryMock;
-  let signedIdentityRepositoryMock;
+  let signedPublicKeyToIdentitiesRepositoryMock;
   let publicKeyHashes;
   let identities;
   let maxIdentitiesPerRequest;
-  let previousRootTreeMock;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextStackMock;
   let params;
   let data;
 
   beforeEach(function beforeEach() {
-    signedPublicKeyToIdentityIdRepositoryMock = {
-      fetchBuffer: this.sinon.stub(),
-    };
-
-    signedIdentityRepositoryMock = {
-      fetch: this.sinon.stub(),
-    };
-
-    previousRootTreeMock = {
-      getFullProofForOneLeaf: this.sinon.stub(),
-      getProof: this.sinon.stub(),
+    signedPublicKeyToIdentitiesRepositoryMock = {
+      fetchManyBuffers: this.sinon.stub(),
+      proveMany: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
@@ -62,16 +47,10 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-
-    blockExecutionContextStackMock.getLast.returns(true);
-
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
-      signedPublicKeyToIdentityIdRepositoryMock,
-      signedIdentityRepositoryMock,
+      signedPublicKeyToIdentitiesRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     publicKeyHashes = [
@@ -85,59 +64,22 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       getIdentityFixture(),
     ];
 
-    signedPublicKeyToIdentityIdRepositoryMock
-      .fetchBuffer
-      .withArgs(publicKeyHashes[0])
-      .resolves(cbor.encode([identities[0].getId()]));
-
-    signedPublicKeyToIdentityIdRepositoryMock
-      .fetchBuffer
-      .withArgs(publicKeyHashes[1])
-      .resolves(cbor.encode([identities[1].getId()]));
-
-    signedIdentityRepositoryMock.fetch
-      .withArgs(identities[0].getId())
-      .resolves(identities[0]);
-
-    signedIdentityRepositoryMock.fetch
-      .withArgs(identities[0].getId())
-      .resolves(identities[1]);
+    signedPublicKeyToIdentitiesRepositoryMock
+      .fetchManyBuffers.resolves(
+        new StorageResult([identities[0].toBuffer(), identities[1].toBuffer()]),
+      );
 
     params = {};
     data = { publicKeyHashes };
-  });
-
-  it('should return empty response if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    responseMock = new GetIdentitiesByPublicKeyHashesResponse();
-    responseMock.setIdentitiesList([
-      cbor.encode([]),
-      cbor.encode([]),
-      cbor.encode([]),
-    ]);
-    responseMock.setMetadata(new ResponseMetadata());
-
-    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
-
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    expect(result.value).to.deep.equal(responseMock.serializeBinary());
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer).to.have.not.been.called();
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
   });
 
   it('should throw an error if maximum requested items exceeded', async () => {
     maxIdentitiesPerRequest = 1;
 
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
-      signedPublicKeyToIdentityIdRepositoryMock,
-      signedIdentityRepositoryMock,
+      signedPublicKeyToIdentitiesRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     try {
@@ -152,43 +94,21 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     }
   });
 
-  it('should return identity id map', async () => {
+  it('should return identities', async () => {
+    params = publicKeyHashes;
+
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
 
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.callCount).to.equal(
-      publicKeyHashes.length,
+    expect(signedPublicKeyToIdentitiesRepositoryMock.fetchManyBuffers).to.be.calledOnceWithExactly(
+      publicKeyHashes,
     );
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.getCall(0).args).to.deep.equal([
-      publicKeyHashes[0],
-    ]);
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.getCall(1).args).to.deep.equal([
-      publicKeyHashes[1],
-    ]);
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.getCall(2).args).to.deep.equal([
-      publicKeyHashes[2],
-    ]);
-
-    expect(signedIdentityRepositoryMock.fetch.callCount).to.equal(
-      identities.length,
-    );
-
-    expect(signedIdentityRepositoryMock.fetch.getCall(0).args).to.deep.equal([
-      identities[0].getId(),
-    ]);
-
-    expect(signedIdentityRepositoryMock.fetch.getCall(1).args).to.deep.equal([
-      identities[1].getId(),
-    ]);
 
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
-  it('should throw UnimplementedAbciError of proof requested', async () => {
+  it('should return proof if it was requested', async () => {
     // const proof = {
     //   rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
     //   'hex'),
@@ -196,12 +116,20 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     //   'hex'),
     // };
 
-    try {
-      await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: true });
+    const proof = Buffer.alloc(20, 1);
 
-      expect.fail('should throw UnimplementedAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(UnimplementedAbciError);
-    }
+    signedPublicKeyToIdentitiesRepositoryMock.proveMany.resolves(
+      new StorageResult(proof),
+    );
+
+    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: true });
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
+
+    expect(signedPublicKeyToIdentitiesRepositoryMock.proveMany).to.be.calledOnceWithExactly(
+      data.publicKeyHashes,
+    );
   });
 });

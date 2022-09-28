@@ -20,7 +20,6 @@ const {
     GetDataContractRequest,
     GetDocumentsRequest,
     GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentityIdsByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     pbjs: {
@@ -34,8 +33,6 @@ const {
       GetDocumentsResponse: PBJSGetDocumentsResponse,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
-      GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
-      GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -63,9 +60,6 @@ const getDataContractHandlerFactory = require(
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',
 );
-const getIdentityIdsByPublicKeyHashesHandlerFactory = require(
-  './getIdentityIdsByPublicKeyHashesHandlerFactory',
-);
 const waitForStateTransitionResultHandlerFactory = require(
   './waitForStateTransitionResultHandlerFactory',
 );
@@ -76,7 +70,6 @@ const getConsensusParamsHandlerFactory = require(
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
 const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
 const waitForTransactionResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
-const waitForHeightFactory = require('../../../externalApis/tenderdash/waitForHeightFactory');
 const getExistingTransactionResultFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/getExistingTransactionResult');
 const getConsensusParamsFactory = require('../../../externalApis/tenderdash/getConsensusParamsFactory');
 
@@ -178,22 +171,6 @@ function platformHandlersFactory(
     wrapInErrorHandler(getIdentitiesByPublicKeyHashesHandler),
   );
 
-  // getIdentityIdsByPublicKeyHashes
-  const getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetIdentityIdsByPublicKeyHashes = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetIdentityIdsByPublicKeyHashesRequest,
-      PBJSGetIdentityIdsByPublicKeyHashesRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetIdentityIdsByPublicKeyHashesResponse,
-    ),
-    wrapInErrorHandler(getIdentityIdsByPublicKeyHashesHandler),
-  );
-
   // waitForStateTransitionResult
   const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient);
 
@@ -201,12 +178,9 @@ function platformHandlersFactory(
     rpcClient,
   );
 
-  const waitForHeight = waitForHeightFactory(blockchainListener);
-
   const waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
     waitForTransactionResult,
     getExistingTransactionResult,
-    waitForHeight,
   );
 
   const waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(
@@ -249,7 +223,6 @@ function platformHandlersFactory(
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
-    getIdentityIdsByPublicKeyHashes: wrappedGetIdentityIdsByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
   };

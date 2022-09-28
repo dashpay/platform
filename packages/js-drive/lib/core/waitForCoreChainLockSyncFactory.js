@@ -43,10 +43,13 @@ function waitForCoreChainLockSyncFactory(
       try {
         ({ chainLock } = new ChainLockSigMessage(rawChainLockMessage));
       } catch (e) {
-        logger.error({ err: e }, 'Error on creating ChainLockSigMessage');
-        logger.debug({
-          rawChainLockMessage: rawChainLockMessage.toString('hex'),
-        });
+        logger.error(
+          {
+            err: e,
+            rawChainLockMessage: rawChainLockMessage.toString('hex'),
+          },
+          'Error on creating ChainLockSigMessage',
+        );
 
         return;
       }
@@ -55,7 +58,7 @@ function waitForCoreChainLockSyncFactory(
 
       logger.trace(
         {
-          rawChainLockMessage: rawChainLockMessage.toString('hex'),
+          chainLock,
         },
         `Updated latestCoreChainLock for core height ${chainLock.height}`,
       );

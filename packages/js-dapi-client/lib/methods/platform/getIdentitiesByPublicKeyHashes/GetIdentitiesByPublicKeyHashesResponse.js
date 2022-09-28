@@ -1,5 +1,3 @@
-const cbor = require('cbor');
-
 const AbstractResponse = require('../response/AbstractResponse');
 
 class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
@@ -15,7 +13,7 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Array<Buffer[]>}
+   * @returns {Buffer[]}
    */
   getIdentities() {
     return this.identities;
@@ -29,13 +27,7 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     return new GetIdentitiesByPublicKeyHashesResponse(
-      proto.getIdentitiesList().map((identitiesSerialized) => {
-        const identities = cbor.decode(identitiesSerialized);
-
-        return identities.map((identity) => (
-          (identity.length > 0 ? Buffer.from(identity) : null)
-        ));
-      }),
+      proto.getIdentitiesList_asU8().map((identity) => Buffer.from(identity)),
       metadata,
       proof,
     );

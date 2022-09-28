@@ -1,7 +1,10 @@
-const Identifier = require('@dashevo/dpp/lib/Identifier');
-const Worker = require('../Worker');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
+const Worker = require('../Worker');
 const logger = require('../../logger');
+
+const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 /**
  * @property {number} gapLimit
@@ -66,13 +69,13 @@ class IdentitySyncWorker extends Worker {
       const publicKey = privateKey.toPublicKey();
 
       // eslint-disable-next-line no-await-in-loop
-      const [fetchedIds] = await this.transport.getIdentityIdsByPublicKeyHash([publicKey.hash]);
+      const identityBuffers = await this.transport.getIdentitiesByPublicKeyHashes(
+        [publicKey.hash],
+      );
 
-      const [fetchedId] = fetchedIds || [];
-
-      // if identity id is not preset then increment gap count
+      // if identity is not preset then increment gap count
       // and stop sync if gap limit is reached
-      if (fetchedId === undefined) {
+      if (identityBuffers.length === 0) {
         gapCount += 1;
 
         logger.silly(`IdentitySyncWorker - gap at index ${index}`);
@@ -87,24 +90,34 @@ class IdentitySyncWorker extends Worker {
         continue;
       }
 
+      const [identityBuffer] = identityBuffers;
+
       // If it's not an undefined and not a buffer or Identifier (which inherits Buffer),
       // this method will loop forever.
       // This check prevents this from happening
-      if (!Buffer.isBuffer(fetchedId)) {
-        throw new Error(`Expected identity id to be a Buffer or undefined, got ${fetchedId}`);
+      if (!Buffer.isBuffer(identityBuffer)) {
+        throw new Error(`Expected identity id to be a Buffer or undefined, got ${identityBuffer}`);
       }
 
       // reset gap counter if we got an identity
       // it means gaps are not sequential
       gapCount = 0;
 
-      logger.silly(`IdentitySyncWorker - got ${Identifier.from(fetchedId)} at ${index}`);
+      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        identityBuffer,
+      );
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      const identity = new Identity(rawIdentity);
+
+      logger.silly(`IdentitySyncWorker - got ${identity.getId()} at ${index}`);
 
       // eslint-disable-next-line no-await-in-loop
       await this.storage
         .getWalletStore(this.walletId)
         .insertIdentityIdAtIndex(
-          Identifier.from(fetchedId).toString(),
+          identity.getId().toString(),
           index,
         );
     }

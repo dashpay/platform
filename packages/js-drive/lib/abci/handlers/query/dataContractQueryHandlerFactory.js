@@ -16,20 +16,17 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
  *
  * @param {DataContractStoreRepository} signedDataContractRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(
   signedDataContractRepository,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef dataContractQueryHandler
@@ -40,11 +37,6 @@ function dataContractQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function dataContractQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      throw new NotFoundAbciError('Data Contract not found');
-    }
-
     let contractIdIdentifier;
     try {
       contractIdIdentifier = new Identifier(id);
@@ -59,16 +51,17 @@ function dataContractQueryHandlerFactory(
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
     if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
+      const proof = await signedDataContractRepository.prove(contractIdIdentifier);
+
+      response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
+      if (dataContract.isNull()) {
+        throw new NotFoundAbciError('Data Contract not found');
+      }
+
+      response.setDataContract(dataContract.getValue().toBuffer());
     }
-
-    const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
-
-    if (!dataContract) {
-      throw new NotFoundAbciError('Data Contract not found');
-    }
-
-    response.setDataContract(dataContract.toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),

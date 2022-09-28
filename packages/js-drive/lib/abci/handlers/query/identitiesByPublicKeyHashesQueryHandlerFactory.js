@@ -6,34 +6,25 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const cbor = require('cbor');
-
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
- * @param {PublicKeyToIdentityIdStoreRepository} signedPublicKeyToIdentityIdRepository
- * @param {IdentityStoreRepository} signedIdentityRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} signedPublicKeyToIdentitiesRepository
  * @param {number} maxIdentitiesPerRequest
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
-  signedPublicKeyToIdentityIdRepository,
-  signedIdentityRepository,
+  signedPublicKeyToIdentitiesRepository,
   maxIdentitiesPerRequest,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -52,64 +43,19 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      const response = new GetIdentitiesByPublicKeyHashesResponse();
-
-      response.setIdentitiesList(publicKeyHashes.map(() => cbor.encode([])));
-      response.setMetadata(new ResponseMetadata());
-
-      return new ResponseQuery({
-        value: response.serializeBinary(),
-      });
-    }
-
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
-    const identityIds = await Promise.all(
-      publicKeyHashes.map((publicKeyHash) => (
-        signedPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
-      )),
-    );
+    if (request.prove) {
+      const proof = await signedPublicKeyToIdentitiesRepository.proveMany(publicKeyHashes);
 
-    const foundIdentityIds = [];
+      response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const identitiesListResult = await signedPublicKeyToIdentitiesRepository.fetchManyBuffers(
+        publicKeyHashes,
+      );
 
-    for (let i = 0; i < identityIds.length; i++) {
-      if (identityIds[i]) {
-        // If identity was found, we need to request ordinary identity proof by id
-        const ids = cbor.decode(identityIds[i]);
-
-        ids.forEach((id) => foundIdentityIds.push(id));
-      }
+      response.setIdentitiesList(identitiesListResult.getValue());
     }
-
-    const identityBuffers = await Promise.all(
-      identityIds.map(async (serializedIds) => {
-        if (!serializedIds) {
-          return cbor.encode([]);
-        }
-
-        const ids = cbor.decode(serializedIds);
-
-        const identities = await Promise.all(
-          ids.map(async (id) => {
-            const identity = await signedIdentityRepository.fetch(
-              Identifier.from(id),
-            );
-
-            return identity.toBuffer();
-          }),
-        );
-
-        return cbor.encode(identities);
-      }),
-    );
-
-    response.setIdentitiesList(identityBuffers);
 
     return new ResponseQuery({
       value: response.serializeBinary(),

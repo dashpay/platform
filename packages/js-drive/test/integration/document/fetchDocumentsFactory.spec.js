@@ -1,11 +1,10 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
-const NotIndexedPropertiesInWhereConditionsError = require('../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
@@ -39,8 +38,11 @@ describe('fetchDocumentsFactory', () => {
       },
     ];
 
-    const createInitialStateStructure = container.resolve('createInitialStateStructure');
-    await createInitialStateStructure();
+    /**
+     * @type {Drive}
+     */
+    const rsDrive = container.resolve('rsDrive');
+    await rsDrive.createInitialStateStructure();
 
     await dataContractRepository.store(dataContract);
 
@@ -54,50 +56,59 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const result = await fetchDocuments(contractId, documentType);
 
-    expect(result).to.be.an('array');
-    expect(result).to.have.lengthOf(1);
+    expect(result).to.be.instanceOf(StorageResult);
+    expect(result.getOperations().length).to.be.greaterThan(0);
 
-    const [actualDocument] = result;
+    const foundDocuments = result.getValue();
+
+    expect(foundDocuments).to.be.an('array');
+    expect(foundDocuments).to.have.lengthOf(1);
+
+    const [actualDocument] = foundDocuments;
 
     expect(actualDocument.toObject()).to.deep.equal(document.toObject());
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {
-    let result = await fetchDocuments(contractId, documentType);
-
-    expect(result).to.deep.equal([]);
-
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const query = { where: [['name', '==', document.get('name')]] };
-    result = await fetchDocuments(contractId, documentType, query);
 
-    expect(result).to.be.an('array');
-    expect(result).to.have.lengthOf(1);
+    const result = await fetchDocuments(contractId, documentType, query);
 
-    const [actualDocument] = result;
+    const foundDocuments = result.getValue();
+
+    expect(foundDocuments).to.be.an('array');
+    expect(foundDocuments).to.have.lengthOf(1);
+
+    const [actualDocument] = foundDocuments;
 
     expect(actualDocument.toObject()).to.deep.equal(document.toObject());
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const query = { where: [['name', '==', 'unknown']] };
 
     const result = await fetchDocuments(contractId, documentType, query);
 
-    expect(result).to.deep.equal([]);
+    expect(result).to.be.instanceOf(StorageResult);
+    expect(result.getOperations().length).to.be.greaterThan(0);
+
+    const foundDocuments = result.getValue();
+
+    expect(foundDocuments).to.deep.equal([]);
   });
 
   it('should fetch documents by an equal date', async () => {
     const indexedDocument = getDocumentsFixture(dataContract)[3];
 
-    await documentRepository.store(indexedDocument);
+    await documentRepository.create(indexedDocument);
 
     const query = {
       where: [
@@ -107,7 +118,12 @@ describe('fetchDocumentsFactory', () => {
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
-    expect(result[0].toObject()).to.deep.equal(
+    expect(result).to.be.instanceOf(StorageResult);
+    expect(result.getOperations().length).to.be.greaterThan(0);
+
+    const foundDocuments = result.getValue();
+
+    expect(foundDocuments[0].toObject()).to.deep.equal(
       indexedDocument.toObject(),
     );
   });
@@ -115,7 +131,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by a date range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.store(indexedDocument);
+    await documentRepository.create(indexedDocument);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() - 10);
@@ -133,7 +149,12 @@ describe('fetchDocumentsFactory', () => {
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
-    expect(result[0].toObject()).to.deep.equal(
+    expect(result).to.be.instanceOf(StorageResult);
+    expect(result.getOperations().length).to.be.greaterThan(0);
+
+    const foundDocuments = result.getValue();
+
+    expect(foundDocuments[0].toObject()).to.deep.equal(
       indexedDocument.toObject(),
     );
   });
@@ -141,7 +162,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch empty array in case date is out of range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.store(indexedDocument);
+    await documentRepository.create(indexedDocument);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() + 10);
@@ -159,69 +180,16 @@ describe('fetchDocumentsFactory', () => {
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
-    expect(result).to.have.length(0);
-  });
+    expect(result).to.be.instanceOf(StorageResult);
+    expect(result.getOperations().length).to.be.greaterThan(0);
 
-  it('should throw InvalidQueryError if contract ID is not valid', async () => {
-    contractId = 'something';
+    const foundDocuments = result.getValue();
 
-    try {
-      await fetchDocuments(contractId, documentType);
-
-      expect.fail('should throw InvalidQueryError');
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error.getContractId()).to.be.deep.equal(contractId);
-    }
-  });
-
-  it('should throw InvalidQueryError if contract ID does not exist', async () => {
-    await documentRepository.store(document);
-
-    contractId = generateRandomIdentifier();
-
-    try {
-      await fetchDocuments(contractId, documentType);
-
-      expect.fail('should throw InvalidQueryError');
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error.getContractId()).to.be.deep.equal(contractId);
-    }
-  });
-
-  it('should throw InvalidQueryError if type does not exist', async () => {
-    await documentRepository.store(document);
-
-    documentType = 'Unknown';
-
-    try {
-      await fetchDocuments(contractId, documentType);
-
-      expect.fail('should throw InvalidQueryError');
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error.getDocumentType()).to.be.equal(documentType);
-    }
+    expect(foundDocuments).to.have.length(0);
   });
 
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const query = { where: [['lastName', '==', 'unknown']] };
 
@@ -231,12 +199,19 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
+    }
+  });
 
-      const [error] = e.getErrors();
+  it('should throw InvalidQueryError if type does not exist', async () => {
+    documentType = 'Unknown';
 
-      expect(error).to.be.instanceOf(NotIndexedPropertiesInWhereConditionsError);
+    try {
+      await fetchDocuments(contractId, documentType);
+
+      expect.fail('should throw InvalidQueryError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidQueryError);
+      expect(e.message).to.equal('document type Unknown is not defined in the data contract');
     }
   });
 });

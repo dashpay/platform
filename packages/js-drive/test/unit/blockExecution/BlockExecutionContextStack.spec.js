@@ -79,8 +79,8 @@ describe('BlockExecutionContextStack', () => {
     });
   });
 
-  describe('#removeLatest', () => {
-    it('should return remove the last context from the stack', () => {
+  describe('#removeFirst', () => {
+    it('should return remove the first context from the stack', () => {
       const lastContext = new BlockExecutionContext();
 
       blockExecutionContextStack.setContexts([
@@ -88,12 +88,12 @@ describe('BlockExecutionContextStack', () => {
         lastContext,
       ]);
 
-      blockExecutionContextStack.removeLatest();
+      blockExecutionContextStack.removeFirst();
 
       const result = blockExecutionContextStack.getContexts();
 
       expect(result).to.deep.equals([
-        blockExecutionContext,
+        lastContext,
       ]);
     });
   });

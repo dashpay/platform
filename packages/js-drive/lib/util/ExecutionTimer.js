@@ -1,7 +1,15 @@
 const process = require('process');
 
 class ExecutionTimer {
-  #timers = {};
+  /**
+   * @type {Object.<string, [number, number]>}
+   */
+  #started = {};
+
+  /**
+   * @type {Object.<string, string>}
+   */
+  #stopped = {};
 
   /**
    * Start named timer
@@ -15,26 +23,64 @@ class ExecutionTimer {
       throw new Error(`${name} timer is already started`);
     }
 
-    this.#timers[name] = process.hrtime();
+    this.#started[name] = process.hrtime();
   }
 
   /**
-   * End named timer and get timings
+   * Clear timer
    *
    * @param {string} name
-   *
-   * @return {number}
    */
-  endTimer(name) {
+  clearTimer(name) {
+    delete this.#started[name];
+    delete this.#stopped[name];
+  }
+
+  /**
+   * Get timer
+   *
+   * @param {string} name
+   * @param {boolean} clear - clear timer after getting
+   * @returns {string}
+   */
+  getTimer(name, clear = false) {
+    if (!this.#stopped[name]) {
+      throw new Error(`${name} timer is not stopped`);
+    }
+
+    const timing = this.#stopped[name];
+
+    if (clear) {
+      this.clearTimer(name);
+    }
+
+    return timing;
+  }
+
+  /**
+   * Stop named timer and get timings
+   *
+   * @param {string} name
+   * @param {boolean} keep - do not delete timer
+   *
+   * @return {string}
+   */
+  stopTimer(name, keep = false) {
     if (!this.isStarted(name)) {
       throw new Error(`${name} timer is not started`);
     }
 
-    const timings = process.hrtime(this.#timers[name]);
+    const timings = process.hrtime(this.#started[name]);
 
-    delete this.#timers[name];
+    const result = (
+      parseFloat(timings[0].toString()) + timings[1] / 1000000000
+    ).toFixed(3);
 
-    return (parseFloat(timings[0]) + timings[1] / 1000000000).toFixed(3);
+    if (keep) {
+      this.#stopped[name] = result;
+    }
+
+    return result;
   }
 
   /**
@@ -42,7 +88,7 @@ class ExecutionTimer {
    * @return {boolean}
    */
   isStarted(name) {
-    return this.#timers[name] !== undefined;
+    return this.#started[name] !== undefined;
   }
 }
 

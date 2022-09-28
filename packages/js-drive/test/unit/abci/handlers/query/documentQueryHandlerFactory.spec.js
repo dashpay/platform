@@ -9,7 +9,6 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
-    ResponseMetadata,
     Proof,
   },
 } = require('@dashevo/dapi-grpc');
@@ -21,28 +20,27 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const documentQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/documentQueryHandlerFactory');
 const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQueryError');
-const ValidationError = require('../../../../../lib/document/query/errors/ValidationError');
 
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
   let fetchSignedDocumentsMock;
+  let proveSignedDocumentsMock;
   let documents;
   let params;
   let data;
   let options;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextStackMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
 
     fetchSignedDocumentsMock = this.sinon.stub();
+    proveSignedDocumentsMock = this.sinon.stub();
     createQueryResponseMock = this.sinon.stub();
 
     responseMock = new GetDocumentsResponse();
@@ -50,13 +48,10 @@ describe('documentQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-    blockExecutionContextStackMock.getLast.returns(true);
-
     documentQueryHandler = documentQueryHandlerFactory(
       fetchSignedDocumentsMock,
+      proveSignedDocumentsMock,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     params = {};
@@ -78,37 +73,23 @@ describe('documentQueryHandlerFactory', () => {
     };
   });
 
-  it('should return empty response if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    responseMock = new GetDocumentsResponse();
-
-    responseMock.setMetadata(new ResponseMetadata());
-
-    const result = await documentQueryHandler(params, data, {});
-
-    expect(createQueryResponseMock).to.have.not.been.called();
-    expect(fetchSignedDocumentsMock).to.have.not.been.called();
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    expect(result.value).to.deep.equal(responseMock.serializeBinary());
-  });
-
   it('should return serialized documents', async () => {
-    fetchSignedDocumentsMock.resolves(documents);
+    fetchSignedDocumentsMock.resolves(
+      new StorageResult(documents),
+    );
 
     const result = await documentQueryHandler(params, data, {});
 
     expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, undefined);
     expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(proveSignedDocumentsMock).to.not.be.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
-  it('should throw UnimplementedAbciError if proof was requested', async () => {
+  it('should return proof if it was requested', async () => {
     // const proof = {
     //   rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
     //   'hex'),
@@ -116,21 +97,27 @@ describe('documentQueryHandlerFactory', () => {
     //   'hex'),
     // };
 
-    fetchSignedDocumentsMock.resolves(documents);
+    const proof = Buffer.alloc(20, 255);
 
-    try {
-      await documentQueryHandler(params, data, { prove: true });
+    fetchSignedDocumentsMock.resolves(new StorageResult(documents));
+    proveSignedDocumentsMock.resolves(
+      new StorageResult(proof),
+    );
 
-      expect.fail('should throw UnimplementedAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(UnimplementedAbciError);
-    }
+    const result = await documentQueryHandler(params, data, { prove: true });
+
+    expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, true);
+    expect(fetchSignedDocumentsMock).to.not.be.called();
+    expect(proveSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
   it('should throw InvalidArgumentAbciError on invalid query', async () => {
-    const error = new ValidationError('Invalid query');
-
-    fetchSignedDocumentsMock.throws(new InvalidQueryError([error]));
+    fetchSignedDocumentsMock.throws(new InvalidQueryError('invalid'));
 
     try {
       await documentQueryHandler(params, data, {});
@@ -139,13 +126,13 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
-      expect(e.getData()).to.deep.equal({ errors: [error] });
-      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(e.getMessage()).to.equal('Invalid query: invalid');
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type);
     }
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableAbciError());
+    createQueryResponseMock.throws(new UnavailableAbciError('message'));
 
     try {
       await documentQueryHandler(params, data, {});
@@ -154,11 +141,12 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceof(UnavailableAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
+      expect(e.getMessage()).to.equal('message');
       expect(fetchSignedDocumentsMock).to.not.be.called();
     }
   });
 
-  it('should throw error if fetchDocuments throws unknown error', async () => {
+  it('should throw error if fetchSignedDocuments throws unknown error', async () => {
     const error = new Error('Some error');
 
     fetchSignedDocumentsMock.throws(error);
@@ -169,7 +157,7 @@ describe('documentQueryHandlerFactory', () => {
       expect.fail('should throw any error');
     } catch (e) {
       expect(e).to.deep.equal(error);
-      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type);
     }
   });
 });

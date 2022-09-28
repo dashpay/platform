@@ -27,8 +27,13 @@ function validateIdentityCreateTransitionStateFactory(
     const result = new ValidationResult();
 
     // Check if identity with such id already exists
+    const executionContext = stateTransition.getExecutionContext();
     const identityId = stateTransition.getIdentityId();
-    const identity = await stateRepository.fetchIdentity(identityId);
+    const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     if (identity) {
       result.addError(
