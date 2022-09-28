@@ -5,7 +5,7 @@ const {
     },
     types: {
       VoteExtensionType,
-    }
+    },
   },
 } = require('@dashevo/abci/types');
 

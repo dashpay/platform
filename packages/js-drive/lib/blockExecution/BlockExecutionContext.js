@@ -249,8 +249,8 @@ class BlockExecutionContext {
 
   /**
    * Set withdrawal transactions hash map
-   * 
-   * @param {Object} withdrawalTransactionsMap 
+   *
+   * @param {Object} withdrawalTransactionsMap
    */
   setWithdrawalTransactionsMap(withdrawalTransactionsMap) {
     this.withdrawalTransactionsMap = withdrawalTransactionsMap;

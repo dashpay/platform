@@ -137,10 +137,15 @@ function beginBlockFactory(
 
     const { unsignedWithdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
 
-    blockExecutionContext.setWithdrawalTransactionsMap(unsignedWithdrawalTransactions.reduce((map, transactionBytes) => ({
-      ...map,
-      [hash(transactionBytes).toString('hex')]: transactionBytes,
-    })), {});
+    const withdrawalTransactionsMap = unsignedWithdrawalTransactions.reduce(
+      (map, transactionBytes) => ({
+        ...map,
+        [hash(transactionBytes).toString('hex')]: transactionBytes,
+      }),
+      {},
+    );
+
+    blockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
 
     // Update SML
 

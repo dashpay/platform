@@ -27,7 +27,7 @@ function commitFactory(
    *
    * @param {ILastCommitInfo} lastCommitInfo
    * @param {BaseLogger} logger
-   * 
+   *
    * @return {Promise<{ appHash: Buffer }>}
    */
   async function commit(lastCommitInfo, logger) {
