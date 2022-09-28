@@ -299,8 +299,8 @@ module.exports = {
   },
   '0.22.0': (configFile) => {
     Object.entries(configFile.configs)
-      .forEach(([name, config]) => {
-        config.docker = systemConfigs[config.group || name].docker;
+      .forEach(([, config]) => {
+        config.docker = systemConfigs[config.group || 'base'].docker;
 
         // Update images
         config.core.docker.image = systemConfigs.base.core.docker.image;
@@ -343,11 +343,31 @@ module.exports = {
 
     return configFile;
   },
-  '0.22.16': (configFile) => {
+  '0.23.0': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          // Update images
+          config.platform.dpns = systemConfigs.base.platform.dpns;
+          config.platform.featureFlags = systemConfigs.base.platform.featureFlags;
+          config.platform.dashpay = systemConfigs.base.platform.dashpay;
+          config.platform.masternodeRewardShares = systemConfigs.base.platform
+            .masternodeRewardShares;
+        }
+      });
+
+    configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
+    configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
+    configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
+    configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
+      .masternodeRewardShares;
+
+    return configFile;
+  },
+  '0.23.0-dev.8': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         config.core.reindex = 0;
-        config.core.reindexContainerId = null;
       });
 
     return configFile;
