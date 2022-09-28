@@ -92,13 +92,22 @@ impl IdentityWasm {
         self.0.get_id().clone().into()
     }
 
+    // TODO: There's a problem here - if the value is not a vec, this method just won't return
+    //  anything
     #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(&mut self, pub_keys: Vec<JsValue>) {
-        let keys: Vec<IdentityPublicKey> = pub_keys
-            .into_iter()
-            .map(|v| JsValue::into_serde(&v).expect("unable to convert pub keys"))
-            .collect();
-        self.0.set_public_keys(keys);
+    pub fn set_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<usize, JsValue> {
+        let public_keys_wasm = into_vec::<IdentityPublicKeyWasm>(public_keys)?;
+        let len = public_keys_wasm.len();
+
+        self.0
+            .set_public_keys(public_keys_wasm.into_iter().map(Into::into).collect());
+        Ok(len)
+
+        // let keys: Vec<IdentityPublicKey> = pub_keys
+        //     .into_iter()
+        //     .map(|v| JsValue::into_serde(&v).expect("unable to convert pub keys"))
+        //     .collect();
+        // self.0.set_public_keys(keys);
     }
 
     #[wasm_bindgen(js_name=getPublicKeys)]

@@ -52,6 +52,17 @@ impl From<&JsPublicKey> for IdentityPublicKey {
     }
 }
 
+// pub(crate) struct JsonPublicKey {
+//     pub id: KeyID,
+//     pub purpose: Purpose,
+//     pub security_level: SecurityLevel,
+//     #[serde(rename = "type")]
+//     pub key_type: KeyType,
+//     pub data: String,
+//     pub read_only: bool,
+//     pub disabled_at: Option<TimestampMillis>,
+// }
+
 // #[derive(Debug, Serialize, Deserialize, Clone)]
 // #[serde(rename_all = "camelCase")]
 // pub(crate) struct JsonPublicKey {
@@ -205,6 +216,12 @@ impl IdentityPublicKeyWasm {
         let json = val.to_string();
         js_sys::JSON::parse(&json)
     }
+
+    pub fn from_json(json_object: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
+        let str = String::from(js_sys::JSON::stringify(&json_object)?);
+        let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
+        Ok(Self(IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?))
+    }
 }
 
 impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
@@ -217,7 +234,7 @@ impl TryFrom<JsValue> for IdentityPublicKeyWasm {
     type Error = JsValue;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        Self::new(value)
+        Self::from_json(value)
     }
 }
 

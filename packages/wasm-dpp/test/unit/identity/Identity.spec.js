@@ -85,7 +85,16 @@ describe('Identity', () => {
 
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
-      identity.setPublicKeys(42);
+      console.log(identity.setPublicKeys([
+        new IdentityPublicKeyWasm({
+          id: 99,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: Buffer.alloc(36).fill('a'),
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          readOnly: false,
+        })
+      ]));
       expect(identity.getPublicKeys()).to.equal(42);
     });
   });
@@ -217,23 +226,24 @@ describe('Identity', () => {
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
-      console.log(1);
-      identity.addPublicKey(new IdentityPublicKeyWasm({
-        id: 99,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.alloc(36).fill('a'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-      }));
-      identity.addPublicKey(new IdentityPublicKeyWasm({
-        id: 50,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.alloc(36).fill('a'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-      }));
+      identity.addPublicKeys([
+        new IdentityPublicKeyWasm({
+          id: 99,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: Buffer.alloc(36).fill('a'),
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          readOnly: false,
+        }),
+        new IdentityPublicKeyWasm({
+          id: 50,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: Buffer.alloc(36).fill('a'),
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          readOnly: false,
+        })
+      ]);
 
       const maxId = identity.getPublicKeyMaxId();
 
