@@ -52,7 +52,6 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v16.10.0+
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [docker-compose](https://docs.docker.com/compose/install/) v1.29.2+
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources

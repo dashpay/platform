@@ -5,6 +5,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const UnavailableAbciError = require('../../../errors/UnavailableAbciError');
+
 /**
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {createQueryResponse}
@@ -19,12 +21,15 @@ function createQueryResponseFactory(
    */
   function createQueryResponse(ResponseClass, prove = false) {
     const blockExecutionContext = blockExecutionContextStack.getFirst();
-    const signedBlockExecutionContext = blockExecutionContextStack.getLast();
+
+    if (!blockExecutionContext) {
+      throw new UnavailableAbciError('data is not available');
+    }
 
     const {
       height: signedBlockHeight,
       coreChainLockedHeight: signedCoreChainLockedHeight,
-    } = signedBlockExecutionContext.getHeader();
+    } = blockExecutionContext.getHeader();
 
     const response = new ResponseClass();
 

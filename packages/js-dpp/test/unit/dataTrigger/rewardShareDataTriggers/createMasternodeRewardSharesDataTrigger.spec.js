@@ -2,11 +2,12 @@ const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmn
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const getMasternodeRewardShareDocumentsFixture = require('../../../../lib/test/fixtures/getMasternodeRewardShareDocumentsFixture');
+const getMasternodeRewardSharesContractFixture = require('../../../../lib/test/fixtures/getMasternodeRewardSharesContractFixture');
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
-const { hash } = require('../../../../lib/util/hash');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createMasternodeRewardSharesDataTrigger', () => {
   let contextMock;
@@ -16,9 +17,10 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   let smlStoreMock;
   let smlMock;
   let documentsFixture;
+  let executionContext;
 
   beforeEach(function beforeEach() {
-    topLevelIdentityId = hash(Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex'));
+    topLevelIdentityId = Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex');
 
     smlMock = {
       getQuorum: this.sinonSandbox.stub(),
@@ -44,7 +46,9 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       ]),
     };
 
-    documentsFixture = getMasternodeRewardShareDocumentsFixture();
+    const dataContract = getMasternodeRewardSharesContractFixture();
+
+    documentsFixture = getMasternodeRewardShareDocumentsFixture(undefined, undefined, dataContract);
 
     smlStoreMock = {
       getSMLbyHeight: this.sinonSandbox.stub().returns(smlMock),
@@ -56,16 +60,19 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     stateRepositoryMock.fetchIdentity.resolves(getIdentityFixture());
     stateRepositoryMock.fetchDocuments.resolves([]);
 
-    const [document] = getMasternodeRewardShareDocumentsFixture();
+    const [document] = getMasternodeRewardShareDocumentsFixture(undefined, undefined, dataContract);
 
     [documentTransition] = getDocumentTransitionsFixture({
       create: [document],
     });
 
+    executionContext = new StateTransitionExecutionContext();
+
     contextMock = {
       getStateRepository: () => stateRepositoryMock,
       getOwnerId: this.sinonSandbox.stub(),
-      getDataContract: () => getMasternodeRewardShareDocumentsFixture.dataContract,
+      getDataContract: () => dataContract,
+      getStateTransitionExecutionContext: () => executionContext,
     };
     contextMock.getOwnerId.returns(topLevelIdentityId);
   });
@@ -90,6 +97,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
+      executionContext,
     );
   });
 
@@ -111,6 +119,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
+      executionContext,
     );
   });
 
@@ -144,6 +153,48 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
+      executionContext,
+    );
+  });
+
+  it('should pass on dry run', async () => {
+    stateRepositoryMock.fetchIdentity.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await createRewardShareDataTrigger(
+      documentTransition, contextMock,
+    );
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.true();
+    expect(stateRepositoryMock.fetchSMLStore).to.not.be.called();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+      executionContext,
+    );
+  });
+
+  it('should return an error if there are 16 stored shares', async () => {
+    stateRepositoryMock.fetchDocuments.resolves(new Array(16).fill(0));
+
+    const result = await createRewardShareDataTrigger(
+      documentTransition, contextMock,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal('Reward shares cannot contain more than 16 identities');
+
+    expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+      executionContext,
     );
   });
 });

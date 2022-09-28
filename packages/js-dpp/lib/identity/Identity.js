@@ -227,6 +227,16 @@ class Identity {
   getMetadata() {
     return this.metadata;
   }
+
+  /**
+   * Get the biggest public key ID
+   * @returns {number}
+   */
+  getPublicKeyMaxId() {
+    return this.publicKeys.reduce(
+      (result, publicKey) => (result > publicKey.getId() ? result : publicKey.getId()), 0,
+    );
+  }
 }
 
 /**

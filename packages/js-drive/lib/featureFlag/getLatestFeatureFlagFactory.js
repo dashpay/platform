@@ -32,12 +32,16 @@ function getLatestFeatureFlagFactory(
       limit: 1,
     };
 
-    const [document] = await fetchDocuments(
+    const result = await fetchDocuments(
       featureFlagsContractId,
       flagType,
-      query,
-      useTransaction,
+      {
+        ...query,
+        useTransaction,
+      },
     );
+
+    const [document] = result.getValue();
 
     return document;
   }

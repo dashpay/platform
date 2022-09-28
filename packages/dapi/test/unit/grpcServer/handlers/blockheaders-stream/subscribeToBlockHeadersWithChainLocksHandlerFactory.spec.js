@@ -24,6 +24,7 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory',
 );
+const ChainDataProvider = require('../../../../../lib/chainDataProvider/ChainDataProvider');
 
 let coreAPIMock;
 let zmqClientMock;
@@ -33,10 +34,15 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let subscribeToBlockHeadersWithChainLocksHandler;
   let getHistoricalBlockHeadersIteratorMock;
   let subscribeToNewBlockHeadersMock;
+  let chainDataProvider;
 
-  beforeEach(function () {
+  const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+  beforeEach(function beforeEach() {
     coreAPIMock = {
       getBlock: this.sinon.stub(),
+      getBlockStats: this.sinon.stub(),
+      getBlockHeaders: this.sinon.stub(),
       getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
       getBestChainLock: this.sinon.stub(),
@@ -50,54 +56,70 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     getHistoricalBlockHeadersIteratorMock = () => asyncGenerator();
     zmqClientMock = { on: this.sinon.stub(), topics: { hashblock: 'fake' } };
 
+    chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock);
+
     // eslint-disable-next-line operator-linebreak
     subscribeToBlockHeadersWithChainLocksHandler =
       subscribeToBlockHeadersWithChainLocksHandlerFactory(
         getHistoricalBlockHeadersIteratorMock,
         coreAPIMock,
+        chainDataProvider,
         zmqClientMock,
         subscribeToNewBlockHeadersMock,
       );
   });
 
-  it('should subscribe to newBlockHeaders', async function () {
+  it('should subscribe to newBlockHeaders', async function it() {
     this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-    const request = new BlockHeadersWithChainLocksRequest();
+
+    let request = new BlockHeadersWithChainLocksRequest();
+
+    request.setFromBlockHash(blockHash);
+    request.setCount(0);
+
+    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, request);
-
-    call.request.setFromBlockHash('fakehash');
-    call.request.setCount(0);
 
     coreAPIMock.getBestChainLock.resolves({
       height: 1,
       signature: Buffer.from('fakeSig'),
-      blockHash: Buffer.from('fakeHash'),
+      blockHash,
     });
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.have.been.called();
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(blockHash
+      .toString('hex'), ['height']);
   });
 
-  it('should subscribe from block hash', async function () {
+  it('should subscribe from block hash', async function it() {
     const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-    const request = new BlockHeadersWithChainLocksRequest();
+    let request = new BlockHeadersWithChainLocksRequest();
+
+    request.setFromBlockHash(blockHash);
+    request.setCount(0);
+
+    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, request);
 
-    call.request.setFromBlockHash('someBlockHash');
-    call.request.setCount(0);
-
-    coreAPIMock.getBestChainLock.resolves({
+    // monkey-patching
+    chainDataProvider.chainLock = new ChainLock({
       height: 1,
       signature: Buffer.from('fakesig', 'hex'),
       blockHash: Buffer.from('fakeHash', 'hex'),
     });
 
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+      blockHash.toString('hex'),
+      ['height'],
+    );
 
     const clSigResponse = new BlockHeadersWithChainLocksResponse();
     clSigResponse.setChainLock(new ChainLock({
@@ -122,55 +144,80 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     );
   });
 
-  it('should subscribe from block height', async function () {
+  it('should subscribe from block height', async function it() {
     this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-    const request = new BlockHeadersWithChainLocksRequest();
+
+    const blockHeight = 1;
+    const count = 5;
+
+    let request = new BlockHeadersWithChainLocksRequest();
+    request.setFromBlockHeight(blockHeight);
+    request.setCount(count);
+
+    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, request);
-
-    call.request.setFromBlockHeight(1);
-    call.request.setCount(5);
 
     coreAPIMock.getBestChainLock.resolves({
       height: 1,
       signature: Buffer.from('fakeSig'),
       blockHash: Buffer.from('fakeHash'),
     });
-    coreAPIMock.getBlock.resolves({ height: 1 });
+
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+      blockHeight,
+      ['height'],
+    );
+
     expect(subscribeToNewBlockHeadersMock).to.not.have.been.called();
   });
 
-  it('should validate responses from coreAPI', async function () {
-    this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-    const request = new BlockHeadersWithChainLocksRequest();
+  it('should handle getBlockStats RPC method errors', async function it() {
+    let request = new BlockHeadersWithChainLocksRequest();
+
+    request.setFromBlockHash(blockHash);
+    request.setCount(0);
+
+    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, request);
 
-    call.request.setFromBlockHash('someBlockHash');
-    call.request.setCount(0);
-
     try {
-      coreAPIMock.getBlock.resolves({ height: -1 });
+      coreAPIMock.getBlockStats.throws({ code: -5 });
+
       await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+      expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message).to.be('fromBlockHash is not found');
+      expect(e.message).to.be.equal(`Block ${blockHash.toString('hex')} not found`);
     }
 
     try {
-      coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
+      coreAPIMock.getBlockStats.throws({ code: -8 });
+
       await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+      expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message.includes('is not part of the best block chain')).to.be.true();
+      expect(e.message).to.be.equal(`Block ${blockHash.toString('hex')} not found`);
     }
 
     try {
-      coreAPIMock.getBlock.resolves({ height: 10 });
+      request.setCount(10);
+
+      coreAPIMock.getBlockStats.resolves({ height: 10 });
+
       coreAPIMock.getBestBlockHeight.resolves(11);
+
       await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+      expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
     }

@@ -5,10 +5,11 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
+const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 /**
- * @param {CreditsDistributionPool} creditsDistributionPool
- * @param {CreditsDistributionPoolRepository} creditsDistributionPoolRepository
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
@@ -21,8 +22,6 @@ const {
  * @return {commitHandler}
  */
 function commitHandlerFactory(
-  creditsDistributionPool,
-  creditsDistributionPoolRepository,
   blockExecutionContext,
   blockExecutionContextStack,
   blockExecutionContextStackRepository,
@@ -51,33 +50,31 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    // Store ST fees from the block to distribution pool
-    creditsDistributionPool.incrementAmount(
-      blockExecutionContext.getCumulativeFees(),
-    );
-
-    await creditsDistributionPoolRepository.store(
-      creditsDistributionPool,
-      true,
-    );
-
     // Store block execution context
-    blockExecutionContextStack.add(blockExecutionContext);
+    const clonedBlockExecutionContext = new BlockExecutionContext();
+    clonedBlockExecutionContext.populate(blockExecutionContext);
+
+    blockExecutionContextStack.add(clonedBlockExecutionContext);
+
     blockExecutionContextStackRepository.store(
       blockExecutionContextStack,
-      true,
+      {
+        useTransaction: true,
+      },
     );
 
     // Commit the current block db transactions
     await groveDBStore.commitTransaction();
 
     // Update data contract cache with new version of
-    // commited data contract
+    // committed data contract
     for (const dataContract of blockExecutionContext.getDataContracts()) {
-      const idString = dataContract.getId().toString();
+      const operations = [new ReadOperation(dataContract.toBuffer().length)];
 
-      if (dataContractCache.has(idString)) {
-        dataContractCache.set(idString, dataContract);
+      const cacheItem = new DataContractCacheItem(dataContract, operations);
+
+      if (dataContractCache.has(cacheItem.getKey())) {
+        dataContractCache.set(cacheItem.getKey(), cacheItem);
       }
     }
 
@@ -95,7 +92,7 @@ function commitHandlerFactory(
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
     );
 
-    const blockExecutionTimings = executionTimer.endTimer('blockExecution');
+    const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 
     consensusLogger.trace(
       {

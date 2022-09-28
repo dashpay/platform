@@ -6,6 +6,7 @@ const InvalidStateTransitionSignatureError = require('../../../../lib/errors/con
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateStateTransitionKeySignatureFactory', () => {
   let publicKeyHash;
@@ -14,12 +15,17 @@ describe('validateStateTransitionKeySignatureFactory', () => {
   let verifyHashSignatureMock;
   let validateStateTransitionKeySignature;
   let fetchAssetLockPublicKeyHashMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     publicKeyHash = Buffer.alloc(20).fill(1);
 
     stateTransition = getIdentityCreateTransitionFixture();
     stateTransitionHash = stateTransition.hash({ skipSignature: true });
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     verifyHashSignatureMock = this.sinonSandbox.stub();
 
@@ -46,6 +52,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     expect(fetchAssetLockPublicKeyHashMock).to.be.calledOnceWithExactly(
       stateTransition.getAssetLockProof(),
+      executionContext,
     );
 
     expect(verifyHashSignatureMock).to.be.calledOnceWithExactly(
@@ -67,6 +74,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     expect(fetchAssetLockPublicKeyHashMock).to.be.calledOnceWithExactly(
       stateTransition.getAssetLockProof(),
+      executionContext,
     );
 
     expect(verifyHashSignatureMock).to.be.calledOnceWithExactly(

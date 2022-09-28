@@ -16,6 +16,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('getProofsQueryHandlerFactory', () => {
   let getProofsQueryHandler;
@@ -28,17 +29,14 @@ describe('getProofsQueryHandlerFactory', () => {
   let blockExecutionContextStackMock;
   let signedBlockExecutionContextMock;
   let blockExecutionContextMock;
+  let signedIdentityRepositoryMock;
+  let signedDataContractRepositoryMock;
+  let signedDocumentRepository;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
     identity = getIdentityFixture();
     documents = getDocumentsFixture();
-
-    signedBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    signedBlockExecutionContextMock.getHeader.returns({
-      height: new Long(42),
-      coreChainLockedHeight: 41,
-    });
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
@@ -47,12 +45,33 @@ describe('getProofsQueryHandlerFactory', () => {
       stateSignature: Buffer.alloc(32, 1),
     });
 
+    blockExecutionContextMock.getHeader.returns({
+      height: new Long(42),
+      coreChainLockedHeight: 41,
+    });
+
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
     blockExecutionContextStackMock.getLast.returns(signedBlockExecutionContextMock);
     blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
+    signedIdentityRepositoryMock = {
+      proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
+    };
+    signedDataContractRepositoryMock = {
+      proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
+    };
+
+    signedDocumentRepository = {
+      proveManyDocumentsFromDifferentContracts: this.sinon.stub().resolves(
+        new StorageResult(Buffer.from([1])),
+      ),
+    };
+
     getProofsQueryHandler = getProofsQueryHandlerFactory(
       blockExecutionContextStackMock,
+      signedIdentityRepositoryMock,
+      signedDataContractRepositoryMock,
+      signedDocumentRepository,
     );
 
     dataContractData = {
@@ -61,32 +80,11 @@ describe('getProofsQueryHandlerFactory', () => {
     identityData = {
       id: identity.getId(),
     };
-    documentsData = {
-      ids: documents.map((doc) => doc.getId()),
-    };
-  });
-
-  it('should return empty response if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    const result = await getProofsQueryHandler({}, {}, {});
-
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    const emptyValue = cbor.encode(
-      {
-        documentsProof: null,
-        identitiesProof: null,
-        dataContractsProof: null,
-        metadata: {
-          height: 0,
-          coreChainLockedHeight: 0,
-        },
-      },
-    );
-
-    expect(result.value).to.deep.equal(emptyValue);
+    documentsData = documents.map((doc) => ({
+      documentId: doc.getId(),
+      dataContractId: doc.getDataContractId(),
+      type: doc.getType(),
+    }));
   });
 
   it('should return proof for passed data contract ids', async () => {
@@ -103,7 +101,7 @@ describe('getProofsQueryHandlerFactory', () => {
     const result = await getProofsQueryHandler({}, {
       dataContractIds: [dataContractData.id],
       identityIds: [identityData.id],
-      documentIds: documentsData.ids,
+      documents: documentsData,
     });
 
     const expectedResult = new ResponseQuery({

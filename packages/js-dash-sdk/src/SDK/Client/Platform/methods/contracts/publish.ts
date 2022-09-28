@@ -17,7 +17,7 @@ export default async function publish(this: Platform, dataContract: any, identit
 
     const dataContractCreateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
-    await signStateTransition(this, dataContractCreateTransition, identity);
+    await signStateTransition(this, dataContractCreateTransition, identity, 1);
     await broadcastStateTransition(this, dataContractCreateTransition);
 
     return dataContractCreateTransition;

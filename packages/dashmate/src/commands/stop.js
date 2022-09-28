@@ -1,5 +1,7 @@
 const { Listr } = require('listr2');
 
+const { Flags } = require('@oclif/core');
+
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
@@ -15,6 +17,7 @@ class StopCommand extends ConfigBaseCommand {
   async runWithDependencies(
     args,
     {
+      force: isForce,
       verbose: isVerbose,
     },
     stopNodeTask,
@@ -37,6 +40,7 @@ class StopCommand extends ConfigBaseCommand {
 
     try {
       await tasks.run({
+        isForce,
         isVerbose,
       });
     } catch (e) {
@@ -52,6 +56,11 @@ Stop node
 
 StopCommand.flags = {
   ...ConfigBaseCommand.flags,
+  force: Flags.boolean({
+    char: 'f',
+    description: 'force stop even if any is running',
+    default: false,
+  }),
 };
 
 module.exports = StopCommand;

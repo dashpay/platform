@@ -3,14 +3,16 @@ class DataTriggerExecutionContext {
    * @param {StateRepository} stateRepository
    * @param {Buffer|Identifier} ownerId
    * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} stateTransitionExecutionContext
    */
-  constructor(stateRepository, ownerId, dataContract) {
+  constructor(stateRepository, ownerId, dataContract, stateTransitionExecutionContext) {
     /**
      * @type {StateRepository}
      */
     this.stateRepository = stateRepository;
     this.ownerId = ownerId;
     this.dataContract = dataContract;
+    this.stateTransitionExecutionContext = stateTransitionExecutionContext;
   }
 
   /**
@@ -32,6 +34,13 @@ class DataTriggerExecutionContext {
    */
   getDataContract() {
     return this.dataContract;
+  }
+
+  /**
+   * @return {StateTransitionExecutionContext}
+   */
+  getStateTransitionExecutionContext() {
+    return this.stateTransitionExecutionContext;
   }
 }
 

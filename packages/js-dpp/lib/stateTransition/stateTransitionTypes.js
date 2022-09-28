@@ -4,4 +4,5 @@ module.exports = {
   IDENTITY_CREATE: 2,
   IDENTITY_TOP_UP: 3,
   DATA_CONTRACT_UPDATE: 4,
+  IDENTITY_UPDATE: 5,
 };

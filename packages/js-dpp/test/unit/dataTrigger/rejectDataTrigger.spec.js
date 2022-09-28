@@ -11,6 +11,7 @@ const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContra
 const getDocumentTransitionFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
 const DataTriggerExecutionResult = require('../../../lib/dataTrigger/DataTriggerExecutionResult');
+const StateTransitionExecutionContext = require('../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('rejectDataTrigger', () => {
   let documentTransition;
@@ -32,6 +33,7 @@ describe('rejectDataTrigger', () => {
       stateRepositoryMock,
       bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq'),
       dataContract,
+      new StateTransitionExecutionContext(),
     );
   });
 

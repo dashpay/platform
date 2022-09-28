@@ -2,13 +2,11 @@
 const AbstractDocumentTransition = require(
   './documentTransition/AbstractDocumentTransition',
 );
-const DocumentCreateTransition = require('./documentTransition/DocumentCreateTransition');
 
 const InvalidDocumentActionError = require('../../errors/InvalidDocumentActionError');
-const DocumentNotProvidedError = require('../../errors/DocumentNotProvidedError');
-const DataContractNotPresentError = require('../../../errors/DataContractNotPresentError');
 
 const Document = require('../../Document');
+const DocumentNotProvidedError = require('../../errors/DocumentNotProvidedError');
 
 /**
  * @param {StateRepository} stateRepository
@@ -30,11 +28,13 @@ function applyDocumentsBatchTransitionFactory(
    * @return {Promise<*>}
    */
   async function applyDocumentsBatchTransition(stateTransition) {
+    const executionContext = stateTransition.getExecutionContext();
+
     // Fetch documents for replace transitions
     const replaceTransitions = stateTransition.getTransitions()
       .filter((dt) => dt.getAction() === AbstractDocumentTransition.ACTIONS.REPLACE);
 
-    const fetchedDocuments = await fetchDocuments(replaceTransitions);
+    const fetchedDocuments = await fetchDocuments(replaceTransitions, executionContext);
 
     const fetchedDocumentsById = fetchedDocuments.reduce((result, document) => (
       {
@@ -53,16 +53,6 @@ function applyDocumentsBatchTransitionFactory(
       (previousPromise, documentTransition) => previousPromise.then(async () => {
         switch (documentTransition.getAction()) {
           case AbstractDocumentTransition.ACTIONS.CREATE: {
-            const dataContract = await stateRepository.fetchDataContract(
-              documentTransition.getDataContractId(),
-            );
-
-            if (!dataContract) {
-              throw new DataContractNotPresentError(
-                documentTransition.getDataContractId(),
-              );
-            }
-
             const newDocument = new Document({
               $protocolVersion: stateTransition.getProtocolVersion(),
               $id: documentTransition.getId(),
@@ -70,7 +60,7 @@ function applyDocumentsBatchTransitionFactory(
               $dataContractId: documentTransition.getDataContractId(),
               $ownerId: stateTransition.getOwnerId(),
               ...documentTransition.getData(),
-            }, dataContract);
+            }, documentTransition.getDataContract());
 
             if (documentTransition.getCreatedAt()) {
               newDocument.setCreatedAt(documentTransition.getCreatedAt());
@@ -81,15 +71,37 @@ function applyDocumentsBatchTransitionFactory(
             }
 
             newDocument.setEntropy(documentTransition.getEntropy());
-            newDocument.setRevision(DocumentCreateTransition.INITIAL_REVISION);
 
-            return stateRepository.storeDocument(newDocument);
+            newDocument.setRevision(documentTransition.getRevision());
+
+            return stateRepository.createDocument(newDocument, executionContext);
           }
           case AbstractDocumentTransition.ACTIONS.REPLACE: {
-            const document = fetchedDocumentsById[documentTransition.getId()];
+            let document;
+            if (executionContext.isDryRun()) {
+              const {
+                time: {
+                  seconds: lastBlockHeaderTimeSeconds,
+                },
+              } = await stateRepository.fetchLatestPlatformBlockHeader();
 
-            if (!document) {
-              throw new DocumentNotProvidedError(documentTransition);
+              const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
+
+              document = new Document({
+                $protocolVersion: stateTransition.getProtocolVersion(),
+                $id: documentTransition.getId(),
+                $type: documentTransition.getType(),
+                $dataContractId: documentTransition.getDataContractId(),
+                $ownerId: stateTransition.getOwnerId(),
+                $createdAt: lastBlockHeaderTime,
+                ...documentTransition.getData(),
+              }, documentTransition.getDataContract());
+            } else {
+              document = fetchedDocumentsById[documentTransition.getId()];
+
+              if (!document) {
+                throw new DocumentNotProvidedError(documentTransition);
+              }
             }
 
             document.setRevision(documentTransition.getRevision());
@@ -99,13 +111,14 @@ function applyDocumentsBatchTransitionFactory(
               document.setUpdatedAt(documentTransition.getUpdatedAt());
             }
 
-            return stateRepository.storeDocument(document);
+            return stateRepository.updateDocument(document, executionContext);
           }
           case AbstractDocumentTransition.ACTIONS.DELETE: {
             return stateRepository.removeDocument(
-              documentTransition.getDataContractId(),
+              documentTransition.getDataContract(),
               documentTransition.getType(),
               documentTransition.getId(),
+              executionContext,
             );
           }
           default:

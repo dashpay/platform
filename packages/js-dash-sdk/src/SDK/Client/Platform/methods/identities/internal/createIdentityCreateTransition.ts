@@ -20,21 +20,49 @@ export async function createIdentityCreateTransition(this : Platform, assetLockP
     const identityIndex = await account.getUnusedIdentityIndex();
 
     // @ts-ignore
-    const { privateKey: identityPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
-    const identityPublicKey = identityPrivateKey.toPublicKey();
+    const { privateKey: identityMasterPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
+    const identityMasterPublicKey = identityMasterPrivateKey.toPublicKey();
+
+    const { privateKey: identitySecondPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 1);
+    const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
     // Create Identity
     // @ts-ignore
     const identity = dpp.identity.create(
         assetLockProof, [{
-          key: identityPublicKey,
+          key: identityMasterPublicKey,
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER
-        }]
+        },
+        {
+          key: identitySecondPublicKey,
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH
+      }
+      ]
     );
 
-    // Create ST
+     // Create ST
     const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
+
+    // Create key proofs
+
+    const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
+
+    await identityCreateTransition.signByPrivateKey(identityMasterPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+
+    masterKey.setSignature(identityCreateTransition.getSignature());
+
+    identityCreateTransition.setSignature(undefined);
+
+  await identityCreateTransition.signByPrivateKey(identitySecondPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+
+  secondKey.setSignature(identityCreateTransition.getSignature());
+
+  identityCreateTransition.setSignature(undefined);
+
+
+  // Sign and validate state transition
 
     await identityCreateTransition.signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 

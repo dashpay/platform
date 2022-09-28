@@ -6,10 +6,9 @@ cmd_usage="Run test suite
 
 Usage: test <seed> [options]
 
-  <seed> can be IP or IP:port
+  <seed> can be IP or IP:port (or pass via DAPI_SEED env)
 
   Options:
-              --npm-install=pkg                             - install npm package before running the suite
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
@@ -19,6 +18,8 @@ Usage: test <seed> [options]
               --dpns-contract-id=tld_contract_id            - dpns contract id
               --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
               --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
+              --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
+              --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
   -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
@@ -32,8 +33,8 @@ Usage: test <seed> [options]
   functional:core
   functional:platform"
 
-DAPI_SEED="$1"
-network="testnet"
+FIRST_ARG="$1"
+DAPI_SEED="${DAPI_SEED:=$FIRST_ARG}"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
@@ -45,9 +46,6 @@ case ${i} in
     -h|--help)
         echo "$cmd_usage"
         exit 0
-    ;;
-    --npm-install=*)
-    npm_package_to_install="${i#*=}"
     ;;
     -s=*|--scope=*)
     scope="${i#*=}"
@@ -79,6 +77,12 @@ case ${i} in
     -t=*|--timeout=*)
     timeout="${i#*=}"
     ;;
+    --faucet-wallet-storage-dir=*)
+    faucet_wallet_storage_dir="${i#*=}"
+    ;;
+    --faucet-wallet-use-storage=*)
+    faucet_wallet_use_storage="${i#*=}"
+    ;;
 esac
 done
 
@@ -94,12 +98,6 @@ if [ -n "$timeout" ] && ! [[ $timeout =~ ^[0-9]+$ ]]
 then
   echo "Timeout must be an integer"
   exit 1
-fi
-
-if [ -n "$npm_package_to_install" ]
-then
-  npm install "$npm_package_to_install"
-  npm dedupe
 fi
 
 if [ -n "$scope" ]
@@ -187,11 +185,22 @@ then
   cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
 fi
 
+if [ -n "$faucet_wallet_use_storage" ]
+then
+  cmd="${cmd} FAUCET_WALLET_USE_STORAGE=${faucet_wallet_use_storage}"
+fi
+
+if [ -n "$faucet_wallet_storage_dir" ]
+then
+  cmd="${cmd} FAUCET_WALLET_STORAGE_DIR=${faucet_wallet_storage_dir}"
+fi
+
 if [ -n "$GITHUB_ACTIONS" ]
 then
   cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
-  cmd="${cmd} NODE_ENV=test mocha -b ${scope_dirs}"
+  echo $cmd
+  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]
