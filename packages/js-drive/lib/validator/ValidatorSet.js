@@ -112,8 +112,6 @@ class ValidatorSet {
       rotationEntropy,
     );
 
-    this.quorum
-
     const quorumMembers = await this.fetchQuorumMembers(
       this.validatorSetLLMQType,
       this.quorum.quorumHash,
