@@ -1,4 +1,4 @@
-## [0.23.0](https://github.com/dashevo/platform/compare/v0.23.0...v0.23.0) (2022-09-28)
+## [0.23.0](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0) (2022-09-28)
 
 
 ### ⚠ BREAKING CHANGES
