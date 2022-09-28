@@ -149,9 +149,6 @@ mod test {
     }
 
     impl StateTransitionLike for ExampleStateTransition {
-        fn calculate_fee(&self) -> Result<u64, crate::ProtocolError> {
-            unimplemented!()
-        }
         fn get_protocol_version(&self) -> u32 {
             1
         }

@@ -1,4 +1,4 @@
-use crate::consensus::{basic::IndexError, signature::SignatureError};
+use crate::consensus::{basic::IndexError, fee::FeeError, signature::SignatureError};
 
 use super::{
     abstract_state_error::StateError, consensus::basic::BasicError, consensus::ConsensusError,
@@ -46,6 +46,7 @@ impl ErrorWithCode for ConsensusError {
             Self::StateError(e) => e.get_code(),
             Self::BasicError(e) => e.get_code(),
             Self::SignatureError(e) => e.get_code(),
+            Self::FeeError(e) => e.get_code(),
 
             Self::IdentityAlreadyExistsError(_) => 4011,
 
@@ -161,6 +162,14 @@ impl ErrorWithCode for SignatureError {
             Self::WrongPublicKeyPurposeError { .. } => 2005,
             Self::PublicKeyIsDisabledError { .. } => 2006,
             Self::PublicKeySecurityLevelNotMetError { .. } => 2007,
+        }
+    }
+}
+
+impl ErrorWithCode for FeeError {
+    fn get_code(&self) -> u32 {
+        match *self {
+            Self::BalanceIsNotEnoughError { .. } => 3000,
         }
     }
 }

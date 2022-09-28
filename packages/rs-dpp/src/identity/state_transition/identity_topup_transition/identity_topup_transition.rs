@@ -216,9 +216,6 @@ impl StateTransitionLike for IdentityTopUpTransition {
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature
     }
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        todo!()
-    }
 
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context
