@@ -30,7 +30,7 @@ function extendVoteHandlerFactory(blockExecutionContext) {
       }));
 
     return new ResponseExtendVote({
-      vote_extensions: voteExtentions,
+      voteExtensions: voteExtentions,
     });
   }
 

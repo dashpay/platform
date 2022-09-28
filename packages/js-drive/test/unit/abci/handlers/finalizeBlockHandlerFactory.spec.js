@@ -8,16 +8,16 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+
 const Long = require('long');
+
 const finalizeBlockHandlerFactory = require('../../../../lib/abci/handlers/finalizeBlockHandlerFactory');
-const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('finalizeBlockHandlerFactory', () => {
   let finalizeBlockHandler;
   let executionTimerMock;
-  let groveDBStoreMock;
   let blockExecutionContextMock;
   let beginBlockMock;
   let deliverTxMock;
@@ -30,7 +30,6 @@ describe('finalizeBlockHandlerFactory', () => {
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
-    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     loggerMock = new LoggerMock(this.sinon);
     executionTimerMock = {
@@ -96,7 +95,6 @@ describe('finalizeBlockHandlerFactory', () => {
     blockExecutionContextMock.getHeight.returns(42);
 
     finalizeBlockHandler = finalizeBlockHandlerFactory(
-      groveDBStoreMock,
       blockExecutionContextMock,
       beginBlockMock,
       deliverTxMock,
@@ -140,6 +138,6 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(endBlockMock).to.be.calledOnceWithExactly(requestMock.height, loggerMock);
 
-    expect(commitMock).to.be.calledOnceWithExactly(loggerMock);
+    expect(commitMock).to.be.calledOnceWithExactly(requestMock.decidedLastCommit, loggerMock);
   });
 });

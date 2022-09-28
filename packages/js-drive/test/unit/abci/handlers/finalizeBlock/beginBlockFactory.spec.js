@@ -1,5 +1,7 @@
 const Long = require('long');
 
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+
 const beginBlockFactory = require('../../../../../lib/abci/handlers/finalizeBlock/beginBlockFactory');
 
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
@@ -60,6 +62,8 @@ describe('beginBlockFactory', () => {
     rsAbciMock = {
       blockBegin: this.sinon.stub(),
     };
+
+    rsAbciMock.blockBegin.resolves({});
 
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
@@ -210,5 +214,23 @@ describe('beginBlockFactory', () => {
 
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
     expect(synchronizeMasternodeIdentitiesMock).to.have.not.been.called();
+  });
+
+  it('should set withdrawal transactions map if present', async () => {
+    const [txOneBytes, txTwoBytes] = [
+      Buffer.alloc(32, 0),
+      Buffer.alloc(32, 1),
+    ];
+
+    rsAbciMock.blockBegin.resolves({
+      unsignedWithdrawalTransactions: [txOneBytes, txTwoBytes],
+    });
+
+    await beginBlock(request, loggerMock);
+
+    expect(blockExecutionContextMock.setWithdrawalTransactionsMap).to.have.been.calledOnceWithExactly({
+      [hash(txOneBytes).toString('hex')]: txOneBytes,
+      [hash(txTwoBytes).toString('hex')]: txTwoBytes,
+    });
   });
 });

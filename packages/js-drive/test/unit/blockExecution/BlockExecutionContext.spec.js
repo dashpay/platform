@@ -258,6 +258,30 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setWithdrawalTransactionsMap', () => {
+    it('should set withdrawalTransactionsMap', async () => {
+      const result = blockExecutionContext.setWithdrawalTransactionsMap(
+        plainObject.withdrawalTransactionsMap,
+      );
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
+        plainObject.withdrawalTransactionsMap,
+      );
+    });
+  });
+
+  describe('#getWithdrawalTransactionsMap', () => {
+    it('should get withdrawalTransactionsMap', async () => {
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+
+      expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal(
+        plainObject.withdrawalTransactionsMap,
+      );
+    });
+  });
+
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -325,6 +349,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -342,6 +367,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 
@@ -372,6 +398,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.validTxs).to.equal(validTxs);
       expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(plainObject.withdrawalTransactionsMap);
     });
   });
 });

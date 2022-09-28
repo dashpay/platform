@@ -49,6 +49,8 @@ class BlockExecutionContextMock {
     this.incrementInvalidTxCount = sinon.stub();
     this.setConsensusLogger = sinon.stub();
     this.getConsensusLogger = sinon.stub();
+    this.setWithdrawalTransactionsMap = sinon.stub();
+    this.getWithdrawalTransactionsMap = sinon.stub();
     this.populate = sinon.stub();
     this.isEmpty = sinon.stub();
   }

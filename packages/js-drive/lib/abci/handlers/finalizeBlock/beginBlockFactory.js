@@ -137,7 +137,7 @@ function beginBlockFactory(
 
     const { unsignedWithdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
 
-    const withdrawalTransactionsMap = unsignedWithdrawalTransactions.reduce(
+    const withdrawalTransactionsMap = (unsignedWithdrawalTransactions || []).reduce(
       (map, transactionBytes) => ({
         ...map,
         [hash(transactionBytes).toString('hex')]: transactionBytes,

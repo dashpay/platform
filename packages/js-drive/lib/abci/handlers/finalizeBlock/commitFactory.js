@@ -9,7 +9,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
  * @param {rotateSignedStore} rotateSignedStore
  * @param {GroveDBStore} groveDBStore
  * @param {LRUCache} dataContractCache
- * @param {CoreRpcClient} coreRPCClient
+ * @param {CoreRpcClient} coreRpcClient
  *
  * @return {commit}
  */
@@ -20,7 +20,7 @@ function commitFactory(
   rotateSignedStore,
   dataContractCache,
   groveDBStore,
-  coreRPCClient,
+  coreRpcClient,
 ) {
   /**
    * @typedef commit
@@ -73,22 +73,24 @@ function commitFactory(
     // Send withdrawal transactions to Core
     const unsignedWithdrawalTransactionsMap = blockExecutionContext.getWithdrawalTransactionsMap();
 
-    const { vote_extenstions: voteExtentions } = lastCommitInfo;
+    const { thresholdVoteExtensions } = lastCommitInfo;
 
-    for (const { extension, signature } of voteExtentions) {
+    for (const { extension, signature } of (thresholdVoteExtensions || [])) {
       const withdrawalTransactionHash = extension.toString('hex');
 
       const unsignedWithdrawalTransactionBytes = unsignedWithdrawalTransactionsMap[
         withdrawalTransactionHash
       ];
 
-      const transactionBytes = Buffer.concat(
-        unsignedWithdrawalTransactionBytes,
-        signature,
-      );
+      if (unsignedWithdrawalTransactionBytes) {
+        const transactionBytes = Buffer.concat([
+          unsignedWithdrawalTransactionBytes,
+          signature,
+        ]);
 
-      // TODO: think about Core error handling
-      await coreRPCClient.sendRawTransaction(transactionBytes.toString('hex'));
+        // TODO: think about Core error handling
+        await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
+      }
     }
 
     // Rotate signed store
