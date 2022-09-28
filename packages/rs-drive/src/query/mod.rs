@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Drive Query Mod File
+//!
+//!
+//!
+
 use std::collections::BTreeMap;
 use std::ops::BitXor;
 
@@ -5,6 +39,7 @@ use ciborium::value::Value;
 use dpp::data_contract::extra::encode_float;
 use dpp::data_contract::extra::ContractError;
 use dpp::data_contract::extra::DriveContractExt;
+/// Import grovedb
 pub use grovedb::{
     Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
 };
@@ -18,7 +53,9 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use conditions::WhereOperator::{Equal, In};
+/// Import conditions
 pub use conditions::{WhereClause, WhereOperator};
+/// Import ordering
 pub use ordering::OrderClause;
 
 use crate::common::bytes_for_system_value;
@@ -33,21 +70,30 @@ use crate::error::Error::GroveDB;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
+/// Conditions module
 pub mod conditions;
 mod defaults;
+/// Ordering module
 pub mod ordering;
 mod test_index;
 
+/// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
+    /// Primary key in clause
     pub primary_key_in_clause: Option<WhereClause>,
+    /// Primary key equal clause
     pub primary_key_equal_clause: Option<WhereClause>,
+    /// In clause
     pub in_clause: Option<WhereClause>,
+    /// Range clause
     pub range_clause: Option<WhereClause>,
+    /// Equal clause
     pub equal_clauses: BTreeMap<String, WhereClause>,
 }
 
 impl InternalClauses {
+    /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
         // There can only be 1 primary key clause, or many other clauses
         if self
@@ -64,10 +110,12 @@ impl InternalClauses {
         }
     }
 
+    /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
     }
 
+    /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
         self.in_clause.is_none()
             && self.range_clause.is_none()
@@ -76,6 +124,7 @@ impl InternalClauses {
             && self.primary_key_equal_clause.is_none()
     }
 
+    /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
     fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
             .iter()
@@ -149,20 +198,31 @@ impl InternalClauses {
     }
 }
 
+/// Drive query struct
 #[derive(Debug, PartialEq)]
 pub struct DriveQuery<'a> {
+    /// Contract
     pub contract: &'a Contract,
+    /// Document type
     pub document_type: &'a DocumentType,
+    /// Internal clauses
     pub internal_clauses: InternalClauses,
+    /// Offset
     pub offset: u16,
+    /// Limit
     pub limit: u16,
+    /// Order by
     pub order_by: IndexMap<String, OrderClause>,
+    /// Start at
     pub start_at: Option<Vec<u8>>,
+    /// Start at included
     pub start_at_included: bool,
+    /// Block time
     pub block_time: Option<f64>,
 }
 
 impl<'a> DriveQuery<'a> {
+    /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
             || (self.internal_clauses.is_empty()
@@ -178,6 +238,7 @@ impl<'a> DriveQuery<'a> {
                             == "$id")))
     }
 
+    /// Converts a query CBOR to a `DriveQuery`.
     pub fn from_cbor(
         query_cbor: &[u8],
         contract: &'a Contract,
@@ -307,6 +368,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    /// Converts a SQL expression to a `DriveQuery`.
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
@@ -427,6 +489,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    /// Operations to construct a path query.
     pub fn construct_path_query_operations(
         &self,
         drive: &Drive,
@@ -506,6 +569,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
@@ -652,6 +716,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    /// Finds the best index for the query.
     pub fn find_best_index(&self) -> Result<&Index, Error> {
         let equal_fields = self
             .internal_clauses
@@ -704,6 +769,7 @@ impl<'a> DriveQuery<'a> {
         Ok(index)
     }
 
+    /// Returns a `QueryItem` given a start key and query direction.
     fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
             QueryItem::RangeAfter(starts_at_key..)
@@ -712,6 +778,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
         starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
@@ -733,6 +800,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
+    /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
         start_at_key: Vec<u8>,
         left_to_right: bool,
@@ -756,6 +824,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
+    /// Returns a `Query` that either starts at or after the given document if given.
     // We are passing in starts_at_document 4 parameters
     // The document
     // The document type (borrowed)
@@ -798,6 +867,7 @@ impl<'a> DriveQuery<'a> {
         Ok(inner_query)
     }
 
+    /// Recursively queries as long as there are leftover index properties.
     fn recursive_insert_on_query(
         query: Option<&mut Query>,
         left_over_index_properties: &[&IndexProperty],
@@ -922,6 +992,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    /// Returns a path query for non-primary keys given a document type path and starting document.
     pub fn get_non_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
@@ -1119,6 +1190,7 @@ impl<'a> DriveQuery<'a> {
         ))
     }
 
+    /// Executes a query with proof and returns the items and fee.
     pub fn execute_with_proof(
         self,
         drive: &Drive,
@@ -1130,6 +1202,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, cost))
     }
 
+    /// Executes an internal query with proof and returns the items.
     pub(crate) fn execute_with_proof_internal(
         self,
         drive: &Drive,
@@ -1141,6 +1214,7 @@ impl<'a> DriveQuery<'a> {
         drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)
     }
 
+    /// Executes a query with proof and returns the root hash, items, and fee.
     pub fn execute_with_proof_only_get_elements(
         self,
         drive: &Drive,
@@ -1156,6 +1230,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, items, cost))
     }
 
+    /// Executes an internal query with proof and returns the root hash and values.
     pub(crate) fn execute_with_proof_only_get_elements_internal(
         self,
         drive: &Drive,
@@ -1186,6 +1261,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, values))
     }
 
+    /// Executes a query with no proof and returns the items, skipped items, and fee.
     pub fn execute_no_proof(
         &self,
         drive: &Drive,
@@ -1198,6 +1274,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, skipped, cost))
     }
 
+    /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
         drive: &Drive,

@@ -1,3 +1,38 @@
+// MIT LICENSE
+//
+// Copyright (c) 2022 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! General Drive Document Functions
+//!
+//! This module defines general functions relevant to Documents in Drive.
+//! Namely functions to return the paths to certain objects and the path sizes.
+//!
+
 use crate::contract::document::Document;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
@@ -9,6 +44,7 @@ mod delete;
 mod insert;
 mod update;
 
+/// Returns the path to a contract document type.
 fn contract_document_type_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
@@ -21,6 +57,7 @@ fn contract_document_type_path<'a>(
     ]
 }
 
+/// Returns the path to the primary keys of a contract document type.
 fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
@@ -34,6 +71,7 @@ fn contract_documents_primary_key_path<'a>(
     ]
 }
 
+/// Returns the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
@@ -49,6 +87,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     ]
 }
 
+/// Returns the size of the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
     document_type_name_len: usize,
 ) -> usize {
@@ -56,6 +95,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
         + document_type_name_len
 }
 
+/// Returns the size of the path to the time at which a document type was stored.
 fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: usize,
 ) -> usize {
@@ -63,6 +103,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
         + document_type_name_len
 }
 
+/// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
     document_type: &DocumentType,
@@ -96,6 +137,7 @@ fn make_document_reference(
     )
 }
 
+/// Tests module
 #[cfg(test)]
 pub(crate) mod tests {
     use std::option::Option::None;
@@ -106,6 +148,7 @@ pub(crate) mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
 
+    /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();

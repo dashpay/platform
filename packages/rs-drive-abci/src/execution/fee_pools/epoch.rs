@@ -1,21 +1,64 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Epoch Info.
+//!
+//! This module defines and implements the `EpochInfo` struct containing
+//! information about the current epoch.
+//!
+
 use crate::block::BlockInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// Lifetime of an epoch in milliseconds.
 pub const EPOCH_CHANGE_TIME_MS: u64 = 1576800000;
 
+/// Info pertinent to the current epoch.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EpochInfo {
+    /// Current epoch index
     pub current_epoch_index: u16,
+
+    /// Previous epoch index
     // Available only on epoch change
     pub previous_epoch_index: Option<u16>,
+
+    /// Boolean true if it's the first block of a new epoch
     pub is_epoch_change: bool,
 }
 
 impl EpochInfo {
+    /// Default epoch info.
     pub fn default() -> EpochInfo {
         EpochInfo {
             current_epoch_index: 0,
@@ -24,6 +67,7 @@ impl EpochInfo {
         }
     }
 
+    /// Converts some values to decimal types and calculates some relevant epoch info values.
     pub fn calculate(
         genesis_time_ms: u64,
         block_time_ms: u64,
@@ -74,6 +118,8 @@ impl EpochInfo {
         })
     }
 
+    /// Takes genesis time and block info and sets current and previous epoch indexes as well as
+    /// the is_epoch_change bool by calling calculate().
     pub fn from_genesis_time_and_block_info(
         genesis_time_ms: u64,
         block_info: &BlockInfo,

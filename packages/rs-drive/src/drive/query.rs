@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Drive Queries
+//!
+//! Defines and implements in Drive functions relevant to querying.
+//!
+
 use grovedb::TransactionArg;
 
 use crate::contract::{Contract, DocumentType};
@@ -11,6 +45,7 @@ use crate::query::DriveQuery;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents(
         &self,
         query_cbor: &[u8],
@@ -36,6 +71,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_from_contract_cbor(
         &self,
         contract_cbor: &[u8],
@@ -59,6 +95,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_from_contract(
         &self,
         contract: &Contract,
@@ -78,6 +115,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
+    /// Performs and returns the result of the specified query along with skipped items.
     pub(crate) fn query_documents_from_contract_internal(
         &self,
         contract: &Contract,
@@ -91,6 +129,8 @@ impl Drive {
         query.execute_no_proof_internal(self, transaction, drive_operations)
     }
 
+    /// Performs and returns the result of the specified query along with the fee.
+    /// Proof is generated.
     pub fn query_documents_as_grove_proof(
         &self,
         query_cbor: &[u8],
@@ -116,6 +156,8 @@ impl Drive {
         Ok((items, cost))
     }
 
+    /// Performs and returns the result of the specified query along with the fee.
+    /// Proof is generated.
     pub fn query_documents_from_contract_cbor_as_grove_proof(
         &self,
         contract_cbor: &[u8],
@@ -139,6 +181,8 @@ impl Drive {
         Ok((items, cost))
     }
 
+    /// Performs and returns the result of the specified query along with the fee.
+    /// Proof is generated.
     pub fn query_documents_from_contract_as_grove_proof(
         &self,
         contract: &Contract,
@@ -159,6 +203,8 @@ impl Drive {
         Ok((items, cost))
     }
 
+    /// Performs and returns the result of the specified internal query.
+    /// Proof is generated.
     pub(crate) fn query_documents_from_contract_as_grove_proof_internal(
         &self,
         contract: &Contract,
@@ -172,6 +218,7 @@ impl Drive {
         query.execute_with_proof_internal(self, transaction, drive_operations)
     }
 
+    /// Performs the specified internal query and returns the root hash, values, and fee.
     pub fn query_documents_from_contract_as_grove_proof_only_get_elements(
         &self,
         contract: &Contract,
@@ -193,6 +240,7 @@ impl Drive {
         Ok((root_hash, items, cost))
     }
 
+    /// Performs the specified internal query and returns the root hash and values.
     pub(crate) fn query_documents_from_contract_as_grove_proof_only_get_elements_internal(
         &self,
         contract: &Contract,

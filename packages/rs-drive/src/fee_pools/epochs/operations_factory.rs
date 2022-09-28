@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Epoch Operations
+//!
+//! Defines and implements in `Epoch` functions relevant to epoch management.
+//!
+
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::fee_pools::pools_vec_path;
 use crate::drive::Drive;
@@ -12,6 +46,7 @@ use grovedb::batch::{GroveDbOp, Op};
 use grovedb::{Element, TransactionArg};
 
 impl Epoch {
+    /// Updates the given proposer's block count to the current + 1
     pub fn increment_proposer_block_count_operation(
         &self,
         drive: &Drive,
@@ -34,10 +69,13 @@ impl Epoch {
             .update_proposer_block_count_operation(proposer_pro_tx_hash, proposed_block_count + 1))
     }
 
+    /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
     pub fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch) {
         batch.add_insert_empty_tree(pools_vec_path(), self.key.to_vec());
     }
 
+    /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
+    /// and sets the storage distribution pool to 0.
     pub fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) {
         self.add_init_empty_without_storage_operations(batch);
 
@@ -45,6 +83,7 @@ impl Epoch {
         batch.push(self.update_storage_credits_for_distribution_operation(0));
     }
 
+    /// Adds to the groveDB op batch initialization operations for the epoch.
     pub fn add_init_current_operations(
         &self,
         multiplier: f64,
@@ -61,6 +100,7 @@ impl Epoch {
         batch.push(self.update_start_time_operation(start_time_ms));
     }
 
+    /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
     pub fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch) {
         batch.push(self.delete_proposers_tree_operation());
 
@@ -69,6 +109,7 @@ impl Epoch {
         batch.push(self.delete_processing_credits_for_distribution_operation());
     }
 
+    /// Returns a groveDB op which updates the epoch start time.
     pub fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -79,6 +120,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which updates the epoch start block height.
     pub fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -89,6 +131,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which updates the epoch fee multiplier.
     pub fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -99,6 +142,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which updates the epoch processing credits for distribution.
     pub fn update_processing_credits_for_distribution_operation(
         &self,
         processing_fee: u64,
@@ -112,6 +156,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
     pub fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -120,6 +165,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which updates the epoch storage credits for distribution.
     pub fn update_storage_credits_for_distribution_operation(&self, storage_fee: u64) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -130,6 +176,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
     pub fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -138,6 +185,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which updates the given epoch proposer's block count.
     pub(crate) fn update_proposer_block_count_operation(
         &self,
         proposer_pro_tx_hash: &[u8; 32],
@@ -152,6 +200,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
     pub fn init_proposers_tree_operation(&self) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -162,6 +211,7 @@ impl Epoch {
         }
     }
 
+    /// Returns a groveDB op which deletes the epoch proposers tree.
     pub fn delete_proposers_tree_operation(&self) -> GroveDbOp {
         GroveDbOp {
             path: self.get_vec_path(),
@@ -170,6 +220,7 @@ impl Epoch {
         }
     }
 
+    /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
     pub fn add_delete_proposers_operations(
         &self,
         pro_tx_hashes: Vec<Vec<u8>>,

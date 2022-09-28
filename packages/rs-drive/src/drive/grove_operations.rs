@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Grove Operations.
+//!
+//! Defines and implements in Drive functions pertinent to groveDB operations.
+//!
+
 use crate::drive::batch::GroveDbOpBatch;
 use costs::CostContext;
 use grovedb::batch::{BatchApplyOptions, GroveDbOp, Op};
@@ -21,6 +55,8 @@ use crate::fee::op::{DriveOperation, SizesOfQueryOperation};
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::Error as GroveError;
 
+/// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
+/// and returns the operation's return value.
 fn push_drive_operation_result<T>(
     cost_context: CostContext<Result<T, GroveError>>,
     drive_operations: &mut Vec<DriveOperation>,
@@ -30,6 +66,8 @@ fn push_drive_operation_result<T>(
     value.map_err(Error::GroveDB)
 }
 
+/// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
+/// if `drive_operations` is given. Returns the operation's return value.
 fn push_drive_operation_result_optional<T>(
     cost_context: CostContext<Result<T, GroveError>>,
     drive_operations: Option<&mut Vec<DriveOperation>>,
@@ -42,6 +80,7 @@ fn push_drive_operation_result_optional<T>(
 }
 
 impl Drive {
+    /// Pushes the `OperationCost` of inserting an empty tree in groveDB to `drive_operations`.
     pub(crate) fn grove_insert_empty_tree<'a, 'c, P>(
         &'a self,
         path: P,
@@ -60,6 +99,7 @@ impl Drive {
                 let (path_items, path): (Vec<Vec<u8>>, Vec<&[u8]>) =
                     path.into_iter().map(|x| (Vec::from(x), x)).unzip();
                 if apply {
+                    // get cost context for inserting empty tree into grove
                     let CostContext { value, cost } = self
                         .grove
                         .insert(
@@ -69,9 +109,11 @@ impl Drive {
                             transaction,
                         )
                         .map_err(Error::GroveDB);
+                    // if drive operations are given, push the operation cost
                     if let Some(drive_operations) = drive_operations {
                         drive_operations.push(CalculatedCostOperation(cost))
                     }
+                    // return value
                     value?
                 } else if let Some(drive_operations) = drive_operations {
                     drive_operations.push(DriveOperation::for_empty_tree(
@@ -83,6 +125,7 @@ impl Drive {
 
                 Ok(())
             }
+            // if drive_operations is given, push `for_insert_path_key_value_size` with the given path size
             KeySize(key_max_length) => {
                 if let Some(drive_operations) = drive_operations {
                     let path_size: u32 = path.into_iter().map(|p| p.len() as u32).sum();
@@ -94,12 +137,15 @@ impl Drive {
                 }
                 Ok(())
             }
+            // return error
             Key(_) => Err(Error::Drive(DriveError::GroveDBInsertion(
                 "only a key ref can be inserted into groveDB",
             ))),
         }
     }
 
+    /// Pushes the `OperationCost` of inserting an empty tree in groveDB where the
+    /// path key does not yet exist to `drive_operations`.
     pub(crate) fn grove_insert_empty_tree_if_not_exists<'a, 'c, const N: usize>(
         &'a self,
         path_key_info: PathKeyInfo<'c, N>,
@@ -237,6 +283,7 @@ impl Drive {
         }
     }
 
+    /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
     pub(crate) fn grove_insert<'a, 'c, const N: usize>(
         &'a self,
         path_key_element_info: PathKeyElementInfo<'c, N>,
@@ -288,6 +335,8 @@ impl Drive {
         }
     }
 
+    /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
+    /// to `drive_operations`.
     pub(crate) fn grove_insert_if_not_exists<'a, 'c, const N: usize>(
         &'a self,
         path_key_element_info: PathKeyElementInfo<'c, N>,
@@ -375,6 +424,7 @@ impl Drive {
         }
     }
 
+    /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
     pub(crate) fn grove_delete<'p>(
         &self,
         path: Vec<Vec<u8>>,
@@ -399,6 +449,8 @@ impl Drive {
         }
     }
 
+    /// Gets the element at the given path from groveDB.
+    /// Pushes the `OperationCost` of getting the element to `drive_operations`.
     pub(crate) fn grove_get<'a, 'c, P>(
         &'a self,
         path: P,
@@ -429,6 +481,8 @@ impl Drive {
         }
     }
 
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
     pub(crate) fn grove_get_path_query(
         &self,
         path_query: &PathQuery,
@@ -440,6 +494,8 @@ impl Drive {
         value.map_err(Error::GroveDB)
     }
 
+    /// Gets the return value and the cost of a groveDB raw path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
     pub(crate) fn grove_get_raw_path_query(
         &self,
         path_query: &PathQuery,
@@ -453,6 +509,8 @@ impl Drive {
         value.map_err(Error::GroveDB)
     }
 
+    /// Gets the return value and the cost of a groveDB proved path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
     pub(crate) fn grove_get_proved_path_query(
         &self,
         path_query: &PathQuery,
@@ -464,6 +522,8 @@ impl Drive {
         value.map_err(Error::GroveDB)
     }
 
+    /// Gets the return value and the cost of a groveDB `has_raw` operation.
+    /// Pushes the cost to `drive_operations` and returns the return value.
     pub(crate) fn grove_has_raw<'p, P>(
         &self,
         path: P,
@@ -494,6 +554,7 @@ impl Drive {
         }
     }
 
+    /// Pushes an "insert empty tree" operation to `drive_operations`.
     pub(crate) fn batch_insert_empty_tree<'a, 'c, P>(
         &'a self,
         path: P,
@@ -530,6 +591,7 @@ impl Drive {
         }
     }
 
+    /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     pub(crate) fn batch_insert_empty_tree_if_not_exists<'a, 'c, const N: usize>(
         &'a self,
         path_key_info: PathKeyInfo<'c, N>,
@@ -621,6 +683,7 @@ impl Drive {
         }
     }
 
+    /// Pushes an "insert element" operation to `drive_operations`.
     pub(crate) fn batch_insert<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,
@@ -655,6 +718,8 @@ impl Drive {
         }
     }
 
+    /// Pushes an "insert element if the path key does not yet exist" operation to `drive_operations`.
+    /// Returns true if the path key already exists without references.
     pub(crate) fn batch_insert_if_not_exists<'a, 'c, const N: usize>(
         &'a self,
         path_key_element_info: PathKeyElementInfo<'c, N>,
@@ -711,6 +776,7 @@ impl Drive {
         }
     }
 
+    /// Pushes a "delete element" operation to `drive_operations`.
     pub(crate) fn batch_delete<'a, 'c, P>(
         &'a self,
         path: P,
@@ -741,6 +807,7 @@ impl Drive {
         Ok(())
     }
 
+    /// Pushes a "delete up tree while empty" operation to `drive_operations`.
     pub(crate) fn batch_delete_up_tree_while_empty<'a, 'c, P>(
         &'a self,
         path: P,
@@ -772,6 +839,7 @@ impl Drive {
         Ok(())
     }
 
+    /// Applies the given groveDB operation
     pub fn grove_apply_operation(
         &self,
         operation: GroveDbOp,
@@ -788,6 +856,7 @@ impl Drive {
         )
     }
 
+    /// Applies the given groveDB operations batch.
     pub fn grove_apply_batch(
         &self,
         ops: GroveDbOpBatch,
@@ -797,6 +866,7 @@ impl Drive {
         self.grove_apply_batch_with_add_costs(ops, validate, transaction, &mut vec![])
     }
 
+    /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
     pub(crate) fn grove_apply_batch_with_add_costs(
         &self,
         ops: GroveDbOpBatch,
@@ -862,6 +932,7 @@ impl Drive {
         }
     }
 
+    /// Gets the costs for the given groveDB op batch and passes them to `push_drive_operation_result`.
     pub(crate) fn grove_batch_operations_costs(
         &self,
         ops: GroveDbOpBatch,

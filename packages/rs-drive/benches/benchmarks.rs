@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Benchmarks for serialization functions.
+//!
+//! This module defines functions which benchmark serialization and deserialization functions.
+//!
+
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::data_contract::extra::DriveContractExt;
 use rs_drive::common::json_document_to_cbor;
@@ -10,6 +44,8 @@ criterion_main!(serialization, deserialization);
 criterion_group!(serialization, test_drive_10_serialization);
 criterion_group!(deserialization, test_drive_10_deserialization);
 
+/// Benchmarks the `DDSR 10`, `CBOR 10`, and `DDSR Consume 10` serialization functions
+/// using 10 Dashpay `contactRequest` documents with random data.
 fn test_drive_10_serialization(c: &mut Criterion) {
     let dashpay_cbor = json_document_to_cbor(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",
@@ -62,6 +98,8 @@ fn test_drive_10_serialization(c: &mut Criterion) {
     });
 }
 
+/// Benchmarks the `DDSR 10` and `CBOR 10` deserialization functions
+/// using 10 serialized Dashpay `contactRequest` documents with random data.
 fn test_drive_10_deserialization(c: &mut Criterion) {
     let dashpay_cbor = json_document_to_cbor(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",

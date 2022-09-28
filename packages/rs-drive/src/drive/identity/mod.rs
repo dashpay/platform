@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! This module defines functions within the Drive struct related to identities.
+//! Functions include inserting new identities into the `Identities` subtree and
+//! fetching identities from the subtree.
+//!
+
 use dpp::identity::Identity;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
@@ -14,24 +48,31 @@ use crate::fee::op::DriveOperation;
 const IDENTITY_KEY: [u8; 1] = [0];
 
 impl Drive {
+    /// Adds operations to the op batch to insert a new identity in the `Identities` subtree
+    /// with its own empty subtree.
     pub fn add_insert_identity_operations(
         &self,
         identity: Identity,
         storage_flags: StorageFlags,
         batch: &mut GroveDbOpBatch,
     ) -> Result<(), Error> {
+        // Serialize identity
         let identity_bytes = identity.to_buffer().map_err(|_| {
             Error::Identity(IdentityError::IdentitySerialization(
                 "failed to serialize identity to CBOR",
             ))
         })?;
 
+        // Adds an operation to the op batch which inserts an empty subtree with flags
+        // at the key of the given identity in the `Identities` subtree.
         batch.add_insert_empty_tree_with_flags(
             vec![vec![RootTree::Identities as u8]],
             identity.id.buffer.to_vec(),
             &storage_flags,
         );
 
+        // Adds an operation to the op batch which inserts the serialized identity
+        // in the `IDENTITY_KEY` key of the new subtree that was just created.
         batch.add_insert(
             vec![
                 vec![RootTree::Identities as u8],
@@ -44,6 +85,7 @@ impl Drive {
         Ok(())
     }
 
+    /// Inserts a new identity to the `Identities` subtree.
     pub fn insert_identity(
         &self,
         identity: Identity,
@@ -62,11 +104,13 @@ impl Drive {
         calculate_fee(None, Some(drive_operations))
     }
 
+    /// Given an identity, fetches the identity with its flags from storage.
     pub fn fetch_identity(
         &self,
         id: &[u8],
         transaction: TransactionArg,
     ) -> Result<(Identity, StorageFlags), Error> {
+        // get element from GroveDB
         let element = self
             .grove
             .get(
@@ -77,6 +121,7 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
+        // extract identity from element and deserialize the identity
         if let Element::Item(identity_cbor, element_flags) = element {
             let identity = Identity::from_buffer(identity_cbor.as_slice()).map_err(|_| {
                 Error::Identity(IdentityError::IdentitySerialization(
@@ -92,6 +137,7 @@ impl Drive {
         }
     }
 
+    /// Given a vector of identities, fetches the identities from storage.
     pub fn fetch_identities(
         &self,
         ids: &Vec<[u8; 32]>,
@@ -104,6 +150,7 @@ impl Drive {
             .collect())
     }
 
+    /// Given a vector of identities, fetches the identities with their flags from storage.
     pub fn fetch_identities_with_flags(
         &self,
         ids: &Vec<[u8; 32]>,

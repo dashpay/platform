@@ -1,3 +1,35 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Deterministic Root Hash Tests
+//!
+
 use std::option::Option::None;
 
 use grovedb::{Element, Transaction, TransactionArg};
@@ -18,12 +50,14 @@ use rs_drive::drive::{Drive, RootTree};
 
 use dpp::data_contract::extra::DriveContractExt;
 
+/// Contains the unique ID for a Dash identity.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Records {
     dash_unique_identity_id: Vec<u8>,
 }
 
+/// Info about a DPNS name.
 // In the real dpns label is required, we make it optional here for a test
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +75,7 @@ struct Domain {
 }
 
 impl Domain {
+    /// Creates domains with random data for a given normalized parent domain name.
     fn random_domains_in_parent(
         count: u32,
         seed: u64,
@@ -71,6 +106,7 @@ impl Domain {
     }
 }
 
+/// Creates and adds to a contract domains with random data.
 pub fn add_domains_to_contract(
     drive: &Drive,
     contract: &Contract,
@@ -112,6 +148,8 @@ pub fn add_domains_to_contract(
     }
 }
 
+/// Tests that the root hash is being calculated correctly after inserting empty subtrees into
+/// the root tree and the DPNS contract.
 fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     // [1644293142180] INFO (35 on bf3bb2a2796a): createTree
     //     path: []
@@ -377,6 +415,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }
 
+/// Runs `test_root_hash_with_batches` 10 times.
 #[test]
 fn test_deterministic_root_hash_with_batches() {
     let tmp_dir = TempDir::new().unwrap();
@@ -395,6 +434,8 @@ fn test_deterministic_root_hash_with_batches() {
     }
 }
 
+/// Tests that the root hashes are the same between a Drive with and without batches.
+/// Employs the empty root tree with the DPNS contract.
 #[ignore]
 #[test]
 fn test_root_hash_matches_with_batching_just_contract() {
@@ -448,6 +489,8 @@ fn test_root_hash_matches_with_batching_just_contract() {
     assert_eq!(root_hash_with_batches, root_hash_without_batches);
 }
 
+/// Tests that the root hashes are the same between a Drive with and without batches.
+/// Employs the empty root tree with the DPNS contract and one document.
 #[ignore]
 #[test]
 fn test_root_hash_matches_with_batching_contract_and_one_document() {
