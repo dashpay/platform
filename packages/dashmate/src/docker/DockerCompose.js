@@ -164,7 +164,7 @@ class DockerCompose {
     try {
       const options = {
         ...this.getOptions(envs),
-        commandOptions: ['--timeout', timeout],
+        commandOptions: [['--timeout', timeout]],
       };
 
       await dockerCompose.stop(options);
