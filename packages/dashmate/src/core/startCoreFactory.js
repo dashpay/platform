@@ -44,14 +44,15 @@ function startCoreFactory(
 
       coreCommand.push('--disablewallet=0');
     } else {
+      coreCommand.push('--disablewallet=1');
+
       const isMasternode = config.get('core.masternode.enable');
 
       if (isMasternode) {
         // Check operatorPrivateKey is set
         const masternodePrivateKey = config.get('core.masternode.operator.privateKey', true);
 
-        coreCommand.push('-masternodeblsprivkey')
-        coreCommand.push(masternodePrivateKey)
+        coreCommand.push(`-masternodeblsprivkey=${masternodePrivateKey}`)
       }
     }
 
