@@ -4,9 +4,11 @@ const path = require('path');
 const dotenvSafe = require('dotenv-safe');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
+const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
 use(sinonChai);
+use(dirtyChai);
 use(chaiAsPromised);
 
 dotenvSafe.config({
