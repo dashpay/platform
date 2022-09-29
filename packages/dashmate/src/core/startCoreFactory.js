@@ -30,17 +30,9 @@ function startCoreFactory(
     };
 
     // Run Core service
-
     const coreCommand = [
       'dashd',
     ];
-
-    const isMasternode = config.get('core.masternode.enable');
-
-    if (isMasternode) {
-      // Check operatorPrivateKey is set
-      config.get('core.masternode.operator.privateKey', true);
-    }
 
     if (options.addressIndex) {
       coreCommand.push('--addressindex=1');
@@ -51,6 +43,16 @@ function startCoreFactory(
       config.set('core.masternode.operator.privateKey', null)
 
       coreCommand.push('--disablewallet=0');
+    } else {
+      const isMasternode = config.get('core.masternode.enable');
+
+      if (isMasternode) {
+        // Check operatorPrivateKey is set
+        const masternodePrivateKey = config.get('core.masternode.operator.privateKey', true);
+
+        coreCommand.push('-masternodeblsprivkey')
+        coreCommand.push(masternodePrivateKey)
+      }
     }
 
     const coreContainer = await dockerCompose.runService(
@@ -78,7 +80,6 @@ function startCoreFactory(
     );
 
     // Wait Core to start
-
     await waitForCoreStart(coreService);
 
     return coreService;
