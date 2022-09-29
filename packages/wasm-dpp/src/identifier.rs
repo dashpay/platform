@@ -4,6 +4,7 @@ use wasm_bindgen::JsCast;
 
 use crate::errors::from_dpp_err;
 use dpp::identifier;
+use js_sys::Uint8Array;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {
@@ -71,8 +72,8 @@ impl IdentifierWrapper {
     }
 
     #[wasm_bindgen(js_name = toBuffer)]
-    pub fn to_buffer(&self) -> Vec<u8> {
-        self.wrapped.to_buffer().to_vec()
+    pub fn to_buffer(&self) -> Uint8Array {
+        js_sys::Uint8Array::from(self.wrapped.buffer.as_slice())
     }
 
     #[wasm_bindgen(js_name = toJSON)]
@@ -91,14 +92,23 @@ impl IdentifierWrapper {
             .to_string_with_encoding_string(encoding.as_deref())
     }
 
-    #[wasm_bindgen(js_name = encodeCBOR)]
-    pub fn encode_cbor(&self) {}
+    // #[wasm_bindgen(js_name = encodeCBOR)]
+    // pub fn encode_cbor(&self) {
+    //     self.wrapped.buffer
+    // }
 
-    pub fn len(&self) -> usize {
+    #[wasm_bindgen(getter)]
+    pub fn length(&self) -> usize {
         self.wrapped.buffer.len()
     }
 
     pub fn inner(&self) -> Vec<u8> {
         self.wrapped.buffer.to_vec()
     }
+
+    // #[wasm_bindgen(js_name = valueOf)]
+    // pub fn value_of(&self) -> js_sys::Uint8Array {
+    //     // let js_arr: js_sys::Array = self.inner().into_iter().map(JsValue::from).collect();
+    //     js_sys::Uint8Array::from(self.wrapped.buffer.as_slice())
+    // }
 }

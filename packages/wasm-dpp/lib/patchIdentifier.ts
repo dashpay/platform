@@ -6,18 +6,23 @@ export default function (dppModule: typeof dpp_module) {
 
     //@ts-ignore
     Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
-    Object.defineProperty(Identifier.prototype, 'length', { get() { return this.len(); } });
+    // Object.defineProperty(Identifier.prototype, 'length', { get() { return this.len(); } });
 
     Identifier.prototype.valueOf = function() {
-        return this.inner()
+        return Buffer.from(this.inner())
     }
 
-    //@ts-ignore
+    // @ts-ignore
+    Identifier.prototype.encodeCBOR = function encodeCBOR(encoder) {
+        // @ts-ignore
+        encoder.pushAny(this.valueOf());
+
+        return true;
+    };
+
+    // @ts-ignore
     Identifier.prototype.inspect = function(...args) {
-        //@ts-ignore
-        const buf = Buffer.from(this.inner());
-        //@ts-ignore
-        return buf.inspect(...args);
+        return this.valueOf().inspect(...args);
     }
 
     // THIS MAKES BUFFERS PRINTABLE IN NODE.JS, BUT FOR THIS TO WORK

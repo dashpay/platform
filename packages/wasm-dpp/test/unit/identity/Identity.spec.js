@@ -3,6 +3,7 @@ const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateR
 
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const OldIdentity = require('@dashevo/dpp/lib/identity/Identity');
 
 const serializer = require('@dashevo/dpp/lib/util/serializer');
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
@@ -48,13 +49,13 @@ describe('Identity', () => {
 
     metadataFixture = new Metadata(42, 0);
 
-    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
-    hashMock = this.sinonSandbox.stub(hash, 'hash');
+    // encodeMock = this.sinonSandbox.stub(serializer, 'encode');
+    // hashMock = this.sinonSandbox.stub(hash, 'hash');
   });
 
   afterEach(() => {
-    encodeMock.restore();
-    hashMock.restore();
+    // encodeMock.restore();
+    // hashMock.restore();
   });
 
   describe('#constructor', () => {
@@ -63,7 +64,7 @@ describe('Identity', () => {
 
       expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
       expect(instance.getPublicKeys().map((pk) => pk.toObject())).to.deep.equal(
-        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
+        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKeyWasm(rawPublicKey).toObject()),
       );
     });
   });
@@ -78,23 +79,14 @@ describe('Identity', () => {
   describe('#getPublicKeys', () => {
     it('should return set public keys', () => {
       expect(identity.getPublicKeys().map(pk => pk.toObject())).to.deep.equal(
-        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
+        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKeyWasm(rawPublicKey).toObject()),
       );
     });
   });
 
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
-      console.log(identity.setPublicKeys([
-        new IdentityPublicKeyWasm({
-          id: 99,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-          readOnly: false,
-        })
-      ]));
+      identity.setPublicKeys(42);
       expect(identity.getPublicKeys()).to.equal(42);
     });
   });
@@ -103,7 +95,7 @@ describe('Identity', () => {
     it('should return a public key for a given id', () => {
       const key = identity.getPublicKeyById(0);
 
-      expect(key.toObject()).to.be.deep.equal(new IdentityPublicKey(rawIdentity.publicKeys[0]));
+      expect(key.toObject()).to.be.deep.equal(new IdentityPublicKeyWasm(rawIdentity.publicKeys[0]).toObject());
     });
 
     it("should return undefined if there's no key with such id", () => {
@@ -114,8 +106,13 @@ describe('Identity', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized Identity', () => {
-      const encodeMockData = Buffer.from('42');
-      encodeMock.returns(encodeMockData); // for example
+      // const encodeMockData = Buffer.from('42');
+      // encodeMock.returns(encodeMockData); // for example
+      const oldIdentity = new OldIdentity(rawIdentity);
+      console.log(oldIdentity);
+      console.log(5);
+      console.log(oldIdentity.toBuffer().toString("hex"));
+      console.log(6);
 
       const result = identity.toBuffer();
 
@@ -125,7 +122,9 @@ describe('Identity', () => {
       const protocolVersionUInt32 = Buffer.alloc(4);
       protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
 
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, encodeMockData]));
+      let oldBuffer = Buffer.from('01000000a46269645820e2d17bfd0ffe749215c3367bc8c667f541a02e85fc51fb99ba18bbdf3192c4f26762616c616e636500687265766973696f6e006a7075626c69634b65797381a6626964006464617461582461616161616161616161616161616161616161616161616161616161616161616161616164747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00', 'hex')
+
+      expect(result).to.deep.equal(Uint8Array.from(oldBuffer));
     });
   });
 
@@ -146,6 +145,11 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
+      const buf = Buffer.from('ff', 'hex');
+      console.log(buf.valueOf());
+
+      console.log(identity.toObject());
+      console.log(rawIdentity.id.valueOf());
       expect(identity.toObject()).to.deep.equal(rawIdentity);
     });
   });
