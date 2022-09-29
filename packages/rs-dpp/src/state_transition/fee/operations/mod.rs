@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 pub use write_operation::*;
 
+mod signature_verification_operation;
+pub use signature_verification_operation::*;
+
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
 pub const STORAGE_PROCESSING_CREDIT_PER_BYTE: i64 = 5000;
 
@@ -23,6 +26,7 @@ pub enum Operation {
     Write(WriteOperation),
     Delete(DeleteOperation),
     PreCalculated(PreCalculatedOperation),
+    SignatureVerification(SignatureVerificationOperation),
 }
 
 pub trait OperationLike {
@@ -32,26 +36,6 @@ pub trait OperationLike {
     fn get_storage_cost(&self) -> i64;
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum OperationType {
-    Write,
-    Read,
-    Delete,
-    PreCalculated,
-}
-
-impl std::fmt::Display for OperationType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Write => write!(f, "write"),
-            Self::Read => write!(f, "read"),
-            Self::Delete => write!(f, "delete"),
-            Self::PreCalculated => write!(f, "preCalculated"),
-        }
-    }
-}
-
 macro_rules! call_method {
     ($operation_type:expr, $method:ident ) => {
         match $operation_type {
@@ -59,6 +43,7 @@ macro_rules! call_method {
             Operation::Write(op) => op.$method(),
             Operation::Delete(op) => op.$method(),
             Operation::PreCalculated(op) => op.$method(),
+            Operation::SignatureVerification(op) => op.$method(),
         }
     };
 }
@@ -97,8 +82,11 @@ impl Operation {
 
 #[cfg(test)]
 mod test {
-    use super::{DeleteOperation, Operation, PreCalculatedOperation, ReadOperation};
-    use crate::state_transition::fee::operations::WriteOperation;
+    use super::{
+        DeleteOperation, Operation, PreCalculatedOperation, ReadOperation,
+        SignatureVerificationOperation,
+    };
+    use crate::{identity::KeyType, state_transition::fee::operations::WriteOperation};
     use serde_json::json;
 
     struct TestCase {
@@ -153,6 +141,16 @@ mod test {
                 operation: Operation::PreCalculated(PreCalculatedOperation {
                     storage_cost: 12357,
                     processing_cost: 468910,
+                }),
+            },
+            TestCase {
+                json_str: json_string!({
+                    "type": "signatureVerification",
+                    "signatureType" : 1,
+
+                }),
+                operation: Operation::SignatureVerification(SignatureVerificationOperation {
+                    signature_type: KeyType::BLS12_381,
                 }),
             },
         ];
