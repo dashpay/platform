@@ -367,7 +367,10 @@ module.exports = {
   '0.23.0-dev.11': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        config.core.reindex = 0;
+        config.core.reindex = {
+          enable: false,
+          containerId: null,
+        };
       });
 
     return configFile;

@@ -238,7 +238,7 @@ module.exports = {
             },
             additionalProperties: false,
           },
-          required: ['enable'],
+          required: ['enable', 'containerId'],
           additionalProperties: false,
         },
       },
