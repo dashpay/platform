@@ -177,7 +177,7 @@ function configureCoreTaskFactory(
             {
               title: 'Stopping wallet',
               task: async () => {
-                await ctx.coreService.stop(configGroup[0].get('docker.stop.timeout'));
+                await ctx.coreService.stop();
               },
             },
             {
@@ -343,7 +343,7 @@ function configureCoreTaskFactory(
             {
               title: 'Stopping nodes',
               task: async () => (Promise.all(
-                ctx.coreServices.map((coreService) => coreService.stop(configGroup[0].get('docker.stop.timeout'))),
+                ctx.coreServices.map((coreService) => coreService.stop()),
               )),
             },
           ]);

@@ -103,7 +103,8 @@ module.exports = {
           type: 'object',
           properties: {
             timeout: {
-              type: 'number',
+              type: 'integer',
+              exclusiveMinimum: 0
             },
           },
           additionalProperties: false,
