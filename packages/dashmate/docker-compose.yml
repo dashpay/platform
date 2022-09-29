@@ -13,6 +13,7 @@ services:
     command:
       - dashd
       - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
+    stop_grace_period: 30s
 
 volumes:
   core_data:
