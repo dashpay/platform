@@ -243,7 +243,7 @@ $ dashmate reset
 
 The `reindex` command rebuilds the block chain index using the downloaded block data.
 
-Sometimes you need to make a process of reindex for your core container, in case you imported new private keys, or your core data corrupted. The command `reindex` put your node in the reindex mode.
+Sometimes you need to run a reindex for your core container. This may be necessary if you import new private keys or if your core data has become corrupted. The `reindex` command puts your node into the reindex mode.
 
 It modifies the configuration, runs the core container in `reindex=1` mode, waits until it fully resynces, and returns it to the normal mode.
 
