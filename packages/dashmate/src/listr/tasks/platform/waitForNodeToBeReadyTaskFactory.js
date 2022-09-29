@@ -17,7 +17,7 @@ function waitForNodeToBeReadyTaskFactory(
   async function waitForNodeToBeReadyTask(config) {
     return new Listr([
       {
-        title: `Wait for node ${config.getName} to be ready`,
+        title: `Wait for node ${config.getName()} to be ready`,
         task: async () => {
           const port = config.get('platform.drive.tenderdash.rpc.port');
 
