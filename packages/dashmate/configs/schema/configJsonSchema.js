@@ -227,12 +227,19 @@ module.exports = {
           enum: [0, 1],
         },
         reindex: {
-          type: 'integer',
-          enum: [0, 1],
-        },
-        reindexContainerId: {
-          type: ['string', 'null'],
-          minLength: 1,
+          type: 'object',
+          properties: {
+            enable: {
+              type: 'boolean',
+            },
+            containerId: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            additionalProperties: false,
+          },
+          required: ['enable'],
+          additionalProperties: false,
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],

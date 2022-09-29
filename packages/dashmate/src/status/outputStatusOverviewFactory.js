@@ -65,9 +65,6 @@ function outputStatusOverviewFactory(
       },
     } = await coreService.getRpcClient().getBlockchainInfo();
 
-    const blockchaininfo = await coreService.getRpcClient().getBlockchainInfo();
-    const mnsync = await coreService.getRpcClient().mnsync('status');
-
     // Collect masternode data
     let masternodeState;
     let masternodeStatus;

@@ -364,7 +364,7 @@ module.exports = {
 
     return configFile;
   },
-  '0.23.0-dev.8': (configFile) => {
+  '0.23.0-dev.11': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         config.core.reindex = 0;

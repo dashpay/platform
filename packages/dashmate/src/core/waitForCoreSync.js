@@ -14,27 +14,17 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
   let verificationProgress = 0.0;
 
   do {
-    const info = await coreService.dockerContainer.inspect()
+    ({
+      result: {IsSynced: isSynced, IsBlockchainSynced: isBlockchainSynced},
+    } = await coreService.getRpcClient().mnsync('status'));
 
-    try {
+    ({
+      result: {verificationprogress: verificationProgress, headers: headers, blocks: blocks},
+    } = await coreService.getRpcClient().getBlockchainInfo());
 
-      ({
-        result: {IsSynced: isSynced, IsBlockchainSynced: isBlockchainSynced},
-      } = await coreService.getRpcClient().mnsync('status'));
-
-      ({
-        result: {verificationprogress: verificationProgress, headers: headers, blocks: blocks},
-      } = await coreService.getRpcClient().getBlockchainInfo());
-
-      if (!isSynced || !isBlockchainSynced) {
-        await wait(10000);
-        progressCallback({percent: verificationProgress, headers, blocks});
-      }
-    } catch (e) {
-      if (info.State.Health.Status !== 'starting') {
-        console.log(e)
-        throw e
-      }
+    if (!isSynced || !isBlockchainSynced) {
+      await wait(10000);
+      progressCallback({percent: verificationProgress, headers, blocks});
     }
   } while (!isSynced || !isBlockchainSynced);
 }
