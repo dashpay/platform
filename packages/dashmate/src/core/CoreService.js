@@ -49,7 +49,7 @@ class CoreService {
       return false;
     }
 
-    const timeout = this.config.get('docker.timeout')
+    const timeout = this.config.get('docker.stop.timeout')
 
     await this.dockerContainer.stop({t: timeout});
     await this.dockerContainer.remove();

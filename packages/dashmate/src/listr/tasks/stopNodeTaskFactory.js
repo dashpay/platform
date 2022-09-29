@@ -45,7 +45,7 @@ function stopNodeTaskFactory(
       },
       {
         title: `Stopping ${config.getName()} node`,
-        task: async () => dockerCompose.stop(config.toEnvs(), config.get('docker.timeout')),
+        task: async () => dockerCompose.stop(config.toEnvs(), config.get('docker.stop.timeout')),
       },
     ]);
   }
