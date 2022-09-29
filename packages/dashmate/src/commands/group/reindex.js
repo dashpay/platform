@@ -3,7 +3,7 @@ const { Listr } = require('listr2');
 const { Flags } = require('@oclif/core');
 
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
-const GroupBaseCommand = require("../../oclif/command/GroupBaseCommand");
+const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 
 class GroupReindexCommand extends GroupBaseCommand {
   /**
@@ -26,34 +26,34 @@ class GroupReindexCommand extends GroupBaseCommand {
     reindexNodeTask,
     createRpcClient,
     dockerCompose,
-    configGroup
+    configGroup,
   ) {
     const groupName = configGroup[0].get('group');
 
     const tasks = new Listr({
-        title: `Reindex ${groupName} nodes`,
-        task: async () => (
-          new Listr([
-            {
-              title: 'Reindex core nodes',
-              task: () => (
-                new Listr(configGroup.map((config) => ({
-                  task: () => reindexNodeTask(config),
-                })))
-              ),
-            },
-          ])
-        ),
+      title: `Reindex ${groupName} nodes`,
+      task: async () => (
+        new Listr([
+          {
+            title: 'Reindex core nodes',
+            task: () => (
+              new Listr(configGroup.map((config) => ({
+                task: () => reindexNodeTask(config),
+              })))
+            ),
+          },
+        ])
+      ),
+    },
+    {
+      renderer: isVerbose ? 'verbose' : 'default',
+      rendererOptions: {
+        showTimer: isVerbose,
+        clearOutput: false,
+        collapse: false,
+        showSubtasks: true,
       },
-      {
-        renderer: isVerbose ? 'verbose' : 'default',
-        rendererOptions: {
-          showTimer: isVerbose,
-          clearOutput: false,
-          collapse: false,
-          showSubtasks: true,
-        },
-      });
+    });
 
     try {
       await tasks.run({

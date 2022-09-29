@@ -1,6 +1,6 @@
-const {Listr} = require('listr2');
-const {Observable} = require('rxjs')
-const CoreService = require('../../core/CoreService')
+const { Listr } = require('listr2');
+const { Observable } = require('rxjs');
+const CoreService = require('../../core/CoreService');
 
 /**
  * @param {Docker} docker
@@ -27,7 +27,7 @@ function reindexNodeTaskFactory(
   renderServiceTemplates,
   writeServiceConfigs,
   configFileRepository,
-  configFile
+  configFile,
 ) {
   /**
    * @typedef {reindexNodeTask}
@@ -39,44 +39,44 @@ function reindexNodeTaskFactory(
         title: 'Check services are not running',
         enabled: () => config.get('core.reindex.enable'),
         task: async () => {
-          const isRunning = await dockerCompose.isServiceRunning(config.toEnvs())
+          const isRunning = await dockerCompose.isServiceRunning(config.toEnvs());
 
           if (isRunning) {
-            throw new Error('Services is running, stop your nodes first')
+            throw new Error('Services is running, stop your nodes first');
           }
-        }
+        },
       },
       {
         title: 'Set core to reindex on next run',
         enabled: () => config.get('core.reindex.enable'),
         task: async () => {
-          config.set('core.reindex.enable', 1)
+          config.set('core.reindex.enable', 1);
 
           // Write configs
-          configFileRepository.write(configFile)
+          configFileRepository.write(configFile);
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
-        }
+        },
       },
       {
         title: 'Start core',
         task: async (ctx) => {
-          const containerId = config.get('core.reindex.containerId', false)
+          const containerId = config.get('core.reindex.containerId', false);
 
           if (!containerId) {
-            ctx.coreService = await startCore(config)
-            const containerInfo = await ctx.coreService.dockerContainer.inspect()
+            ctx.coreService = await startCore(config);
+            const containerInfo = await ctx.coreService.dockerContainer.inspect();
 
-            ctx.reindexContainerId = containerInfo.Id
-            config.set('core.reindex.containerId', containerInfo.Id)
-            configFileRepository.write(configFile)
+            ctx.reindexContainerId = containerInfo.Id;
+            config.set('core.reindex.containerId', containerInfo.Id);
+            configFileRepository.write(configFile);
 
-            return
+            return;
           }
 
           const container = docker.getContainer(containerId);
-          const containerInfo = await container.inspect()
-          ctx.reindexContainerId = containerInfo.Id
+          const containerInfo = await container.inspect();
+          ctx.reindexContainerId = containerInfo.Id;
           ctx.coreService = new CoreService(
             config,
             createRpcClient(
@@ -89,59 +89,57 @@ function reindexNodeTaskFactory(
             dockerCompose.docker.getContainer(containerId),
           );
 
-          const {State} = await container.inspect()
+          const { State } = await container.inspect();
 
-          if (State.Status === "paused" || State.Status === "exited") {
+          if (State.Status === 'paused' || State.Status === 'exited') {
             switch (State.ExitCode) {
               default:
-                console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`)
+                console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`);
               case 0:
                 await container.start();
             }
           }
-        }
+        },
       },
       {
         title: 'Wait for Core start',
-        task: async (ctx) => waitForCoreStart(ctx.coreService)
+        task: async (ctx) => waitForCoreStart(ctx.coreService),
       },
       {
-        task: async (ctx) => {
-          return new Observable(async observer => {
-            observer.next('Reindexing dashcore ' + config.getName())
+        task: async (ctx) => new Observable(async (observer) => {
+          observer.next(`Reindexing dashcore ${config.getName()}`);
 
-            await waitForCoreSync(ctx.coreService, (verificationProgress) => {
-              const {percent, blocks, headers} = verificationProgress
+          await waitForCoreSync(ctx.coreService, (verificationProgress) => {
+            const { percent, blocks, headers } = verificationProgress;
 
-              observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`)
-            })
+            observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`);
+          });
 
-            await new Promise((res) => setTimeout(res, 2000))
+          await new Promise((res) => setTimeout(res, 2000));
 
-            observer.complete()
-          })
-        },
+          observer.complete();
+        }),
       },
       {
         title: 'Stop services',
         task: async () => {
-          const containerId = config.get('core.reindex.containerId', false)
+          const containerId = config.get('core.reindex.containerId', false);
           const container = docker.getContainer(containerId);
 
-          await container.stop()
+          await container.stop();
         },
       },
       {
         title: 'Set core to disable reindex on next run',
         task: async () => {
-          config.set('core.reindex.enable', 0)
-          config.set('core.reindex.containerId', null)
+          config.set('core.reindex.enable', 0);
+          config.set('core.reindex.containerId', null);
 
           // Write configs
-          configFileRepository.write(configFile)
+          configFileRepository.write(configFile);
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
-        }
+        },
       },
     ]);
   }

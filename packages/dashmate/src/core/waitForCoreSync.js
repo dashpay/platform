@@ -15,16 +15,16 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
 
   do {
     ({
-      result: {IsSynced: isSynced, IsBlockchainSynced: isBlockchainSynced},
+      result: { IsSynced: isSynced, IsBlockchainSynced: isBlockchainSynced },
     } = await coreService.getRpcClient().mnsync('status'));
 
     ({
-      result: {verificationprogress: verificationProgress, headers: headers, blocks: blocks},
+      result: { verificationprogress: verificationProgress, headers, blocks },
     } = await coreService.getRpcClient().getBlockchainInfo());
 
     if (!isSynced || !isBlockchainSynced) {
       await wait(10000);
-      progressCallback({percent: verificationProgress, headers, blocks});
+      progressCallback({ percent: verificationProgress, headers, blocks });
     }
   } while (!isSynced || !isBlockchainSynced);
 }
