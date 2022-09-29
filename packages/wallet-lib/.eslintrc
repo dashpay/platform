@@ -14,6 +14,7 @@
     "!src/plugins",
     "!src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.spec.js",
     "!src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.spec.js",
+    "!src/plugins/Workers/TransactionsSyncWorker/TransactionsReader.spec.js",
     "!src/plugins/Workers/TransactionsSyncWorker/utils.spec.js"
   ]
 }

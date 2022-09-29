@@ -1,5 +1,5 @@
 const {
-  BloomFilter, Address,
+  BloomFilter, Address, MerkleBlock, Transaction,
 } = require('@dashevo/dashcore-lib');
 const { BLOOM_FALSE_POSITIVE_RATE } = require('../../../CONSTANTS');
 
@@ -45,7 +45,34 @@ const filterTransactionsForAddresses = (transactions, addresses, network = 'live
   return filteredTransactions;
 };
 
+/**
+ * @private
+ * @param {proto.org.dash.platform.dapi.v0.RawTransactions} rawTransactions
+ * @param {string[]} addresses
+ * @param {string} network
+ * @returns {Transaction[]} transactions
+ */
+const parseRawTransactions = (rawTransactions, addresses, network) => {
+  const transactions = rawTransactions.getTransactionsList()
+    .map((rawTransaction) => new Transaction(Buffer.from(rawTransaction)));
+
+  return filterTransactionsForAddresses(
+    transactions,
+    addresses,
+    network,
+  );
+};
+
+/**
+ * @private
+ * @param {TypedArray} rawMerkleBlock
+ * @returns {MerkleBlock}
+ */
+const parseRawMerkleBlock = (rawMerkleBlock) => new MerkleBlock(Buffer.from(rawMerkleBlock));
+
 module.exports = {
   createBloomFilter,
   filterTransactionsForAddresses,
+  parseRawTransactions,
+  parseRawMerkleBlock,
 };
