@@ -44,10 +44,11 @@ describe('TransactionsReader - unit', () => {
     this.sinon.spy(transactionsReader, 'emit');
     this.sinon.spy(transactionsReader, 'on');
     this.sinon.spy(transactionsReader, 'stopReadingHistorical');
+    this.sinon.spy(transactionsReader, 'subscribeToHistoricalStream');
   });
 
   describe('#subscribeToHistoricalStream', () => {
-    context('initialization', () => {
+    context('Initialization', () => {
       it('should subscribe to transactions stream and hook on events', async () => {
         await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
@@ -60,239 +61,324 @@ describe('TransactionsReader - unit', () => {
       });
     });
 
-    context('[data event] Transactions', () => {
-      it('should process transactions', async () => {
-        await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+    context('On data', () => {
+      context('Transactions', () => {
+        it('should process transactions', async () => {
+          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
-        const transactions = [
-          new Transaction().to(DEFAULT_ADDRESSES[0], 1000),
-          new Transaction().to(DEFAULT_ADDRESSES[1], 2000),
-        ];
-        historicalSyncStream.sendTransactions(transactions);
+          const transactions = [
+            new Transaction().to(DEFAULT_ADDRESSES[0], 1000),
+            new Transaction().to(DEFAULT_ADDRESSES[1], 2000),
+          ];
+          historicalSyncStream.sendTransactions(transactions);
 
-        const { firstCall } = transactionsReader.emit;
-        expect(transactionsReader.emit).to.have.been.calledOnce();
-        expect(firstCall.args[0]).to.equal(TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS);
-        expect(firstCall.args[1].map((tx) => tx.hash))
-          .to.deep.equal(transactions.map((tx) => tx.hash));
+          const { firstCall } = transactionsReader.emit;
+          expect(transactionsReader.emit).to.have.been.calledOnce();
+          expect(firstCall.args[0]).to.equal(TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS);
+          expect(firstCall.args[1].map((tx) => tx.hash))
+            .to.deep.equal(transactions.map((tx) => tx.hash));
+        });
+
+        it('should ignore false positive transactions', async () => {
+          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+
+          const transactions = [
+            new Transaction().to(new PrivateKey().toAddress(), 1000),
+          ];
+
+          historicalSyncStream.sendTransactions(transactions);
+          expect(transactionsReader.emit).to.have.not.been.called();
+        });
       });
 
-      it('should ignore false positive transactions', async () => {
-        await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+      context('MerkleBlock', () => {
+        it('should process merkle block', async () => {
+          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
-        const transactions = [
-          new Transaction().to(new PrivateKey().toAddress(), 1000),
-        ];
+          const merkleBlock = mockMerkleBlock([]);
+          historicalSyncStream.sendMerkleBlock(merkleBlock);
 
-        historicalSyncStream.sendTransactions(transactions);
-        expect(transactionsReader.emit).to.have.not.been.called();
+          const { firstCall } = transactionsReader.emit;
+          expect(transactionsReader.emit).to.have.been.calledOnce();
+          expect(firstCall.args[0]).to.equal(TransactionsReader.EVENTS.MERKLE_BLOCK);
+          const { merkleBlock: emittedMerkleBlock } = firstCall.args[1];
+          expect(emittedMerkleBlock.header.hash).to.equal(merkleBlock.header.hash);
+        });
+
+        it('should manage acceptMerkleBlock and rejectMerkleBlock callbacks', async () => {
+          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+
+          let firstAccepted = false;
+          let failedRejectionError = null;
+          let failedAcceptanceError = null;
+          transactionsReader.on(
+            TransactionsReader.EVENTS.MERKLE_BLOCK,
+            ({ acceptMerkleBlock, rejectMerkleBlock }) => {
+              if (!firstAccepted) {
+                firstAccepted = true;
+                acceptMerkleBlock(1, []);
+                try {
+                  rejectMerkleBlock();
+                } catch (e) {
+                  failedRejectionError = e;
+                }
+              } else {
+                rejectMerkleBlock();
+                try {
+                  acceptMerkleBlock(1, []);
+                } catch (e) {
+                  failedAcceptanceError = e;
+                }
+              }
+            },
+          );
+
+          const merkleBlock = mockMerkleBlock([]);
+          historicalSyncStream.sendMerkleBlock(merkleBlock);
+          historicalSyncStream.sendMerkleBlock(merkleBlock);
+
+          expect(failedRejectionError.message)
+            .to.equal('Unable to reject accepted merkle block');
+          expect(failedAcceptanceError.message)
+            .to.equal('Unable to accept rejected merkle block');
+        });
+
+        context('Merkle Block accepted (Bloom Filter expansion)', () => {
+          let fromBlockHeight;
+          let merkleBlockHeight;
+          let count;
+          let merkleBlock;
+          let newAddresses;
+
+          beforeEach(() => {
+            fromBlockHeight = 100;
+            merkleBlockHeight = 300;
+            count = CHAIN_HEIGHT - fromBlockHeight + 1;
+            merkleBlock = mockMerkleBlock([]);
+            newAddresses = [
+              'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
+              'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
+            ];
+          });
+
+          it('should restart stream in case new addresses were generated', async () => {
+            await transactionsReader.subscribeToHistoricalStream(
+              fromBlockHeight, count, DEFAULT_ADDRESSES,
+            );
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+                acceptMerkleBlock(merkleBlockHeight, newAddresses);
+              });
+
+            historicalSyncStream.sendMerkleBlock(merkleBlock);
+            await waitOneTick();
+
+            expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledTwice();
+            const { secondCall } = transactionsReader.createHistoricalSyncStream;
+
+            const newStream = await secondCall.returnValue;
+
+            expect(secondCall.args).to.deep.equal([
+              merkleBlockHeight + 1, // Reconnect from the next merkle block
+              count - merkleBlockHeight + fromBlockHeight - 1, // Adjust remaining count
+              createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
+            ]);
+
+            expect(transactionsReader.historicalSyncStream).to.equal(newStream);
+          });
+
+          it('should not restart stream in case no new addresses were generated', async () => {
+            await transactionsReader.subscribeToHistoricalStream(
+              fromBlockHeight, count, DEFAULT_ADDRESSES,
+            );
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+                acceptMerkleBlock(merkleBlockHeight, []);
+              });
+
+            historicalSyncStream.sendMerkleBlock(merkleBlock);
+
+            expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
+          });
+
+          it('should not restart stream for the last merkle block in range in case new addresses were generated', async () => {
+            merkleBlockHeight = 1000;
+            await transactionsReader.subscribeToHistoricalStream(
+              fromBlockHeight, count, DEFAULT_ADDRESSES,
+            );
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+                acceptMerkleBlock(merkleBlockHeight, newAddresses);
+              });
+
+            historicalSyncStream.sendMerkleBlock(merkleBlock);
+            await waitOneTick();
+
+            expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
+          });
+
+          it('should handle stream restart error', async () => {
+            await transactionsReader.subscribeToHistoricalStream(
+              fromBlockHeight, count, DEFAULT_ADDRESSES,
+            );
+
+            const restartError = new Error('Error restarting stream');
+            transactionsReader.createHistoricalSyncStream.throws(restartError);
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+                acceptMerkleBlock(merkleBlockHeight, newAddresses);
+              });
+
+            let emittedError = null;
+            transactionsReader.on('error', (e) => {
+              emittedError = e;
+            });
+
+            historicalSyncStream.sendMerkleBlock(merkleBlock);
+            await waitOneTick();
+
+            expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledTwice();
+            expect(emittedError).to.equal(restartError);
+          });
+
+          it('should throw an error if invalid Merkle Block height provided', async () => {
+            await transactionsReader.subscribeToHistoricalStream(
+              fromBlockHeight, count, DEFAULT_ADDRESSES,
+            );
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+                acceptMerkleBlock(1300, newAddresses);
+              });
+
+            let emittedError = null;
+            transactionsReader.on('error', (e) => {
+              emittedError = e;
+            });
+
+            historicalSyncStream.sendMerkleBlock(merkleBlock);
+            await waitOneTick();
+
+            expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
+            expect(emittedError.message)
+              .to.equal('Merkle block height is greater than expected range: 1300 > 1000');
+          });
+        });
+
+        context('Merkle Block rejected', () => {
+          let fromBlockHeight;
+          let count;
+          const rejectedMerkleBlockWith = new Error('Merkle block rejected with error');
+          let merkleBlock;
+
+          beforeEach(() => {
+            fromBlockHeight = 100;
+            count = CHAIN_HEIGHT - fromBlockHeight + 1;
+            merkleBlock = mockMerkleBlock([]);
+          });
+
+          it('should emit error if Merkle Block rejected', async () => {
+            await transactionsReader.subscribeToHistoricalStream(
+              fromBlockHeight, count, DEFAULT_ADDRESSES,
+            );
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ rejectMerkleBlock }) => {
+                rejectMerkleBlock(rejectedMerkleBlockWith);
+              });
+
+            let emittedError = null;
+            transactionsReader.on('error', (e) => {
+              emittedError = e;
+            });
+
+            historicalSyncStream.sendMerkleBlock(merkleBlock);
+            await waitOneTick();
+
+            expect(emittedError)
+              .to.equal(rejectedMerkleBlockWith);
+          });
+        });
       });
     });
-    context('[data event] MerkleBlock', () => {
-      it('should process merkle block', async () => {
+
+    context('On error', () => {
+      it('should emit error', async () => {
         await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
-        const merkleBlock = mockMerkleBlock([]);
-        historicalSyncStream.sendMerkleBlock(merkleBlock);
+        let emittedError = null;
+        transactionsReader.on('error', (e) => {
+          emittedError = e;
+        });
 
-        const { firstCall } = transactionsReader.emit;
-        expect(transactionsReader.emit).to.have.been.calledOnce();
-        expect(firstCall.args[0]).to.equal(TransactionsReader.EVENTS.MERKLE_BLOCK);
-        const { merkleBlock: emittedMerkleBlock } = firstCall.args[1];
-        expect(emittedMerkleBlock.header.hash).to.equal(merkleBlock.header.hash);
+        const error = new Error('Error');
+        historicalSyncStream.emit('error', error);
+
+        await waitOneTick();
+
+        expect(emittedError).to.equal(error);
       });
 
-      it('should manage acceptMerkleBlock and rejectMerkleBlock callbacks', async () => {
-        await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+      it('should handle stream cancellation', async () => {
+        await transactionsReader
+          .subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+        await historicalSyncStream.cancel();
+        expect(transactionsReader.subscribeToHistoricalStream).to.have.been.calledOnce();
+        expect(transactionsReader.historicalSyncStream).to.equal(null);
+        expect(transactionsReader.emit)
+          .to.have.not.been.calledWith(TransactionsReader.EVENTS.ERROR);
+      });
+    });
 
-        let firstAccepted = false;
-        let failedRejectionError = null;
-        let failedAcceptanceError = null;
-        transactionsReader.on(
-          TransactionsReader.EVENTS.MERKLE_BLOCK,
-          ({ acceptMerkleBlock, rejectMerkleBlock }) => {
-            if (!firstAccepted) {
-              firstAccepted = true;
-              acceptMerkleBlock(1, []);
-              try {
-                rejectMerkleBlock();
-              } catch (e) {
-                failedRejectionError = e;
-              }
-            } else {
-              rejectMerkleBlock();
-              try {
-                acceptMerkleBlock(1, []);
-              } catch (e) {
-                failedAcceptanceError = e;
-              }
-            }
-          },
+    context('On end', () => {
+      let fromBlockHeight;
+      let count;
+      let merkleBlockHeight;
+      let merkleBlock;
+      let newAddresses;
+
+      beforeEach(() => {
+        fromBlockHeight = 100;
+        count = CHAIN_HEIGHT - fromBlockHeight + 1;
+        merkleBlock = mockMerkleBlock([]);
+        merkleBlockHeight = 300;
+        newAddresses = [
+          'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
+          'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
+        ];
+      });
+
+      it('should emit HISTORICAL_DATA_OBTAINED event', async () => {
+        await transactionsReader.subscribeToHistoricalStream(
+          fromBlockHeight, count, DEFAULT_ADDRESSES,
         );
 
-        const merkleBlock = mockMerkleBlock([]);
-        historicalSyncStream.sendMerkleBlock(merkleBlock);
-        historicalSyncStream.sendMerkleBlock(merkleBlock);
+        historicalSyncStream.end();
 
-        expect(failedRejectionError.message)
-          .to.equal('Unable to reject accepted merkle block');
-        expect(failedAcceptanceError.message)
-          .to.equal('Unable to accept rejected merkle block');
+        expect(transactionsReader.emit)
+          .to.have.been.calledWith(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
       });
 
-      context('Merkle Block accepted (Bloom Filter expansion)', () => {
-        let fromBlockHeight;
-        let merkleBlockHeight;
-        let count;
-        let merkleBlock;
-        let newAddresses;
+      it('should not emit HISTORICAL_DATA_OBTAINED event if stream ended, but needs to be restarted', async () => {
+        await transactionsReader.subscribeToHistoricalStream(
+          fromBlockHeight, count, DEFAULT_ADDRESSES,
+        );
 
-        beforeEach(() => {
-          fromBlockHeight = 100;
-          merkleBlockHeight = 300;
-          count = CHAIN_HEIGHT - fromBlockHeight + 1;
-          merkleBlock = mockMerkleBlock([]);
-          newAddresses = [
-            'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
-            'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
-          ];
-        });
-
-        it('should restart stream in case new addresses were generated', async () => {
-          await transactionsReader.subscribeToHistoricalStream(
-            fromBlockHeight, count, DEFAULT_ADDRESSES,
-          );
-
-          transactionsReader.on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+        transactionsReader
+          .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
             acceptMerkleBlock(merkleBlockHeight, newAddresses);
+            historicalSyncStream.end();
           });
 
-          historicalSyncStream.sendMerkleBlock(merkleBlock);
-          await waitOneTick();
+        historicalSyncStream.sendMerkleBlock(merkleBlock);
+        await waitOneTick();
 
-          expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledTwice();
-          const { secondCall } = transactionsReader.createHistoricalSyncStream;
-
-          const newStream = await secondCall.returnValue;
-
-          expect(secondCall.args).to.deep.equal([
-            merkleBlockHeight + 1, // Reconnect from the next merkle block
-            count - merkleBlockHeight + fromBlockHeight - 1, // Adjust remaining count
-            createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
-          ]);
-
-          expect(transactionsReader.historicalSyncStream).to.equal(newStream);
-        });
-
-        it('should not restart stream in case no new addresses were generated', async () => {
-          await transactionsReader.subscribeToHistoricalStream(
-            fromBlockHeight, count, DEFAULT_ADDRESSES,
-          );
-
-          transactionsReader.on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-            acceptMerkleBlock(merkleBlockHeight, []);
-          });
-
-          historicalSyncStream.sendMerkleBlock(merkleBlock);
-
-          expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
-        });
-
-        it('should not restart stream for the last merkle block in range in case new addresses were generated', async () => {
-          merkleBlockHeight = 1000;
-          await transactionsReader.subscribeToHistoricalStream(
-            fromBlockHeight, count, DEFAULT_ADDRESSES,
-          );
-
-          transactionsReader.on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-            acceptMerkleBlock(merkleBlockHeight, newAddresses);
-          });
-
-          historicalSyncStream.sendMerkleBlock(merkleBlock);
-          await waitOneTick();
-
-          expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
-        });
-
-        it('should handle stream restart error', async () => {
-          await transactionsReader.subscribeToHistoricalStream(
-            fromBlockHeight, count, DEFAULT_ADDRESSES,
-          );
-
-          const restartError = new Error('Error restarting stream');
-          transactionsReader.createHistoricalSyncStream.throws(restartError);
-
-          transactionsReader.on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-            acceptMerkleBlock(merkleBlockHeight, newAddresses);
-          });
-
-          let emittedError = null;
-          transactionsReader.on('error', (e) => {
-            emittedError = e;
-          });
-
-          historicalSyncStream.sendMerkleBlock(merkleBlock);
-          await waitOneTick();
-
-          expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledTwice();
-          expect(emittedError).to.equal(restartError);
-        });
-
-        it('should throw an error if invalid Merkle Block height provided', async () => {
-          await transactionsReader.subscribeToHistoricalStream(
-            fromBlockHeight, count, DEFAULT_ADDRESSES,
-          );
-
-          transactionsReader.on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-            acceptMerkleBlock(1300, newAddresses);
-          });
-
-          let emittedError = null;
-          transactionsReader.on('error', (e) => {
-            emittedError = e;
-          });
-
-          historicalSyncStream.sendMerkleBlock(merkleBlock);
-          await waitOneTick();
-
-          expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
-          expect(emittedError.message)
-            .to.equal('Merkle block height is greater than expected range: 1300 > 1000');
-        });
-      });
-
-      context('Merkle Block rejected', () => {
-        let fromBlockHeight;
-        let count;
-        const rejectedMerkleBlockWith = new Error('Merkle block rejected with error');
-        let merkleBlock;
-
-        beforeEach(() => {
-          fromBlockHeight = 100;
-          count = CHAIN_HEIGHT - fromBlockHeight + 1;
-          merkleBlock = mockMerkleBlock([]);
-        });
-
-        it('should emit error if Merkle Block rejected', async () => {
-          await transactionsReader.subscribeToHistoricalStream(
-            fromBlockHeight, count, DEFAULT_ADDRESSES,
-          );
-
-          transactionsReader.on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ rejectMerkleBlock }) => {
-            rejectMerkleBlock(rejectedMerkleBlockWith);
-          });
-
-          let emittedError = null;
-          transactionsReader.on('error', (e) => {
-            emittedError = e;
-          });
-
-          historicalSyncStream.sendMerkleBlock(merkleBlock);
-          await waitOneTick();
-
-          expect(emittedError)
-            .to.equal(rejectedMerkleBlockWith);
-        });
+        expect(transactionsReader.emit)
+          .to.have.not.been.calledWith(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
       });
     });
   });

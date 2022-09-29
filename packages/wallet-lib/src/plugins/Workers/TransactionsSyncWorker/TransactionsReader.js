@@ -66,6 +66,7 @@ class TransactionsReader extends EventEmitter {
   async subscribeToHistoricalStream(fromBlockHeight, count, addresses) {
     const bloomFilter = createBloomFilter(addresses);
     const stream = await this.createHistoricalSyncStream(fromBlockHeight, count, bloomFilter);
+    this.historicalSyncStream = stream;
 
     // Arguments for the stream restart when it comes to a need to expand bloom filter
     let restartArgs = null;
@@ -147,9 +148,9 @@ class TransactionsReader extends EventEmitter {
             this.historicalSyncStream = newStream;
           }).catch((e) => {
             this.emit(EVENTS.ERROR, e);
+          }).finally(() => {
+            restartArgs = null;
           });
-
-          restartArgs = null;
         }
 
         return;
@@ -159,7 +160,9 @@ class TransactionsReader extends EventEmitter {
     };
 
     const endHandler = () => {
-      this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      if (!restartArgs) {
+        this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      }
     };
 
     stream.on('data', dataHandler);
