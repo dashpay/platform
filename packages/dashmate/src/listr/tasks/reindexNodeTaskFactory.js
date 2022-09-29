@@ -37,7 +37,7 @@ function reindexNodeTaskFactory(
     return new Listr([
       {
         title: 'Check services are not running',
-        enabled: () => config.get('core.reindex.enabled'),
+        enabled: () => config.get('core.reindex.enable'),
         task: async () => {
           const isRunning = await dockerCompose.isServiceRunning(config.toEnvs())
 
@@ -48,7 +48,7 @@ function reindexNodeTaskFactory(
       },
       {
         title: 'Set core to reindex on next run',
-        enabled: () => config.get('core.reindex.enabled'),
+        enabled: () => config.get('core.reindex.enable'),
         task: async () => {
           config.set('core.reindex.enable', 1)
 
@@ -134,7 +134,7 @@ function reindexNodeTaskFactory(
       {
         title: 'Set core to disable reindex on next run',
         task: async () => {
-          config.set('core.reindex.enabled', 0)
+          config.set('core.reindex.enable', 0)
           config.set('core.reindex.containerId', null)
 
           // Write configs
