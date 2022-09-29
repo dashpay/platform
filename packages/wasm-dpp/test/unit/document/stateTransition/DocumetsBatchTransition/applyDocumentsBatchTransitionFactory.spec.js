@@ -63,10 +63,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      time: {
-        seconds: 86400,
-      },
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
+      seconds: 86400,
     });
 
     fetchDocumentsMock = this.sinonSandbox.stub();
@@ -75,8 +73,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     ]);
 
     applyDocumentsBatchTransition = applyDocumentsBatchTransitionFactory(
-      stateRepositoryMock,
-      fetchDocumentsMock,
+        stateRepositoryMock,
+        fetchDocumentsMock,
     );
   });
 
@@ -86,8 +84,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     const replaceDocumentTransition = documentTransitions[1];
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      [replaceDocumentTransition],
-      executionContext,
+        [replaceDocumentTransition],
+        executionContext,
     );
 
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
@@ -106,10 +104,10 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     ]);
 
     expect(stateRepositoryMock.removeDocument).to.have.been.calledOnceWithExactly(
-      documentTransitions[2].getDataContract(),
-      documentTransitions[2].getType(),
-      documentTransitions[2].getId(),
-      executionContext,
+        documentTransitions[2].getDataContract(),
+        documentTransitions[2].getType(),
+        documentTransitions[2].getId(),
+        executionContext,
     );
   });
 
@@ -146,7 +144,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateTransition.getExecutionContext().disableDryRun();
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.have.been.calledOnceWith();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
 
     const [documentTransition] = stateTransition.getTransitions();
     const newDocument = new Document({
@@ -164,8 +162,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
 
     expect(stateRepositoryMock.updateDocument).to.have.been.calledOnceWithExactly(
-      newDocument,
-      executionContext,
+        newDocument,
+        executionContext,
     );
   });
 });

@@ -21,9 +21,7 @@ describe('createFeatureFlagDataTrigger', () => {
     topLevelIdentityId = getIdentityFixture().getId();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      height: new Long(42),
-    });
+    stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(new Long(42));
 
     const [document] = getFeatureFlagsDocumentsFixture();
 
@@ -46,7 +44,7 @@ describe('createFeatureFlagDataTrigger', () => {
     documentTransition.data.enableAtHeight = 1;
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+        documentTransition, contextMock, topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -62,7 +60,7 @@ describe('createFeatureFlagDataTrigger', () => {
     contextMock.getOwnerId.returns(Identifier.from(Buffer.alloc(32, 1)));
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+        documentTransition, contextMock, topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -76,7 +74,7 @@ describe('createFeatureFlagDataTrigger', () => {
 
   it('should pass', async () => {
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+        documentTransition, contextMock, topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -87,7 +85,7 @@ describe('createFeatureFlagDataTrigger', () => {
     contextMock.getStateTransitionExecutionContext().enableDryRun();
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+        documentTransition, contextMock, topLevelIdentityId,
     );
 
     contextMock.getStateTransitionExecutionContext().disableDryRun();
@@ -96,6 +94,6 @@ describe('createFeatureFlagDataTrigger', () => {
     expect(result.isOk()).to.be.true();
 
     expect(contextMock.getOwnerId).to.not.be.called();
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.not.be.called();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeight).to.not.be.called();
   });
 });
