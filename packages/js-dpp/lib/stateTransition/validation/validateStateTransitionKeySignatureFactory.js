@@ -32,9 +32,9 @@ function validateStateTransitionKeySignatureFactory(
     if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
       const targetIdentityId = stateTransition.getIdentityId();
 
-      // // We use temporary execution context without dry run,
-      // // because despite the dryRun, we need to get the
-      // // identity to proceed with following logic
+      // We use temporary execution context without dry run,
+      // because despite the dryRun, we need to get the
+      // identity to proceed with following logic
       const tmpExecutionContext = new StateTransitionExecutionContext();
 
       // Target identity must exist
