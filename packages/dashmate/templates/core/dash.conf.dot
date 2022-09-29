@@ -41,7 +41,7 @@ zmqpubrawchainlocksig=tcp://0.0.0.0:29998
 zmqpubrawchainlock=tcp://0.0.0.0:29998
 zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 
-{{? it.core.masternode.enable === 1}}
+{{? it.core.masternode.enable === true}}
 masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?}}
 
