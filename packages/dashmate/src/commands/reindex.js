@@ -13,8 +13,6 @@ class ReindexCommand extends ConfigBaseCommand {
    * @param {isSystemConfig} isSystemConfig
    * @param {Config} config
    * @param {reindexNodeTask} reindexNodeTask
-   * @param {createRpcClient} createRpcClient
-   * @param {dockerCompose} dockerCompose
    *
    * @return {Promise<void>}
    */
@@ -26,8 +24,6 @@ class ReindexCommand extends ConfigBaseCommand {
     isSystemConfig,
     config,
     reindexNodeTask,
-    createRpcClient,
-    dockerCompose,
   ) {
     const tasks = new Listr([
       {

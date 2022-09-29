@@ -68,7 +68,7 @@ module.exports = {
     debug: 0,
     reindex: {
       enable: false,
-      containerId: null
+      containerId: null,
     },
     devnetName: null,
   },

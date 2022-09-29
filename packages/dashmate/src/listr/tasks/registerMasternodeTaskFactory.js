@@ -73,7 +73,7 @@ function registerMasternodeTaskFactory(
             await waitForCoreSync(
               ctx.coreService,
               (verificationProgress) => {
-                const {percent, headers, blocks} = verificationProgress
+                const { percent, headers, blocks } = verificationProgress;
                 observer.next(`${(percent * 100).toFixed(2)}% complete (${blocks} / ${headers})`);
               },
             );

@@ -95,6 +95,7 @@ function reindexNodeTaskFactory(
             switch (State.ExitCode) {
               default:
                 console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`);
+              // eslint-disable-next-line no-fallthrough
               case 0:
                 await container.start();
             }
