@@ -13,11 +13,11 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
-    stop_grace_period: 30s
+    stop_grace_period: 10s
 
   dapi_tx_filter_stream:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
-    stop_grace_period: 30s
+    stop_grace_period: 10s

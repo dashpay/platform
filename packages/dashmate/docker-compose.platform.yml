@@ -74,7 +74,7 @@ services:
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
     command: yarn workspace @dashevo/dapi api
-    stop_grace_period: 30s
+    stop_grace_period: 10s
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -96,7 +96,7 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
     command: yarn workspace @dashevo/dapi core-streams
-    stop_grace_period: 30s
+    stop_grace_period: 10s
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
@@ -109,7 +109,7 @@ services:
       - dapi_tx_filter_stream
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
-    stop_grace_period: 30s
+    stop_grace_period: 10s
 
 volumes:
   drive_abci_data:

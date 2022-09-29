@@ -14,4 +14,4 @@ services:
       - RPCPORT=${CORE_RPC_PORT:?err}
       - NETWORK=${NETWORK?:err}
       - SENTINEL_ARGS=-b
-    stop_grace_period: 30s
+    stop_grace_period: 10s
