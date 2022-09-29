@@ -66,7 +66,10 @@ module.exports = {
       },
     },
     debug: 0,
-    reindex: 0,
+    reindex: {
+      enable: false,
+      containerId: null
+    },
     devnetName: null,
   },
   platform: {
