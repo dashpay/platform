@@ -28,15 +28,13 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      coreChainLockedHeight: 42,
-    });
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
 
     context = new DataTriggerExecutionContext(
-      stateRepositoryMock,
-      contactRequestDocument.getOwnerId(),
-      dataContract,
-      new StateTransitionExecutionContext(),
+        stateRepositoryMock,
+        contactRequestDocument.getOwnerId(),
+        dataContract,
+        new StateTransitionExecutionContext(),
     );
 
     dashPayIdentity = context.getOwnerId();
@@ -50,21 +48,21 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+        documentTransition, context, dashPayIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     expect(result.isOk()).to.be.true();
   });
 
   it('should successfully execute if document has no `coreHeightCreatedAt` field', async () => {
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+        documentTransition, context, dashPayIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 
@@ -76,7 +74,7 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+        documentTransition, context, dashPayIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -97,13 +95,13 @@ describe('createContactRequestDataTrigger', () => {
     context.getStateTransitionExecutionContext().enableDryRun();
 
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+        documentTransition, context, dashPayIdentity,
     );
 
     context.getStateTransitionExecutionContext().disableDryRun();
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 });
