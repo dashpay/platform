@@ -6,10 +6,10 @@ use wasm_bindgen::prelude::*;
 use crate::errors::from_dpp_err;
 use crate::js_buffer::JsBuffer;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
-use dpp::ProtocolError;
 use dpp::util::string_encoding::Encoding;
-use wasm_bindgen::{JsCast, JsObject};
+use dpp::ProtocolError;
 use wasm_bindgen::describe::WasmDescribe;
+use wasm_bindgen::{JsCast, JsObject};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -100,7 +100,7 @@ pub struct IdentityPublicKeyWasm(IdentityPublicKey);
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
-        let pk_json_string  = String::from(js_sys::JSON::stringify(&raw_public_key)?);
+        let pk_json_string = String::from(js_sys::JSON::stringify(&raw_public_key)?);
         let js_public_key: JsPublicKey =
             serde_json::from_str(&pk_json_string).map_err(|e| e.to_string())?;
         let pk = IdentityPublicKey::from(js_public_key);
@@ -212,7 +212,10 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let val = self.0.to_raw_json_object().map_err(|e| from_dpp_err(e.into()))?;
+        let val = self
+            .0
+            .to_raw_json_object()
+            .map_err(|e| from_dpp_err(e.into()))?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)
     }
@@ -220,7 +223,9 @@ impl IdentityPublicKeyWasm {
     pub fn from_json(json_object: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
         let str = String::from(js_sys::JSON::stringify(&json_object)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
-        Ok(Self(IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?))
+        Ok(Self(
+            IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?,
+        ))
     }
 }
 
