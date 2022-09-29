@@ -99,20 +99,9 @@ module.exports = {
           additionalProperties: false,
           required: ['subnet'],
         },
-        stop: {
-          type: 'object',
-          properties: {
-            timeout: {
-              type: 'integer',
-              exclusiveMinimum: 0
-            },
-          },
-          additionalProperties: false,
-          required: ['timeout'],
-        },
       },
       additionalProperties: false,
-      required: ['network', 'stop'],
+      required: ['network'],
     },
     core: {
       type: 'object',

@@ -41,7 +41,6 @@ class CoreService {
   /**
    * Stop Core service
    *
-   * @arg {number} timeout
    * @return {Promise<boolean>}
    */
   async stop() {
@@ -49,9 +48,7 @@ class CoreService {
       return false;
     }
 
-    const timeout = this.config.get('docker.stop.timeout')
-
-    await this.dockerContainer.stop({t: timeout});
+    await this.dockerContainer.stop();
     await this.dockerContainer.remove();
 
     return true;
