@@ -2803,16 +2803,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
-      ["@dashevo/merk", [\
-        ["https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f", {\
-          "packageLocation": "./.yarn/unplugged/@dashevo-merk-https-e3939f6b2b/node_modules/@dashevo/merk/",\
-          "packageDependencies": [\
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],\
-            ["neon-load-or-build", "npm:2.2.2"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["@dashevo/platform", [\
         ["workspace:.", {\
           "packageLocation": "./",\
@@ -2840,7 +2830,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["assert", "npm:2.0.0"],\
             ["assert-browserify", "npm:2.0.0"],\
