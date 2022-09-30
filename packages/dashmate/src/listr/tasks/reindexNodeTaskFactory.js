@@ -1,5 +1,5 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
+const {Listr} = require('listr2');
+const {Observable} = require('rxjs');
 const CoreService = require('../../core/CoreService');
 
 /**
@@ -61,7 +61,18 @@ function reindexNodeTaskFactory(
       {
         title: 'Start core',
         task: async (ctx) => {
-          const containerId = config.get('core.reindex.containerId', false);
+          let containerId = config.get('core.reindex.containerId', false);
+
+          if (containerId) {
+            try {
+              await docker.getContainer(containerId).inspect();
+            } catch (e) {
+              if (e.reason === 'no such container') {
+                containerId = null
+              }
+              throw e
+            }
+          }
 
           if (!containerId) {
             ctx.coreService = await startCore(config);
@@ -111,7 +122,7 @@ function reindexNodeTaskFactory(
           observer.next(`Reindexing dashcore ${config.getName()}`);
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
-            const { percent, blocks, headers } = verificationProgress;
+            const {percent, blocks, headers} = verificationProgress;
 
             observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`);
           });
