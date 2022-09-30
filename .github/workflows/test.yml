@@ -109,7 +109,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: yarn workspace "${{ inputs.package }}" test
+        run: yarn test --filter "${{ inputs.package }}"
         if: ${{ !inputs.skip-tests }}
 
       - name: Show Docker logs
