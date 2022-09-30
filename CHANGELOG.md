@@ -37,6 +37,7 @@
 * **wallet-lib:** rework storage for multiple key-chains ([#231](https://github.com/dashevo/platform/issues/231))
 * **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
 * calculate state transition fees using operations ([#376](https://github.com/dashevo/platform/issues/376), [#387](https://github.com/dashevo/platform/issues/387), [#369](https://github.com/dashevo/platform/issues/369), [#370](https://github.com/dashevo/platform/issues/370), [#392](https://github.com/dashevo/platform/issues/392), [#444](https://github.com/dashevo/platform/issues/444))
+* **dashmate:** add hardcoded stop grace time before killing services ([#536](https://github.com/dashevo/platform/issues/536))
 
 
 ### Bug Fixes
@@ -66,6 +67,7 @@
 * **wallet-lib:** hook tx chain broadcast on mempool response ([#388](https://github.com/dashevo/platform/issues/388))
 * **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
 * do not hash proRegTx for masternode identifier ([#318](https://github.com/dashevo/platform/issues/318))
+* **dpp:** cannot read properties of null (reading 'getBalance') ([#549](https://github.com/dashevo/platform/issues/549))
 
 
 ### Performance Improvements
@@ -122,6 +124,8 @@
 * **dpp:** allow only `asc` order for indices ([#435](https://github.com/dashevo/platform/issues/435))
 * **drive:** log synchronize masternode identities ([#449](https://github.com/dashevo/platform/issues/449))
 * **drive:** add more block execution timers ([#329](https://github.com/dashevo/platform/issues/329))
+* **scripts**: remove dashmate update ([#550](https://github.com/dashevo/platform/issues/550))
+
 
 
 ## [0.23.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-dev.10) (2022-09-27)
