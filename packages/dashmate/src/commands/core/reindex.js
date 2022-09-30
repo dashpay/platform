@@ -2,9 +2,9 @@ const { Listr } = require('listr2');
 
 const { Flags } = require('@oclif/core');
 
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
 class ReindexCommand extends ConfigBaseCommand {
   /**

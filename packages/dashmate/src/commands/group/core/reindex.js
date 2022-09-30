@@ -2,15 +2,14 @@ const { Listr } = require('listr2');
 
 const { Flags } = require('@oclif/core');
 
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
+const MuteOneLineError = require('../../../oclif/errors/MuteOneLineError');
+const GroupBaseCommand = require('../../../oclif/command/GroupBaseCommand');
 
 class GroupReindexCommand extends GroupBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {isSystemConfig} isSystemConfig
-   * @param {Config} config
    * @param {reindexNodeTask} reindexNodeTask
    * @param {createRpcClient} createRpcClient
    * @param {dockerCompose} dockerCompose
