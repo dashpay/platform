@@ -10,9 +10,7 @@ services:
     volumes:
       - core_data:/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/dash/.dashcore/dash.conf
-    command:
-      - dashd
-      - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
+    stop_grace_period: 30s
 
 volumes:
   core_data:
