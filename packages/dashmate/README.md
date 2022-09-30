@@ -254,20 +254,19 @@ The process is interactive (shows progress) and can be interrupted any time, but
 The `reindex` command works for regular and local configurations.
 
 ```
-Reindex core container
+Reindex Core
 
 USAGE
-  $ dashmate [group] reindex [--config <value>] [-v]
+  $ dashmate core reindex [-v] [--config <value>]
 
 FLAGS
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
 
 DESCRIPTION
-  Reindex core container
+  Reindex Core
 
-  Reindex core container data
-
+  Reindex Core data
 ```
 
 With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.

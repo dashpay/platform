@@ -100,7 +100,7 @@ function reindexNodeTaskFactory(
             dockerCompose.docker.getContainer(containerId),
           );
 
-          const { State } = await container.inspect();
+          const { State } = containerInfo
 
           if (State.Status === 'paused' || State.Status === 'exited') {
             switch (State.ExitCode) {
