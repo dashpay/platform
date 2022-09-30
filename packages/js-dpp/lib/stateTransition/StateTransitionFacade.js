@@ -136,6 +136,7 @@ class StateTransitionFacade {
     this.validateStateTransitionKeySignature = validateStateTransitionKeySignatureFactory(
       verifyHashSignature,
       fetchAssetLockPublicKeyHash,
+      this.stateRepository,
     );
 
     // eslint-disable-next-line max-len
