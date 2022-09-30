@@ -12,6 +12,11 @@ on:
         type: boolean
         default: false
         required: false
+      skip-tests:
+        description: Skip running tests
+        type: boolean
+        default: false
+        required: false
 jobs:
   test:
     name: Test package
@@ -101,6 +106,7 @@ jobs:
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"
+        if: ${{ !inputs.skip-tests }}
 
       - name: Show Docker logs
         if: ${{ failure() }}
