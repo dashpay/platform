@@ -63,7 +63,7 @@ jobs:
 
       - name: Build Dash SDK
         run: yarn build
-        if: ${{ inputs.package === 'dashmate' }}
+        if: ${{ inputs.package == 'dashmate' }}
 
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
