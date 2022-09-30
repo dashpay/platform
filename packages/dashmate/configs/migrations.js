@@ -343,7 +343,7 @@ module.exports = {
 
     return configFile;
   },
-  '0.23.0': (configFile) => {
+  '0.23.0-alpha.1': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         if (config.platform) {
