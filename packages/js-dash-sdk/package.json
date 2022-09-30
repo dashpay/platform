@@ -14,7 +14,7 @@
     "lint": "",
     "test": "yarn run test:unit && yarn run test:functional && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test:unit": "TS_NODE_COMPILER_OPTIONS='{\"target\":\"es6\"}' ts-mocha \"src/**/*.spec.ts\"",
+    "test:unit": "TS_NODE_COMPILER_OPTIONS={\"target\":\"es6\"} ts-mocha \"src/**/*.spec.ts\"",
     "test:functional": "yarn run build && mocha --recursive tests/functional/**/*.js",
     "prepublishOnly": "yarn run build",
     "prepare": "yarn run build"
