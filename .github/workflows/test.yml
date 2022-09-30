@@ -62,7 +62,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Run ESLinter
-        run: yarn workspace ${{ inputs.package }} lint
+        run: yarn workspace {{ inputs.package }} lint
 
       - name: Create necessary dotenv files
         run: |
