@@ -16,5 +16,5 @@ jobs:
     name: Run Dash SPV tests
     uses: ./.github/workflows/test.yml
     with:
-      package: 'dash-spv'
+      package: '@dashevo/dash-spv'
       start-local-network: false
