@@ -55,6 +55,7 @@ jobs:
 
       - name: Build Dash SDK
         run: yarn build --filter "dash"
+        if: ${{ inputs.build-sdk }}
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
