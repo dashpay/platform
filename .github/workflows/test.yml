@@ -62,7 +62,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Run ESLinter
-        run: yarn lint --filter "${{ inputs.package }}"
+        run: yarn workspace ${{ inputs.package }} lint
 
       - name: Create necessary dotenv files
         run: |
@@ -105,7 +105,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: yarn test --filter "${{ inputs.package }}"
+        run: yarn workspace {{ inputs.package }} test
         if: ${{ !inputs.skip-tests }}
 
       - name: Show Docker logs
