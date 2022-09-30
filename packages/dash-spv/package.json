@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "mocha test/ --no-timeouts --recursive",
-    "build": "exit 0",
+    "build": "echo",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
