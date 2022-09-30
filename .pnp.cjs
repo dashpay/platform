@@ -37,7 +37,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:packages/dash-spv"\
       },\
       {\
-        "name": "dashmate",\
+        "name": "@dashevo/dashmate",\
         "reference": "workspace:packages/dashmate"\
       },\
       {\
@@ -93,6 +93,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/dapi-client", ["workspace:packages/js-dapi-client"]],\
       ["@dashevo/dapi-grpc", ["workspace:packages/dapi-grpc"]],\
       ["@dashevo/dash-spv", ["workspace:packages/dash-spv"]],\
+      ["@dashevo/dashmate", ["workspace:packages/dashmate"]],\
       ["@dashevo/dashpay-contract", ["workspace:packages/dashpay-contract"]],\
       ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],\
       ["@dashevo/dpp", ["workspace:packages/js-dpp"]],\
@@ -103,8 +104,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/platform", ["workspace:."]],\
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
-      ["dash", ["workspace:packages/js-dash-sdk"]],\
-      ["dashmate", ["workspace:packages/dashmate"]]\
+      ["dash", ["workspace:packages/js-dash-sdk"]]\
     ],\
     "fallbackPool": [\
     ],\
@@ -2492,6 +2492,60 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bluebird", "npm:3.7.2"]\
           ],\
           "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@dashevo/dashmate", [\
+        ["workspace:packages/dashmate", {\
+          "packageLocation": "./packages/dashmate/",\
+          "packageDependencies": [\
+            ["@dashevo/dashmate", "workspace:packages/dashmate"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashd-rpc", "npm:2.4.2"],\
+            ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
+            ["@dashevo/docker-compose", "npm:0.24.1"],\
+            ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
+            ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@oclif/core", "npm:1.16.3"],\
+            ["@oclif/plugin-help", "npm:5.1.12"],\
+            ["ajv", "npm:8.8.1"],\
+            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
+            ["awilix", "npm:4.3.4"],\
+            ["bls-signatures", "npm:0.2.5"],\
+            ["chalk", "npm:4.1.2"],\
+            ["dash", "workspace:packages/js-dash-sdk"],\
+            ["dockerode", "npm:3.3.1"],\
+            ["dot", "npm:1.1.3"],\
+            ["dotenv", "npm:8.6.0"],\
+            ["enquirer", "npm:2.3.6"],\
+            ["eslint", "npm:7.32.0"],\
+            ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
+            ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["glob", "npm:7.2.0"],\
+            ["globby", "npm:11.1.0"],\
+            ["hasbin", "npm:1.2.3"],\
+            ["jayson", "npm:3.6.5"],\
+            ["listr2", "virtual:5c08caaca88ae3f53d0e60b7c67d34a3f300e1de64d203b0a50b574953780efd310d7fbc88226564f364dc09da74f4acba6eab20ded0bfb2e74e40075c758339#npm:3.5.0"],\
+            ["lodash.clonedeep", "npm:4.5.0"],\
+            ["lodash.get", "npm:4.4.2"],\
+            ["lodash.isequal", "npm:4.5.0"],\
+            ["lodash.merge", "npm:4.6.2"],\
+            ["lodash.set", "npm:4.3.2"],\
+            ["memory-streams", "npm:0.1.3"],\
+            ["node-fetch", "virtual:25a5f5382d53dbf298bf7a1191760bc2e0a523a619eeb0e667b99a8649e8ad183f9e2e0b45f6fb831b92f4078b61622aa567cf79565f6aa5af9597e3c84864f6#npm:2.6.7"],\
+            ["node-graceful", "npm:3.1.0"],\
+            ["oclif", "npm:3.2.2"],\
+            ["pretty-bytes", "npm:5.6.0"],\
+            ["pretty-ms", "npm:7.0.1"],\
+            ["public-ip", "npm:4.0.4"],\
+            ["rxjs", "npm:6.6.7"],\
+            ["semver", "npm:7.3.7"],\
+            ["strip-ansi", "npm:6.0.1"],\
+            ["table", "npm:5.4.6"]\
+          ],\
+          "linkType": "SOFT"\
         }]\
       ]],\
       ["@dashevo/dashpay-contract", [\
@@ -7418,60 +7472,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
-      ["dashmate", [\
-        ["workspace:packages/dashmate", {\
-          "packageLocation": "./packages/dashmate/",\
-          "packageDependencies": [\
-            ["dashmate", "workspace:packages/dashmate"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
-            ["@dashevo/dashd-rpc", "npm:2.4.2"],\
-            ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
-            ["@dashevo/docker-compose", "npm:0.24.1"],\
-            ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
-            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
-            ["@oclif/core", "npm:1.16.3"],\
-            ["@oclif/plugin-help", "npm:5.1.12"],\
-            ["ajv", "npm:8.8.1"],\
-            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
-            ["awilix", "npm:4.3.4"],\
-            ["bls-signatures", "npm:0.2.5"],\
-            ["chalk", "npm:4.1.2"],\
-            ["dash", "workspace:packages/js-dash-sdk"],\
-            ["dockerode", "npm:3.3.1"],\
-            ["dot", "npm:1.1.3"],\
-            ["dotenv", "npm:8.6.0"],\
-            ["enquirer", "npm:2.3.6"],\
-            ["eslint", "npm:7.32.0"],\
-            ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
-            ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
-            ["glob", "npm:7.2.0"],\
-            ["globby", "npm:11.1.0"],\
-            ["hasbin", "npm:1.2.3"],\
-            ["jayson", "npm:3.6.5"],\
-            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
-            ["lodash.clonedeep", "npm:4.5.0"],\
-            ["lodash.get", "npm:4.4.2"],\
-            ["lodash.isequal", "npm:4.5.0"],\
-            ["lodash.merge", "npm:4.6.2"],\
-            ["lodash.set", "npm:4.3.2"],\
-            ["memory-streams", "npm:0.1.3"],\
-            ["node-fetch", "virtual:25a5f5382d53dbf298bf7a1191760bc2e0a523a619eeb0e667b99a8649e8ad183f9e2e0b45f6fb831b92f4078b61622aa567cf79565f6aa5af9597e3c84864f6#npm:2.6.7"],\
-            ["node-graceful", "npm:3.1.0"],\
-            ["oclif", "npm:3.2.2"],\
-            ["pretty-bytes", "npm:5.6.0"],\
-            ["pretty-ms", "npm:7.0.1"],\
-            ["public-ip", "npm:4.0.4"],\
-            ["rxjs", "npm:6.6.7"],\
-            ["semver", "npm:7.3.7"],\
-            ["strip-ansi", "npm:6.0.1"],\
-            ["table", "npm:5.4.6"]\
-          ],\
-          "linkType": "SOFT"\
-        }]\
-      ]],\
       ["date-fns", [\
         ["npm:2.28.0", {\
           "packageLocation": "./.yarn/cache/date-fns-npm-2.28.0-c19c5add1b-a0516b2e4f.zip/node_modules/date-fns/",\
@@ -11711,10 +11711,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0", {\
-          "packageLocation": "./.yarn/__virtual__/listr2-virtual-30886726f2/0/cache/listr2-npm-3.5.0-6aad1da502-cf30837462.zip/node_modules/listr2/",\
+        ["virtual:5c08caaca88ae3f53d0e60b7c67d34a3f300e1de64d203b0a50b574953780efd310d7fbc88226564f364dc09da74f4acba6eab20ded0bfb2e74e40075c758339#npm:3.5.0", {\
+          "packageLocation": "./.yarn/__virtual__/listr2-virtual-c310d32517/0/cache/listr2-npm-3.5.0-6aad1da502-cf30837462.zip/node_modules/listr2/",\
           "packageDependencies": [\
-            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
+            ["listr2", "virtual:5c08caaca88ae3f53d0e60b7c67d34a3f300e1de64d203b0a50b574953780efd310d7fbc88226564f364dc09da74f4acba6eab20ded0bfb2e74e40075c758339#npm:3.5.0"],\
             ["@types/enquirer", null],\
             ["chalk", "npm:4.1.2"],\
             ["cli-truncate", "npm:2.1.0"],\
