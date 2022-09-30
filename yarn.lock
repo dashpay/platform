@@ -1491,60 +1491,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashmate@workspace:packages/dashmate":
-  version: 0.0.0-use.local
-  resolution: "@dashevo/dashmate@workspace:packages/dashmate"
-  dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": ^2.4.2
-    "@dashevo/dashpay-contract": "workspace:~"
-    "@dashevo/docker-compose": ^0.24.1
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wallet-lib": "workspace:~"
-    "@oclif/core": ^1.16.3
-    "@oclif/plugin-help": ^5.1.12
-    ajv: ^8.6.0
-    ajv-formats: ^2.1.1
-    awilix: ^4.2.6
-    bls-signatures: ^0.2.5
-    chalk: ^4.1.0
-    dash: "workspace:~"
-    dockerode: ^3.2.0
-    dot: ^1.1.3
-    dotenv: ^8.6.0
-    enquirer: ^2.3.6
-    eslint: ^7.32.0
-    eslint-config-airbnb-base: ^14.2.1
-    eslint-plugin-import: ^2.24.2
-    glob: ^7.1.6
-    globby: ^11
-    hasbin: ^1.2.3
-    jayson: ^3.3.4
-    listr2: 3.5.0
-    lodash.clonedeep: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.isequal: ^4.5.0
-    lodash.merge: ^4.6.2
-    lodash.set: ^4.3.2
-    memory-streams: ^0.1.3
-    node-fetch: ^2.6.1
-    node-graceful: ^3.0.1
-    oclif: ^3.2.2
-    pretty-bytes: ^5.3.0
-    pretty-ms: ^7.0.0
-    public-ip: ^4.0.4
-    rxjs: ^6.6.7
-    semver: ^7.3.2
-    strip-ansi: ^6.0.1
-    table: ^5.4.6
-  bin:
-    dashmate: bin/dashmate
-  languageName: unknown
-  linkType: soft
-
 "@dashevo/dashpay-contract@npm:~0.22.1":
   version: 0.22.1
   resolution: "@dashevo/dashpay-contract@npm:0.22.1"
@@ -5612,6 +5558,60 @@ __metadata:
     util: ^0.12.4
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
+  languageName: unknown
+  linkType: soft
+
+"dashmate@workspace:packages/dashmate":
+  version: 0.0.0-use.local
+  resolution: "dashmate@workspace:packages/dashmate"
+  dependencies:
+    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashd-rpc": ^2.4.2
+    "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/docker-compose": ^0.24.1
+    "@dashevo/dpns-contract": "workspace:~"
+    "@dashevo/dpp": "workspace:~"
+    "@dashevo/feature-flags-contract": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
+    "@dashevo/wallet-lib": "workspace:~"
+    "@oclif/core": ^1.16.3
+    "@oclif/plugin-help": ^5.1.12
+    ajv: ^8.6.0
+    ajv-formats: ^2.1.1
+    awilix: ^4.2.6
+    bls-signatures: ^0.2.5
+    chalk: ^4.1.0
+    dash: "workspace:~"
+    dockerode: ^3.2.0
+    dot: ^1.1.3
+    dotenv: ^8.6.0
+    enquirer: ^2.3.6
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    glob: ^7.1.6
+    globby: ^11
+    hasbin: ^1.2.3
+    jayson: ^3.3.4
+    listr2: 3.5.0
+    lodash.clonedeep: ^4.5.0
+    lodash.get: ^4.4.2
+    lodash.isequal: ^4.5.0
+    lodash.merge: ^4.6.2
+    lodash.set: ^4.3.2
+    memory-streams: ^0.1.3
+    node-fetch: ^2.6.1
+    node-graceful: ^3.0.1
+    oclif: ^3.2.2
+    pretty-bytes: ^5.3.0
+    pretty-ms: ^7.0.0
+    public-ip: ^4.0.4
+    rxjs: ^6.6.7
+    semver: ^7.3.2
+    strip-ansi: ^6.0.1
+    table: ^5.4.6
+  bin:
+    dashmate: bin/dashmate
   languageName: unknown
   linkType: soft
 
