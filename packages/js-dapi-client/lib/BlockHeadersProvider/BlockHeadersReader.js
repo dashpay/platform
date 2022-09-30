@@ -223,6 +223,8 @@ class BlockHeadersReader extends EventEmitter {
 
       const errorHandler = (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
+          // TODO: consider reworking with COMMANDS instead
+          // of producing a side effect that alters class state
           const index = this.historicalStreams.indexOf(stream);
           if (index >= 0) {
             this.historicalStreams.splice(index, 1);
@@ -234,6 +236,7 @@ class BlockHeadersReader extends EventEmitter {
           const newFromBlockHeight = fromBlockHeight + headersObtained;
           const newCount = count - headersObtained;
 
+          // TODO: do not retry in case newCount is zero
           subscribeWithRetries(newFromBlockHeight, newCount)
             .then((newStream) => {
               const index = this.historicalStreams.indexOf(stream);

@@ -52,128 +52,171 @@ class TransactionsReader extends EventEmitter {
     if (totalAmount <= 0) {
       throw new Error(`Invalid total amount of blocks to sync: ${totalAmount}`);
     }
-
-    // this.historicalSyncStream = await
   }
 
   /**
-   * @private
+   * A HOF that returns a function to subscribe to historical block headers and chain locks
+   * and handles retry logic
    *
-   * @param {number} fromBlockHeight
-   * @param {number} count
-   * @param {string[]} addresses
-   * @return Promise<!grpc.web.ClientReadableStream>
+   * @private
+   * @param {number} [maxRetries=0] - maximum amount of retries
+   * @returns {function(*, *): Promise<Stream>}
    */
-  async subscribeToHistoricalStream(fromBlockHeight, count, addresses) {
-    const bloomFilter = createBloomFilter(addresses);
-    const stream = await this.createHistoricalSyncStream(bloomFilter, {
-      fromBlockHeight,
-      count,
-    });
-    this.historicalSyncStream = stream;
+  subscribeToHistoricalBatch(maxRetries = 0) {
+    let currentRetries = 0;
+    /**
+     * Subscribes to the stream of historical data and handles retry logic
+     *
+     * @param {number} fromBlockHeight
+     * @param {number} count
+     * @param {string[]} addresses
+     * @return Promise<!grpc.web.ClientReadableStream>
+     */
+    const subscribeWithRetries = async (fromBlockHeight, count, addresses) => {
+      let lastSyncedBlockHeight = fromBlockHeight - 1;
+      const bloomFilter = createBloomFilter(addresses);
+      const stream = await this.createHistoricalSyncStream(bloomFilter, {
+        fromBlockHeight,
+        count,
+      });
+      this.historicalSyncStream = stream;
 
-    // Arguments for the stream restart when it comes to a need to expand bloom filter
-    let restartArgs = null;
+      // Arguments for the stream restart when it comes to a need to expand bloom filter
+      let restartArgs = null;
 
-    const dataHandler = (data) => {
-      const rawTransactions = data.getRawTransactions();
-      // TBD: const rawInstantLocks = data.getInstantSendLockMessages();
-      const rawMerkleBlock = data.getRawMerkleBlock();
+      const dataHandler = (data) => {
+        const rawTransactions = data.getRawTransactions();
+        // TBD: const rawInstantLocks = data.getInstantSendLockMessages();
+        const rawMerkleBlock = data.getRawMerkleBlock();
 
-      if (rawTransactions) {
-        const transactions = parseRawTransactions(rawTransactions, addresses, this.network);
+        if (rawTransactions) {
+          const transactions = parseRawTransactions(rawTransactions, addresses, this.network);
 
-        if (transactions.length) {
-          this.emit(EVENTS.HISTORICAL_TRANSACTIONS, transactions);
-        }
-      } else if (rawMerkleBlock) {
-        const merkleBlock = parseRawMerkleBlock(rawMerkleBlock);
-
-        let rejected = false;
-        let accepted = false;
-
-        /**
-         * Accepts merkle block
-         * @param {number} height
-         * @param {string[]} newAddresses
-         */
-        const acceptMerkleBlock = (height, newAddresses) => {
-          if (rejected) {
-            throw new Error('Unable to accept rejected merkle block');
+          if (transactions.length) {
+            this.emit(EVENTS.HISTORICAL_TRANSACTIONS, transactions);
           }
-          accepted = true;
+        } else if (rawMerkleBlock) {
+          const merkleBlock = parseRawMerkleBlock(rawMerkleBlock);
 
-          if (newAddresses.length) {
-            const blocksRead = height - fromBlockHeight + 1;
+          let rejected = false;
+          let accepted = false;
+
+          /**
+           * Accepts merkle block
+           * @param {number} height
+           * @param {string[]} newAddresses
+           */
+          const acceptMerkleBlock = (height, newAddresses) => {
+            if (rejected) {
+              throw new Error('Unable to accept rejected merkle block');
+            }
+            accepted = true;
+
+            lastSyncedBlockHeight = height;
+            const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
             const remainingCount = count - blocksRead;
+
             if (remainingCount === 0) {
               return;
             }
 
             if (remainingCount < 0) {
-              const error = new Error(`Merkle block height is greater than expected range: ${height} > ${fromBlockHeight + count - 1}`);
-              stream.destroy(error);
+              throw new Error(`Merkle block height is greater than expected range: ${height} > ${fromBlockHeight + count - 1}`);
+            }
+
+            if (newAddresses.length) {
+              restartArgs = {
+                fromBlockHeight: height + 1,
+                count: remainingCount,
+                addresses: [...addresses, ...newAddresses],
+              };
+
+              // Restart stream to expand bloom filter
+              stream.cancel()
+                .catch((e) => this.emit(EVENTS.ERROR, e));
+            }
+          };
+
+          const rejectMerkleBlock = (e) => {
+            if (accepted) {
+              throw new Error('Unable to reject accepted merkle block');
+            }
+            rejected = true;
+            stream.destroy(e);
+          };
+
+          this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });
+        }
+      };
+
+      const errorHandler = (streamError) => {
+        if (streamError.code === GrpcErrorCodes.CANCELLED) {
+          // TODO: consider reworking with COMMANDS instead
+          // of producing a side effect that alters class state
+          this.historicalSyncStream = null;
+          if (restartArgs) {
+            subscribeWithRetries(
+              restartArgs.fromBlockHeight,
+              restartArgs.count,
+              restartArgs.addresses,
+            ).then((newStream) => {
+              this.historicalSyncStream = newStream;
+            }).catch((e) => {
+              this.emit(EVENTS.ERROR, e);
+            }).finally(() => {
+              restartArgs = null;
+            });
+          }
+
+          return;
+        }
+
+        if (currentRetries < maxRetries) {
+          if (!restartArgs) {
+            const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
+            const remainingCount = count - blocksRead;
+            if (remainingCount <= 0) {
               return;
             }
 
             restartArgs = {
-              fromBlockHeight: height + 1,
+              fromBlockHeight: lastSyncedBlockHeight + 1,
               count: remainingCount,
-              addresses: [...addresses, ...newAddresses],
+              addresses,
             };
-
-            // Restart stream to expand bloom filter
-            stream.cancel()
-              .catch((e) => this.emit(EVENTS.ERROR, e));
           }
-        };
 
-        const rejectMerkleBlock = (e) => {
-          if (accepted) {
-            throw new Error('Unable to reject accepted merkle block');
-          }
-          rejected = true;
-          stream.destroy(e);
-        };
-
-        this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });
-      }
-    };
-
-    const errorHandler = (streamError) => {
-      if (streamError.code === GrpcErrorCodes.CANCELLED) {
-        this.historicalSyncStream = null;
-        if (restartArgs) {
-          this.subscribeToHistoricalStream(
+          subscribeWithRetries(
             restartArgs.fromBlockHeight,
             restartArgs.count,
             restartArgs.addresses,
           ).then((newStream) => {
             this.historicalSyncStream = newStream;
+            currentRetries += 1;
           }).catch((e) => {
             this.emit(EVENTS.ERROR, e);
           }).finally(() => {
             restartArgs = null;
           });
+        } else {
+          this.emit(EVENTS.ERROR, streamError);
         }
+      };
 
-        return;
-      }
+      const endHandler = () => {
+        if (!restartArgs) {
+          this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+        }
+      };
 
-      this.emit(EVENTS.ERROR, streamError);
+      stream.on('data', dataHandler);
+      stream.on('error', errorHandler);
+      stream.on('end', endHandler);
+
+      return stream;
     };
 
-    const endHandler = () => {
-      if (!restartArgs) {
-        this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-      }
-    };
-
-    stream.on('data', dataHandler);
-    stream.on('error', errorHandler);
-    stream.on('end', endHandler);
-
-    return stream;
+    return subscribeWithRetries;
   }
 
   /**

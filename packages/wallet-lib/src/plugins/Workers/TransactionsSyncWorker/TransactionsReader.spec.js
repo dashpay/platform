@@ -14,6 +14,7 @@ describe('TransactionsReader - unit', () => {
   let historicalSyncStream;
   let continuousSyncStream;
 
+  const MAX_RETRIES = 3;
   const CHAIN_HEIGHT = 1000;
   const NETWORK = 'testnet';
 
@@ -24,6 +25,7 @@ describe('TransactionsReader - unit', () => {
       network: NETWORK,
       createHistoricalSyncStream: () => {},
       createContinuousSyncStream: () => {},
+      maxRetries: 3,
     };
 
     this.sinon.stub(options, 'createHistoricalSyncStream')
@@ -44,14 +46,21 @@ describe('TransactionsReader - unit', () => {
     this.sinon.spy(transactionsReader, 'emit');
     this.sinon.spy(transactionsReader, 'on');
     this.sinon.spy(transactionsReader, 'stopReadingHistorical');
-    this.sinon.spy(transactionsReader, 'subscribeToHistoricalStream');
+    this.sinon.spy(transactionsReader, 'subscribeToHistoricalBatch');
     this.sinon.spy(transactionsReader, 'startContinuousSync');
   });
 
-  describe('#subscribeToHistoricalStream', () => {
+  describe('#subscribeToHistoricalBatch', () => {
+    let subscribeToHistoricalBatch;
+    beforeEach(() => {
+      subscribeToHistoricalBatch = transactionsReader.subscribeToHistoricalBatch(
+        MAX_RETRIES,
+      );
+    });
+
     context('Initialization', () => {
       it('should subscribe to transactions stream and hook on events', async () => {
-        await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+        await subscribeToHistoricalBatch(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
         expect(transactionsReader.createHistoricalSyncStream)
           .to.have.been.calledWith(createBloomFilter(DEFAULT_ADDRESSES), {
@@ -68,7 +77,7 @@ describe('TransactionsReader - unit', () => {
     context('On "data"', () => {
       context('Transactions', () => {
         it('should process transactions', async () => {
-          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+          await subscribeToHistoricalBatch(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
           const transactions = [
             new Transaction().to(DEFAULT_ADDRESSES[0], 1000),
@@ -84,7 +93,7 @@ describe('TransactionsReader - unit', () => {
         });
 
         it('should ignore false positive transactions', async () => {
-          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+          await subscribeToHistoricalBatch(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
           const transactions = [
             new Transaction().to(new PrivateKey().toAddress(), 1000),
@@ -97,7 +106,7 @@ describe('TransactionsReader - unit', () => {
 
       context('MerkleBlock', () => {
         it('should process merkle block', async () => {
-          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+          await subscribeToHistoricalBatch(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
           const merkleBlock = mockMerkleBlock([]);
           historicalSyncStream.sendMerkleBlock(merkleBlock);
@@ -110,7 +119,7 @@ describe('TransactionsReader - unit', () => {
         });
 
         it('should manage acceptMerkleBlock and rejectMerkleBlock callbacks', async () => {
-          await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+          await subscribeToHistoricalBatch(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
 
           let firstAccepted = false;
           let failedRejectionError = null;
@@ -166,7 +175,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should restart stream in case new addresses were generated', async () => {
-            await transactionsReader.subscribeToHistoricalStream(
+            await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
 
@@ -195,7 +204,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should not restart stream in case no new addresses were generated', async () => {
-            await transactionsReader.subscribeToHistoricalStream(
+            await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
 
@@ -211,7 +220,7 @@ describe('TransactionsReader - unit', () => {
 
           it('should not restart stream for the last merkle block in range in case new addresses were generated', async () => {
             merkleBlockHeight = 1000;
-            await transactionsReader.subscribeToHistoricalStream(
+            await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
 
@@ -227,7 +236,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should handle stream restart error', async () => {
-            await transactionsReader.subscribeToHistoricalStream(
+            await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
 
@@ -252,25 +261,25 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should throw an error if invalid Merkle Block height provided', async () => {
-            await transactionsReader.subscribeToHistoricalStream(
+            await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
 
+            let errorThrown = null;
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-                acceptMerkleBlock(1300, newAddresses);
+                try {
+                  acceptMerkleBlock(1300, newAddresses);
+                } catch (e) {
+                  errorThrown = e;
+                }
               });
-
-            let emittedError = null;
-            transactionsReader.on('error', (e) => {
-              emittedError = e;
-            });
 
             historicalSyncStream.sendMerkleBlock(merkleBlock);
             await waitOneTick();
 
             expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
-            expect(emittedError.message)
+            expect(errorThrown.message)
               .to.equal('Merkle block height is greater than expected range: 1300 > 1000');
           });
         });
@@ -287,8 +296,8 @@ describe('TransactionsReader - unit', () => {
             merkleBlock = mockMerkleBlock([]);
           });
 
-          it('should emit error if Merkle Block rejected', async () => {
-            await transactionsReader.subscribeToHistoricalStream(
+          it('should destroy stream if Merkle Block rejected', async () => {
+            await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
 
@@ -297,46 +306,124 @@ describe('TransactionsReader - unit', () => {
                 rejectMerkleBlock(rejectedMerkleBlockWith);
               });
 
-            let emittedError = null;
-            transactionsReader.on('error', (e) => {
-              emittedError = e;
-            });
-
+            const { historicalSyncStream: stream } = transactionsReader;
             historicalSyncStream.sendMerkleBlock(merkleBlock);
             await waitOneTick();
-
-            expect(emittedError)
-              .to.equal(rejectedMerkleBlockWith);
+            expect(historicalSyncStream).to.equal(transactionsReader.historicalSyncStream);
+            expect(stream.destroy)
+              .to.have.been.calledWith(rejectedMerkleBlockWith);
           });
         });
       });
     });
 
     context('On "error"', () => {
-      it('should emit error', async () => {
-        await transactionsReader.subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+      let fromBlockHeight;
+      let merkleBlockHeight;
+      let merkleBlock;
+      let newAddresses;
 
-        let emittedError = null;
-        transactionsReader.on('error', (e) => {
-          emittedError = e;
-        });
-
-        const error = new Error('Error');
-        historicalSyncStream.emit('error', error);
-
-        await waitOneTick();
-
-        expect(emittedError).to.equal(error);
+      beforeEach(() => {
+        fromBlockHeight = 100;
+        merkleBlockHeight = 300;
+        merkleBlock = mockMerkleBlock([]);
+        newAddresses = [
+          'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
+          'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
+        ];
       });
 
       it('should handle stream cancellation', async () => {
-        await transactionsReader
-          .subscribeToHistoricalStream(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+        await subscribeToHistoricalBatch(fromBlockHeight, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
         await historicalSyncStream.cancel();
-        expect(transactionsReader.subscribeToHistoricalStream).to.have.been.calledOnce();
         expect(transactionsReader.historicalSyncStream).to.equal(null);
         expect(transactionsReader.emit)
           .to.have.not.been.calledWith(TransactionsReader.EVENTS.ERROR);
+      });
+
+      it('should retry in case of an error', async () => {
+        await subscribeToHistoricalBatch(fromBlockHeight, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+
+        transactionsReader
+          .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+            acceptMerkleBlock(merkleBlockHeight, []);
+          });
+
+        historicalSyncStream.sendMerkleBlock(merkleBlock);
+
+        historicalSyncStream.emit('error', new Error('Fake stream error'));
+
+        await waitOneTick();
+
+        // Ensure that retry logic does not re-fetch already processed data
+        const blocksRead = merkleBlockHeight - fromBlockHeight + 1;
+        const remainingCount = CHAIN_HEIGHT - blocksRead;
+        expect(transactionsReader.createHistoricalSyncStream.secondCall.args)
+          .to.deep.equal([createBloomFilter(DEFAULT_ADDRESSES), {
+            fromBlockHeight: merkleBlockHeight + 1,
+            count: remainingCount,
+          }]);
+      });
+
+      it('should retry with the restartArgs provided by merkle block', async () => {
+        await subscribeToHistoricalBatch(fromBlockHeight, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+
+        transactionsReader
+          .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+            acceptMerkleBlock(merkleBlockHeight, newAddresses);
+          });
+
+        historicalSyncStream.sendMerkleBlock(merkleBlock);
+
+        historicalSyncStream.emit('error', new Error('Fake stream error'));
+
+        await waitOneTick();
+
+        // Ensure that retry logic does not re-fetch already processed data
+        const blocksRead = merkleBlockHeight - fromBlockHeight + 1;
+        const remainingCount = CHAIN_HEIGHT - blocksRead;
+        expect(transactionsReader.createHistoricalSyncStream.secondCall.args)
+          .to.deep.equal([createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]), {
+            fromBlockHeight: merkleBlockHeight + 1,
+            count: remainingCount,
+          }]);
+      });
+
+      it('should not retry if no headers remaining', async () => {
+        await subscribeToHistoricalBatch(fromBlockHeight, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+
+        transactionsReader
+          .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
+            acceptMerkleBlock(fromBlockHeight + CHAIN_HEIGHT - 1);
+          });
+
+        historicalSyncStream.sendMerkleBlock(merkleBlock);
+
+        historicalSyncStream.emit('error', new Error('Fake stream error'));
+
+        await waitOneTick();
+
+        expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnce();
+      });
+
+      it('should emit error in case retry attempts were exhausted', async () => {
+        await subscribeToHistoricalBatch(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+
+        transactionsReader.on('error', () => {});
+
+        const { maxRetries } = options;
+        for (let i = 0; i < maxRetries; i += 1) {
+          const error = new Error(`Retry exhaust error ${i}`);
+          historicalSyncStream.emit('error', error);
+          // eslint-disable-next-line no-await-in-loop
+          await waitOneTick();
+        }
+
+        const lastError = new Error('Retry exhaust error last');
+        historicalSyncStream.emit('error', lastError);
+
+        expect(transactionsReader.emit)
+          .to.have.been.calledWith('error', lastError);
       });
     });
 
@@ -359,7 +446,7 @@ describe('TransactionsReader - unit', () => {
       });
 
       it('should emit HISTORICAL_DATA_OBTAINED event', async () => {
-        await transactionsReader.subscribeToHistoricalStream(
+        await subscribeToHistoricalBatch(
           fromBlockHeight, count, DEFAULT_ADDRESSES,
         );
 
@@ -370,7 +457,7 @@ describe('TransactionsReader - unit', () => {
       });
 
       it('should not emit HISTORICAL_DATA_OBTAINED event if stream ended, but needs to be restarted', async () => {
-        await transactionsReader.subscribeToHistoricalStream(
+        await subscribeToHistoricalBatch(
           fromBlockHeight, count, DEFAULT_ADDRESSES,
         );
 
