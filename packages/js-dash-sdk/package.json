@@ -9,7 +9,7 @@
   "scripts": {
     "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
     "start:ts": "tsc --watch",
-    "build": "echo huyna",
+    "build": "yarn run build:ts && webpack --stats-error-details",
     "build:ts": "tsc",
     "lint": "",
     "test": "yarn run test:unit && yarn run test:functional && yarn run test:browsers",
