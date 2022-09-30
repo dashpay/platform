@@ -59,6 +59,7 @@ jobs:
 
       - name: Build all packages
         run: yarn build
+        if: ${{ inputs.start-local-network }}
 
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
