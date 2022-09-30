@@ -24,6 +24,6 @@ on:
 jobs:
   dashmate-tests:
     name: Run Dashmate tests
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: ./.github/workflows/test.yml@master
     with:
       package: 'dashmate'
