@@ -70,9 +70,18 @@ const parseRawTransactions = (rawTransactions, addresses, network) => {
  */
 const parseRawMerkleBlock = (rawMerkleBlock) => new MerkleBlock(Buffer.from(rawMerkleBlock));
 
+/**
+ * @param {KeyChainStore} keyChainStore
+ * @returns {string[]}
+ */
+const getAddressesToSync = (keyChainStore) => keyChainStore.getKeyChains()
+  .map((keychain) => keychain.getWatchedAddresses())
+  .reduce((pre, cur) => pre.concat(cur));
+
 module.exports = {
   createBloomFilter,
   filterTransactionsForAddresses,
   parseRawTransactions,
   parseRawMerkleBlock,
+  getAddressesToSync,
 };
