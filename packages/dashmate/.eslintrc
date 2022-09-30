@@ -1,5 +1,10 @@
 {
   "extends": "airbnb-base",
+  "settings": {
+    "import/core-modules": [
+      "dash"
+    ]
+  },
   "rules": {
     "no-plusplus": 0,
     "eol-last": [
