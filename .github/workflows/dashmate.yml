@@ -27,4 +27,3 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       package: 'dashmate'
-      build-sdk: true

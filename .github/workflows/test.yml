@@ -53,17 +53,12 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build Dash SDK
-        run: yarn build --filter "dash"
-        if: ${{ inputs.build-sdk }}
-
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
         if: ${{ !inputs.start-local-network }}
 
       - name: Build all packages
         run: yarn build
-        if: ${{ inputs.start-local-network }}
 
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
