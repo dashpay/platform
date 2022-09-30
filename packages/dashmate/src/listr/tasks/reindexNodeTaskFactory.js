@@ -47,7 +47,7 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        title: 'Set core to reindex on next run',
+        title: 'Set reindex mode',
         enabled: () => config.get('core.reindex.enable'),
         task: async () => {
           config.set('core.reindex.enable', 1);
@@ -119,7 +119,7 @@ function reindexNodeTaskFactory(
       },
       {
         task: async (ctx) => new Observable(async (observer) => {
-          observer.next(`Reindexing dashcore ${config.getName()}`);
+          observer.next(`Reindexing Core for ${config.getName()}`);
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
             const {percent, blocks, headers} = verificationProgress;
@@ -142,7 +142,7 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        title: 'Set core to disable reindex on next run',
+        title: 'Disable reindex mode',
         task: async () => {
           config.set('core.reindex.enable', 0);
           config.set('core.reindex.containerId', null);

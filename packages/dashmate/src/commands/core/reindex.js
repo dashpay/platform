@@ -51,9 +51,9 @@ class ReindexCommand extends ConfigBaseCommand {
   }
 }
 
-ReindexCommand.description = `Reindex core container
+ReindexCommand.description = `Reindex Core
 
-Reindex core container data
+Reindex Core data
 `;
 
 ReindexCommand.flags = {

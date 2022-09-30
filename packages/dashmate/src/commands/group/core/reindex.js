@@ -64,9 +64,9 @@ class GroupReindexCommand extends GroupBaseCommand {
   }
 }
 
-GroupReindexCommand.description = `Reindex all core containers in the group
+GroupReindexCommand.description = `Reindex group of Core services
 
-Reindex group core container data
+Reindex group Core data
 `;
 
 GroupReindexCommand.flags = {
