@@ -476,6 +476,51 @@ describe('TransactionsReader - unit', () => {
     });
   });
 
+  describe('#startHistoricalSync', () => {
+    let fromBlockHeight;
+    let toBlockHeight;
+    let count;
+
+    beforeEach(() => {
+      fromBlockHeight = 1;
+      toBlockHeight = CHAIN_HEIGHT;
+      count = toBlockHeight - fromBlockHeight + 1;
+    });
+
+    it('should start historical sync and subscribe to events', async () => {
+      await transactionsReader
+        .startHistoricalSync(fromBlockHeight, toBlockHeight, DEFAULT_ADDRESSES);
+
+      expect(transactionsReader.historicalSyncStream).to.exist();
+      expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnceWith(
+        createBloomFilter(DEFAULT_ADDRESSES), {
+          fromBlockHeight,
+          count,
+        },
+      );
+    });
+
+    it('should validate arguments', async () => {
+      await expect(transactionsReader.startHistoricalSync(2, 1))
+        .to.be.rejectedWith('No addresses to sync');
+
+      await expect(transactionsReader.startHistoricalSync(2, 1, []))
+        .to.be.rejectedWith('No addresses to sync');
+
+      await expect(transactionsReader.startHistoricalSync(0, 1, DEFAULT_ADDRESSES))
+        .to.be.rejectedWith('Invalid fromBlockHeight: 0');
+
+      await expect(transactionsReader.startHistoricalSync(2, 1, DEFAULT_ADDRESSES))
+        .to.be.rejectedWith('Invalid total amount of blocks to sync: 0');
+    });
+
+    it('should not allow multiple executions', async () => {
+      await transactionsReader.startHistoricalSync(1, 2, DEFAULT_ADDRESSES);
+      await expect(transactionsReader.startHistoricalSync(1, 2, DEFAULT_ADDRESSES))
+        .to.be.rejectedWith('Historical sync is already in process');
+    });
+  });
+
   describe('#startContinuousSync', () => {
     const fromBlockHeight = 100;
 

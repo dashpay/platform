@@ -15,6 +15,7 @@ const EVENTS = {
  * @property {Function} [createHistoricalSyncStream]
  * @property {Function} [createContinuousSyncStream]
  * @property {string} network
+ * @property {number} maxRetries
  */
 
 class TransactionsReader extends EventEmitter {
@@ -26,6 +27,7 @@ class TransactionsReader extends EventEmitter {
     this.createHistoricalSyncStream = options.createHistoricalSyncStream;
     this.createContinuousSyncStream = options.createContinuousSyncStream;
     this.network = options.network;
+    this.maxRetries = options.maxRetries;
 
     this.historicalSyncStream = null;
     this.continuousSyncStream = null;
@@ -41,17 +43,25 @@ class TransactionsReader extends EventEmitter {
    */
   async startHistoricalSync(fromBlockHeight, toBlockHeight, addresses) {
     if (this.historicalSyncStream) {
-      throw new Error('Historical sync is already in process.');
+      throw new Error('Historical sync is already in process');
     }
 
-    if (fromBlockHeight <= 1) {
-      throw new Error('Invalid fromBlockHeight');
+    if (!addresses || addresses.length === 0) {
+      throw new Error('No addresses to sync');
+    }
+
+    if (fromBlockHeight < 1) {
+      throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
     }
 
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
     if (totalAmount <= 0) {
       throw new Error(`Invalid total amount of blocks to sync: ${totalAmount}`);
     }
+
+    const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
+    const count = toBlockHeight - fromBlockHeight + 1;
+    this.historicalSyncStream = await subscribeWithRetries(fromBlockHeight, count, addresses);
   }
 
   /**
@@ -60,7 +70,7 @@ class TransactionsReader extends EventEmitter {
    *
    * @private
    * @param {number} [maxRetries=0] - maximum amount of retries
-   * @returns {function(*, *): Promise<Stream>}
+   * @returns {function(*, *, *): Promise<Stream>}
    */
   subscribeToHistoricalBatch(maxRetries = 0) {
     let currentRetries = 0;
