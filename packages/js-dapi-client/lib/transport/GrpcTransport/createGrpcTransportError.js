@@ -50,32 +50,34 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   const message = grpcError.details || grpcError.message;
 
+  let metadata = {};
+
   if (grpcError.metadata) {
     // In cases of gRPC-Web client we get plain map instead of Metadata instance
-    let metadataMap = grpcError.metadata;
+    metadata = grpcError.metadata;
     if (grpcError.metadata instanceof Metadata) {
-      metadataMap = grpcError.metadata.getMap();
+      metadata = grpcError.metadata.getMap();
     }
+  }
 
-    // Error data
-    const driveErrorData = metadataMap['drive-error-data-bin'];
-    if (driveErrorData) {
-      const encodedData = Buffer.from(driveErrorData, 'base64');
-      data = cbor.decode(encodedData);
-    }
+  // Error data
+  const driveErrorData = metadata['drive-error-data-bin'];
+  if (driveErrorData) {
+    const encodedData = Buffer.from(driveErrorData, 'base64');
+    data = cbor.decode(encodedData);
+  }
 
-    // Error code
-    const driveErrorCode = metadataMap.code;
-    if (driveErrorCode) {
-      code = Number(driveErrorCode);
-    }
+  // Error code
+  const driveErrorCode = metadata.code;
+  if (driveErrorCode) {
+    code = Number(driveErrorCode);
+  }
 
-    // Error stack
-    const driveErrorStack = metadataMap['stack-bin'];
-    if (driveErrorStack) {
-      const encodedStack = Buffer.from(driveErrorStack, 'base64');
-      data.stack = cbor.decode(encodedStack);
-    }
+  // Error stack
+  const driveErrorStack = metadata['stack-bin'];
+  if (driveErrorStack) {
+    const encodedStack = Buffer.from(driveErrorStack, 'base64');
+    data.stack = cbor.decode(encodedStack);
   }
 
   // Specialized classes
@@ -100,13 +102,6 @@ function createGrpcTransportError(grpcError, dapiAddress) {
   }
 
   if (code === GrpcErrorCodes.INTERNAL) {
-    if (grpcError.metadata) {
-      const metaStack = grpcError.metadata.get('stack-bin');
-      if (metaStack && metaStack.length > 0) {
-        data.stack = cbor.decode(metaStack[0]);
-      }
-    }
-
     return new InternalServerError(
       code,
       message,

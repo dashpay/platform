@@ -1,8 +1,8 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
-// const Address = require('@dashevo/dashcore-lib/lib/address');
-// const Script = require('@dashevo/dashcore-lib/lib/script');
-// const createOperatorIdentifier = require('./createOperatorIdentifier');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
+const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
  *
@@ -15,6 +15,7 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
  * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
  * @param {number} smlMaxListsLimit
  * @param {RpcClient} coreRpcClient
+ * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
@@ -27,6 +28,7 @@ function synchronizeMasternodeIdentitiesFactory(
   handleUpdatedScriptPayout,
   smlMaxListsLimit,
   coreRpcClient,
+  lastSyncedCoreHeightRepository,
 ) {
   let lastSyncedCoreHeight = 0;
 
@@ -42,6 +44,14 @@ function synchronizeMasternodeIdentitiesFactory(
    * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
+    if (!lastSyncedCoreHeight) {
+      const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
+        useTransaction: true,
+      });
+
+      lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
+    }
+
     let newMasternodes = [];
 
     let previousMNList = [];
@@ -68,7 +78,7 @@ function synchronizeMasternodeIdentitiesFactory(
       // simplifiedMasternodeList contains sml only for the last `smlMaxListsLimit` number of blocks
       if (coreHeight - lastSyncedCoreHeight >= smlMaxListsLimit) {
         // get diff directly from core
-        const { result: rawDiff } = await coreRpcClient.protx('diff', 1, lastSyncedCoreHeight);
+        const { result: rawDiff } = await coreRpcClient.protx('diff', 1, lastSyncedCoreHeight, true);
 
         previousMNList = new SimplifiedMNList(rawDiff).mnList;
       } else {
@@ -101,49 +111,49 @@ function synchronizeMasternodeIdentitiesFactory(
           );
         }
 
-        // if (mnEntry.payoutAddress) {
-        //   const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
-        //     previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-        //     && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
-        //   ));
-        //
-        //   if (mnEntryWithChangedPayoutAddress) {
-        //     const newPayoutScript = new Script(Address.fromString(mnEntry.payoutAddress));
-        //     const previousPayoutScript = mnEntryWithChangedPayoutAddress.payoutAddress
-        //       ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
-        //       : undefined;
-        //
-        //     await handleUpdatedScriptPayout(
-        //       Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
-        //       newPayoutScript,
-        //       previousPayoutScript,
-        //     );
-        //   }
-        // }
+        if (mnEntry.payoutAddress) {
+          const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
+            previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+            && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
+          ));
 
-        // if (mnEntry.operatorPayoutAddress) {
-        //   const mnEntryWithChangedOperatorPayoutAddress = previousMNList
-        //     .find((previousMnListEntry) => (
-        //       previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-        //       && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
-        //     ));
-        //
-        //   if (mnEntryWithChangedOperatorPayoutAddress) {
-        //     const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
-        //
-        //     const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
-        //
-        //     const previousOperatorPayoutScript = operatorPayoutAddress
-        //       ? new Script(Address.fromString(operatorPayoutAddress))
-        //       : undefined;
-        //
-        //     await handleUpdatedScriptPayout(
-        //       createOperatorIdentifier(mnEntry),
-        //       new Script(newOperatorPayoutAddress),
-        //       previousOperatorPayoutScript,
-        //     );
-        //   }
-        // }
+          if (mnEntryWithChangedPayoutAddress) {
+            const newPayoutScript = new Script(Address.fromString(mnEntry.payoutAddress));
+            const previousPayoutScript = mnEntryWithChangedPayoutAddress.payoutAddress
+              ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
+              : undefined;
+
+            await handleUpdatedScriptPayout(
+              Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
+              newPayoutScript,
+              previousPayoutScript,
+            );
+          }
+        }
+
+        if (mnEntry.operatorPayoutAddress) {
+          const mnEntryWithChangedOperatorPayoutAddress = previousMNList
+            .find((previousMnListEntry) => (
+              previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+              && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
+            ));
+
+          if (mnEntryWithChangedOperatorPayoutAddress) {
+            const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
+
+            const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
+
+            const previousOperatorPayoutScript = operatorPayoutAddress
+              ? new Script(Address.fromString(operatorPayoutAddress))
+              : undefined;
+
+            await handleUpdatedScriptPayout(
+              createOperatorIdentifier(mnEntry),
+              new Script(newOperatorPayoutAddress),
+              previousOperatorPayoutScript,
+            );
+          }
+        }
       }
     }
 
@@ -182,6 +192,10 @@ function synchronizeMasternodeIdentitiesFactory(
     const fromHeight = lastSyncedCoreHeight;
 
     lastSyncedCoreHeight = coreHeight;
+
+    await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight, {
+      useTransaction: true,
+    });
 
     return {
       fromHeight,

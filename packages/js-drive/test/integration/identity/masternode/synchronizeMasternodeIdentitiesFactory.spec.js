@@ -296,7 +296,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '5f1a4135bb406eacb57cc8af9eee9a1dfa815be7c221029b191436102289a82c';
+    firstSyncAppHash = '458731b06d86f200f174f4a3e22f54202f3838e456bc12ed67f81c9bfcc64e7c';
 
     container = await createTestDIContainer();
 
@@ -378,6 +378,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
+    // Create misc tree
+    const groveDBStore = container.resolve('groveDBStore');
+    await groveDBStore.createTree(
+      [],
+      Buffer.from([5]),
+      { useTransaction: true },
+    );
+
     const registerSystemDataContract = container.resolve('registerSystemDataContract');
     const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
     const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
@@ -446,6 +454,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     await expectMasternodeIdentity(
       smlFixture[0],
       transaction1,
+      undefined,
+      Address.fromString(smlFixture[0].payoutAddress),
     );
 
     // Operator identity should be created
@@ -498,6 +508,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     await expectMasternodeIdentity(
       smlFixture[1],
       transaction2,
+      undefined,
+      Address.fromString(smlFixture[1].payoutAddress),
     );
 
     // Operator identity shouldn't be created
@@ -560,11 +572,11 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Nothing happened
 
-    await expectDeterministicAppHash(firstSyncAppHash);
+    await expectDeterministicAppHash('c1e14007355ba59b6255688125bd8be19b2cccf59646a9a8eaed8b0976c495ea');
 
     // Core RPC should be called
 
-    expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3);
+    expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3, true);
   });
 
   it('should create masternode identities if new masternode appeared', async () => {
@@ -614,13 +626,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('27a0b71e8480c6d2b2f8345b854b91801c94ee4c69ba893e703366f176535f0d');
+    await expectDeterministicAppHash('f76584f44a9c4d052cbd30140a81a3022c0684356f70a0dd9b23f3aa1ba7c4f8');
 
     // New masternode identity should be created
 
     await expectMasternodeIdentity(
       newSmlFixture[0],
       transaction3,
+      undefined,
+      Address.fromString(newSmlFixture[0].payoutAddress),
     );
 
     // New operator should be created
@@ -688,13 +702,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('0b773f2e9435d5ad53c66d059e3f07b36c0925c47dd091ca76bef096f8a190da');
+    await expectDeterministicAppHash('30ef43b0a3ae64acdf0bfecb9959f0c9fbdb2c1751ec8a8bac5e21c93981a5c3');
 
     // Masternode identity should stay
 
     await expectMasternodeIdentity(
       smlFixture[0],
       transaction1,
+      undefined,
+      Address.fromString(smlFixture[0].payoutAddress),
     );
 
     // Operator identity should stay
@@ -746,7 +762,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('0b773f2e9435d5ad53c66d059e3f07b36c0925c47dd091ca76bef096f8a190da');
+    await expectDeterministicAppHash('30ef43b0a3ae64acdf0bfecb9959f0c9fbdb2c1751ec8a8bac5e21c93981a5c3');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -795,13 +811,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(3);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('b74ced8562632f600bdd1f7db2ebd9eee38ef448f78431103bb0309fe789ed00');
+    await expectDeterministicAppHash('0d36cfde4ca44f1b191c9f272148238e2ebc12be95fbdf9556f4fb31ea453dbb');
 
     // Masternode identity should stay
 
     await expectMasternodeIdentity(
       smlFixture[0],
       transaction1,
+      undefined,
+      Address.fromString(smlFixture[0].payoutAddress),
     );
 
     // Previous operator identity should stay
@@ -839,7 +857,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it.skip('should handle changed payout and operator payout addresses', async () => {
+  it('should handle changed payout and operator payout addresses', async () => {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight);
@@ -860,7 +878,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('7d0248dbad9d0109a9d215158a5196991d6c4650bfd4e043a36bb8517c2068a9');
+    await expectDeterministicAppHash('08dd50b99139af601b1b29aaa5b0f9f1111c2d30e940c7353386aeb33664ed52');
 
     // Masternode identity should contain new public key
 

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.23.0-dev.9",
+  "version": "0.23.0-alpha.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -29,6 +29,7 @@
     "configure:network": "yarn exec ./scripts/setup_local_network.sh",
     "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
     "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
+    "configure:tests:network": "yarn exec scripts/configure_test_suite_network.sh",
     "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
@@ -70,7 +71,8 @@
     "packages/dash-spv"
   ],
   "resolutions": {
-    "elliptic": "6.5.3",
-    "bn.js": "4.12.0"
+    "elliptic": "^6.5.4",
+    "bn.js": "4.12.0",
+    "ejs": "^3.1.7"
   }
 }

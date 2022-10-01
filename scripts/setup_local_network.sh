@@ -12,8 +12,6 @@ PACKAGES_PATH="$ROOT_PATH/packages"
 
 DASHMATE_BIN="${PACKAGES_PATH}/dashmate/bin/dashmate"
 
-yarn dashmate update -v
-
 yarn dashmate setup local --verbose \
                           --debug-logs \
                           --miner-interval="${MINING_INTERVAL_IN_SECONDS}s" \
