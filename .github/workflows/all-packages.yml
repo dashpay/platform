@@ -87,6 +87,11 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
+      - name: Temp fix broken compose version
+        uses: ndeloof/install-docker-compose
+        with:
+          version: v2.11.2 # defaults to 'latest'
+
       - name: Setup local network
         run: yarn configure
 
@@ -164,6 +169,11 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
+
+      - name: Temp fix broken compose version
+        uses: ndeloof/install-docker-compose
+        with:
+          version: v2.11.2 # defaults to 'latest'
 
       - name: Setup local network
         run: yarn configure
