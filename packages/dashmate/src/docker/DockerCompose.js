@@ -138,6 +138,10 @@ class DockerCompose {
             commandOptions: options,
           });
         } else {
+          console.log({
+            ...this.getOptions(envs),
+            callback
+          });
           await dockerCompose.buildAll({
             ...this.getOptions(envs),
             callback
