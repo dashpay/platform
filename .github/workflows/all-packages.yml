@@ -88,7 +88,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Temp fix broken compose version
-        uses: ndeloof/install-docker-compose
+        uses: ndeloof/install-docker-compose@v0.0.1
         with:
           version: v2.11.2 # defaults to 'latest'
 
@@ -171,7 +171,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Temp fix broken compose version
-        uses: ndeloof/install-docker-compose
+        uses: ndeloof/install-docker-compose@v0.0.1
         with:
           version: v2.11.2 # defaults to 'latest'
 
