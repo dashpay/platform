@@ -99,10 +99,6 @@ jobs:
       - name: Run test suite
         run: yarn test:suite
 
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
-
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
