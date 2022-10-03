@@ -47,7 +47,7 @@ function startCoreFactory(
 
     if (options.wallet) {
       if (isMasternode) {
-        throw new Error('You cannot run masternode with wallet mode on')
+        throw new Error('You cannot run masternode with wallet mode on');
       }
 
       coreCommand.push('--disablewallet=0');
