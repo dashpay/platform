@@ -1,5 +1,6 @@
 const { expect } = require('chai');
 const EventEmitter = require('events');
+const { Transaction } = require('@dashevo/dashcore-lib');
 const TransactionsSyncWorker = require('./TransactionsSyncWorker');
 const TransactionsReader = require('./TransactionsReader');
 const { waitOneTick } = require('../../../test/utils');
@@ -132,196 +133,221 @@ describe('TransactionsSyncWorker', () => {
       transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
     });
 
-    it('should kickstart reading of historical headers', async () => {
-      const startPromise = transactionsSyncWorker.onStart();
-      await waitOneTick();
+    context('Startup', () => {
+      it('should validate input params', async () => {
+        const { storage } = transactionsSyncWorker;
 
-      const { transactionsReader } = transactionsSyncWorker;
+        // Invalid chain height
+        storage.getDefaultChainStore().state.chainHeight = true;
+        await expect(transactionsSyncWorker.onStart())
+          .to.be.rejectedWith('Chain height is not a number: "true"');
 
-      expect(transactionsSyncWorker.syncState).to
-        .equal(TransactionsSyncWorker.STATES.HISTORICAL_SYNC);
-      expect(transactionsReader.on).to
-        .have.been.calledWith(
-          TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          transactionsSyncWorker.historicalTransactionsHandler,
-        );
-      expect(transactionsReader.on).to
-        .have.been.calledWith(
-          TransactionsReader.EVENTS.MERKLE_BLOCK,
-          transactionsSyncWorker.historicalMerkleBlockHandler,
-        );
-      expect(transactionsReader.on).to
-        .have.been.calledWith(
-          TransactionsReader.EVENTS.ERROR,
-          transactionsSyncWorker.transactionsReaderErrorHandler,
-        );
-      expect(transactionsReader.once).to
-        .have.been.calledWith(
-          TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED,
-          transactionsSyncWorker.historicalDataObtainedHandler,
-        );
-      expect(transactionsReader.once).to
-        .have.been.calledWith(
-          TransactionsReader.EVENTS.STOPPED,
-          transactionsSyncWorker.transactionsReaderStoppedHandler,
-        );
-      expect(transactionsReader.startHistoricalSync)
-        .to.have.been.calledOnceWith(
-          1,
+        storage.getDefaultChainStore().state.chainHeight = 0;
+        await expect(transactionsSyncWorker.onStart())
+          .to.be.rejectedWith('Invalid current chain height 0');
+        storage.getDefaultChainStore().state.chainHeight = CHAIN_HEIGHT;
+
+        // lastSyncedBlockHeight exceeds chain height
+        storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT * 2;
+        await expect(transactionsSyncWorker.onStart())
+          .to.be.rejectedWith('Start block height 2000 is greater than chain height 1000');
+      });
+      it('should kickstart reading of historical headers', async () => {
+        const startPromise = transactionsSyncWorker.onStart();
+        await waitOneTick();
+
+        const { transactionsReader } = transactionsSyncWorker;
+
+        expect(transactionsSyncWorker.syncState).to
+          .equal(TransactionsSyncWorker.STATES.HISTORICAL_SYNC);
+        expect(transactionsReader.on).to
+          .have.been.calledWith(
+            TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
+            transactionsSyncWorker.historicalTransactionsHandler,
+          );
+        expect(transactionsReader.on).to
+          .have.been.calledWith(
+            TransactionsReader.EVENTS.MERKLE_BLOCK,
+            transactionsSyncWorker.historicalMerkleBlockHandler,
+          );
+        expect(transactionsReader.on).to
+          .have.been.calledWith(
+            TransactionsReader.EVENTS.ERROR,
+            transactionsSyncWorker.transactionsReaderErrorHandler,
+          );
+        expect(transactionsReader.once).to
+          .have.been.calledWith(
+            TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED,
+            transactionsSyncWorker.historicalDataObtainedHandler,
+          );
+        expect(transactionsReader.once).to
+          .have.been.calledWith(
+            TransactionsReader.EVENTS.STOPPED,
+            transactionsSyncWorker.transactionsReaderStoppedHandler,
+          );
+        expect(transactionsReader.startHistoricalSync)
+          .to.have.been.calledOnceWith(
+            1,
+            CHAIN_HEIGHT,
+            ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
+          );
+        transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+        await startPromise;
+      });
+      it('should skip historical sync in case startBlockHeight is equal to chain height', async () => {
+        const { storage, transactionsReader } = transactionsSyncWorker;
+
+        // Invalid chain height
+        storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT;
+        await transactionsSyncWorker.onStart();
+
+        const chainStore = storage.getDefaultChainStore();
+        expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
+        expect(transactionsReader.startHistoricalSync).to.have.not.been.called();
+      });
+    });
+
+    context('Paused', () => {
+      it('should handle stopped event from transactionsReader', async () => {
+        const startPromise = transactionsSyncWorker.onStart();
+        await waitOneTick();
+
+        const tx = new Transaction()
+          .to(ADDRESSES_KEYCHAIN_1[0], 1000);
+        transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+
+        const { transactionsReader } = transactionsSyncWorker;
+        transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+
+        const {
+          historicalTransactionsHandler,
+          historicalMerkleBlockHandler,
+          historicalDataObtainedHandler,
+          transactionsReaderErrorHandler,
+        } = transactionsSyncWorker;
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
+            historicalTransactionsHandler,
+          );
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.MERKLE_BLOCK,
+            historicalMerkleBlockHandler,
+          );
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED,
+            historicalDataObtainedHandler,
+          );
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.ERROR,
+            transactionsReaderErrorHandler,
+          );
+        expect(transactionsSyncWorker.historicalTransactionsToVerify.size).to.equal(0);
+
+        await startPromise;
+      });
+
+      it('should start over from the sync checkpoint if historical sync is interrupted', async () => {
+        const { transactionsReader } = transactionsSyncWorker;
+
+        // Start historical sync
+        let startPromise = transactionsSyncWorker.onStart();
+        await waitOneTick();
+
+        // Put on a pause
+        const syncCheckpoint = CHAIN_HEIGHT - 500;
+        transactionsSyncWorker.syncCheckpoint = syncCheckpoint;
+        transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+        await startPromise;
+
+        // Continue historical sync
+        startPromise = transactionsSyncWorker.onStart();
+        transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+        await startPromise;
+
+        const { secondCall } = transactionsReader.startHistoricalSync;
+
+        expect(secondCall.args).to.deep.equal([
+          syncCheckpoint,
           CHAIN_HEIGHT,
           ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
-        );
-      transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
-      await startPromise;
+        ]);
+      });
     });
 
-    it('should skip historical sync in case startBlockHeight is equal to chain height', async () => {
-      const { storage, transactionsReader } = transactionsSyncWorker;
+    context('Finished', () => {
+      it('should prepare for continuous sync after historical data is obtained', async function test() {
+        const { transactionsReader } = transactionsSyncWorker;
 
-      // Invalid chain height
-      storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT;
-      await transactionsSyncWorker.onStart();
+        transactionsSyncWorker.updateProgress = this.sinon.spy();
 
-      const chainStore = storage.getDefaultChainStore();
-      expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
-      expect(transactionsReader.startHistoricalSync).to.have.not.been.called();
+        const startPromise = transactionsSyncWorker.onStart();
+        transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+        await startPromise;
+
+        expect(transactionsSyncWorker.syncState).to
+          .equal(TransactionsSyncWorker.STATES.IDLE);
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
+            transactionsSyncWorker.historicalTransactionsHandler,
+          );
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.MERKLE_BLOCK,
+            transactionsSyncWorker.historicalMerkleBlockHandler,
+          );
+        expect(transactionsReader.removeListener)
+          .to.have.been.calledWith(
+            TransactionsReader.EVENTS.ERROR,
+            transactionsSyncWorker.transactionsReaderErrorHandler,
+          );
+        expect(transactionsSyncWorker.syncCheckpoint).to.equal(CHAIN_HEIGHT);
+        expect(transactionsSyncWorker.updateProgress).to.have.been.calledOnce();
+        expect(transactionsSyncWorker.storage.saveState).to.have.been.calledOnce();
+
+        const chainStore = transactionsSyncWorker.storage.getDefaultChainStore();
+        expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
+      });
+      it('should throw an error in case there are transactions to verify left', async () => {
+        const { transactionsReader } = transactionsSyncWorker;
+
+        const tx = new Transaction()
+          .to(ADDRESSES_KEYCHAIN_1[0], 1000);
+        transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+
+        const startPromise = transactionsSyncWorker.onStart();
+
+        transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+        await expect(startPromise)
+          .to.be.rejectedWith('Historical data obtained but there are still transactions to verify');
+      });
     });
 
-    it('should prepare for continuous sync after historical data is obtained', async function test() {
-      const { transactionsReader } = transactionsSyncWorker;
+    context('Error', () => {
+      it('should handle error event from transactionsReader', async () => {
+        const { transactionsReader } = transactionsSyncWorker;
 
-      transactionsSyncWorker.updateProgress = this.sinon.spy();
+        const startPromise = transactionsSyncWorker.onStart();
+        await waitOneTick();
+        const tx = new Transaction()
+          .to(ADDRESSES_KEYCHAIN_1[0], 1000);
+        transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
 
-      const startPromise = transactionsSyncWorker.onStart();
-      transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
-      await startPromise;
+        // Throw an error and interrupt historical sync
+        const syncError = new Error('Error syncing historical data');
+        transactionsReader.emit(TransactionsReader.EVENTS.ERROR, syncError);
 
-      expect(transactionsSyncWorker.syncState).to
-        .equal(TransactionsSyncWorker.STATES.IDLE);
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          transactionsSyncWorker.historicalTransactionsHandler,
-        );
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.MERKLE_BLOCK,
-          transactionsSyncWorker.historicalMerkleBlockHandler,
-        );
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.ERROR,
-          transactionsSyncWorker.transactionsReaderErrorHandler,
-        );
-      expect(transactionsSyncWorker.syncCheckpoint).to.equal(CHAIN_HEIGHT);
-      expect(transactionsSyncWorker.updateProgress).to.have.been.calledOnce();
-      expect(transactionsSyncWorker.storage.saveState).to.have.been.calledOnce();
+        await expect(startPromise)
+          .to.be.rejectedWith(syncError);
 
-      const chainStore = transactionsSyncWorker.storage.getDefaultChainStore();
-      expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
-    });
-
-    it('should validate input params', async () => {
-      const { storage } = transactionsSyncWorker;
-
-      // Invalid chain height
-      storage.getDefaultChainStore().state.chainHeight = true;
-      await expect(transactionsSyncWorker.onStart())
-        .to.be.rejectedWith('Chain height is not a number: "true"');
-
-      storage.getDefaultChainStore().state.chainHeight = 0;
-      await expect(transactionsSyncWorker.onStart())
-        .to.be.rejectedWith('Invalid current chain height 0');
-      storage.getDefaultChainStore().state.chainHeight = CHAIN_HEIGHT;
-
-      // lastSyncedBlockHeight exceeds chain height
-      storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT * 2;
-      await expect(transactionsSyncWorker.onStart())
-        .to.be.rejectedWith('Start block height 2000 is greater than chain height 1000');
-    });
-
-    it('should handle stopped event from transactionsReader', async () => {
-      const startPromise = transactionsSyncWorker.onStart();
-      await waitOneTick();
-
-      const { transactionsReader } = transactionsSyncWorker;
-      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
-
-      const {
-        historicalTransactionsHandler,
-        historicalMerkleBlockHandler,
-        historicalDataObtainedHandler,
-        transactionsReaderErrorHandler,
-      } = transactionsSyncWorker;
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          historicalTransactionsHandler,
-        );
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.MERKLE_BLOCK,
-          historicalMerkleBlockHandler,
-        );
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED,
-          historicalDataObtainedHandler,
-        );
-      expect(transactionsReader.removeListener)
-        .to.have.been.calledWith(
-          TransactionsReader.EVENTS.ERROR,
-          transactionsReaderErrorHandler,
-        );
-
-      await startPromise;
-    });
-
-    it('should start over from the sync checkpoint if historical sync is interrupted', async () => {
-      const { transactionsReader } = transactionsSyncWorker;
-
-      // Start historical sync
-      let startPromise = transactionsSyncWorker.onStart();
-      await waitOneTick();
-
-      // Put on a pause
-      const syncCheckpoint = CHAIN_HEIGHT - 500;
-      transactionsSyncWorker.syncCheckpoint = syncCheckpoint;
-      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
-      await startPromise;
-
-      // Continue historical sync
-      startPromise = transactionsSyncWorker.onStart();
-      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
-      await startPromise;
-
-      const { secondCall } = transactionsReader.startHistoricalSync;
-
-      expect(secondCall.args).to.deep.equal([
-        syncCheckpoint,
-        CHAIN_HEIGHT,
-        ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
-      ]);
-    });
-
-    it('should handle error event from transactionsReader', async () => {
-      const { transactionsReader } = transactionsSyncWorker;
-
-      let caughtError = null;
-      // Start historical sync
-      const startPromise = transactionsSyncWorker.onStart()
-        .catch((e) => {
-          caughtError = e;
-        });
-
-      await waitOneTick();
-
-      // Throw an error and interrupt historical sync
-      const syncError = new Error('Error syncing historical data');
-      transactionsReader.emit(TransactionsReader.EVENTS.ERROR, syncError);
-      await startPromise;
-
-      expect(caughtError).to.equal(syncError);
+        expect(transactionsSyncWorker.historicalTransactionsToVerify.size)
+          .to.equal(0);
+      });
     });
   });
 
@@ -475,6 +501,23 @@ describe('TransactionsSyncWorker', () => {
       const { transactionsReader } = transactionsSyncWorker;
       expect(transactionsReader.stopContinuousSync).to.have.been.calledOnce();
       expect(transactionsReader.stopHistoricalSync).to.have.not.been.called();
+    });
+  });
+
+  describe('#historicalTransactionsHandler', () => {
+    it('should add transactions to the verification pool', () => {
+      const transactions = ADDRESSES_KEYCHAIN_1
+        .map((address) => new Transaction().to(address, 1000));
+
+      transactionsSyncWorker.historicalTransactionsHandler(transactions);
+
+      const expectedResult = transactions.reduce((acc, transaction) => {
+        acc.set(transaction.hash, transaction);
+        return acc;
+      }, new Map());
+
+      expect(transactionsSyncWorker.historicalTransactionsToVerify)
+        .to.deep.equal(expectedResult);
     });
   });
 });

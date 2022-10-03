@@ -44,6 +44,12 @@ class TransactionsSyncWorker extends Worker {
     this.continuousSyncStream = null;
     this.syncCheckpoint = -1;
 
+    /**
+     * Pool of historical transactions to be verified and imported
+     * @type {Map<string, Transaction>}
+     */
+    this.historicalTransactionsToVerify = new Map();
+
     this.transactionsReaderErrorHandler = null;
     this.transactionsReaderStoppedHandler = null;
     this.historicalDataObtainedHandler = null;
@@ -125,6 +131,8 @@ class TransactionsSyncWorker extends Worker {
           this.historicalDataObtainedHandler,
         );
 
+        this.historicalTransactionsToVerify.clear();
+
         resolve({
           stopped: true,
         });
@@ -148,9 +156,13 @@ class TransactionsSyncWorker extends Worker {
           this.transactionsReaderStoppedHandler,
         );
 
-        resolve({
-          stopped: false,
-        });
+        if (this.historicalTransactionsToVerify.size > 0) {
+          reject(new Error('Historical data obtained but there are still transactions to verify'));
+        } else {
+          resolve({
+            stopped: false,
+          });
+        }
       };
 
       this.transactionsReader.on(
@@ -174,7 +186,13 @@ class TransactionsSyncWorker extends Worker {
 
     this.syncState = STATES.HISTORICAL_SYNC;
 
-    const syncResult = await historicalSyncPromise;
+    let syncResult;
+    try {
+      syncResult = await historicalSyncPromise;
+    } catch (e) {
+      this.historicalTransactionsToVerify.clear();
+      throw e;
+    }
 
     this.updateProgress();
     this.storage.saveState();
@@ -183,6 +201,8 @@ class TransactionsSyncWorker extends Worker {
       chainStore.clearHeadersMetadata();
       this.syncCheckpoint = chainHeight;
     }
+
+    this.historicalTransactionsToVerify.clear();
 
     this.syncState = STATES.IDLE;
   }
@@ -293,9 +313,12 @@ class TransactionsSyncWorker extends Worker {
 
   /**
    * Processing TXs during the historical sync
+   * @param {Transaction[]} transactions
    */
-  historicalTransactionsHandler() {
-
+  historicalTransactionsHandler(transactions) {
+    transactions.forEach((tx) => {
+      this.historicalTransactionsToVerify.set(tx.hash, tx);
+    });
   }
 
   /**
