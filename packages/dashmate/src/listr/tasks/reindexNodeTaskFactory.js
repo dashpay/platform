@@ -99,7 +99,7 @@ function reindexNodeTaskFactory(
             docker.getContainer(containerId),
           );
 
-          const { State } = containerInfo
+          const { State } = containerInfo;
 
           if (State.Status === 'paused' || State.Status === 'exited') {
             switch (State.ExitCode) {
