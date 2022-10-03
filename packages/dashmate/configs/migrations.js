@@ -346,6 +346,11 @@ module.exports = {
   '0.23.0-alpha.1': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        config.core.reindex = {
+          enable: false,
+          containerId: null,
+        };
+      
         if (config.platform) {
           // Update images
           config.platform.dpns = systemConfigs.base.platform.dpns;
