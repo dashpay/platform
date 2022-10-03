@@ -28,6 +28,11 @@ function startNodeTaskFactory(
    * @return {Object}
    */
   function startNodeTask(config) {
+    // check core is not reindexing
+    if (config.get('core.reindex.enable', true)) {
+      throw new Error(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
+    }
+
     // Check external IP is set
     config.get('externalIp', true);
 

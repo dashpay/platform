@@ -235,7 +235,7 @@ function setupLocalPresetTaskFactory(
               configFile.setDefaultGroupName(PRESET_LOCAL);
 
               // Persist configs
-              await configFileRepository.write(configFile);
+              configFileRepository.write(configFile);
             },
           });
 
