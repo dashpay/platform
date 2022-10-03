@@ -346,6 +346,11 @@ module.exports = {
   '0.23.0-alpha.1': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        config.core.reindex = {
+          enable: false,
+          containerId: null,
+        };
+      
         if (config.platform) {
           // Update images
           config.platform.dpns = systemConfigs.base.platform.dpns;
@@ -361,17 +366,6 @@ module.exports = {
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
     configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
       .masternodeRewardShares;
-
-    return configFile;
-  },
-  '0.23.0-alpha.2': (configFile) => {
-    Object.entries(configFile.configs)
-      .forEach(([, config]) => {
-        config.core.reindex = {
-          enable: false,
-          containerId: null,
-        };
-      });
 
     return configFile;
   },
