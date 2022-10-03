@@ -126,7 +126,6 @@ class TransactionsReader extends EventEmitter {
             if (rejected) {
               throw new Error('Unable to accept rejected merkle block');
             }
-            accepted = true;
 
             lastSyncedBlockHeight = height;
             const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
@@ -151,6 +150,8 @@ class TransactionsReader extends EventEmitter {
               stream.cancel()
                 .catch((e) => this.emit(EVENTS.ERROR, e));
             }
+
+            accepted = true;
           };
 
           const rejectMerkleBlock = (e) => {

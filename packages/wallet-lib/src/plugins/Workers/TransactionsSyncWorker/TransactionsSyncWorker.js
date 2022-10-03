@@ -11,6 +11,14 @@ const STATES = {
 };
 
 const MAX_RETRIES = 10;
+const PROGRESS_UPDATE_INTERVAL = 1000;
+
+/**
+ * @typedef MerkleBlockDataEventPayload
+ * @property {MerkleBlock} merkleBlock
+ * @property {Function} acceptMerkleBlock
+ * @property {Function} rejectMerkleBlock
+ */
 
 class TransactionsSyncWorker extends Worker {
   constructor(options = {}) {
@@ -43,6 +51,7 @@ class TransactionsSyncWorker extends Worker {
     this.historicalSyncStream = null;
     this.continuousSyncStream = null;
     this.syncCheckpoint = -1;
+    this.progressUpdateTimeout = null;
 
     /**
      * Pool of historical transactions to be verified and imported
@@ -272,6 +281,7 @@ class TransactionsSyncWorker extends Worker {
   }
 
   /**
+   * @private
    * Determines starting point considering options
    * and last save checkpoint
    * @returns {number|number}
@@ -312,6 +322,7 @@ class TransactionsSyncWorker extends Worker {
   }
 
   /**
+   * @private
    * Processing TXs during the historical sync
    * @param {Transaction[]} transactions
    */
@@ -322,13 +333,86 @@ class TransactionsSyncWorker extends Worker {
   }
 
   /**
+   * @private
    * Processing Merkle Blocks during the historical sync
+   * @param {MerkleBlockDataEventPayload} payload
    */
-  historicalMerkleBlockHandler() {
+  historicalMerkleBlockHandler(payload) {
+    const { merkleBlock, acceptMerkleBlock, rejectMerkleBlock } = payload;
+    if (!this.historicalTransactionsToVerify.size) {
+      rejectMerkleBlock(new Error(`No transactions to verify for merkle block ${merkleBlock.header.hash}`));
+      return;
+    }
+    const chainStore = this.storage.getDefaultChainStore();
 
+    const txHashesInTheBlock = merkleBlock
+      .hashes.reduce((set, hashHex) => {
+        const hash = Buffer.from(hashHex, 'hex').reverse();
+        set.add(hash.toString('hex'));
+        return set;
+      }, new Set());
+
+    const headerHash = merkleBlock.header.hash;
+    const headerMetadata = chainStore.state.headersMetadata.get(headerHash);
+
+    if (!headerMetadata) {
+      rejectMerkleBlock(
+        new Error('Header metadata was not found during the merkle block processing'),
+      );
+      return;
+    }
+
+    const headerHeight = headerMetadata.height;
+    const headerTime = headerMetadata.time;
+
+    if (!headerTime || !headerHeight) {
+      rejectMerkleBlock(
+        Error(`Invalid header metadata: Time: ${headerTime}, Height: ${headerHeight}`),
+      );
+      return;
+    }
+
+    const metadata = {
+      blockHash: headerHash,
+      height: headerHeight,
+      time: new Date(headerTime * 1e3),
+      instantLocked: false, // TBD
+      chainLocked: false, // TBD
+    };
+
+    const transactionsWithMetadata = [];
+
+    try {
+      this.historicalTransactionsToVerify.forEach((tx) => {
+        if (!txHashesInTheBlock.has(tx.hash)) {
+          throw new Error(`Transaction ${tx.hash} was not found in merkle block ${headerHash}`);
+        }
+        transactionsWithMetadata.push([tx, metadata]);
+        delete this.historicalTransactionsToVerify[tx.hash];
+      });
+    } catch (e) {
+      logger.error(`Error processing merkle block ${headerHash}`, e);
+      rejectMerkleBlock(e);
+      return;
+    }
+
+    // TODO(spv): verify transactions against the merkle block
+
+    let addressesGenerated = [];
+    if (transactionsWithMetadata.length) {
+      ({ addressesGenerated } = this.importTransactions(transactionsWithMetadata));
+    }
+
+    acceptMerkleBlock(headerHeight, addressesGenerated);
+
+    this.syncCheckpoint = headerHeight;
+    chainStore.updateLastSyncedBlockHeight(headerHeight);
+    this.storage.scheduleStateSave();
+    this.scheduleProgressUpdate();
   }
 
   /**
+   * @private
    * Processing new TXs during the continuous sync
    */
   newTransactionsHandler() {
@@ -336,12 +420,25 @@ class TransactionsSyncWorker extends Worker {
   }
 
   /**
+   * @private
    * Processing new Merkle Blocks during the continuous sync
    */
   newMerkleBlockHandler() {
 
   }
 
+  /**
+   * @private
+   */
+  scheduleProgressUpdate() {
+    if (!this.progressUpdateTimeout) {
+      this.progressUpdateTimeout = setTimeout(this.updateProgress, PROGRESS_UPDATE_INTERVAL);
+    }
+  }
+
+  /**
+   * @private
+   */
   updateProgress() {
     // if (this.progressUpdateTimeout) {
     //   clearTimeout(this.progressUpdateTimeout);
@@ -367,6 +464,10 @@ class TransactionsSyncWorker extends Worker {
     // });
   }
 
+  /**
+   * @private
+   * @param {Error} e
+   */
   emitError(e) {
     this.parentEvents.emit('error', e);
   }
