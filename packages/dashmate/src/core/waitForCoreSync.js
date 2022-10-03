@@ -12,6 +12,8 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
   let isSynced = false;
   let isBlockchainSynced = false;
   let verificationProgress = 0.0;
+  let headers = 0;
+  let blocks = 0;
 
   do {
     ({
@@ -19,13 +21,11 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
     } = await coreService.getRpcClient().mnsync('status'));
 
     ({
-      // eslint-disable-next-line no-undef
       result: { verificationprogress: verificationProgress, headers, blocks },
     } = await coreService.getRpcClient().getBlockchainInfo());
 
     if (!isSynced || !isBlockchainSynced) {
       await wait(10000);
-      // eslint-disable-next-line no-undef
       progressCallback({ percent: verificationProgress, headers, blocks });
     }
   } while (!isSynced || !isBlockchainSynced);

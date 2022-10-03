@@ -3,7 +3,6 @@ const {Observable} = require('rxjs');
 const CoreService = require('../../core/CoreService');
 
 /**
- * @param {Docker} docker
  * @param {DockerCompose} dockerCompose
  * @param {startCore} startCore
  * @param {stopNodeTask} stopNodeTask
@@ -17,7 +16,6 @@ const CoreService = require('../../core/CoreService');
  * @return {reindexNodeTask}
  */
 function reindexNodeTaskFactory(
-  docker,
   dockerCompose,
   startCore,
   stopNodeTask,
@@ -61,6 +59,8 @@ function reindexNodeTaskFactory(
       {
         title: 'Start core',
         task: async (ctx) => {
+          const {docker} = dockerCompose
+
           let containerId = config.get('core.reindex.containerId', false);
           let containerInfo;
 
@@ -96,7 +96,7 @@ function reindexNodeTaskFactory(
                 pass: config.get('core.rpc.password'),
               },
             ),
-            dockerCompose.docker.getContainer(containerId),
+            docker.getContainer(containerId),
           );
 
           const { State } = containerInfo
