@@ -1,5 +1,5 @@
-const {Listr} = require('listr2');
-const {Observable} = require('rxjs');
+const { Listr } = require('listr2');
+const { Observable } = require('rxjs');
 const CoreService = require('../../core/CoreService');
 
 /**
@@ -59,7 +59,7 @@ function reindexNodeTaskFactory(
       {
         title: 'Start core',
         task: async (ctx) => {
-          const {docker} = dockerCompose
+          const { docker } = dockerCompose;
 
           let containerId = config.get('core.reindex.containerId', false);
           let containerInfo;
@@ -69,15 +69,15 @@ function reindexNodeTaskFactory(
               containerInfo = await docker.getContainer(containerId).inspect();
             } catch (e) {
               if (e.reason === 'no such container') {
-                containerId = null
+                containerId = null;
               }
-              throw e
+              throw e;
             }
           }
 
           if (!containerId) {
             ctx.coreService = await startCore(config);
-            const containerInfo = await ctx.coreService.dockerContainer.inspect();
+            containerInfo = await ctx.coreService.dockerContainer.inspect();
 
             ctx.reindexContainerId = containerInfo.Id;
             config.set('core.reindex.containerId', containerInfo.Id);
@@ -104,6 +104,7 @@ function reindexNodeTaskFactory(
           if (State.Status === 'paused' || State.Status === 'exited') {
             switch (State.ExitCode) {
               default:
+              // eslint-disable-next-line no-console
                 console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`);
               // eslint-disable-next-line no-fallthrough
               case 0:
@@ -121,7 +122,7 @@ function reindexNodeTaskFactory(
           observer.next(`Reindexing Core for ${config.getName()}`);
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
-            const {percent, blocks, headers} = verificationProgress;
+            const { percent, blocks, headers } = verificationProgress;
 
             observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`);
           });
@@ -135,7 +136,7 @@ function reindexNodeTaskFactory(
         title: 'Stop services',
         task: async () => {
           const containerId = config.get('core.reindex.containerId', false);
-          const container = docker.getContainer(containerId);
+          const container = dockerCompose.docker.getContainer(containerId);
 
           await container.stop();
         },
