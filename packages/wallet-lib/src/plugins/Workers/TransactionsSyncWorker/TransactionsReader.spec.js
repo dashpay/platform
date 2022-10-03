@@ -45,7 +45,7 @@ describe('TransactionsReader - unit', () => {
     transactionsReader = new TransactionsReader(options);
     this.sinon.spy(transactionsReader, 'emit');
     this.sinon.spy(transactionsReader, 'on');
-    this.sinon.spy(transactionsReader, 'stopReadingHistorical');
+    this.sinon.spy(transactionsReader, 'stopHistoricalSync');
     this.sinon.spy(transactionsReader, 'subscribeToHistoricalBatch');
     this.sinon.spy(transactionsReader, 'startContinuousSync');
   });
@@ -521,6 +521,17 @@ describe('TransactionsReader - unit', () => {
     });
   });
 
+  describe('#stopHistoricalSync', () => {
+    it('should stop historical sync', async () => {
+      await transactionsReader.startHistoricalSync(1, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+      expect(transactionsReader.historicalSyncStream).to.exist();
+      await transactionsReader.stopHistoricalSync();
+      expect(historicalSyncStream.cancel).to.have.been.calledOnce();
+      expect(transactionsReader.emit).to.have.been.calledWith(TransactionsReader.EVENTS.STOPPED);
+      expect(transactionsReader.historicalSyncStream).to.equal(null);
+    });
+  });
+
   describe('#startContinuousSync', () => {
     const fromBlockHeight = 100;
 
@@ -926,6 +937,17 @@ describe('TransactionsReader - unit', () => {
 
         expect(newArgs).to.equal(null);
       });
+    });
+  });
+
+  describe('#stopContinuousSync', () => {
+    it('should stop continuous sync', async () => {
+      await transactionsReader.startContinuousSync(CHAIN_HEIGHT, DEFAULT_ADDRESSES);
+      expect(transactionsReader.continuousSyncStream).to.exist();
+      await transactionsReader.stopContinuousSync();
+      expect(continuousSyncStream.cancel).to.have.been.calledOnce();
+      expect(transactionsReader.emit).to.have.been.calledWith(TransactionsReader.EVENTS.STOPPED);
+      expect(transactionsReader.continuousSyncStream).to.equal(null);
     });
   });
 });

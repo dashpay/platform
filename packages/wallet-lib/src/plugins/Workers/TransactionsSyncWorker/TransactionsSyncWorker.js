@@ -3,7 +3,6 @@ const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const TransactionsReader = require('./TransactionsReader');
 const { getAddressesToSync } = require('./utils');
-const EVENTS = require('../../../EVENTS');
 
 const STATES = {
   IDLE: 'STATE_IDLE',
@@ -49,8 +48,10 @@ class TransactionsSyncWorker extends Worker {
     this.transactionsReaderStoppedHandler = null;
     this.historicalDataObtainedHandler = null;
 
-    this.historicalSyncHandler = this.historicalSyncHandler.bind(this);
-    this.continuousSyncHandler = this.continuousSyncHandler.bind(this);
+    this.historicalTransactionsHandler = this.historicalTransactionsHandler.bind(this);
+    this.historicalMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
+    this.newTransactionsHandler = this.historicalTransactionsHandler.bind(this);
+    this.newMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
 
     this.syncState = STATES.IDLE;
   }
@@ -84,7 +85,7 @@ class TransactionsSyncWorker extends Worker {
     } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
-      logger.debug(`[TransactionSyncStreamWorker] Wallet created from a new mnemonic. Sync from the best block height ${bestBlockHeight}`);
+      logger.debug(`[TransactionSyncStreamWorker] Wallet created from a new mnemonic. Sync from the current chain height ${chainHeight}`);
       chainStore.updateLastSyncedBlockHeight(chainHeight);
       this.syncCheckpoint = chainHeight;
       chainStore.clearHeadersMetadata();
@@ -92,7 +93,12 @@ class TransactionsSyncWorker extends Worker {
 
     this.transactionsReader.on(
       TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-      this.historicalSyncHandler,
+      this.historicalTransactionsHandler,
+    );
+
+    this.transactionsReader.on(
+      TransactionsReader.EVENTS.MERKLE_BLOCK,
+      this.historicalMerkleBlockHandler,
     );
 
     const historicalSyncPromise = new Promise((resolve, reject) => {
@@ -101,7 +107,12 @@ class TransactionsSyncWorker extends Worker {
       this.transactionsReaderStoppedHandler = () => {
         this.transactionsReader.removeListener(
           TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          this.historicalDataObtainedHandler,
+          this.historicalTransactionsHandler,
+        );
+
+        this.transactionsReader.removeListener(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          this.historicalMerkleBlockHandler,
         );
 
         this.transactionsReader.removeListener(
@@ -122,7 +133,11 @@ class TransactionsSyncWorker extends Worker {
       this.historicalDataObtainedHandler = () => {
         this.transactionsReader.removeListener(
           TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          this.historicalSyncHandler,
+          this.historicalTransactionsHandler,
+        );
+        this.transactionsReader.removeListener(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          this.historicalMerkleBlockHandler,
         );
         this.transactionsReader.removeListener(
           BlockHeadersProvider.EVENTS.ERROR,
@@ -173,11 +188,67 @@ class TransactionsSyncWorker extends Worker {
   }
 
   async execute() {
+    if (this.syncState !== STATES.IDLE) {
+      throw new Error(`Worker is already running: ${this.syncState}. Please call .onStop() first.`);
+    }
 
+    this.transactionsReader.on(
+      TransactionsReader.EVENTS.NEW_TRANSACTIONS,
+      this.newTransactionsHandler,
+    );
+
+    this.transactionsReader.on(
+      TransactionsReader.EVENTS.MERKLE_BLOCK,
+      this.newMerkleBlockHandler,
+    );
+
+    this.transactionsReaderErrorHandler = (e) => {
+      this.emitError(e);
+      logger.debug('[TransactionsSyncWorker] Error handling continuous chain update', e);
+    };
+
+    this.transactionsReader.on(
+      TransactionsReader.EVENTS.ERROR,
+      this.transactionsReaderErrorHandler,
+    );
+
+    this.transactionsReaderStoppedHandler = () => {
+      this.transactionsReader.removeListener(
+        TransactionsReader.EVENTS.NEW_TRANSACTIONS,
+        this.newTransactionsHandler,
+      );
+
+      this.transactionsReader.removeListener(
+        TransactionsReader.EVENTS.MERKLE_BLOCK,
+        this.newMerkleBlockHandler,
+      );
+
+      this.transactionsReader.removeListener(
+        TransactionsReader.EVENTS.ERROR,
+        this.transactionsReaderErrorHandler,
+      );
+
+      this.syncState = STATES.IDLE;
+    };
+
+    this.transactionsReader.once(
+      TransactionsReader.EVENTS.STOPPED,
+      this.transactionsReaderStoppedHandler,
+    );
+
+    const addresses = getAddressesToSync(this.keyChainStore);
+    await this.transactionsReader
+      .startContinuousSync(this.syncCheckpoint, addresses);
+
+    this.syncState = STATES.CONTINUOUS_SYNC;
   }
 
   async onStop() {
-
+    if (this.syncState === STATES.HISTORICAL_SYNC) {
+      await this.transactionsReader.stopHistoricalSync();
+    } else if (this.syncState === STATES.CONTINUOUS_SYNC) {
+      await this.transactionsReader.stopContinuousSync();
+    }
   }
 
   /**
@@ -221,16 +292,30 @@ class TransactionsSyncWorker extends Worker {
   }
 
   /**
-   * Processing new TXs during the historical sync
+   * Processing TXs during the historical sync
    */
-  historicalSyncHandler() {
+  historicalTransactionsHandler() {
+
+  }
+
+  /**
+   * Processing Merkle Blocks during the historical sync
+   */
+  historicalMerkleBlockHandler() {
 
   }
 
   /**
    * Processing new TXs during the continuous sync
    */
-  continuousSyncHandler() {
+  newTransactionsHandler() {
+
+  }
+
+  /**
+   * Processing new Merkle Blocks during the continuous sync
+   */
+  newMerkleBlockHandler() {
 
   }
 
@@ -247,7 +332,8 @@ class TransactionsSyncWorker extends Worker {
     // const transactionsCount = chainStore.state.transactions.size;
     // let progress = syncedBlocksCount / totalBlocksCount;
     // progress = Math.round(progress * 1000) / 10;
-    // logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
+    // logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress:
+    // ${this.lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
     // logger.debug(`[-------------------------->] TXs: ${transactionsCount}`);
     //
     // this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
@@ -256,6 +342,10 @@ class TransactionsSyncWorker extends Worker {
     //   totalBlocksCount,
     //   transactionsCount,
     // });
+  }
+
+  emitError(e) {
+    this.parentEvents.emit('error', e);
   }
 }
 

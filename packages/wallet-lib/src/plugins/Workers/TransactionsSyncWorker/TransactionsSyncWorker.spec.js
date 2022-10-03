@@ -29,9 +29,14 @@ describe('TransactionsSyncWorker', () => {
       })),
     };
 
+    worker.parentEvents = new EventEmitter();
+    sinon.spy(worker.parentEvents, 'emit');
+
     const transactionsReader = new EventEmitter();
     transactionsReader.startHistoricalSync = sinon.spy();
     transactionsReader.startContinuousSync = sinon.spy();
+    transactionsReader.stopHistoricalSync = sinon.spy();
+    transactionsReader.stopContinuousSync = sinon.spy();
     sinon.spy(transactionsReader, 'on');
     sinon.spy(transactionsReader, 'once');
     sinon.spy(transactionsReader, 'removeListener');
@@ -138,9 +143,13 @@ describe('TransactionsSyncWorker', () => {
       expect(transactionsReader.on).to
         .have.been.calledWith(
           TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          transactionsSyncWorker.historicalSyncHandler,
+          transactionsSyncWorker.historicalTransactionsHandler,
         );
-
+      expect(transactionsReader.on).to
+        .have.been.calledWith(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          transactionsSyncWorker.historicalMerkleBlockHandler,
+        );
       expect(transactionsReader.on).to
         .have.been.calledWith(
           TransactionsReader.EVENTS.ERROR,
@@ -192,7 +201,12 @@ describe('TransactionsSyncWorker', () => {
       expect(transactionsReader.removeListener)
         .to.have.been.calledWith(
           TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
-          transactionsSyncWorker.historicalSyncHandler,
+          transactionsSyncWorker.historicalTransactionsHandler,
+        );
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          transactionsSyncWorker.historicalMerkleBlockHandler,
         );
       expect(transactionsReader.removeListener)
         .to.have.been.calledWith(
@@ -224,6 +238,243 @@ describe('TransactionsSyncWorker', () => {
       storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT * 2;
       await expect(transactionsSyncWorker.onStart())
         .to.be.rejectedWith('Start block height 2000 is greater than chain height 1000');
+    });
+
+    it('should handle stopped event from transactionsReader', async () => {
+      const startPromise = transactionsSyncWorker.onStart();
+      await waitOneTick();
+
+      const { transactionsReader } = transactionsSyncWorker;
+      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+
+      const {
+        historicalTransactionsHandler,
+        historicalMerkleBlockHandler,
+        historicalDataObtainedHandler,
+        transactionsReaderErrorHandler,
+      } = transactionsSyncWorker;
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.HISTORICAL_TRANSACTIONS,
+          historicalTransactionsHandler,
+        );
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          historicalMerkleBlockHandler,
+        );
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED,
+          historicalDataObtainedHandler,
+        );
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.ERROR,
+          transactionsReaderErrorHandler,
+        );
+
+      await startPromise;
+    });
+
+    it('should start over from the sync checkpoint if historical sync is interrupted', async () => {
+      const { transactionsReader } = transactionsSyncWorker;
+
+      // Start historical sync
+      let startPromise = transactionsSyncWorker.onStart();
+      await waitOneTick();
+
+      // Put on a pause
+      const syncCheckpoint = CHAIN_HEIGHT - 500;
+      transactionsSyncWorker.syncCheckpoint = syncCheckpoint;
+      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+      await startPromise;
+
+      // Continue historical sync
+      startPromise = transactionsSyncWorker.onStart();
+      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+      await startPromise;
+
+      const { secondCall } = transactionsReader.startHistoricalSync;
+
+      expect(secondCall.args).to.deep.equal([
+        syncCheckpoint,
+        CHAIN_HEIGHT,
+        ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
+      ]);
+    });
+
+    it('should handle error event from transactionsReader', async () => {
+      const { transactionsReader } = transactionsSyncWorker;
+
+      let caughtError = null;
+      // Start historical sync
+      const startPromise = transactionsSyncWorker.onStart()
+        .catch((e) => {
+          caughtError = e;
+        });
+
+      await waitOneTick();
+
+      // Throw an error and interrupt historical sync
+      const syncError = new Error('Error syncing historical data');
+      transactionsReader.emit(TransactionsReader.EVENTS.ERROR, syncError);
+      await startPromise;
+
+      expect(caughtError).to.equal(syncError);
+    });
+  });
+
+  describe('#execute', () => {
+    beforeEach(function beforeEach() {
+      transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+    });
+
+    it('should kickstart continuous sync', async () => {
+      const { transactionsReader } = transactionsSyncWorker;
+
+      transactionsSyncWorker.syncCheckpoint = 1200;
+      await transactionsSyncWorker.execute();
+
+      expect(transactionsSyncWorker.syncState).to
+        .equal(TransactionsSyncWorker.STATES.CONTINUOUS_SYNC);
+      expect(transactionsReader.on).to
+        .have.been.calledWith(
+          TransactionsReader.EVENTS.NEW_TRANSACTIONS,
+          transactionsSyncWorker.newTransactionsHandler,
+        );
+      expect(transactionsReader.on).to
+        .have.been.calledWith(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          transactionsSyncWorker.newMerkleBlockHandler,
+        );
+      expect(transactionsReader.on).to
+        .have.been.calledWith(
+          TransactionsReader.EVENTS.ERROR,
+          transactionsSyncWorker.transactionsReaderErrorHandler,
+        );
+
+      expect(transactionsReader.once).to
+        .have.been.calledWith(
+          TransactionsReader.EVENTS.STOPPED,
+          transactionsSyncWorker.transactionsReaderStoppedHandler,
+        );
+      expect(transactionsReader.startContinuousSync).to
+        .have.been.calledWith(
+          1200,
+          ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
+        );
+      expect(transactionsSyncWorker.syncState)
+        .to.equal(TransactionsSyncWorker.STATES.CONTINUOUS_SYNC);
+    });
+
+    it('should forward an error from blockHeadersProvider', async function () {
+      transactionsSyncWorker.syncCheckpoint = 1200;
+      await transactionsSyncWorker.execute();
+
+      const errorCallback = this.sinon.spy();
+      transactionsSyncWorker.parentEvents.on('error', errorCallback);
+      const { transactionsReader } = transactionsSyncWorker;
+      const error = new Error('Test error');
+      transactionsReader.emit('error', error);
+
+      expect(errorCallback).to.have.been.calledOnceWith(error);
+    });
+
+    it('should not allow multiple executions', async () => {
+      await transactionsSyncWorker.execute();
+      await expect(transactionsSyncWorker.execute()).to.be.rejected();
+    });
+
+    it('should handle stopped event from transactionsReader', async () => {
+      await transactionsSyncWorker.execute();
+
+      const { transactionsReader } = transactionsSyncWorker;
+      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+
+      const {
+        newTransactionsHandler,
+        newMerkleBlockHandler,
+        transactionsReaderErrorHandler,
+      } = transactionsSyncWorker;
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.NEW_TRANSACTIONS,
+          newTransactionsHandler,
+        );
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.MERKLE_BLOCK,
+          newMerkleBlockHandler,
+        );
+      expect(transactionsReader.removeListener)
+        .to.have.been.calledWith(
+          TransactionsReader.EVENTS.ERROR,
+          transactionsReaderErrorHandler,
+        );
+    });
+
+    it('should start over from the sync checkpoint if continuous sync is interrupted', async () => {
+      const { transactionsReader } = transactionsSyncWorker;
+
+      // Start historical sync
+      await transactionsSyncWorker.execute();
+
+      // Put on a pause
+      const syncCheckpoint = CHAIN_HEIGHT + 500;
+      transactionsSyncWorker.syncCheckpoint = syncCheckpoint;
+      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+
+      // Continue historical sync
+      await transactionsSyncWorker.execute();
+      transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
+
+      const { secondCall } = transactionsReader.startContinuousSync;
+
+      expect(secondCall.args).to.deep.equal([
+        syncCheckpoint,
+        ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
+      ]);
+    });
+
+    it('should handle error event from transactionsReader', async () => {
+      const { transactionsReader } = transactionsSyncWorker;
+
+      let emittedError = null;
+      transactionsSyncWorker.parentEvents.on('error', (e) => {
+        emittedError = e;
+      });
+
+      // Start continuous sync
+      await transactionsSyncWorker.execute();
+
+      // Throw an error from reader
+      const syncError = new Error('Error syncing historical data');
+      transactionsReader.emit(TransactionsReader.EVENTS.ERROR, syncError);
+
+      expect(emittedError).to.equal(syncError);
+    });
+  });
+
+  describe('#onStop', () => {
+    beforeEach(function beforeEach() {
+      transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+    });
+
+    it('should stop historical sync', async () => {
+      transactionsSyncWorker.syncState = TransactionsSyncWorker.STATES.HISTORICAL_SYNC;
+      await transactionsSyncWorker.onStop();
+      const { transactionsReader } = transactionsSyncWorker;
+      expect(transactionsReader.stopHistoricalSync).to.have.been.calledOnce();
+      expect(transactionsReader.stopContinuousSync).to.have.not.been.called();
+    });
+
+    it('should stop continuous sync', async () => {
+      transactionsSyncWorker.syncState = TransactionsSyncWorker.STATES.CONTINUOUS_SYNC;
+      await transactionsSyncWorker.onStop();
+      const { transactionsReader } = transactionsSyncWorker;
+      expect(transactionsReader.stopContinuousSync).to.have.been.calledOnce();
+      expect(transactionsReader.stopHistoricalSync).to.have.not.been.called();
     });
   });
 });

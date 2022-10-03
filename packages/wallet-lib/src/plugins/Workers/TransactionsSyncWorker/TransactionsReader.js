@@ -15,10 +15,15 @@ const EVENTS = {
  * @typedef TransactionsReaderOptions
  * @property {Function} [createHistoricalSyncStream]
  * @property {Function} [createContinuousSyncStream]
- * @property {string} network
+ * @property {string} [network]
  * @property {number} maxRetries
  */
 
+/**
+ * @typedef TransactionsReader
+ * @extends {EventEmitter}
+ * @class
+ */
 class TransactionsReader extends EventEmitter {
   /**
    * @param {TransactionsReaderOptions} options
@@ -388,9 +393,17 @@ class TransactionsReader extends EventEmitter {
     return stream;
   }
 
-  async stopReadingHistorical() {
+  async stopHistoricalSync() {
     if (this.historicalSyncStream) {
       await this.historicalSyncStream.cancel();
+      this.emit(EVENTS.STOPPED);
+    }
+  }
+
+  async stopContinuousSync() {
+    if (this.continuousSyncStream) {
+      await this.continuousSyncStream.cancel();
+      this.emit(EVENTS.STOPPED);
     }
   }
 }
