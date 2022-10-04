@@ -12,6 +12,11 @@ on:
         type: boolean
         default: false
         required: false
+      skip-tests:
+        description: Skip running tests
+        type: boolean
+        default: false
+        required: false
 jobs:
   test:
     name: Test package
@@ -48,9 +53,6 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Run ESLinter
-        run: yarn lint --filter "${{ inputs.package }}"
-
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
         if: ${{ !inputs.start-local-network }}
@@ -58,6 +60,9 @@ jobs:
       - name: Build all packages
         run: yarn build
         if: ${{ inputs.start-local-network }}
+
+      - name: Run ESLinter
+        run: yarn workspace "${{ inputs.package }}" lint
 
       - name: Create necessary dotenv files
         run: |
@@ -69,7 +74,7 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v1
         with:
-          version: v0.6.3
+          version: v0.9.1
           install: true
           driver-opts: image=moby/buildkit:buildx-stable-1
         if: ${{ inputs.start-local-network }}
@@ -91,6 +96,9 @@ jobs:
           cache-max-size: 3g
         if: ${{ inputs.start-local-network }}
 
+      - name: Temp fix broken compose version
+        uses: ndeloof/install-compose-action@v0.0.1
+
       - name: Setup local network
         run: yarn configure
         if: ${{ inputs.start-local-network }}
@@ -101,6 +109,7 @@ jobs:
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"
+        if: ${{ !inputs.skip-tests }}
 
       - name: Show Docker logs
         if: ${{ failure() }}

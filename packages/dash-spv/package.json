@@ -1,10 +1,11 @@
 {
   "name": "@dashevo/dash-spv",
-  "version": "0.23.0-dev.10",
+  "version": "0.23.0-alpha.1",
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
     "test": "mocha test/ --no-timeouts --recursive",
+    "build": "",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },

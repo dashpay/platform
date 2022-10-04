@@ -1,3 +1,134 @@
+## [0.23.0-alpha.1](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-alpha.1) (2022-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* Dash Core version lower than 18.1.0-rc.1 is not supported
+* Blockchain data and state structure are changed and incompatible with previous versions
+* `getIdentityIdsByPublicKeyHash` endpoint is removed. `getIdentitiesByPublicKeyHash` now responds with an array of identities, instead of an array of cbored arrays of identities. (#437)
+* Data Contract indices must have 'asc' order (#435)
+* Document query logic can behave differently in some cases (#398)
+* Identity master key can be used only to update identity
+* Use plain proRegTx for masternode identifier
+* Incompatible wallet-lib storage format
+
+
+### Features
+
+* update Core to 18.1.0-rc.1 ([#544](https://github.com/dashevo/platform/issues/544), [#526](https://github.com/dashevo/platform/issues/526), [#511](https://github.com/dashevo/platform/issues/511))
+* **drive:** fees distribution ([#458](https://github.com/dashevo/platform/issues/458), [#474](https://github.com/dashevo/platform/issues/474), [#484](https://github.com/dashevo/platform/issues/484))
+* bench suite ([#335](https://github.com/dashevo/platform/issues/335))
+* **bench-suite:** add fees to documents benchmark ([#379](https://github.com/dashevo/platform/issues/379))
+* **bench-suite:** function benchmark and other improvements ([#344](https://github.com/dashevo/platform/issues/344))
+* **bench:** state transition benchmark ([#418](https://github.com/dashevo/platform/issues/418))
+* **dashmate:** add --force flag to stop command ([#434](https://github.com/dashevo/platform/issues/434))
+* **dashmate:** upgrade docker compose to v2 ([#441](https://github.com/dashevo/platform/issues/441))
+* **dpp:** allow 1 char document type and 1 char property name ([#445](https://github.com/dashevo/platform/issues/445))
+* integrate dash-spv into monorepo
+* limit the number of shares for masternode by 16 ([#432](https://github.com/dashevo/platform/issues/432))
+* re-enable proof responses ([#440](https://github.com/dashevo/platform/issues/440))
+* create withdrawal keys for masternode identities ([#320](https://github.com/dashevo/platform/issues/320))
+* **dpp:** BIP13_SCRIPT_HASH identity public key type ([#353](https://github.com/dashevo/platform/issues/353))
+* Identity master key can be used only to update identity ([#384](https://github.com/dashevo/platform/issues/384))
+* identity public key proofs ([#349](https://github.com/dashevo/platform/issues/349))
+* Integrate with Tenderdash ABCI++ ([#314](https://github.com/dashevo/platform/issues/314))
+* **dpp:** add `withdraw` purpose for `IdentityPublicKey` ([#317](https://github.com/dashevo/platform/issues/317))
+* update identity ([#292](https://github.com/dashevo/platform/issues/292), [#477](https://github.com/dashevo/platform/issues/477), [#421](https://github.com/dashevo/platform/issues/421))
+* **wallet-lib:** rework storage for multiple key-chains ([#231](https://github.com/dashevo/platform/issues/231))
+* **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
+* calculate state transition fees using operations ([#376](https://github.com/dashevo/platform/issues/376), [#387](https://github.com/dashevo/platform/issues/387), [#369](https://github.com/dashevo/platform/issues/369), [#370](https://github.com/dashevo/platform/issues/370), [#392](https://github.com/dashevo/platform/issues/392), [#444](https://github.com/dashevo/platform/issues/444))
+* **dashmate:** add hardcoded stop grace time before killing services ([#536](https://github.com/dashevo/platform/issues/536))
+
+
+### Bug Fixes
+
+* **dapi-client:** metadata.get is not a function ([#492](https://github.com/dashevo/platform/issues/492), [#531](https://github.com/dashevo/platform/issues/531))
+* **dashmate:** homedir fs.exists check ([#537](https://github.com/dashevo/platform/issues/537))
+* **drive:** masternode identities sync from beginning after restart ([#542](https://github.com/dashevo/platform/issues/542))
+* **dashmate:** DockerComposeError undefined ([#480](https://github.com/dashevo/platform/issues/480), [#513](https://github.com/dashevo/platform/issues/513))
+* security vulnerability in elliptic library ([#501](https://github.com/dashevo/platform/issues/501))
+* test suite image and environment problems in ci ([#505](https://github.com/dashevo/platform/issues/505))
+* **test-suite:** failing assertions due to replication lag ([#502](https://github.com/dashevo/platform/issues/502))
+* **dapi:** getStatus errored if masternode is banned ([#496](https://github.com/dashevo/platform/issues/496))
+* Drive and DAPI expect data available on H+1 block ([#497](https://github.com/dashevo/platform/issues/497))
+* **test-suite:** failing tests due to replication latency ([#500](https://github.com/dashevo/platform/issues/500))
+* DAPI client requests one local single node only ([#479](https://github.com/dashevo/platform/issues/479))
+* **dapi-client:** node can be marked as banned on retriable error ([#482](https://github.com/dashevo/platform/issues/482))
+* **dashmate:** gRPC stream timeout ([#481](https://github.com/dashevo/platform/issues/481))
+* **sdk:** cannot read properties of null (reading 'getMetadata') ([#488](https://github.com/dashevo/platform/issues/488))
+* **test-suite:** invalid transaction: Missing inputs ([#494](https://github.com/dashevo/platform/issues/494))
+* **drive:** invalid previous block time ([#475](https://github.com/dashevo/platform/issues/475))
+* **drive:** various fixes in synchronize masternode identities logic and logging ([#461](https://github.com/dashevo/platform/issues/461))
+* **dpp:** data contract index update validation ([#427](https://github.com/dashevo/platform/issues/427))
+* **drive:** change transaction is started check ([#451](https://github.com/dashevo/platform/issues/451))
+* **wallet-lib:** separate persistent storage by walletId ([#407](https://github.com/dashevo/platform/issues/407))
+* change allowed security level for withdrawal purpose to critical ([#352](https://github.com/dashevo/platform/issues/352))
+* **dapi-grpc:** outdated autogenerated code ([#331](https://github.com/dashevo/platform/issues/331))
+* **wallet-lib:** hook tx chain broadcast on mempool response ([#388](https://github.com/dashevo/platform/issues/388))
+* **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
+* do not hash proRegTx for masternode identifier ([#318](https://github.com/dashevo/platform/issues/318))
+* **dpp:** cannot read properties of null (reading 'getBalance') ([#549](https://github.com/dashevo/platform/issues/549))
+* **dashmate**: can't use local seed as a wallet ([#538](https://github.com/dashevo/platform/issues/538))
+
+
+### Performance Improvements
+
+* **dapi:** cache block headers and chainlocks ([#235](https://github.com/dashevo/platform/issues/235), [#296](https://github.com/dashevo/platform/issues/296))
+* **dapi:** remove unnecessary Core RPC calls for core streams ([#194](https://github.com/dashevo/platform/issues/194))
+
+
+### Code Refactoring
+
+* **drive:** use RS Drive query validation logic ([#398](https://github.com/dashevo/platform/issues/398))
+* simplified public key to identity structure ([#437](https://github.com/dashevo/platform/issues/437))
+* **wallet-lib:** storage layer refactoring ([#232](https://github.com/dashevo/platform/issues/232))
+
+
+### Tests
+
+* **dapi:** fix broken subscribeToNewBlockHeaders test ([#508](https://github.com/dashevo/platform/issues/508))
+* **dapi:** rename test files to mach the naming convention ([#509](https://github.com/dashevo/platform/issues/509))
+* **dpp:** fix invalid findIndexDuplicates test in DPP ([#448](https://github.com/dashevo/platform/issues/448))
+* **wallet-lib:** fixes wallet.spec.js
+
+
+### Build System
+
+* `yarn install` fails with Node.JS 16.17.0 ([#507](https://github.com/dashevo/platform/issues/507))
+* new node alpine image breaks package builds ([#493](https://github.com/dashevo/platform/issues/493))
+* **test-suite:** fix docker image build
+
+
+### Documentation
+
+* **dashmate:** add troubleshooting section ([#431](https://github.com/dashevo/platform/issues/431))
+* **dashmate:** update dashmate documentation ([#459](https://github.com/dashevo/platform/issues/459))
+* **sdk:** update outdated documentation ([#463](https://github.com/dashevo/platform/issues/463))
+* update badges in individual package readmes ([#361](https://github.com/dashevo/platform/issues/361))
+
+
+### Continuous Integration
+
+* add `latest-dev` docker tag ([#382](https://github.com/dashevo/platform/issues/382))
+* enable multiarch builds ([#316](https://github.com/dashevo/platform/issues/316))
+* docker images incorrectly tagged with v ([#413](https://github.com/dashevo/platform/issues/413))
+
+
+### Miscellaneous Chores
+
+* **drive:** correct typo in debug message ([#535](https://github.com/dashevo/platform/issues/535))
+* **test-suite:** remove unused merk dependency ([#547](https://github.com/dashevo/platform/issues/547))
+* clean up dependencies ([#534](https://github.com/dashevo/platform/issues/534))
+* **scripts:** remove comment from env key ([#532](https://github.com/dashevo/platform/issues/532))
+* **test-suite:** move wallet storage persistence in the outer folder ([#416](https://github.com/dashevo/platform/issues/416))
+* various linter fixes across packages ([#465](https://github.com/dashevo/platform/issues/465))
+* **dpp:** allow only `asc` order for indices ([#435](https://github.com/dashevo/platform/issues/435))
+* **drive:** log synchronize masternode identities ([#449](https://github.com/dashevo/platform/issues/449))
+* **drive:** add more block execution timers ([#329](https://github.com/dashevo/platform/issues/329))
+* **scripts**: remove dashmate update ([#550](https://github.com/dashevo/platform/issues/550))
+
+
+
 ## [0.23.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-dev.10) (2022-09-27)
 
 
@@ -112,7 +243,7 @@
 
 * DAPI client requests one local single node only ([#479](https://github.com/dashevo/platform/issues/479))
 * **dapi-client:** A.metadata.get is not a function ([#492](https://github.com/dashevo/platform/issues/492))
-* **dapi-clinet:** node can bed marked as banned on retriable error ([#482](https://github.com/dashevo/platform/issues/482))
+* **dapi-client:** node can bed marked as banned on retriable error ([#482](https://github.com/dashevo/platform/issues/482))
 * **dashmate:** docker undefined error ([#480](https://github.com/dashevo/platform/issues/480))
 * **dashmate:** gRPC stream timeout ([#481](https://github.com/dashevo/platform/issues/481))
 * infinite block production due to fees distribution ([#484](https://github.com/dashevo/platform/issues/484))

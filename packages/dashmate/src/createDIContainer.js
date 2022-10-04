@@ -64,6 +64,7 @@ const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForN
 const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
 const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
+const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
@@ -175,6 +176,7 @@ async function createDIContainer() {
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
   });
 
   return container;
