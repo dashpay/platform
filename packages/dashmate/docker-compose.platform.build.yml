@@ -18,3 +18,15 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
+
+  dapi_envoy:
+    build:
+      context: ${PLATFORM_SOURCE_PATH:?err}
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/envoy/Dockerfile
+    image: dapi-envoy:local
+
+  dashamte_helper:
+    build:
+      context: ${PLATFORM_SOURCE_PATH:?err}
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/Dockerfile
+    image: dashamte_helper:local

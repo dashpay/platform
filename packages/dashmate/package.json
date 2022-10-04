@@ -7,7 +7,8 @@
     "postpack": "rm -f oclif.manifest.json",
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
-    "version": "oclif readme && git add README.md"
+    "version": "oclif readme && git add README.md",
+    "helper": "node scripts/helper.js"
   },
   "repository": {
     "type": "git",
@@ -62,6 +63,7 @@
     "axios": "^0.21.1",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
+    "cron": "^2.1.0",
     "dash": "workspace:~",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",

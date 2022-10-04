@@ -69,10 +69,15 @@ module.exports = {
     devnetName: null,
   },
   platform: {
+    dashmateHelper: {
+      docker: {
+        image: 'dashpay/dashamte-helper:0.23-dev',
+      },
+    },
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.22-latest',
+          image: 'dashpay/envoy:0.23-dev',
         },
         http: {
           port: 3000,

@@ -108,6 +108,13 @@ services:
       - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/bundle.crt:/etc/ssl/bundle.crt
       - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key
 
+  dashamte_helper:
+    image: ${PLATFORM_DASHMATE_HELPER_DOCKER_IMAGE:?err}
+    restart: unless-stopped
+    command: yarn workspace dashmate helper
+    volumes:
+      - ${DASHMATE_HOME_DIR:?err}:/root/.dashmate
+
 volumes:
   drive_abci_data:
   drive_tenderdash:

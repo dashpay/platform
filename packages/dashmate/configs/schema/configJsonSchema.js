@@ -233,6 +233,16 @@ module.exports = {
     platform: {
       type: 'object',
       properties: {
+        dashmateHelper: {
+          type: 'object',
+          properties: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+          },
+          required: ['docker'],
+          additionalProperties: false,
+        },
         dapi: {
           type: 'object',
           properties: {
