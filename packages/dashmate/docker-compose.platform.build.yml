@@ -6,27 +6,32 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/js-drive/Dockerfile
     image: drive:local
+    stop_grace_period: 30s
 
   dapi_api:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
+    stop_grace_period: 10s
 
   dapi_tx_filter_stream:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
+    stop_grace_period: 10s
 
   dapi_envoy:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/envoy/Dockerfile
     image: dapi-envoy:local
+    stop_grace_period: 10s
 
   dashamte_helper:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/Dockerfile
     image: dashamte_helper:local
+    stop_grace_period: 10s

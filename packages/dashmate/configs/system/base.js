@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.1.0-alpha.2',
+      image: 'dashpay/dashd:18.1.0-rc.1',
     },
     p2p: {
       port: 20001,
@@ -103,14 +103,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23-dev',
+          image: 'dashpay/dapi:0.23.0-alpha.1',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23-dev',
+          image: 'dashpay/drive:0.23.0-alpha.1',
         },
         log: {
           stdout: {
