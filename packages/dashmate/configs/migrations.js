@@ -350,7 +350,7 @@ module.exports = {
           enable: false,
           containerId: null,
         };
-      
+
         if (config.platform) {
           // Update images
           config.platform.dpns = systemConfigs.base.platform.dpns;
