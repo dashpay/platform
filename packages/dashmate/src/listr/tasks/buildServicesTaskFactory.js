@@ -19,12 +19,12 @@ function buildServicesTaskFactory(
       task: async (ctx, task) => {
         const envs = config.toEnvs();
 
-        const obs = await dockerCompose.build(envs)
+        const obs = await dockerCompose.build(envs);
 
         await new Promise((res, rej) => {
           obs
-            .subscribe(task.stdout().write, rej, res)
-        })
+            .subscribe(task.stdout().write, rej, res);
+        });
       },
     });
   }

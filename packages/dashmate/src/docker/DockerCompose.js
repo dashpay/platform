@@ -128,8 +128,8 @@ class DockerCompose {
         await this.throwErrorIfNotInstalled();
 
         const callback = (e) => {
-          observer.next(e.toString())
-        }
+          observer.next(e.toString());
+        };
 
         if (serviceName) {
           await dockerCompose.buildOne(serviceName, {
@@ -140,11 +140,11 @@ class DockerCompose {
         } else {
           await dockerCompose.buildAll({
             ...this.getOptions(envs),
-            callback
+            callback,
           });
         }
 
-        observer.complete()
+        observer.complete();
       });
     } catch (e) {
       throw new DockerComposeError(e);
