@@ -402,19 +402,19 @@ function createDIContainer(options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-        {
-          level: logStdoutLevel,
-          stream: logStdoutStream,
-        },
-        {
-          level: logPrettyFileLevel,
-          stream: logPrettyFileStream,
-        },
-        {
-          level: logJsonFileLevel,
-          stream: logJsonFileStream,
-        },
-      ]),
+      {
+        level: logStdoutLevel,
+        stream: logStdoutStream,
+      },
+      {
+        level: logPrettyFileLevel,
+        stream: logPrettyFileStream,
+      },
+      {
+        level: logJsonFileLevel,
+        stream: logJsonFileStream,
+      },
+    ]),
 
     logger: asFunction(
       (loggerStreams) => pino({

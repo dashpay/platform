@@ -624,7 +624,7 @@ describe('DriveStateRepository', () => {
       ).to.have.been.calledOnceWithExactly(
         repositoryOptions.useTransaction,
       );
-    })
+    });
   });
 
   describe('#enqueueWithdrawalTransaction', () => {
@@ -643,6 +643,6 @@ describe('DriveStateRepository', () => {
         transactionBytes,
         repositoryOptions.useTransaction,
       );
-    })
+    });
   });
 });

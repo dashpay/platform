@@ -494,7 +494,7 @@ class LoggedStateRepositoryDecorator {
 
   /**
    * Fetch latest withdrawal transaction index
-   * 
+   *
    * @returns {Promise<number>}
    */
   async fetchLatestWithdrawalTransactionIndex() {
@@ -511,10 +511,10 @@ class LoggedStateRepositoryDecorator {
 
   /**
    * Enqueue withdrawal transaction bytes into the queue
-   * 
-   * @param {number} index 
-   * @param {Buffer} transactionBytes 
-   * 
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
    * @returns {Promise<void>}
    */
   async enqueueWithdrawalTransaction(index, transactionBytes) {

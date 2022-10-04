@@ -244,7 +244,7 @@ describe('CachedStateRepositoryDecorator', () => {
       expect(
         stateRepositoryMock.fetchLatestWithdrawalTransactionIndex,
       ).to.have.been.calledOnce();
-    })
+    });
   });
 
   describe('#enqueueWithdrawalTransaction', () => {
@@ -262,6 +262,6 @@ describe('CachedStateRepositoryDecorator', () => {
         index,
         transactionBytes,
       );
-    })
+    });
   });
 });

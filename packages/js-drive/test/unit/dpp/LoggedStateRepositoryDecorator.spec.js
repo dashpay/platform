@@ -741,7 +741,7 @@ describe('LoggedStateRepositoryDecorator', () => {
           response: 42,
         },
       }, 'StateRepository#fetchLatestWithdrawalTransactionIndex');
-    })
+    });
   });
 
   describe('#enqueueWithdrawalTransaction', () => {
@@ -767,6 +767,6 @@ describe('LoggedStateRepositoryDecorator', () => {
           response: undefined,
         },
       }, 'StateRepository#enqueueWithdrawalTransaction');
-    })
+    });
   });
 });
