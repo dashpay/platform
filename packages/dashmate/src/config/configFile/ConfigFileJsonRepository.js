@@ -76,9 +76,9 @@ class ConfigFileJsonRepository {
    * Save configs to file
    *
    * @param {ConfigFile} configFile
-   * @returns {Promise<void>}
+   * @returns {void}
    */
-  async write(configFile) {
+  write(configFile) {
     const configFileJSON = JSON.stringify(configFile.toObject(), undefined, 2);
 
     fs.writeFileSync(CONFIG_FILE_PATH, configFileJSON, 'utf8');
