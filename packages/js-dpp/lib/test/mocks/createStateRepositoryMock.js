@@ -37,5 +37,7 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     verifyChainLockHeight: sinonSandbox.stub(),
     isAssetLockTransactionOutPointAlreadyUsed: sinonSandbox.stub(),
     fetchSMLStore: sinonSandbox.stub(),
+    fetchLatestWithdrawalTransactionIndex: sinonSandbox.stub(),
+    enqueueWithdrawalTransaction: sinonSandbox.stub(),
   };
 };

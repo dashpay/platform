@@ -605,7 +605,7 @@ describe('LoggedStateRepositoryDecorator', () => {
 
   describe('#fetchLatestPlatformBlockHeight', () => {
     it('should call logger with proper params', async () => {
-      const response = { };
+      const response = {};
 
       stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(response);
 
@@ -614,7 +614,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'fetchLatestPlatformBlockHeight',
-          parameters: { },
+          parameters: {},
           response,
         },
       }, 'StateRepository#fetchLatestPlatformBlockHeight');
@@ -636,7 +636,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'fetchLatestPlatformBlockHeight',
-          parameters: { },
+          parameters: {},
           response: undefined,
         },
       }, 'StateRepository#fetchLatestPlatformBlockHeight');
@@ -645,7 +645,7 @@ describe('LoggedStateRepositoryDecorator', () => {
 
   describe('#fetchLatestPlatformBlockTime', () => {
     it('should call logger with proper params', async () => {
-      const response = { };
+      const response = {};
 
       stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(response);
 
@@ -654,7 +654,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'fetchLatestPlatformBlockTime',
-          parameters: { },
+          parameters: {},
           response,
         },
       }, 'StateRepository#fetchLatestPlatformBlockTime');
@@ -676,7 +676,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'fetchLatestPlatformBlockTime',
-          parameters: { },
+          parameters: {},
           response: undefined,
         },
       }, 'StateRepository#fetchLatestPlatformBlockTime');
@@ -685,7 +685,7 @@ describe('LoggedStateRepositoryDecorator', () => {
 
   describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
     it('should call logger with proper params', async () => {
-      const response = { };
+      const response = {};
 
       stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(response);
 
@@ -694,7 +694,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'fetchLatestPlatformCoreChainLockedHeight',
-          parameters: { },
+          parameters: {},
           response,
         },
       }, 'StateRepository#fetchLatestPlatformCoreChainLockedHeight');
@@ -716,10 +716,57 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'fetchLatestPlatformCoreChainLockedHeight',
-          parameters: { },
+          parameters: {},
           response: undefined,
         },
       }, 'StateRepository#fetchLatestPlatformCoreChainLockedHeight');
     });
+  });
+
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    it('should call fetchLatestWithdrawalTransactionIndex', async () => {
+      stateRepositoryMock.fetchLatestWithdrawalTransactionIndex.resolves(42);
+
+      const result = await loggedStateRepositoryDecorator.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(42);
+      expect(
+        stateRepositoryMock.fetchLatestWithdrawalTransactionIndex,
+      ).to.have.been.calledOnce();
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchLatestWithdrawalTransactionIndex',
+          parameters: {},
+          response: 42,
+        },
+      }, 'StateRepository#fetchLatestWithdrawalTransactionIndex');
+    })
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    it('should call enqueueWithdrawalTransaction', async () => {
+      const index = 42;
+      const transactionBytes = Buffer.alloc(32, 1);
+
+      await loggedStateRepositoryDecorator.enqueueWithdrawalTransaction(
+        index, transactionBytes,
+      );
+
+      expect(
+        stateRepositoryMock.enqueueWithdrawalTransaction,
+      ).to.have.been.calledOnceWithExactly(
+        index,
+        transactionBytes,
+      );
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'enqueueWithdrawalTransaction',
+          parameters: { index, transactionBytes },
+          response: undefined,
+        },
+      }, 'StateRepository#enqueueWithdrawalTransaction');
+    })
   });
 });
