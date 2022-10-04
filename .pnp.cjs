@@ -7589,7 +7589,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
-            ["axios", "npm:0.21.4"],\
+            ["axios", "npm:0.27.2"],\
             ["bls-signatures", "npm:0.2.5"],\
             ["chalk", "npm:4.1.2"],\
             ["cron", "npm:2.1.0"],\
