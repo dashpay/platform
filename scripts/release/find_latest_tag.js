@@ -4,7 +4,7 @@ const execute = require('../utils/execute');
 const [ version ] = process.argv.slice(2);
 
 if (!version) {
-  console.log('usage example: yarn node find_latest_tag.js v0.21.0');
+  console.error('usage example: yarn node find_latest_tag.js v0.21.0');
   process.exit(1);
 }
 
@@ -38,14 +38,8 @@ if (!version) {
     }
   }
 
-
   if (!result) {
-    // try to find any previous versions
-    result = tags.match(new RegExp(`^v${parsedVersion.major}\.${parsedVersion.minor - 1}\.*$`, 'mgi'));
-  }
-
-  if (!result) {
-    console.log(`Can't find latest tag for the version ${version}`);
+    console.error(`Can't find latest tag for the version ${version}`);
     process.exit(1);
   }
 
