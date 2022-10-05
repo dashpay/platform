@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.23.0-alpha.1",
+  "version": "0.24.0-dev.0",
   "description": "Distribution package for Dash Masternode installation",
   "scripts": {
     "lint": "eslint .",
@@ -60,7 +60,7 @@
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
-    "axios": "^0.21.1",
+    "axios": "^0.27.2",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
     "dash": "workspace:~",
