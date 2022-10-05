@@ -8,7 +8,29 @@ DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # get current version
 PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
-RELEASE_TYPE="$1"
+cmd_usage="Usage: yarn release [options]
+
+  Options:
+  -t          --type                                        - release or prerelease
+  -f          --from                                        - tag to build changelog from
+  -h          --help                                        - show help
+"
+
+for i in "$@"
+do
+case ${i} in
+    -h|--help)
+        echo "$cmd_usage"
+        exit 0
+    ;;
+    -t=*|--type=*)
+      RELEASE_TYPE="${i#*=}"
+    ;;
+    -f=*|--from=*)
+      LATEST_TAG="${i#*=}"
+    ;;
+esac
+done
 
 # if parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
@@ -23,7 +45,7 @@ fi
 
 if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "prerelease" ]]
 then
-  echo "release or prerelease are the only acceptable options"
+  echo cmd_usage
   exit 1
 fi
 
@@ -44,8 +66,11 @@ yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
-# get last tag for changelog
-LATEST_TAG=$(yarn node $DIR/find_latest_tag.js $NEW_PACKAGE_VERSION)
+if [ -z "$LATEST_TAG" ]
+then
+  # get last tag for changelog
+  LATEST_TAG=$(yarn node $DIR/find_latest_tag.js $NEW_PACKAGE_VERSION)
+fi
 
 # generate changelog
 yarn node $DIR/generate_changelog.js $LATEST_TAG
