@@ -172,10 +172,10 @@ jobs:
         with:
           images: dashpay/drive
           tags: |
-            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
             type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
             type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
             type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
