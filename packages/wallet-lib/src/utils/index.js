@@ -1,4 +1,5 @@
 const extendTransactionsWithMetadata = require('./extendTransactionsWithMetadata');
+const formatTransactionsForHistory = require('./formatTransactionsForHistory');
 const calculateTransactionFees = require('./calculateTransactionFees');
 const categorizeTransactions = require('./categorizeTransactions');
 const calculateDuffBalance = require('./calculateDuffBalance');
@@ -26,6 +27,7 @@ const {
 
 module.exports = {
   extendTransactionsWithMetadata,
+  formatTransactionsForHistory,
   varIntSizeBytesFromLength,
   calculateTransactionFees,
   categorizeTransactions,
