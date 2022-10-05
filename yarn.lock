@@ -1843,6 +1843,8 @@ __metadata:
     util: ^0.12.4
     webpack: ^5.59.1
     ws: ^7.5.3
+  bin:
+    test: bin/test.sh
   languageName: unknown
   linkType: soft
 
