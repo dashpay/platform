@@ -9,7 +9,7 @@ if (!version) {
 }
 
 (async () => {
-  const tags = (await execute('git tag -l --sort=-v:refname'));
+  const tags = await execute('git tag -l --sort=-v:refname');
 
   const isPrerelease = semver.prerelease(version) !== null;
   const parsedVersion = semver.parse(version);
@@ -36,6 +36,12 @@ if (!version) {
       // try to find the latest stable version with previous minor part
       result = tags.match(new RegExp(`^v${parsedVersion.major}\.${parsedVersion.minor - 1}\.([0-9]+)$`, 'mgi'));
     }
+  }
+
+
+  if (!result) {
+    // try to find any previous versions
+    result = tags.match(new RegExp(`^v${parsedVersion.major}\.${parsedVersion.minor - 1}\.*$`, 'mgi'));
   }
 
   if (!result) {
