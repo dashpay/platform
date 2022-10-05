@@ -1462,7 +1462,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.43, @dashevo/dashcore-lib@npm:~0.19.44":
+"@dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.44":
   version: 0.19.44
   resolution: "@dashevo/dashcore-lib@npm:0.19.44"
   dependencies:
@@ -1956,7 +1956,7 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.43
+    "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -1987,7 +1987,7 @@ __metadata:
     https-browserify: ^1.0.0
     json-schema-diff-validator: ^0.4.1
     json-schema-traverse: ^1.0.0
-    karma: ^6.3.4
+    karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
     karma-firefox-launcher: ^2.1.1
@@ -5645,7 +5645,7 @@ __metadata:
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
     awilix: ^4.2.6
-    axios: ^0.21.1
+    axios: ^0.27.2
     bls-signatures: ^0.2.5
     chalk: ^4.1.0
     dash: "workspace:~"
@@ -9088,7 +9088,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"karma@npm:^6.3.4, karma@npm:^6.4.1":
+"karma@npm:^6.4.1":
   version: 6.4.1
   resolution: "karma@npm:6.4.1"
   dependencies:
