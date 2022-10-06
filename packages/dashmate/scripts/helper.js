@@ -6,6 +6,14 @@ const createDIContainer = require('../src/createDIContainer');
   // Read environment variables from .env file
   dotenv.config();
 
+  const args = process.argv.slice(2);
+
+  if (args.length !== 1) {
+    throw new Error('please specify config name: "yarn workspace dashmate helper testnet"');
+  }
+
+  const [configName] = args;
+
   console.info('Starting Dashmate helper');
 
   const container = await createDIContainer();
@@ -23,21 +31,12 @@ const createDIContainer = require('../src/createDIContainer');
     configFile: asValue(configFile),
   });
 
-  const defaultConfigName = configFile.getDefaultConfigName();
-
-  if (defaultConfigName !== 'testnet') {
-    return;
-  }
-
-  const config = configFile.getConfig(defaultConfigName);
+  const config = configFile.getConfig(configName);
 
   const provider = config.get('platform.dapi.envoy.ssl.provider');
 
-  if (provider !== 'zerossl') {
-    return;
+  if (provider === 'zerossl') {
+    const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
+    await scheduleRenewZeroSslCertificate(config);
   }
-
-  const renewZeroSslCertificateHelper = container.resolve('renewZeroSslCertificateHelper');
-
-  await renewZeroSslCertificateHelper(config);
 }());

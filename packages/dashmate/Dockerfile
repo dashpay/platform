@@ -48,6 +48,10 @@ FROM node:16-alpine
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
+RUN apk update && \
+    apk --no-cache upgrade && \
+    apk add --no-cache docker-cli
+
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Helper Node.JS"
 

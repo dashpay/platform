@@ -2,32 +2,30 @@ const { CronJob } = require('cron');
 
 /**
  *
- * @param {listCertificates} listCertificates
+ * @param {getCertificate} getCertificate
  * @param {renewZeroSSLCertificateTask} renewZeroSSLCertificateTask
  * @param {DockerCompose} dockerCompose
- * @return {renewZeroSslCertificateHelper}
+ * @return {scheduleRenewZeroSslCertificate}
  */
-function renewZeroSslCertificateHelperFactory(
-  listCertificates,
+function scheduleRenewZeroSslCertificateFactory(
+  getCertificate,
   renewZeroSSLCertificateTask,
   dockerCompose,
 ) {
   /**
-   * @typedef renewZeroSslCertificateHelper
+   * @typedef scheduleRenewZeroSslCertificate
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async function renewZeroSslCertificateHelper(config) {
-    const provider = config.get('platform.dapi.envoy.ssl.provider');
-    if (provider !== 'zerossl') {
-      return;
-    }
-
-    const certificatesResponse = await listCertificates(config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'));
-
-    const certificate = certificatesResponse.results.find((result) => result.common_name === config.get('externalIp'));
+  async function scheduleRenewZeroSslCertificate(config) {
+    const certificate = await getCertificate(
+      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'),
+      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id'),
+    );
 
     if (!certificate) {
+      console.info('No ZeroSSL certificate found.');
+
       return;
     }
 
@@ -49,14 +47,14 @@ function renewZeroSslCertificateHelperFactory(
         return job.stop();
       }, async () => {
         // set up new cron
-        process.nextTick(() => renewZeroSslCertificateHelper(config));
+        process.nextTick(() => scheduleRenewZeroSslCertificate(config));
       },
     );
 
     job.start();
   }
 
-  return renewZeroSslCertificateHelper;
+  return scheduleRenewZeroSslCertificate;
 }
 
-module.exports = renewZeroSslCertificateHelperFactory;
+module.exports = scheduleRenewZeroSslCertificateFactory;

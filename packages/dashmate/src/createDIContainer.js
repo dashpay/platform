@@ -77,12 +77,13 @@ const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
 const createZeroSSLCertificate = require('./ssl/zerossl/createCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
 const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
+const getCertificate = require('./ssl/zerossl/getCertificate');
 const listCertificates = require('./ssl/zerossl/listCertificates');
 const generateCsr = require('./ssl/zerossl/generateCsr');
 const generateKeyPair = require('./ssl/generateKeyPair');
 const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
 
-const renewZeroSslCertificateHelperFactory = require('./helper/renewZeroSslCertificateHelperFactory');
+const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -126,6 +127,7 @@ async function createDIContainer() {
     generateKeyPair: asValue(generateKeyPair),
     verifyDomain: asValue(verifyDomain),
     downloadCertificate: asValue(downloadCertificate),
+    getCertificate: asValue(getCertificate),
     listCertificates: asValue(listCertificates),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
     verificationServer: asClass(VerificationServer).singleton(),
@@ -217,7 +219,7 @@ async function createDIContainer() {
    * Helper
    */
   container.register({
-    renewZeroSslCertificateHelper: asFunction(renewZeroSslCertificateHelperFactory).singleton(),
+    scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
   });
 
   return container;

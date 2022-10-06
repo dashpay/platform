@@ -248,16 +248,6 @@ module.exports = {
     platform: {
       type: 'object',
       properties: {
-        dashmateHelper: {
-          type: 'object',
-          properties: {
-            docker: {
-              $ref: '#/definitions/docker',
-            },
-          },
-          required: ['docker'],
-          additionalProperties: false,
-        },
         dapi: {
           type: 'object',
           properties: {
@@ -326,6 +316,10 @@ module.exports = {
                           type: ['object'],
                           properties: {
                             apiKey: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
+                            id: {
                               type: ['string', 'null'],
                               minLength: 32,
                             },
@@ -641,6 +635,21 @@ module.exports = {
       },
       required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
       additionalProperties: false,
+    },
+    dashmate: {
+      type: 'object',
+      properties: {
+        helper: {
+          type: 'object',
+          properties: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+          },
+          required: ['docker'],
+          additionalProperties: false,
+        },
+      },
     },
     externalIp: {
       type: ['string', 'null'],

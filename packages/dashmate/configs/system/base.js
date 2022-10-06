@@ -73,15 +73,10 @@ module.exports = {
     devnetName: null,
   },
   platform: {
-    dashmateHelper: {
-      docker: {
-        image: 'dashpay/dashamte-helper:0.23-dev',
-      },
-    },
     dapi: {
       envoy: {
         docker: {
-          image: 'dashpay/envoy:0.23-dev',
+          image: 'dashpay/envoy:0.24-dev',
         },
         http: {
           port: 3000,
@@ -101,6 +96,7 @@ module.exports = {
           providerConfigs: {
             zerossl: {
               apiKey: null,
+              id: null,
             },
           },
         },
@@ -197,6 +193,13 @@ module.exports = {
       },
       masterPublicKey: null,
       secondPublicKey: null,
+    },
+  },
+  dashmate: {
+    helper: {
+      docker: {
+        image: 'dashpay/dashamte-helper:0.24-dev',
+      },
     },
   },
   externalIp: null,

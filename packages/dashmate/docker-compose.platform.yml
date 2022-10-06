@@ -114,11 +114,12 @@ services:
     stop_grace_period: 10s
 
   dashamte_helper:
-    image: ${PLATFORM_DASHMATE_HELPER_DOCKER_IMAGE:?err}
+    image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    command: yarn workspace dashmate helper
+    command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/root/.dashmate
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   drive_abci_data:
