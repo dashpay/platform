@@ -365,10 +365,13 @@ class TransactionsSyncWorker extends Worker {
     const headerHeight = headerMetadata.height;
     const headerTime = headerMetadata.time;
 
-    if (!headerTime || !headerHeight) {
-      rejectMerkleBlock(
-        Error(`Invalid header metadata: Time: ${headerTime}, Height: ${headerHeight}`),
-      );
+    if (headerHeight < 0 || Number.isNaN(headerHeight)) {
+      rejectMerkleBlock(Error(`Invalid header height: ${headerHeight}`));
+      return;
+    }
+
+    if (headerTime <= 0 || Number.isNaN(headerTime)) {
+      rejectMerkleBlock(rejectMerkleBlock(Error(`Invalid header time: ${headerTime}`)));
       return;
     }
 
@@ -391,7 +394,6 @@ class TransactionsSyncWorker extends Worker {
         delete this.historicalTransactionsToVerify[tx.hash];
       });
     } catch (e) {
-      logger.error(`Error processing merkle block ${headerHash}`, e);
       rejectMerkleBlock(e);
       return;
     }

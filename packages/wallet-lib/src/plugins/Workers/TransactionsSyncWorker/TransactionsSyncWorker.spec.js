@@ -525,16 +525,16 @@ describe('TransactionsSyncWorker', () => {
   });
 
   describe('#historicalMerkleBlockHandler', () => {
+    let storage;
+    let chainStore;
     beforeEach(function beforeEach() {
       transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+      ({ storage } = transactionsSyncWorker);
+      chainStore = storage.getDefaultChainStore();
     });
 
     context('Accept merkle block', () => {
       it('should verify transactions in the pool and accept merkle block', function () {
-        // Preconditions
-        const { storage } = transactionsSyncWorker;
-        const chainStore = storage.getDefaultChainStore();
-
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -581,13 +581,176 @@ describe('TransactionsSyncWorker', () => {
     });
 
     context('Reject merkle block', () => {
-      it('should reject in case tx verification pool is empty');
-      it('should reject in case header metadata is missing', () => {
+      it('should reject in case tx verification pool is empty', function () {
+        const merkleBlock = mockMerkleBlock([]);
 
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal(`No transactions to verify for merkle block ${merkleBlock.header.hash}`);
+
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+        expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
-      it('should reject in case of invalid header time');
-      it('should reject in case of invalid header height');
-      it('should reject if tx hash from verification pool not present in the merkle block');
+
+      it('should reject in case header metadata is missing', function () {
+        // Create transactions
+        const transactions = [
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[1], 2000),
+        ];
+
+        // Add transactions to the verification pool
+        transactions.forEach((tx) => {
+          transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+        });
+
+        const merkleBlock = mockMerkleBlock(transactions.map((tx) => tx.hash));
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal('Header metadata was not found during the merkle block processing');
+
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+        expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
+      });
+
+      it('should reject in case of invalid header time', function () {
+        // Create transactions
+        const transactions = [
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
+        ];
+
+        // Add transactions to the verification pool
+        transactions.forEach((tx) => {
+          transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+        });
+
+        const merkleBlock = mockMerkleBlock(transactions.map((tx) => tx.hash));
+        const merkleBlockHeight = 500;
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: 0,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal('Invalid header time: 0');
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+        expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
+      });
+
+      it('should reject in case of invalid header height', function () {
+        // Create transactions
+        const transactions = [
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
+        ];
+
+        // Add transactions to the verification pool
+        transactions.forEach((tx) => {
+          transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+        });
+
+        const merkleBlock = mockMerkleBlock(transactions.map((tx) => tx.hash));
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: -1,
+          time: merkleBlock.header.time,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal('Invalid header height: -1');
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+        expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
+      });
+
+      it('should reject if tx hash from verification pool not present in the merkle block', function () {
+        // Create transactions
+        const transactions = [
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[1], 2000),
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[2], 3000),
+        ];
+
+        // Add transactions to the verification pool
+        transactions.forEach((tx) => {
+          transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+        });
+
+        // Create merkle block
+        const merkleBlock = mockMerkleBlock(transactions.slice(1).map((tx) => tx.hash));
+        const merkleBlockHeight = 500;
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: merkleBlock.header.time,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal(`Transaction ${transactions[0].hash} was not found in merkle block ${merkleBlock.header.hash}`);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+        expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
+      });
     });
   });
 });
