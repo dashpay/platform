@@ -87,9 +87,6 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
-      - name: Temp fix broken compose version
-        uses: ndeloof/install-compose-action@v0.0.1
-
       - name: Setup local network
         run: yarn configure
 
@@ -163,9 +160,6 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Temp fix broken compose version
-        uses: ndeloof/install-compose-action@v0.0.1
 
       - name: Setup local network
         run: yarn configure

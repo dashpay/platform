@@ -23,7 +23,7 @@ function buildServicesTaskFactory(
 
         await new Promise((res, rej) => {
           obs
-            .subscribe(task.stdout().write, rej, res);
+            .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
         });
       },
     });

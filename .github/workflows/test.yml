@@ -96,9 +96,6 @@ jobs:
           cache-max-size: 3g
         if: ${{ inputs.start-local-network }}
 
-      - name: Temp fix broken compose version
-        uses: ndeloof/install-compose-action@v0.0.1
-
       - name: Setup local network
         run: yarn configure
         if: ${{ inputs.start-local-network }}
