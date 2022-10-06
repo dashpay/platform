@@ -1843,6 +1843,8 @@ __metadata:
     util: ^0.12.4
     webpack: ^5.59.1
     ws: ^7.5.3
+  bin:
+    test: bin/test.sh
   languageName: unknown
   linkType: soft
 
@@ -1985,7 +1987,7 @@ __metadata:
     https-browserify: ^1.0.0
     json-schema-diff-validator: ^0.4.1
     json-schema-traverse: ^1.0.0
-    karma: ^6.3.4
+    karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
     karma-firefox-launcher: ^2.1.1
@@ -9096,7 +9098,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"karma@npm:^6.3.4, karma@npm:^6.4.1":
+"karma@npm:^6.4.1":
   version: 6.4.1
   resolution: "karma@npm:6.4.1"
   dependencies:

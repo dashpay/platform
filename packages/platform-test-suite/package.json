@@ -1,14 +1,17 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "0.23.0-alpha.1",
+  "version": "0.24.0-dev.0",
   "description": "Dash Network end-to-end tests",
   "scripts": {
-    "test": "mocha -b './test/**/*.spec.js'",
+    "test": "yarn exec bin/test.sh",
     "lint": "eslint .",
     "test:e2e": "NODE_ENV=test mocha 'test/e2e/**/*.spec.js'",
     "test:functional": "NODE_ENV=test mocha 'test/functional/**/*.spec.js'",
     "test:browsers": "karma start ./karma.conf.js"
+  },
+  "bin": {
+    "test": "bin/test.sh"
   },
   "repository": {
     "type": "git",

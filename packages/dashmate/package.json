@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.23.0-alpha.1",
+  "version": "0.24.0-dev.0",
   "description": "Distribution package for Dash Masternode installation",
   "scripts": {
     "lint": "eslint .",
@@ -8,6 +8,7 @@
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
+    "test": "",
     "helper": "node scripts/helper.js"
   },
   "repository": {

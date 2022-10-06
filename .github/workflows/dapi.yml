@@ -23,6 +23,6 @@ on:
 jobs:
   dapi-tests:
     name: Run DAPI tests
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/dapi'

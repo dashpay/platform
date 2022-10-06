@@ -104,7 +104,7 @@ class BaseCommand extends Command {
       if (this.container.has('configFile')) {
         const configFile = this.container.resolve('configFile');
 
-        await configFileRepository.write(configFile);
+        configFileRepository.write(configFile);
       }
 
       // Stop all running containers

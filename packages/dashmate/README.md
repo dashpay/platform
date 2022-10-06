@@ -243,6 +243,38 @@ To reset a node:
 $ dashmate reset
 ```
 
+### Reindex dashcore chain data
+
+The `reindex` command rebuilds the block chain index using the downloaded block data.
+
+It modifies the configuration, runs the core container in `reindex=1` mode, waits until it fully resynces, and returns it to the normal mode.
+
+The process is interactive (shows progress) and can be interrupted any time, but you cannot start your configuration until the resync is fully complete.
+
+The `reindex` command works for regular and local configurations.
+
+```
+Reindex Core
+
+USAGE
+  $ dashmate core reindex [-v] [--config <value>]
+
+FLAGS
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
+
+DESCRIPTION
+  Reindex Core
+
+  Reindex Core data
+```
+
+With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
+
+To reset a node:
+```bash
+$ dashmate reset
+=======
 #### Hard reset
 
 ``dashmate reset --hard``

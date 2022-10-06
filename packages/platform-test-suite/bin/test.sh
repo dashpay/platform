@@ -33,9 +33,6 @@ Usage: test <seed> [options]
   functional:core
   functional:platform"
 
-FIRST_ARG="$1"
-DAPI_SEED="${DAPI_SEED:=$FIRST_ARG}"
-
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 cd "${DIR}/.."
@@ -47,7 +44,10 @@ case ${i} in
         echo "$cmd_usage"
         exit 0
     ;;
-    -s=*|--scope=*)
+    -s=*|--seed=*)
+      seed="${i#*=}"
+    ;;
+    --scope=*)
     scope="${i#*=}"
     ;;
     -k=*|--faucet-key=*)
@@ -86,12 +86,9 @@ case ${i} in
 esac
 done
 
-if [ -z "$DAPI_SEED" ] || [[ $DAPI_SEED == -* ]]
+if [[ -n "$seed" ]]
 then
-  echo "Seed is not specified"
-  echo ""
-  echo "$cmd_usage"
-  exit 1
+  cmd="DAPI_SEED=${DAPI_SEED}"
 fi
 
 if [ -n "$timeout" ] && ! [[ $timeout =~ ^[0-9]+$ ]]
@@ -143,8 +140,6 @@ else
   scope_dirs="test/functional/**/*.spec.js test/e2e/**/*.spec.js"
 fi
 
-cmd="DAPI_SEED=${DAPI_SEED}"
-
 if [ -n "$faucet_key" ]
 then
   cmd="${cmd} FAUCET_PRIVATE_KEY=${faucet_key}"
@@ -195,13 +190,7 @@ then
   cmd="${cmd} FAUCET_WALLET_STORAGE_DIR=${faucet_wallet_storage_dir}"
 fi
 
-if [ -n "$GITHUB_ACTIONS" ]
-then
-  cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
-else
-  echo $cmd
-  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
-fi
+cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
 
 if [ -n "$timeout" ]
 then
