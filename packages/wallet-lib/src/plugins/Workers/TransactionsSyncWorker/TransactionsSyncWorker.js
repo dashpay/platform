@@ -2,7 +2,8 @@ const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvi
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const TransactionsReader = require('./TransactionsReader');
-const { getAddressesToSync } = require('./utils');
+const { getAddressesToSync, getTxHashesFromMerkleBlock } = require('./utils');
+const EVENTS = require('../../../EVENTS');
 
 const STATES = {
   IDLE: 'STATE_IDLE',
@@ -18,6 +19,12 @@ const PROGRESS_UPDATE_INTERVAL = 1000;
  * @property {MerkleBlock} merkleBlock
  * @property {Function} acceptMerkleBlock
  * @property {Function} rejectMerkleBlock
+ */
+
+/**
+ * @typedef NewTransactionsDataEventPayload
+ * @property {Transaction[]} transactions
+ * @property {Function} appendAddresses
  */
 
 class TransactionsSyncWorker extends Worker {
@@ -63,10 +70,12 @@ class TransactionsSyncWorker extends Worker {
     this.transactionsReaderStoppedHandler = null;
     this.historicalDataObtainedHandler = null;
 
+    this.blockHeightChangedHandler = null;
+
     this.historicalTransactionsHandler = this.historicalTransactionsHandler.bind(this);
     this.historicalMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
-    this.newTransactionsHandler = this.historicalTransactionsHandler.bind(this);
-    this.newMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
+    this.newTransactionsHandler = this.newTransactionsHandler.bind(this);
+    this.newMerkleBlockHandler = this.newMerkleBlockHandler.bind(this);
 
     this.syncState = STATES.IDLE;
   }
@@ -91,7 +100,7 @@ class TransactionsSyncWorker extends Worker {
       throw new Error(`Start block height ${startFrom} is greater than chain height ${chainHeight}`);
     } else if (startFrom === chainHeight) {
       logger.debug(`Start block height is equal to chain height ${chainHeight}, no need to sync`);
-      chainStore.clearHeadersMetadata();
+      // chainStore.clearHeadersMetadata();
       return;
     }
 
@@ -103,7 +112,7 @@ class TransactionsSyncWorker extends Worker {
       logger.debug(`[TransactionSyncStreamWorker] Wallet created from a new mnemonic. Sync from the current chain height ${chainHeight}`);
       chainStore.updateLastSyncedBlockHeight(chainHeight);
       this.syncCheckpoint = chainHeight;
-      chainStore.clearHeadersMetadata();
+      // chainStore.clearHeadersMetadata();
     }
 
     this.transactionsReader.on(
@@ -190,8 +199,9 @@ class TransactionsSyncWorker extends Worker {
 
     const addresses = getAddressesToSync(this.keyChainStore);
 
+    // Sync up to chainHeight -1 to avoid overlapping with continuous sync starting point
     await this.transactionsReader
-      .startHistoricalSync(startFrom, chainHeight, addresses);
+      .startHistoricalSync(startFrom, chainHeight - 1, addresses);
 
     this.syncState = STATES.HISTORICAL_SYNC;
 
@@ -207,7 +217,8 @@ class TransactionsSyncWorker extends Worker {
     this.storage.saveState();
 
     if (!syncResult.stopped) {
-      chainStore.clearHeadersMetadata();
+      // TODO(spv): rework to clear only metadata that was actually used
+      // chainStore.clearHeadersMetadata();
       this.syncCheckpoint = chainHeight;
     }
 
@@ -278,6 +289,12 @@ class TransactionsSyncWorker extends Worker {
     } else if (this.syncState === STATES.CONTINUOUS_SYNC) {
       await this.transactionsReader.stopContinuousSync();
     }
+
+    if (this.blockHeightChangedHandler) {
+      this.parentEvents
+        .removeListener(EVENTS.BLOCKHEIGHT_CHANGED, this.blockHeightChangedHandler);
+      this.blockHeightChangedHandler = null;
+    }
   }
 
   /**
@@ -327,6 +344,10 @@ class TransactionsSyncWorker extends Worker {
    * @param {Transaction[]} transactions
    */
   historicalTransactionsHandler(transactions) {
+    if (!transactions.length) {
+      throw new Error('No transactions to process');
+    }
+
     transactions.forEach((tx) => {
       this.historicalTransactionsToVerify.set(tx.hash, tx);
     });
@@ -415,18 +436,109 @@ class TransactionsSyncWorker extends Worker {
 
   /**
    * @private
+   * @param {NewTransactionsDataEventPayload} payload
    * Processing new TXs during the continuous sync
    */
-  newTransactionsHandler() {
+  newTransactionsHandler(payload) {
+    const { transactions, appendAddresses } = payload;
 
+    if (!transactions.length) {
+      throw new Error('No new transactions to process');
+    }
+
+    transactions.forEach((tx) => {
+      this.historicalTransactionsToVerify.set(tx.hash, tx);
+    });
+
+    const { addressesGenerated } = this.importTransactions(transactions);
+
+    appendAddresses(addressesGenerated);
   }
 
   /**
    * @private
-   * Processing new Merkle Blocks during the continuous sync
+   * Processing Merkle Blocks during the historical sync
+   * @param {MerkleBlockDataEventPayload} payload
    */
-  newMerkleBlockHandler() {
+  newMerkleBlockHandler(payload) {
+    const { merkleBlock, acceptMerkleBlock, rejectMerkleBlock } = payload;
 
+    const chainStore = this.storage.getDefaultChainStore();
+
+    const headerHash = merkleBlock.header.hash;
+    const headerMetadata = chainStore.state.headersMetadata.get(headerHash);
+
+    // Header metadata was not found, subscribe to BLOCKHEIGHT_CHANGED event
+    // in order to check one more time
+    if (!headerMetadata) {
+      if (this.blockHeightChangedHandler) {
+        // This situation should not normally happen
+        // because BlockHeadersSyncWorker should fire BLOCKHEIGHT_CHANGED either
+        // before new MerkleBlock or immediately after, but set an error log just in case
+        // TODO: probably remove after the debugging?
+        logger.error('[TransactionsSyncWorker] Block height changed handler is already set.');
+        return;
+      }
+
+      this.blockHeightChangedHandler = () => {
+        this.newMerkleBlockHandler(payload);
+      };
+
+      this.parentEvents.once(
+        EVENTS.BLOCKHEIGHT_CHANGED,
+        this.blockHeightChangedHandler,
+      );
+
+      return;
+    }
+
+    const headerHeight = headerMetadata.height;
+    if (headerHeight < 0 || Number.isNaN(headerHeight)) {
+      rejectMerkleBlock(Error(`Invalid header height: ${headerHeight}`));
+      return;
+    }
+
+    const headerTime = headerMetadata.time;
+    if (headerTime <= 0 || Number.isNaN(headerTime)) {
+      rejectMerkleBlock(rejectMerkleBlock(Error(`Invalid header time: ${headerTime}`)));
+      return;
+    }
+
+    if (this.historicalTransactionsToVerify.size) {
+      const txHashesInTheBlock = getTxHashesFromMerkleBlock(merkleBlock);
+
+      // TODO: verify merkle block in SPV
+
+      const metadata = {
+        blockHash: headerHash,
+        height: headerHeight,
+        time: new Date(headerTime * 1e3),
+        instantLocked: false, // TBD
+        chainLocked: false, // TBD
+      };
+
+      const transactionsWithMetadata = [];
+
+      // Traverse through all transactions to verify and re-import ones having metadata
+      this.historicalTransactionsToVerify.forEach((tx) => {
+        if (txHashesInTheBlock.has(tx.hash)) {
+          transactionsWithMetadata.push([tx, metadata]);
+          delete this.historicalTransactionsToVerify[tx.hash];
+        }
+      });
+
+      if (transactionsWithMetadata.length) {
+        this.importTransactions(transactionsWithMetadata);
+        transactionsWithMetadata.forEach(([tx]) => {
+          this.parentEvents.emit(EVENTS.CONFIRMED_TRANSACTION, tx);
+        });
+      }
+    }
+
+    acceptMerkleBlock(headerHeight);
+    this.syncCheckpoint = headerHeight;
+    chainStore.updateLastSyncedBlockHeight(headerHeight);
+    this.storage.scheduleStateSave();
   }
 
   /**

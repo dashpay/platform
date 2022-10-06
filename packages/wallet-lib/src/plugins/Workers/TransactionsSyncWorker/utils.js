@@ -78,10 +78,22 @@ const getAddressesToSync = (keyChainStore) => keyChainStore.getKeyChains()
   .map((keychain) => keychain.getWatchedAddresses())
   .reduce((pre, cur) => pre.concat(cur));
 
+/**
+ * @param merkleBlock
+ * @returns {Set<string>}
+ */
+const getTxHashesFromMerkleBlock = (merkleBlock) => merkleBlock
+  .hashes.reduce((set, hashHex) => {
+    const hash = Buffer.from(hashHex, 'hex').reverse();
+    set.add(hash.toString('hex'));
+    return set;
+  }, new Set());
+
 module.exports = {
   createBloomFilter,
   filterTransactionsForAddresses,
   parseRawTransactions,
   parseRawMerkleBlock,
   getAddressesToSync,
+  getTxHashesFromMerkleBlock,
 };

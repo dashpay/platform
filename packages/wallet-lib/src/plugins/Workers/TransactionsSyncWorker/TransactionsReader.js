@@ -310,7 +310,6 @@ class TransactionsReader extends EventEmitter {
             return;
           }
 
-          accepted = true;
           lastSyncedBlockHeight = height;
           if (addressesGenerated.length) {
             restartArgs = {
@@ -324,6 +323,8 @@ class TransactionsReader extends EventEmitter {
             stream.cancel()
               .catch((e) => this.emit(EVENTS.ERROR, e));
           }
+
+          accepted = true;
         };
 
         const rejectMerkleBlock = (e) => {

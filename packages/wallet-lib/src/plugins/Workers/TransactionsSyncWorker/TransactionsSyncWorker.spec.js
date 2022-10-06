@@ -5,6 +5,7 @@ const TransactionsSyncWorker = require('./TransactionsSyncWorker');
 const TransactionsReader = require('./TransactionsReader');
 const { waitOneTick } = require('../../../test/utils');
 const mockMerkleBlock = require('../../../test/mocks/mockMerkleBlock');
+const EVENTS = require('../../../EVENTS');
 
 describe('TransactionsSyncWorker', () => {
   let transactionsSyncWorker;
@@ -33,6 +34,7 @@ describe('TransactionsSyncWorker', () => {
 
     worker.parentEvents = new EventEmitter();
     sinon.spy(worker.parentEvents, 'emit');
+    sinon.spy(worker.parentEvents, 'removeListener');
     sinon.spy(worker, 'scheduleProgressUpdate');
 
     worker.importTransactions = sinon.stub().returns([]);
@@ -191,7 +193,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsReader.startHistoricalSync)
           .to.have.been.calledOnceWith(
             1,
-            CHAIN_HEIGHT,
+            CHAIN_HEIGHT - 1,
             ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
           );
         transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
@@ -205,7 +207,7 @@ describe('TransactionsSyncWorker', () => {
         await transactionsSyncWorker.onStart();
 
         const chainStore = storage.getDefaultChainStore();
-        expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
+        // expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
         expect(transactionsReader.startHistoricalSync).to.have.not.been.called();
       });
     });
@@ -275,7 +277,7 @@ describe('TransactionsSyncWorker', () => {
 
         expect(secondCall.args).to.deep.equal([
           syncCheckpoint,
-          CHAIN_HEIGHT,
+          CHAIN_HEIGHT - 1,
           ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
         ]);
       });
@@ -313,7 +315,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsSyncWorker.storage.saveState).to.have.been.calledOnce();
 
         const chainStore = transactionsSyncWorker.storage.getDefaultChainStore();
-        expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
+        // expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
       });
       it('should throw an error in case there are transactions to verify left', async () => {
         const { transactionsReader } = transactionsSyncWorker;
@@ -505,9 +507,27 @@ describe('TransactionsSyncWorker', () => {
       expect(transactionsReader.stopContinuousSync).to.have.been.calledOnce();
       expect(transactionsReader.stopHistoricalSync).to.have.not.been.called();
     });
+
+    it('should unsubscribe from blockHeightChanged handler', async function () {
+      const handler = this.sinon.spy();
+      transactionsSyncWorker.blockHeightChangedHandler = handler;
+      transactionsSyncWorker.parentEvents.on(
+        EVENTS.BLOCKHEIGHT_CHANGED,
+        transactionsSyncWorker.blockHeightChangedHandler,
+      );
+
+      await transactionsSyncWorker.onStop();
+      expect(transactionsSyncWorker.parentEvents.removeListener)
+        .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, handler);
+      expect(transactionsSyncWorker.blockHeightChangedHandler).to.equal(null);
+    });
   });
 
   describe('#historicalTransactionsHandler', () => {
+    beforeEach(function beforeEach() {
+      transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+    });
+
     it('should add transactions to the verification pool', () => {
       const transactions = ADDRESSES_KEYCHAIN_1
         .map((address) => new Transaction().to(address, 1000));
@@ -521,6 +541,11 @@ describe('TransactionsSyncWorker', () => {
 
       expect(transactionsSyncWorker.historicalTransactionsToVerify)
         .to.deep.equal(expectedResult);
+    });
+
+    it('should validate arguments', () => {
+      expect(() => transactionsSyncWorker.historicalTransactionsHandler([]))
+        .to.throw('No transactions to process');
     });
   });
 
@@ -751,6 +776,221 @@ describe('TransactionsSyncWorker', () => {
         expect(storage.scheduleStateSave).to.have.not.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
+    });
+  });
+
+  describe('#newTransactionHandler', () => {
+    beforeEach(function beforeEach() {
+      transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+    });
+
+    it('should handle new transactions', function () {
+      const transactions = ADDRESSES_KEYCHAIN_1.slice(0, 2)
+        .map((address) => new Transaction().to(address, 1000));
+
+      // Simulate addresses gap fill
+      const addressesGenerated = ADDRESSES_KEYCHAIN_1.slice(2);
+      transactionsSyncWorker.importTransactions.returns({
+        addressesGenerated,
+      });
+
+      // Simulate data event
+      const dataEventPayload = {
+        transactions,
+        appendAddresses: this.sinon.spy(),
+      };
+
+      transactionsSyncWorker
+        .newTransactionsHandler(dataEventPayload);
+
+      const expectedResult = transactions.reduce((acc, transaction) => {
+        acc.set(transaction.hash, transaction);
+        return acc;
+      }, new Map());
+
+      expect(transactionsSyncWorker.historicalTransactionsToVerify)
+        .to.deep.equal(expectedResult);
+
+      expect(dataEventPayload.appendAddresses)
+        .to.have.been.calledWith(addressesGenerated);
+    });
+
+    it('should validate arguments', () => {
+      expect(() => transactionsSyncWorker.newTransactionsHandler({ transactions: [] }))
+        .to.throw('No new transactions to process');
+    });
+  });
+
+  describe('#newMerkleBlockHandler', () => {
+    let storage;
+    let chainStore;
+    beforeEach(function beforeEach() {
+      transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+      ({ storage } = transactionsSyncWorker);
+      chainStore = storage.getDefaultChainStore();
+    });
+
+    context('Accept merkle block', () => {
+      it('should verify transactions in the pool and accept merkle block', function () {
+        // Create transactions
+        const transactions = [
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
+          new Transaction().to(ADDRESSES_KEYCHAIN_1[1], 2000),
+        ];
+
+        // Add transactions to the verification pool
+        transactions.forEach((tx) => {
+          transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
+        });
+
+        // Create merkle block
+        const merkleBlock = mockMerkleBlock(transactions.map((tx) => tx.hash));
+        const merkleBlockHeight = 500;
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: merkleBlock.header.time,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.rejectMerkleBlock).to.have.not.been.called();
+        expect(dataEventPayload.acceptMerkleBlock)
+          .to.have.been.calledWith(merkleBlockHeight);
+        expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
+        expect(transactionsSyncWorker.importTransactions)
+          .to.have.been.called();
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(merkleBlockHeight);
+        expect(storage.scheduleStateSave).to.have.been.called();
+      });
+
+      it('should verify merkle block if no relevant transactions found', function () {
+        // Create merkle block
+        const merkleBlock = mockMerkleBlock([]);
+        const merkleBlockHeight = 500;
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: merkleBlock.header.time,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.rejectMerkleBlock).to.have.not.been.called();
+        expect(dataEventPayload.acceptMerkleBlock)
+          .to.have.been.calledWith(merkleBlockHeight);
+        expect(transactionsSyncWorker.importTransactions)
+          .to.have.not.been.called();
+        expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(merkleBlockHeight);
+        expect(storage.scheduleStateSave).to.have.been.called();
+      });
+
+      it('should retry after BLOCKHEIGHT_CHANGED event in case metadata was not found', function () {
+        // Create merkle block
+        const merkleBlock = mockMerkleBlock([]);
+        const merkleBlockHeight = 500;
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        // Emit merkle block data event
+        transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+        // Update chain store and emit BLOCKHEIGHT_CHANGED event
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: merkleBlock.header.time,
+        });
+
+        transactionsSyncWorker.parentEvents
+          .emit(EVENTS.BLOCKHEIGHT_CHANGED, merkleBlockHeight);
+
+        expect(dataEventPayload.rejectMerkleBlock).to.have.not.been.called();
+        expect(dataEventPayload.acceptMerkleBlock)
+          .to.have.been.calledOnceWith(merkleBlockHeight);
+        expect(chainStore.updateLastSyncedBlockHeight)
+          .to.have.been.calledOnceWith(merkleBlockHeight);
+        expect(storage.scheduleStateSave).to.have.been.calledOnce();
+        expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
+      });
+    });
+
+    context('Reject merkle block', () => {
+      it('should reject in case of invalid header metadata', function () {
+        const merkleBlock = mockMerkleBlock([]);
+        const merkleBlockHeight = 500;
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: 0,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal('Invalid header time: 0');
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+      });
+
+      it('should reject in case of invalid header height', function () {
+        const merkleBlock = mockMerkleBlock([]);
+
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: -1,
+          time: merkleBlock.header.time,
+        });
+
+        // Prepare event handler payload
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
+        expect(args[0].message)
+          .to.equal('Invalid header height: -1');
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+      });
+
+      // TODO: should reject in case merkle block verification failed
     });
   });
 });
