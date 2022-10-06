@@ -12,6 +12,10 @@ const convertReleaseToPrerelease = (version, prereleaseType = 'dev') => {
   return `${semver.major(bumpedVersion)}.${semver.minor(bumpedVersion)}.0-${prereleaseType}.1`;
 };
 
+const convertPrereleaseType = (version, prereleaseType = 'dev') => {
+  return `${semver.major(version)}.${semver.minor(version)}.0-${prereleaseType}.1`;
+};
+
 (async () => {
   let [ releaseType ] = process.argv.slice(2);
 
@@ -55,10 +59,10 @@ const convertReleaseToPrerelease = (version, prereleaseType = 'dev') => {
     // root version
     rootPackageJson.version = convertReleaseToPrerelease(rootPackageJson.version);
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
-  } else if (prereleaseTypes.has(rootVersionType) && prereleaseTypes.has(releaseType)) {
+  } else if (prereleaseTypes.has(rootVersionType) && releaseType === 'release') {
     // prerelease to release
-    for (const { filename, json } of packagesIterator(packagesDir)) {
-      const { version } = json;
+    for (const {filename, json} of packagesIterator(packagesDir)) {
+      const {version} = json;
       json.version = semver.inc(version, 'minor');
 
       fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
@@ -67,8 +71,20 @@ const convertReleaseToPrerelease = (version, prereleaseType = 'dev') => {
     // root version
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'minor');
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+  } else if (rootVersionType !== releaseType) {
+    // dev to alpha or vice versa
+    for (const { filename, json } of packagesIterator(packagesDir)) {
+      const { version } = json;
+      json.version = convertPrereleaseType(version, releaseType);
+
+      fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
+    }
+
+    // root version
+    rootPackageJson.version = convertPrereleaseType(rootPackageJson.version, releaseType);
+    fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else {
-    // prerelease to prerelease
+    // prerelease to prerelease (the same type)
     for (const { filename, json } of packagesIterator(packagesDir)) {
       const { version } = json;
       json.version = semver.inc(version, 'prerelease');
