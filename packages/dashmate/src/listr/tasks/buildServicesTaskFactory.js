@@ -21,12 +21,10 @@ function buildServicesTaskFactory(
 
         const obs = await dockerCompose.build(envs);
 
-        if (ctx.isVerbose) {
-          await new Promise((res, rej) => {
-            obs
-              .subscribe(task.stdout().write, rej, res);
-          });
-        }
+        await new Promise((res, rej) => {
+          obs
+            .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
+        });
       },
     });
   }
