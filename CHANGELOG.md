@@ -8,7 +8,6 @@
 
 ### Bug Fixes
 
-* **ci:** support alpha prereleases ([#560](https://github.com/dashevo/platform/issues/560))
 * **sdk:** platform.initialize is not a function ([#555](https://github.com/dashevo/platform/issues/555))
 
 
@@ -20,8 +19,9 @@
 
 ### Build System
 
-* release can be made from any branch if type is defined
-* release script could not find previous tag in some cases ([#558](https://github.com/dashevo/platform/issues/558))
+* support alpha prereleases ([#560](https://github.com/dashevo/platform/issues/560), #558](https://github.com/dashevo/platform/issues/558))
+
+
 
 ## [0.23.0-alpha.1](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-alpha.1) (2022-09-28)
 
