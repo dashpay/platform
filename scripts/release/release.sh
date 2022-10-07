@@ -85,12 +85,12 @@ CURRENT_BRANCH=$(git branch --show-current)
 
 if [[ $RELEASE_TYPE == "release" ]]
 then
- BRANCH="master"
+  BRANCH="master"
 elif [[ $RELEASE_TYPE == "alpha" ]]
 then
   BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-alpha"
 else
- BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
+  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
 fi
 
 if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
