@@ -11,6 +11,7 @@
     "tests/*",
     "!tests/integration",
     "!tests/integration/plugins/Workers/BlockHeadersSyncWorker.spec.js",
+    "!tests/integration/plugins/Workers/TransactionsSyncWorker.spec.js",
     "!src/plugins",
     "!src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.spec.js",
     "!src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.spec.js",
