@@ -1,3 +1,42 @@
+## [0.24.0-dev.1](https://github.com/dashevo/platform/compare/v0.23.0-alpha.1...v0.24.0-dev.1) (2022-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate to ABCI++ (#464)
+
+### Features
+
+* **dashmate:** add `core reindex` command ([#533](https://github.com/dashevo/platform/issues/533)), closes [#538](https://github.com/dashevo/platform/issues/538)
+* **dashmate:** update tenderdash to 0.9.0-dev.1 ([#525](https://github.com/dashevo/platform/issues/525))
+* **dpp:** add wasm-dpp template package ([#529](https://github.com/dashevo/platform/issues/529))
+* implement masternode voting identities ([#467](https://github.com/dashevo/platform/issues/467))
+* migrate to ABCI++ ([#464](https://github.com/dashevo/platform/issues/464))
+* SSL certificate for DAPI ([#519](https://github.com/dashevo/platform/issues/519))
+
+
+### Bug Fixes
+
+* **ci:** support alpha prereleases ([#560](https://github.com/dashevo/platform/issues/560))
+* **sdk:** platform.initialize is not a function ([#555](https://github.com/dashevo/platform/issues/555))
+
+
+### Continuous Integration
+
+* add dashmate and test suite ([#551](https://github.com/dashevo/platform/issues/551))
+* release arbitrary pre-release tags ([#552](https://github.com/dashevo/platform/issues/552))
+
+
+### Miscellaneous Chores
+
+* bump version of main package
+* bump versions
+
+
+### Build System
+
+* release script could not find previous tag in some cases ([#558](https://github.com/dashevo/platform/issues/558))
+
 ## [0.23.0-alpha.1](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-alpha.1) (2022-09-28)
 
 
