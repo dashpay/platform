@@ -11,7 +11,7 @@ PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ pr
 cmd_usage="Usage: yarn release [options]
 
   Options:
-  -t          --type                                        - release or prerelease
+  -t          --type                                        - release, dev or alpha
   -f          --from                                        - tag to build changelog from
   -h          --help                                        - show help
 "
@@ -35,15 +35,18 @@ done
 # if parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
 then
- if [[ $PACKAGE_VERSION == *-* ]]
+ if [[ $PACKAGE_VERSION == *dev* ]]
  then
-    RELEASE_TYPE="prerelease"
-  else
+    RELEASE_TYPE="dev"
+ elif [[ $PACKAGE_VERSION == *alpha* ]]
+ then
+    RELEASE_TYPE="alpha"
+ else
     RELEASE_TYPE="release"
  fi
 fi
 
-if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "prerelease" ]]
+if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "dev" ]] && [[ $RELEASE_TYPE != "alpha" ]]
 then
   echo cmd_usage
   exit 1
@@ -82,9 +85,12 @@ CURRENT_BRANCH=$(git branch --show-current)
 
 if [[ $RELEASE_TYPE == "release" ]]
 then
- BRANCH="master"
+  BRANCH="master"
+elif [[ $RELEASE_TYPE == "alpha" ]]
+then
+  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-alpha"
 else
- BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
+  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
 fi
 
 if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
