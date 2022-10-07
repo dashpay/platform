@@ -1,3 +1,55 @@
+## [0.23.0-alpha.2](https://github.com/dashevo/platform/compare/v0.23.0-alpha.1...v0.23.0-alpha.2) (2022-10-07)
+
+
+### Features
+
+* **dashmate:** add `core reindex` command ([#533](https://github.com/dashevo/platform/issues/533)), closes [#538](https://github.com/dashevo/platform/issues/538)
+
+
+### Bug Fixes
+
+* **ci:** support alpha prereleases ([#560](https://github.com/dashevo/platform/issues/560))
+* **sdk:** platform.initialize is not a function ([#555](https://github.com/dashevo/platform/issues/555))
+
+
+### Continuous Integration
+
+* add dashmate and test suite ([#551](https://github.com/dashevo/platform/issues/551))
+* release arbitrary pre-release tags ([#552](https://github.com/dashevo/platform/issues/552))
+
+
+### Build System
+
+* release can be made from any branch if type is defined
+* release script could not find previous tag in some cases ([#558](https://github.com/dashevo/platform/issues/558))
+
+## [0.23.0-alpha.1](https://github.com/dashevo/platform/compare/v0.23.0-dev.10...v0.23.0-alpha.1) (2022-09-30)
+
+
+### Features
+
+* **dashmate:** add hardcoded stop grace time before killing services ([#536](https://github.com/dashevo/platform/issues/536))
+* update Core to 18.1.0-rc.1 ([#544](https://github.com/dashevo/platform/issues/544))
+
+
+### Bug Fixes
+
+* **dashmate:** can't use local seed as a wallet  ([#538](https://github.com/dashevo/platform/issues/538))
+* **dpp:** cannot read properties of null (reading 'getBalance') ([#549](https://github.com/dashevo/platform/issues/549))
+
+
+### Documentation
+
+* **dashmate:** add troubleshooting section ([#431](https://github.com/dashevo/platform/issues/431))
+
+
+### Miscellaneous Chores
+
+* **drive:** correct typo in debug message ([#535](https://github.com/dashevo/platform/issues/535))
+* **release:** update changelog and bump version to 0.23.0-alpha.1
+* **scripts:** remove dashmate update ([#550](https://github.com/dashevo/platform/issues/550))
+* **test-suite:** remove unused merk dependency ([#547](https://github.com/dashevo/platform/issues/547))
+
 ## [0.23.0-alpha.1](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-alpha.1) (2022-09-28)
 
 
