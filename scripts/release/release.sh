@@ -24,7 +24,7 @@ case ${i} in
         exit 0
     ;;
     -t=*|--type=*)
-      RELEASE_TYPE="${i#*=}"
+      FORCED_RELEASE_TYPE="${i#*=}"
     ;;
     -f=*|--from=*)
       LATEST_TAG="${i#*=}"
@@ -33,7 +33,7 @@ esac
 done
 
 # if parameter is empty, get release type from current version
-if [ -z "$RELEASE_TYPE" ]
+if [ -z "$FORCED_RELEASE_TYPE" ]
 then
  if [[ $PACKAGE_VERSION == *dev* ]]
  then
@@ -44,6 +44,8 @@ then
  else
     RELEASE_TYPE="release"
  fi
+else
+  RELEASE_TYPE=$FORCED_RELEASE_TYPE
 fi
 
 if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "dev" ]] && [[ $RELEASE_TYPE != "alpha" ]]
@@ -83,21 +85,24 @@ echo "New version is $NEW_PACKAGE_VERSION"
 VERSION_WITHOUT_PRERELEASE=${NEW_PACKAGE_VERSION%-*}
 CURRENT_BRANCH=$(git branch --show-current)
 
-if [[ $RELEASE_TYPE == "release" ]]
+if [ -z "$FORCED_RELEASE_TYPE" ]
 then
-  BRANCH="master"
-elif [[ $RELEASE_TYPE == "alpha" ]]
-then
-  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-alpha"
-else
-  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
-fi
+  if [[ $RELEASE_TYPE == "release" ]]
+  then
+    BRANCH="master"
+  elif [[ $RELEASE_TYPE == "alpha" ]]
+  then
+    BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-alpha"
+  else
+    BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
+  fi
 
-if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
-then
- echo "you must run this script either from the master of from the dev branch"
- git checkout .
- exit 1
+  if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
+  then
+   echo "you must run this script either from the master of from the dev branch"
+   git checkout .
+   exit 1
+  fi
 fi
 
 # create branch
@@ -117,7 +122,7 @@ else
   MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.0"
 fi
 
-gh pr create --base $BRANCH \
+gh pr create --base $CURRENT_BRANCH \
              --fill \
              --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
              --body-file $DIR/pr_description.md \
