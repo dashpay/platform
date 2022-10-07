@@ -27,12 +27,6 @@
 * release arbitrary pre-release tags ([#552](https://github.com/dashevo/platform/issues/552))
 
 
-### Miscellaneous Chores
-
-* bump version of main package
-* bump versions
-
-
 ### Build System
 
 * release script could not find previous tag in some cases ([#558](https://github.com/dashevo/platform/issues/558))
