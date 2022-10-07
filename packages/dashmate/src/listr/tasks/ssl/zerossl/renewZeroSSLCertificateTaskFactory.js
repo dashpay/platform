@@ -1,51 +1,45 @@
 const { Listr } = require('listr2');
+const fs = require('fs');
+const path = require('path');
+const { HOME_DIR_PATH } = require('../../../../constants');
 
 /**
- * @param {generateCsr} generateCsr
- * @param {generateKeyPair} generateKeyPair
+ *
  * @param {createZeroSSLCertificate} createZeroSSLCertificate
  * @param {verifyDomain} verifyDomain
  * @param {downloadCertificate} downloadCertificate
+ * @param {listCertificates} listCertificates
  * @param {saveCertificateTask} saveCertificateTask
  * @param {VerificationServer} verificationServer
- * @return {obtainZeroSSLCertificateTask}
+ * @return {renewZeroSSLCertificateTask}
  */
-function obtainZeroSSLCertificateTaskFactory(
-  generateCsr,
-  generateKeyPair,
+function renewZeroSSLCertificateTaskFactory(
   createZeroSSLCertificate,
   verifyDomain,
   downloadCertificate,
+  listCertificates,
   saveCertificateTask,
   verificationServer,
 ) {
   /**
-   * @typedef {obtainZeroSSLCertificateTask}
-   * @param config
+   * @typedef {renewZeroSSLCertificateTask}
+   * @param {Config} config
    * @return {Promise<Listr>}
    */
-  async function obtainZeroSSLCertificateTask(config) {
+  async function renewZeroSSLCertificateTask(config) {
     return new Listr([
-      {
-        title: 'Generate a keypair',
-        task: async (ctx) => {
-          ctx.keyPair = await generateKeyPair();
-        },
-      },
-      {
-        title: 'Generate CSR',
-        task: async (ctx) => {
-          ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
-        },
-      },
       {
         title: 'Request certificate challenge',
         task: async (ctx) => {
-          ctx.response = await createZeroSSLCertificate(ctx.csr, config.get('externalIp'), config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'));
+          const crtFile = path.join(HOME_DIR_PATH, 'ssl', config.getName(), 'bundle.crt');
+
+          ctx.csr = fs.readFileSync(crtFile, 'utf8');
+
+          ctx.response = await createZeroSSLCertificate(ctx.csr, config);
         },
       },
       {
-        title: 'Setup verification server',
+        title: 'Set up verification server',
         task: async (ctx) => {
           const validationResponse = ctx.response.validation.other_methods[config.get('externalIp')];
           const route = validationResponse.file_validation_url_http.replace(`http://${config.get('externalIp')}`, '');
@@ -70,12 +64,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Save certificate',
-        task: async (ctx) => {
-          config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.response.id);
-          config.set('platform.dapi.envoy.ssl.provider', 'zerossl');
-
-          await saveCertificateTask(config);
-        },
+        task: async () => saveCertificateTask(config),
       },
       {
         title: 'Stop verification server',
@@ -83,10 +72,11 @@ function obtainZeroSSLCertificateTaskFactory(
           await verificationServer.stop();
           await verificationServer.destroy();
         },
-      }]);
+      },
+    ]);
   }
 
-  return obtainZeroSSLCertificateTask;
+  return renewZeroSSLCertificateTask;
 }
 
-module.exports = obtainZeroSSLCertificateTaskFactory;
+module.exports = renewZeroSSLCertificateTaskFactory;
