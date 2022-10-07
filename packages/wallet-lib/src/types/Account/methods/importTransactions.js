@@ -12,7 +12,7 @@ module.exports = function importTransactions(transactionsWithMayBeMetadata) {
     network,
   } = this;
 
-  let addressesGenerated = 0;
+  const addressesGenerated = [];
 
   const chainStore = storage.getChainStore(network);
 
@@ -33,7 +33,10 @@ module.exports = function importTransactions(transactionsWithMayBeMetadata) {
     logger.silly(`Account.importTransactions - Import ${transaction.hash} to chainStore. ${affectedAddresses.length} addresses affected.`);
 
     const newPaths = this.generateNewPaths(affectedAddresses);
-    addressesGenerated += newPaths.length;
+    newPaths.forEach((path) => {
+      addressesGenerated.push(path.address.toString());
+    });
+
     this.addPathsToStore(newPaths);
   });
 

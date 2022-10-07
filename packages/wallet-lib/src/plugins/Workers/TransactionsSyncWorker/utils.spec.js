@@ -1,8 +1,7 @@
 const { expect } = require('chai');
-const crypto = require('crypto');
 
 const {
-  PrivateKey, Transaction, Address, Script,
+  PrivateKey, Transaction,
 } = require('@dashevo/dashcore-lib');
 
 const { mockUtxo } = require('../../../test/mocks/transactionMocks');

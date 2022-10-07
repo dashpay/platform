@@ -206,7 +206,7 @@ describe('TransactionsSyncWorker', () => {
         storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT;
         await transactionsSyncWorker.onStart();
 
-        const chainStore = storage.getDefaultChainStore();
+        // const chainStore = storage.getDefaultChainStore();
         // expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
         expect(transactionsReader.startHistoricalSync).to.have.not.been.called();
       });
@@ -270,6 +270,7 @@ describe('TransactionsSyncWorker', () => {
 
         // Continue historical sync
         startPromise = transactionsSyncWorker.onStart();
+        await waitOneTick();
         transactionsReader.emit(TransactionsReader.EVENTS.STOPPED);
         await startPromise;
 
@@ -285,11 +286,13 @@ describe('TransactionsSyncWorker', () => {
 
     context('Finished', () => {
       it('should prepare for continuous sync after historical data is obtained', async function test() {
-        const { transactionsReader } = transactionsSyncWorker;
+        const { transactionsReader, storage } = transactionsSyncWorker;
+        const chainStore = storage.getDefaultChainStore();
 
         transactionsSyncWorker.updateProgress = this.sinon.spy();
 
         const startPromise = transactionsSyncWorker.onStart();
+        await waitOneTick();
         transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
         await startPromise;
 
@@ -311,10 +314,10 @@ describe('TransactionsSyncWorker', () => {
             transactionsSyncWorker.transactionsReaderErrorHandler,
           );
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(CHAIN_HEIGHT);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(CHAIN_HEIGHT - 1);
         expect(transactionsSyncWorker.updateProgress).to.have.been.calledOnce();
         expect(transactionsSyncWorker.storage.saveState).to.have.been.calledOnce();
 
-        const chainStore = transactionsSyncWorker.storage.getDefaultChainStore();
         // expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
       });
       it('should throw an error in case there are transactions to verify left', async () => {
@@ -325,7 +328,7 @@ describe('TransactionsSyncWorker', () => {
         transactionsSyncWorker.historicalTransactionsToVerify.set(tx.hash, tx);
 
         const startPromise = transactionsSyncWorker.onStart();
-
+        await waitOneTick();
         transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
 
         await expect(startPromise)
@@ -494,16 +497,16 @@ describe('TransactionsSyncWorker', () => {
 
     it('should stop historical sync', async () => {
       transactionsSyncWorker.syncState = TransactionsSyncWorker.STATES.HISTORICAL_SYNC;
-      await transactionsSyncWorker.onStop();
       const { transactionsReader } = transactionsSyncWorker;
+      await transactionsSyncWorker.onStop();
       expect(transactionsReader.stopHistoricalSync).to.have.been.calledOnce();
       expect(transactionsReader.stopContinuousSync).to.have.not.been.called();
     });
 
     it('should stop continuous sync', async () => {
       transactionsSyncWorker.syncState = TransactionsSyncWorker.STATES.CONTINUOUS_SYNC;
-      await transactionsSyncWorker.onStop();
       const { transactionsReader } = transactionsSyncWorker;
+      await transactionsSyncWorker.onStop();
       expect(transactionsReader.stopContinuousSync).to.have.been.calledOnce();
       expect(transactionsReader.stopHistoricalSync).to.have.not.been.called();
     });
@@ -575,11 +578,12 @@ describe('TransactionsSyncWorker', () => {
         const merkleBlock = mockMerkleBlock(transactions.map((tx) => tx.hash));
         const merkleBlockHeight = 500;
 
-        // Update chain store
-        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+        const metadata = {
           height: merkleBlockHeight,
           time: merkleBlock.header.time,
-        });
+        };
+        // Update chain store
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
 
         // Simulate addresses gap fill
         transactionsSyncWorker.importTransactions.returns({
@@ -594,6 +598,17 @@ describe('TransactionsSyncWorker', () => {
         };
 
         transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        const expectedMetadata = {
+          blockHash: merkleBlock.header.hash,
+          height: metadata.height,
+          time: new Date(metadata.time * 1000),
+          instantLocked: false,
+          chainLocked: false,
+        };
+
+        expect(transactionsSyncWorker.importTransactions)
+          .to.have.been.calledWith(transactions.map((tx) => [tx, expectedMetadata]));
 
         expect(dataEventPayload.rejectMerkleBlock).to.have.not.been.called();
         expect(dataEventPayload.acceptMerkleBlock)
@@ -808,6 +823,9 @@ describe('TransactionsSyncWorker', () => {
         return acc;
       }, new Map());
 
+      expect(transactionsSyncWorker.importTransactions)
+        .to.have.been.calledWith(transactions.map((tx) => [tx]));
+
       expect(transactionsSyncWorker.historicalTransactionsToVerify)
         .to.deep.equal(expectedResult);
 
@@ -848,10 +866,11 @@ describe('TransactionsSyncWorker', () => {
         const merkleBlockHeight = 500;
 
         // Update chain store
-        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+        const metadata = {
           height: merkleBlockHeight,
           time: merkleBlock.header.time,
-        });
+        };
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
 
         // Prepare event handler payload
         const dataEventPayload = {
@@ -860,16 +879,31 @@ describe('TransactionsSyncWorker', () => {
           rejectMerkleBlock: this.sinon.spy(),
         };
 
+        const expectedMetadata = {
+          blockHash: merkleBlock.header.hash,
+          height: metadata.height,
+          time: new Date(metadata.time * 1000),
+          instantLocked: false,
+          chainLocked: false,
+        };
+
         transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
 
+        expect(transactionsSyncWorker.importTransactions)
+          .to.have.been.calledWith(transactions.map((tx) => [tx, expectedMetadata]));
         expect(dataEventPayload.rejectMerkleBlock).to.have.not.been.called();
         expect(dataEventPayload.acceptMerkleBlock)
           .to.have.been.calledWith(merkleBlockHeight);
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
-        expect(transactionsSyncWorker.importTransactions)
-          .to.have.been.called();
         expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(merkleBlockHeight);
         expect(storage.scheduleStateSave).to.have.been.called();
+        expect(transactionsSyncWorker.parentEvents.emit)
+          .to.have.been.calledTwice();
+        const { firstCall, secondCall } = transactionsSyncWorker.parentEvents.emit;
+        expect(firstCall.args)
+          .to.deep.equal([EVENTS.CONFIRMED_TRANSACTION, transactions[0]]);
+        expect(secondCall.args)
+          .to.deep.equal([EVENTS.CONFIRMED_TRANSACTION, transactions[1]]);
       });
 
       it('should verify merkle block if no relevant transactions found', function () {

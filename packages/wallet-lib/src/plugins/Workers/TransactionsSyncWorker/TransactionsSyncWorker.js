@@ -1,4 +1,5 @@
 const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
+const DAPIStream = require('@dashevo/dapi-client/lib/transport/DAPIStream');
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const TransactionsReader = require('./TransactionsReader');
@@ -36,23 +37,13 @@ class TransactionsSyncWorker extends Worker {
       awaitOnInjection: true,
       workerIntervalTime: 0,
       dependencies: [
-        // 'importTransactions',
-        // 'importInstantLock',
-        // 'storage',
+        'importTransactions',
+        'storage',
         'keyChainStore',
-        // 'transport',
-        // 'walletId',
-        // 'getAddress',
-        // 'network',
-        // 'index',
-        // 'BIP44PATH',
-        // 'walletType',
+        'transport',
+        'network',
       ],
       ...options,
-    });
-
-    this.transactionsReader = new TransactionsReader({
-      maxRetries: MAX_RETRIES,
     });
 
     this.historicalSyncStream = null;
@@ -80,7 +71,36 @@ class TransactionsSyncWorker extends Worker {
     this.syncState = STATES.IDLE;
   }
 
+  async init() {
+    if (!this.transactionsReader) {
+      const createContinuousSyncStream = (bloomFilter, rangeOptions) => DAPIStream
+        .create(
+          this.transport.client.core.subscribeToTransactionsWithProofs,
+        )(
+          bloomFilter,
+          rangeOptions,
+        );
+
+      const createHistoricalSyncStream = (bloomFilter, rangeOptions) => {
+        const { subscribeToTransactionsWithProofs } = this.transport.client.core;
+        return subscribeToTransactionsWithProofs(
+          bloomFilter,
+          rangeOptions,
+        );
+      };
+
+      this.transactionsReader = new TransactionsReader({
+        maxRetries: MAX_RETRIES,
+        network: this.network,
+        createContinuousSyncStream,
+        createHistoricalSyncStream,
+      });
+    }
+  }
+
   async onStart() {
+    await this.init();
+
     const chainStore = this.storage.getDefaultChainStore();
 
     const { chainHeight } = chainStore.state;
@@ -213,6 +233,7 @@ class TransactionsSyncWorker extends Worker {
       throw e;
     }
 
+    chainStore.updateLastSyncedBlockHeight(chainHeight - 1);
     this.updateProgress();
     this.storage.saveState();
 
@@ -228,6 +249,8 @@ class TransactionsSyncWorker extends Worker {
   }
 
   async execute() {
+    await this.init();
+
     if (this.syncState !== STATES.IDLE) {
       throw new Error(`Worker is already running: ${this.syncState}. Please call .onStop() first.`);
     }
@@ -289,6 +312,8 @@ class TransactionsSyncWorker extends Worker {
     } else if (this.syncState === STATES.CONTINUOUS_SYNC) {
       await this.transactionsReader.stopContinuousSync();
     }
+
+    this.transactionsReader = null;
 
     if (this.blockHeightChangedHandler) {
       this.parentEvents
@@ -412,7 +437,7 @@ class TransactionsSyncWorker extends Worker {
           throw new Error(`Transaction ${tx.hash} was not found in merkle block ${headerHash}`);
         }
         transactionsWithMetadata.push([tx, metadata]);
-        delete this.historicalTransactionsToVerify[tx.hash];
+        this.historicalTransactionsToVerify.delete(tx.hash);
       });
     } catch (e) {
       rejectMerkleBlock(e);
@@ -450,7 +475,9 @@ class TransactionsSyncWorker extends Worker {
       this.historicalTransactionsToVerify.set(tx.hash, tx);
     });
 
-    const { addressesGenerated } = this.importTransactions(transactions);
+    const { addressesGenerated } = this.importTransactions(
+      transactions.map((tx) => [tx]),
+    );
 
     appendAddresses(addressesGenerated);
   }
@@ -523,7 +550,7 @@ class TransactionsSyncWorker extends Worker {
       this.historicalTransactionsToVerify.forEach((tx) => {
         if (txHashesInTheBlock.has(tx.hash)) {
           transactionsWithMetadata.push([tx, metadata]);
-          delete this.historicalTransactionsToVerify[tx.hash];
+          this.historicalTransactionsToVerify.delete(tx.hash);
         }
       });
 
@@ -553,6 +580,7 @@ class TransactionsSyncWorker extends Worker {
   /**
    * @private
    */
+  // eslint-disable-next-line
   updateProgress() {
     // if (this.progressUpdateTimeout) {
     //   clearTimeout(this.progressUpdateTimeout);

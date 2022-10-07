@@ -12,7 +12,7 @@ describe('DAPIStream', () => {
     stream = new EventEmitter();
     stream.cancel = this.sinon.stub().callsFake(() => {
       stream.emit('error', {
-        message: ' CANCELED_ON_CLIENT',
+        message: 'CANCELED_ON_CLIENT',
         code: 1,
       });
     });
@@ -91,8 +91,13 @@ describe('DAPIStream', () => {
 
     it('should handle cancellation', async () => {
       await dapiStream.connect();
+      let emittedError;
+      dapiStream.on('error', (e) => {
+        emittedError = e;
+      });
       stream.cancel();
-      expect(dapiStream.endHandler).to.have.been.calledOnce();
+      expect(dapiStream.stopReconnectTimeout).to.have.been.calledOnce();
+      expect(emittedError.message).to.equal('CANCELED_ON_CLIENT');
     });
 
     it('should handle cancellation triggered by reconnect logic', async () => {
@@ -125,9 +130,14 @@ describe('DAPIStream', () => {
   describe('#cancel', async () => {
     it('should cancel stream', async () => {
       await dapiStream.connect();
+      let emittedError;
+      dapiStream.on('error', (e) => {
+        emittedError = e;
+      });
       dapiStream.cancel();
       expect(dapiStream.stopReconnectTimeout).to.have.been.calledOnce();
       expect(stream.cancel).to.have.been.calledOnce();
+      expect(emittedError.message).to.equal('CANCELED_ON_CLIENT');
     });
   });
 

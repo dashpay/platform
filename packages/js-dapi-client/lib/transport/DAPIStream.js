@@ -84,6 +84,7 @@ class DAPIStream extends EventEmitter {
    * @param e
    */
   errorHandler(e) {
+    this.stream = null;
     if (e.code === GrpcErrorCodes.CANCELLED) {
       if (this.reconnectingAfterTimeout) {
         this.reconnectingAfterTimeout = false;
@@ -97,7 +98,8 @@ class DAPIStream extends EventEmitter {
         this.connect(...newArgs)
           .catch((connectError) => this.emit(EVENTS.ERROR, connectError));
       } else {
-        this.endHandler();
+        this.stopReconnectTimeout();
+        this.emit(EVENTS.ERROR, e);
       }
     } else {
       this.emit(EVENTS.ERROR, e);
@@ -115,7 +117,7 @@ class DAPIStream extends EventEmitter {
   }
 
   cancel() {
-    this.stream.cancel();
+    return this.stream.cancel();
   }
 
   destroy(e) {

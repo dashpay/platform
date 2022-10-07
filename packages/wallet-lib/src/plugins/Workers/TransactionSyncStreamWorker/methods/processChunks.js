@@ -30,7 +30,7 @@ async function processTransactions(transactions) {
       } = this.importTransactions(walletTransactions.map((tx) => [tx]));
       this.setLastSyncedBlockHeight(mostRecentHeight, true);
 
-      if (addressesGenerated > 0) {
+      if (addressesGenerated.length > 0) {
         this.hasReachedGapLimit = true;
         this.reconnectOnNewBlock = true;
       }
@@ -101,7 +101,7 @@ async function processMerkleBlock(merkleBlock) {
 
   // TODO(spv): verify transactions against the merkle block
 
-  let addressesGenerated = 0;
+  let addressesGenerated = [];
   if (transactionsWithMetadata.length) {
     ({ addressesGenerated } = this.importTransactions(transactionsWithMetadata));
   }
@@ -109,7 +109,7 @@ async function processMerkleBlock(merkleBlock) {
   this.setLastSyncedBlockHeight(headerHeight, true);
   this.scheduleProgressUpdate();
 
-  if (addressesGenerated > 0) {
+  if (addressesGenerated.length > 0) {
     this.hasReachedGapLimit = true;
     await this.reconnectToStream();
   }
