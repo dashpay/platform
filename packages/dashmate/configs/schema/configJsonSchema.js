@@ -319,6 +319,10 @@ module.exports = {
                               type: ['string', 'null'],
                               minLength: 32,
                             },
+                            id: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
                           },
                           required: ['apiKey'],
                           additionalProperties: false,
@@ -631,6 +635,21 @@ module.exports = {
       },
       required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
       additionalProperties: false,
+    },
+    dashmate: {
+      type: 'object',
+      properties: {
+        helper: {
+          type: 'object',
+          properties: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+          },
+          required: ['docker'],
+          additionalProperties: false,
+        },
+      },
     },
     externalIp: {
       type: ['string', 'null'],

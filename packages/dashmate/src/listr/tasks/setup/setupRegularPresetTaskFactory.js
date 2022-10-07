@@ -163,12 +163,16 @@ function setupRegularPresetTaskFactory(
       {
         title: 'Set SSL certificate',
         task: async (ctx, task) => {
+          const sslProviders = [...SSL_PROVIDERS].filter((item) => item !== 'selfSigned');
+
           ctx.certificateProvider = await task.prompt({
             type: 'select',
             message: 'Select SSL certificate provider',
-            choices: SSL_PROVIDERS,
-            initial: SSL_PROVIDERS[0],
+            choices: sslProviders,
+            initial: sslProviders[0],
           });
+
+          ctx.config.set('platform.dapi.envoy.ssl.provider', ctx.certificateProvider);
         },
       },
       {

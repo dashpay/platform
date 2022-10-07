@@ -8,7 +8,8 @@
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": ""
+    "test": "",
+    "helper": "node scripts/helper.js"
   },
   "repository": {
     "type": "git",
@@ -63,6 +64,7 @@
     "axios": "^0.27.2",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
+    "cron": "^2.1.0",
     "dash": "workspace:~",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",

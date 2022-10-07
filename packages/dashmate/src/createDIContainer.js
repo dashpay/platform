@@ -70,16 +70,20 @@ const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
+const renewZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/renewZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
 const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
 
 const createZeroSSLCertificate = require('./ssl/zerossl/createCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
 const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
+const getCertificate = require('./ssl/zerossl/getCertificate');
 const listCertificates = require('./ssl/zerossl/listCertificates');
 const generateCsr = require('./ssl/zerossl/generateCsr');
 const generateKeyPair = require('./ssl/generateKeyPair');
 const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
+
+const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -123,6 +127,7 @@ async function createDIContainer() {
     generateKeyPair: asValue(generateKeyPair),
     verifyDomain: asValue(verifyDomain),
     downloadCertificate: asValue(downloadCertificate),
+    getCertificate: asValue(getCertificate),
     listCertificates: asValue(listCertificates),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
     verificationServer: asClass(VerificationServer).singleton(),
@@ -204,9 +209,17 @@ async function createDIContainer() {
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
+    renewZeroSSLCertificateTask: asFunction(renewZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
     saveCertificateTask: asValue(saveCertificateTask),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
+  });
+
+  /**
+   * Helper
+   */
+  container.register({
+    scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
   });
 
   return container;

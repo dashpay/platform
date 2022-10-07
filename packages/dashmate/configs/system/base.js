@@ -76,7 +76,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.22-latest',
+          image: 'dashpay/envoy:0.24-dev',
         },
         http: {
           port: 3000,
@@ -96,6 +96,7 @@ module.exports = {
           providerConfigs: {
             zerossl: {
               apiKey: null,
+              id: null,
             },
           },
         },
@@ -192,6 +193,13 @@ module.exports = {
       },
       masterPublicKey: null,
       secondPublicKey: null,
+    },
+  },
+  dashmate: {
+    helper: {
+      docker: {
+        image: 'dashpay/dashamte-helper:0.24-dev',
+      },
     },
   },
   externalIp: null,
