@@ -12,7 +12,7 @@ cmd_usage="Usage: yarn release [options]
 
   Options:
   -t          --type                                        - release, dev or alpha
-  -f          --from                                        - tag to build changelog from
+  -c          --changelog-from                              - tag to build changelog from
   -h          --help                                        - show help
 "
 
@@ -35,21 +35,12 @@ done
 # if parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
 then
- if [[ $PACKAGE_VERSION == *dev* ]]
+ if [[ $PACKAGE_VERSION == *-* ]]
  then
-    RELEASE_TYPE="dev"
- elif [[ $PACKAGE_VERSION == *alpha* ]]
- then
-    RELEASE_TYPE="alpha"
- else
+    RELEASE_TYPE=$(echo "$PACKAGE_VERSION" | awk -F[\-.] '{print $4}')
+  else
     RELEASE_TYPE="release"
  fi
-fi
-
-if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "dev" ]] && [[ $RELEASE_TYPE != "alpha" ]]
-then
-  echo cmd_usage
-  exit 1
 fi
 
 UNCOMMITTED_FILES="$(git status -su)"
@@ -83,23 +74,6 @@ echo "New version is $NEW_PACKAGE_VERSION"
 VERSION_WITHOUT_PRERELEASE=${NEW_PACKAGE_VERSION%-*}
 CURRENT_BRANCH=$(git branch --show-current)
 
-if [[ $RELEASE_TYPE == "release" ]]
-then
-  BRANCH="master"
-elif [[ $RELEASE_TYPE == "alpha" ]]
-then
-  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-alpha"
-else
-  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
-fi
-
-if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
-then
- echo "you must run this script either from the master of from the dev branch"
- git checkout .
- exit 1
-fi
-
 # create branch
 git checkout -b release_"$NEW_PACKAGE_VERSION"
 
@@ -117,7 +91,7 @@ else
   MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.0"
 fi
 
-gh pr create --base $BRANCH \
+gh pr create --base $CURRENT_BRANCH \
              --fill \
              --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
              --body-file $DIR/pr_description.md \

@@ -30,7 +30,7 @@ if (!version) {
     // prerelease
 
     // try to find previous prerelease
-    result = tags.match(new RegExp(`^v${parsedVersion.major}\.${parsedVersion.minor}\.0-dev.([0-9]+)$`, 'mgi'));
+    result = tags.match(new RegExp(`^v${parsedVersion.major}\.${parsedVersion.minor}\.0-${parsedVersion.prerelease[0]}.([0-9]+)$`, 'mgi'));
 
     if (!result) {
       // try to find the latest stable version with previous minor part
