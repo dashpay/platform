@@ -4,6 +4,7 @@
 ### ⚠ BREAKING CHANGES
 
 * migrate to ABCI++ (#464)
+* Tenderdash 0.8 and lower not supported anymore
 
 ### Features
 
@@ -15,20 +16,6 @@
 * SSL certificate for DAPI ([#519](https://github.com/dashevo/platform/issues/519))
 
 
-### Bug Fixes
-
-* **ci:** support alpha prereleases ([#560](https://github.com/dashevo/platform/issues/560))
-
-
-### Miscellaneous Chores
-
-* bump version of main package
-* bump versions
-
-
-### Build System
-
-* release script could not find previous tag in some cases ([#558](https://github.com/dashevo/platform/issues/558))
 
 ## [0.23.0-alpha.2](https://github.com/dashevo/platform/compare/v0.23.0-alpha.1...v0.23.0-alpha.2) (2022-10-07)
 
