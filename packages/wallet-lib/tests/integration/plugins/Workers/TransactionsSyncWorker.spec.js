@@ -7,6 +7,7 @@ const { Wallet } = require('../../../../src');
 const LocalForageAdapterMock = require('../../../../src/test/mocks/LocalForageAdapterMock');
 const { waitOneTick } = require('../../../../src/test/utils');
 const mockMerkleBlock = require('../../../../src/test/mocks/mockMerkleBlock');
+const EVENTS = require('../../../../src/EVENTS');
 
 describe('TransactionsSyncWorker', () => {
   const WALLET_HD_KEY = 'xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ';
@@ -38,6 +39,9 @@ describe('TransactionsSyncWorker', () => {
       HDPrivateKey: WALLET_HD_KEY,
       network: NETWORK,
       adapter: options.withAdapter ? new LocalForageAdapterMock() : null,
+      storage: {
+        autosaveIntervalTime: 500,
+      },
     });
 
     // Mock transport because a default one is not created in offlineMode
@@ -48,11 +52,87 @@ describe('TransactionsSyncWorker', () => {
     return worker;
   };
 
+  const mockTxStream = (sinon) => {
+    // Mock TX stream
+    sinon.stub(wallet.transport.client.core, 'subscribeToTransactionsWithProofs')
+      .callsFake(async (bloomFilter, rangeOpts) => {
+        const { count } = rangeOpts;
+
+        const streamMock = new TxStreamMock(sinon);
+
+        if (count === 0) {
+          continuousStream = streamMock;
+        } else {
+          historicalStream = streamMock;
+        }
+        return streamMock;
+      });
+  };
+
+  const sendHistoricalTransactionsWithProofs = ({
+    toAddresses,
+    atHeight,
+    prevMerkleBlock,
+  }) => {
+    // Mock Transactions
+    const transactions = toAddresses
+      .map((address) => new Transaction().to(address, 1000));
+
+    const merkleBlock = mockMerkleBlock(
+      transactions.map((tx) => tx.hash),
+      prevMerkleBlock ? prevMerkleBlock.header : null,
+    );
+
+    const chainStore = wallet.storage.getDefaultChainStore();
+    const metadata = {
+      height: atHeight,
+      time: merkleBlock.header.time,
+    };
+
+    chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
+
+    historicalStream.sendTransactions(transactions);
+    historicalStream.sendMerkleBlock(merkleBlock);
+
+    return { transactions, merkleBlock };
+  };
+
+  const sendNewTransactions = ({ toAddresses }) => {
+    // Pick addresses that will trigger gap filling
+    const transactions = toAddresses
+      .map((address) => new Transaction().to(address, 1000));
+
+    continuousStream.sendTransactions(transactions);
+
+    return { transactions };
+  };
+
+  const sendNewMerkleBlock = ({ forTransactions, atHeight, prevMerkleBlock }) => {
+    // Mock Merkle Block
+    const merkleBlock = mockMerkleBlock(
+      forTransactions.map((tx) => tx.hash),
+      prevMerkleBlock ? prevMerkleBlock.header : null,
+    );
+
+    // Prepare header metadata for merkle block
+    const chainStore = wallet.storage.getDefaultChainStore();
+    const metadata = {
+      height: atHeight,
+      time: merkleBlock.header.time,
+    };
+    chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
+
+    continuousStream.sendMerkleBlock(merkleBlock);
+
+    return { merkleBlock };
+  };
+
   describe('Basic synchronization', () => {
     let account;
     let onStartPromise;
+
     const allTransactions = [];
-    const merkleBlocks = [];
+    const allMerkleBlocks = [];
 
     before(async function before() {
       transactionsSyncWorker = await createWorker(this.sinon);
@@ -63,20 +143,7 @@ describe('TransactionsSyncWorker', () => {
     });
 
     beforeEach(async function beforeEach() {
-      // Mock TX stream
-      this.sinon.stub(wallet.transport.client.core, 'subscribeToTransactionsWithProofs')
-        .callsFake(async (bloomFilter, rangeOpts) => {
-          const { count } = rangeOpts;
-
-          const streamMock = new TxStreamMock(this.sinon);
-
-          if (count === 0) {
-            continuousStream = streamMock;
-          } else {
-            historicalStream = streamMock;
-          }
-          return streamMock;
-        });
+      mockTxStream(this.sinon);
     });
 
     context('Historical sync', () => {
@@ -87,35 +154,22 @@ describe('TransactionsSyncWorker', () => {
 
       it('should process first transactions and a merkle block', async () => {
         // Start historical sync
-        onStartPromise = transactionsSyncWorker.onStart();// .catch(console.error);
+        onStartPromise = transactionsSyncWorker.onStart();
         await waitOneTick();
 
-        const addresses = [
+        const toAddresses = [
           account.getAddress(0).address,
           account.getAddress(1).address,
           account.getAddress(2).address,
         ];
 
-        // Mock Transactions
-        const transactions = addresses.map((address) => new Transaction().to(address, 1000));
+        const { transactions, merkleBlock } = sendHistoricalTransactionsWithProofs({
+          toAddresses,
+          atHeight: CHAIN_HEIGHT - 3,
+        });
+
         allTransactions.push(...transactions);
-        // Mock Merkle Block
-        const merkleBlock = mockMerkleBlock(transactions.map((tx) => tx.hash));
-        merkleBlocks.push(merkleBlock);
-        const merkleBlockHeight = CHAIN_HEIGHT - 3;
-
-        // Prepare header metadata for merkle block
-        const chainStore = wallet.storage.getDefaultChainStore();
-        const metadata = {
-          height: merkleBlockHeight,
-          time: merkleBlock.header.time,
-        };
-        chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
-
-        historicalStream.sendTransactions(transactions);
-        historicalStream.sendMerkleBlock(merkleBlock);
-
-        await waitOneTick();
+        allMerkleBlocks.push(merkleBlock);
 
         const accountTransactions = account.getTransactions();
         const internalAddresses = account.getAddresses('internal');
@@ -128,34 +182,18 @@ describe('TransactionsSyncWorker', () => {
       });
 
       it('should process last transactions and merkle block', async () => {
-        const addresses = [
+        const toAddresses = [
           account.getAddress(21).address,
           account.getAddress(22).address,
         ];
 
-        // Mock Transactions
-        const transactions = addresses.map((address) => new Transaction().to(address, 1000));
+        const { transactions, merkleBlock } = sendHistoricalTransactionsWithProofs({
+          toAddresses,
+          atHeight: CHAIN_HEIGHT - 2,
+          prevMerkleBlock: allMerkleBlocks[allMerkleBlocks.length - 1],
+        });
         allTransactions.push(...transactions);
-        // Mock Merkle Block
-        const merkleBlock = mockMerkleBlock(
-          transactions.map((tx) => tx.hash),
-          merkleBlocks[0].header,
-        );
-        merkleBlocks.push(merkleBlock);
-        const merkleBlockHeight = CHAIN_HEIGHT - 2;
-
-        // Prepare header metadata for merkle block
-        const chainStore = wallet.storage.getDefaultChainStore();
-        const metadata = {
-          height: merkleBlockHeight,
-          time: merkleBlock.header.time,
-        };
-        chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
-
-        historicalStream.sendTransactions(transactions);
-        historicalStream.sendMerkleBlock(merkleBlock);
-
-        await waitOneTick();
+        allMerkleBlocks.push(merkleBlock);
 
         const accountTransactions = account.getTransactions();
         const internalAddresses = account.getAddresses('internal');
@@ -182,18 +220,15 @@ describe('TransactionsSyncWorker', () => {
         it('should process unconfirmed transaction', async () => {
           await transactionsSyncWorker.execute();
 
-          // Pick addresses that will trigger gap filling
-          transactions = [
-            new Transaction()
-              .to(account.getAddress(23).address, 1e8),
-            new Transaction()
-              .to(account.getAddress(24).address, 1e8),
+          const toAddresses = [
+            account.getAddress(23).address,
+            account.getAddress(24).address,
           ];
+
+          ({ transactions } = sendNewTransactions({
+            toAddresses,
+          }));
           allTransactions.push(...transactions);
-
-          continuousStream.sendTransactions(transactions);
-
-          await waitOneTick();
 
           const accountTransactions = account.getTransactions();
           const internalAddresses = account.getAddresses('internal');
@@ -207,23 +242,13 @@ describe('TransactionsSyncWorker', () => {
 
         it('should confirm transactions with a merkle block', async () => {
           // Mock Merkle Block
-          const merkleBlock = mockMerkleBlock(
-            transactions.map((tx) => tx.hash),
-            merkleBlocks[1].header,
-          );
-          merkleBlocks.push(merkleBlock);
           const merkleBlockHeight = CHAIN_HEIGHT + 1;
+          sendNewMerkleBlock({
+            forTransactions: transactions,
+            atHeight: merkleBlockHeight,
+          });
 
-          // Prepare header metadata for merkle block
           const chainStore = wallet.storage.getDefaultChainStore();
-          const metadata = {
-            height: merkleBlockHeight,
-            time: merkleBlock.header.time,
-          };
-          chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
-
-          continuousStream.sendMerkleBlock(merkleBlock);
-
           expect(chainStore.state.lastSyncedBlockHeight)
             .to.equal(merkleBlockHeight);
         });
@@ -233,18 +258,15 @@ describe('TransactionsSyncWorker', () => {
         let transactions;
 
         it('should process two unconfirmed transactions', async () => {
-          // Pick addresses that will trigger gap filling
-          transactions = [
-            new Transaction()
-              .to(account.getAddress(43).address, 1e8),
-            new Transaction()
-              .to(account.getAddress(44).address, 1e8),
+          const toAddresses = [
+            account.getAddress(43).address,
+            account.getAddress(44).address,
           ];
+
+          ({ transactions } = sendNewTransactions({
+            toAddresses,
+          }));
           allTransactions.push(...transactions);
-
-          continuousStream.sendTransactions(transactions);
-
-          await waitOneTick();
 
           const accountTransactions = account.getTransactions();
           const internalAddresses = account.getAddresses('internal');
@@ -257,24 +279,13 @@ describe('TransactionsSyncWorker', () => {
         });
 
         it('should process first TX in the first merkle block', () => {
-          // Mock Merkle Block
-          const merkleBlock = mockMerkleBlock(
-            [transactions[0].hash],
-            merkleBlocks[2].header,
-          );
-          merkleBlocks.push(merkleBlock);
           const merkleBlockHeight = CHAIN_HEIGHT + 2;
+          const { merkleBlock } = sendNewMerkleBlock({
+            forTransactions: [transactions[0]],
+            atHeight: merkleBlockHeight,
+          });
 
-          // Prepare header metadata for merkle block
           const chainStore = wallet.storage.getDefaultChainStore();
-          const metadata = {
-            height: merkleBlockHeight,
-            time: merkleBlock.header.time,
-          };
-          chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
-
-          continuousStream.sendMerkleBlock(merkleBlock);
-
           const transactionsWithMetadata = chainStore.state.transactions;
           const { metadata: firstTxMetadata } = transactionsWithMetadata
             .get(transactions[0].hash);
@@ -297,23 +308,15 @@ describe('TransactionsSyncWorker', () => {
         });
 
         it('should process second TX in the second merkle block', () => {
-          // Mock Merkle Block
-          const merkleBlock = mockMerkleBlock(
-            [transactions[1].hash],
-            merkleBlocks[3].header,
-          );
-          merkleBlocks.push(merkleBlock);
           const merkleBlockHeight = CHAIN_HEIGHT + 3;
+
+          const { merkleBlock } = sendNewMerkleBlock({
+            forTransactions: [transactions[1]],
+            atHeight: merkleBlockHeight,
+          });
 
           // Prepare header metadata for merkle block
           const chainStore = wallet.storage.getDefaultChainStore();
-          const metadata = {
-            height: merkleBlockHeight,
-            time: merkleBlock.header.time,
-          };
-          chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
-
-          continuousStream.sendMerkleBlock(merkleBlock);
 
           const transactionsWithMetadata = chainStore.state.transactions;
           const { metadata: secondTxMetadata } = transactionsWithMetadata
@@ -330,18 +333,154 @@ describe('TransactionsSyncWorker', () => {
   });
 
   context('Synchronization with storage adapter', () => {
+    let account;
+    let onStartPromise;
+    const allTransactions = [];
+    const allMerkleBlocks = [];
+
+    before(async function before() {
+      transactionsSyncWorker = await createWorker(this.sinon, { withAdapter: true });
+      transactionsSyncWorker.on('error', console.error);
+    });
+
+    beforeEach(async function beforeEach() {
+      mockTxStream(this.sinon);
+    });
+
     context('First launch', () => {
-      it('should start historical sync and stop in the middle');
+      it('should start historical sync', async () => {
+        // Call get account in order to inject TransactionsSyncWorker plugin and its deps
+        account = await wallet.getAccount();
+
+        wallet.storage.getDefaultChainStore().updateChainHeight(CHAIN_HEIGHT);
+
+        // Start historical sync
+        transactionsSyncWorker.onStart().catch(console.error);
+        await waitOneTick();
+
+        const toAddresses = [
+          account.getAddress(0).address,
+          account.getAddress(1).address,
+          account.getAddress(2).address,
+        ];
+
+        const { transactions, merkleBlock } = sendHistoricalTransactionsWithProofs({
+          toAddresses,
+          atHeight: Math.round(CHAIN_HEIGHT / 2),
+        });
+        allTransactions.push(...transactions);
+        allMerkleBlocks.push(merkleBlock);
+
+        const accountTransactions = account.getTransactions();
+        const internalAddresses = account.getAddresses('internal');
+        const externalAddresses = account.getAddresses('external');
+
+        expect(Object.keys(accountTransactions))
+          .to.deep.equal(allTransactions.map((tx) => tx.hash));
+        expect(Object.keys(internalAddresses).length).to.equal(20);
+        expect(Object.keys(externalAddresses).length).to.equal(23);
+      });
+
+      it('should stop sync', async () => {
+        await new Promise((resolve) => {
+          wallet.storage.on(EVENTS.SAVE_STATE_SUCCESS, resolve);
+        });
+
+        await wallet.disconnect();
+        wallet.accounts = [];
+        const { storage } = wallet;
+        storage.reset();
+
+        const chainStore = storage.getDefaultChainStore();
+        expect(chainStore.state.transactions.size).to.equal(0);
+        expect(transactionsSyncWorker.syncState)
+          .to.equal(TransactionsSyncWorker.STATES.IDLE);
+      });
     });
 
     context('Second launch', () => {
-      it('should finish historical sync after restart');
-      it('should proceed with the continuous sync');
-    });
+      it('should finish historical sync after restart', async () => {
+        const { storage } = wallet;
+        await storage.rehydrateState();
+        storage.startWorker();
 
-    context('Third launch', () => {
-      it('should sync up to the latest chain height after restart');
-      it('should proceed with the continuous sync');
+        account = await wallet.getAccount();
+        onStartPromise = transactionsSyncWorker.onStart().catch(console.error);
+        await waitOneTick();
+
+        const toAddresses = [
+          account.getAddress(21).address,
+          account.getAddress(22).address,
+        ];
+
+        const { transactions, merkleBlock } = sendHistoricalTransactionsWithProofs({
+          toAddresses,
+          atHeight: CHAIN_HEIGHT - 1,
+        });
+        allTransactions.push(...transactions);
+        allMerkleBlocks.push(merkleBlock);
+
+        historicalStream.end();
+        await onStartPromise;
+
+        const accountTransactions = account.getTransactions();
+        const internalAddresses = account.getAddresses('internal');
+        const externalAddresses = account.getAddresses('external');
+
+        expect(Object.keys(accountTransactions))
+          .to.deep.equal(allTransactions.map((tx) => tx.hash));
+        expect(Object.keys(internalAddresses).length).to.equal(20);
+        expect(Object.keys(externalAddresses).length).to.equal(43);
+      });
+
+      it('should proceed with the continuous sync', async () => {
+        await transactionsSyncWorker.execute();
+
+        const toAddresses = [
+          account.getAddress(23).address,
+          account.getAddress(24).address,
+        ];
+        // Pick addresses that will trigger gap filling
+        const { transactions } = sendNewTransactions({
+          toAddresses,
+        });
+        allTransactions.push(...transactions);
+
+        const { merkleBlock } = sendNewMerkleBlock({
+          forTransactions: transactions,
+          atHeight: CHAIN_HEIGHT + 1,
+        });
+        allMerkleBlocks.push(merkleBlock);
+
+        const accountTransactions = account.getTransactions();
+        const internalAddresses = account.getAddresses('internal');
+        const externalAddresses = account.getAddresses('external');
+
+        expect(Object.keys(accountTransactions).sort())
+          .to.deep.equal(allTransactions.map((tx) => tx.hash).sort());
+        expect(Object.keys(internalAddresses).length).to.equal(20);
+        expect(Object.keys(externalAddresses).length).to.equal(45);
+      });
+
+      it('should stop sync', async () => {
+        await new Promise((resolve) => {
+          wallet.storage.on(EVENTS.SAVE_STATE_SUCCESS, resolve);
+        });
+
+        const { storage } = wallet;
+        const chainStore = storage.getDefaultChainStore();
+
+        expect(chainStore.state.lastSyncedBlockHeight)
+          .to.equal(CHAIN_HEIGHT + 1);
+
+        await wallet.disconnect();
+        wallet.accounts = [];
+        storage.reset();
+
+        expect(chainStore.state.transactions.size).to.equal(0);
+        expect(transactionsSyncWorker.syncState)
+          .to.equal(TransactionsSyncWorker.STATES.IDLE);
+      });
     });
   });
 });

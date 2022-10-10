@@ -248,7 +248,6 @@ describe('BlockHeadersSyncWorker', () => {
 
       // Reset storage and rehydrate from adapter
       storage.reset();
-      storage.lastRehydrate = null;
       await storage.rehydrateState();
 
       // Reset spv chain

@@ -120,6 +120,10 @@ class Wallet extends EventEmitter {
       if (typeof opts.storage.autoSave === 'boolean') {
         storageOpts.autosave = opts.storage.autoSave;
       }
+
+      if (typeof opts.storage.autosaveIntervalTime === 'number') {
+        storageOpts.autosaveIntervalTime = opts.storage.autosaveIntervalTime;
+      }
     }
     this.storage = new Storage(storageOpts);
 

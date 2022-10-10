@@ -40,6 +40,7 @@ class Storage extends EventEmitter {
   reset() {
     this.wallets.forEach((wallet) => wallet.reset());
     this.chains.forEach((chain) => chain.reset());
+    this.lastRehydrate = null;
   }
 
   scheduleStateSave() {
