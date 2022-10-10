@@ -40,21 +40,21 @@ module.exports = lodashMerge({}, baseConfig, {
           seeds: [
             {
               id: '74907790a03b51ac062c8a1453dafd72a08668a3',
-              host: '54.189.200.56',
+              host: '34.209.100.240',
               port: 26656,
             },
             {
               id: '2006632eb20e670923d13d4f53abc24468eaad4d',
-              host: '52.43.162.96',
+              host: '54.213.254.17',
               port: 26656,
             },
           ],
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-9',
+          chain_id: 'dash-testnet-14',
           initial_height: '0',
-          initial_core_chain_locked_height: 542300,
+          initial_core_chain_locked_height: 813581,
           initial_proposal_core_chain_lock: null,
           consensus_params: {
             block: {
@@ -74,24 +74,42 @@ module.exports = lodashMerge({}, baseConfig, {
             },
             version: {},
           },
-          threshold_public_key: null,
+          validators: [
+            {
+              pub_key: {
+                type: 'tendermint/PubKeyBLS12381',
+                value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
+              },
+              power: '100',
+              name: '',
+              pro_tx_hash: 'F3D506822A24E7E4BE318A6ED7371CC1E1527880A594FE04629F50A1618DB8E7',
+            },
+          ],
+          threshold_public_key: {
+            type: 'tendermint/PubKeyBLS12381',
+            value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
+          },
           quorum_type: '4',
-          quorum_hash: null,
+          quorum_hash: '0000000000000000000000000000000000000000',
           app_hash: '',
         },
       },
     },
     dpns: {
-      masterPublicKey: '022a5ffc9f92e005a02401c375f575b3aed5606fb24ddef5b3a05d55c66ba2a2f6',
+      masterPublicKey: '038b74aea104c19463b74be5fae9af2255fe42013aecd17092464214f2867ac19b',
+      secondPublicKey: '029df453a626cde501f454b44a9beeb8e525590c94ef2e78743993006651fcec4f',
     },
     dashpay: {
-      masterPublicKey: '02c6bf10f8cc078866ed5466a0b5ea3a4e8db2a764ea5aa9cb75f22658664eb149',
+      masterPublicKey: '02e57fb84728e6f10c885cf4d17025f8c6d7016321e4fab7b7ca8135d6e06b5ec2',
+      secondPublicKey: '03c7024f5f375f9a04152c8438e9bca612d084c752269c28965146caa73e223118',
     },
     featureFlags: {
-      masterPublicKey: '033d57d03ba602acecfb6fd4ad66c5fdb9a739e163faefa901926bdf28063f9251',
+      masterPublicKey: '03aff4e943e005a2549757fdd308b0a7a04b03d74d78d53f981dd337ace47994cc',
+      secondPublicKey: '0311c23cf3ba6cdb32834d5a1ce2e4258ff7766a8e977f6318063d0bfe9bd476c3',
     },
     masternodeRewardShares: {
-      masterPublicKey: '02182c19827a5e3151feb965b2c6e6bbe57bb1f2fe7579595d76b672966da4e8e6',
+      masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f534d02dd6766c6de53e3fd7152dfc',
+      secondPublicKey: '035655d53d061275314535b74bfbbfb74cf640023a5cc466283e83881876cb9a3f',
     },
   },
   network: NETWORK_TESTNET,
