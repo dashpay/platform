@@ -20,7 +20,7 @@ async function waitForCoreStart(coreService) {
       isReady = true;
     } catch (e) {
       // just wait 1 second before next try
-      await wait(1000);
+      await wait(2000);
       ++retries;
     }
   } while (!isReady && retries < maxRetries);
