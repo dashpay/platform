@@ -26,7 +26,7 @@ case ${i} in
     -t=*|--type=*)
       RELEASE_TYPE="${i#*=}"
     ;;
-    -f=*|--from=*)
+    -c=*|--changelog-from=*)
       LATEST_TAG="${i#*=}"
     ;;
 esac

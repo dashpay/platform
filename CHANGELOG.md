@@ -1,3 +1,21 @@
+## [0.23.0-alpha.3](https://github.com/dashevo/platform/compare/v0.23.0-alpha.2...v0.23.0-alpha.3) (2022-10-10)
+
+
+### Bug Fixes
+
+* **drive:** db is in readonly mode due to the active transaction ([#567](https://github.com/dashevo/platform/issues/567))
+
+
+### Build System
+
+* fix release script wrong param names ([#566](https://github.com/dashevo/platform/issues/566))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** use latest DAPI and Drive 0.23.0-alpha ([#568](https://github.com/dashevo/platform/issues/568))
+
+
 ## [0.24.0-dev.1](https://github.com/dashevo/platform/compare/v0.23.0-alpha.2...v0.24.0-dev.1) (2022-10-07)
 
 
