@@ -12,6 +12,8 @@ class DAPIAddress {
     if (typeof address === 'string') {
       const [host, httpPort, grpcPort, ssl] = address.split(':');
 
+      console.log(host, httpPort, grpcPort, ssl);
+
       // eslint-disable-next-line no-param-reassign
       address = {
         host,
@@ -26,7 +28,7 @@ class DAPIAddress {
       throw new DAPIAddressHostMissingError();
     }
 
-    this.protocol = address.protocol || 'https';
+    this.protocol = address.protocol || 'http';
     this.host = address.host;
     this.httpPort = address.httpPort || DAPIAddress.DEFAULT_HTTP_PORT;
     this.grpcPort = address.grpcPort || DAPIAddress.DEFAULT_GRPC_PORT;
