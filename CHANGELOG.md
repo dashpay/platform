@@ -1,3 +1,15 @@
+## [0.23.0-alpha.4](https://github.com/dashevo/platform/compare/v0.23.0-alpha.3...v0.23.0-alpha.4) (2022-10-11)
+
+
+### Bug Fixes
+
+* **dashmate:** Core RPC is not responding ([#575](https://github.com/dashevo/platform/issues/575))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** update dapi addresses white list ([#574](https://github.com/dashevo/platform/issues/574))
+
 ## [0.23.0-alpha.3](https://github.com/dashevo/platform/compare/v0.23.0-alpha.2...v0.23.0-alpha.3) (2022-10-10)
 
 
