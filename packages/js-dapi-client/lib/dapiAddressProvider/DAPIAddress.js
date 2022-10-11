@@ -193,7 +193,7 @@ class DAPIAddress {
 
 DAPIAddress.DEFAULT_HTTP_PORT = 3000;
 DAPIAddress.DEFAULT_GRPC_PORT = 3010;
-DAPIAddress.DEFAULT_PROTOCOL = 'https';
+DAPIAddress.DEFAULT_PROTOCOL = 'http';
 
 /**
  * @typedef {object} RawDAPIAddress

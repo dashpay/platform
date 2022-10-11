@@ -394,7 +394,7 @@ describe('GrpcTransport', () => {
 
         expect(receivedData).to.deep.equal(data);
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
-        expect(clientClassMock).to.be.calledOnceWithExactly(`http://${host}:${dapiAddress.getHttpPort()}`);
+        expect(clientClassMock).to.be.calledOnceWithExactly(`${DAPIAddress.DEFAULT_PROTOCOL}://${host}:${dapiAddress.getHttpPort()}`);
         expect(requestFunc).to.be.calledOnceWithExactly(requestMessage, {}, {});
         expect(grpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
       });
