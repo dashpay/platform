@@ -55,7 +55,7 @@ dotenvExpand(dotenvConfig);
 
 DashCoreOptions.setDefaultCustomOptions({
   container: {
-    image: 'dashpay/dashd:18.1.0-rc.1',
+    image: 'dashpay/dashd:18.1.0-rc.0',
   },
 });
 
