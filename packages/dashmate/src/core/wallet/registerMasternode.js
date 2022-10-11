@@ -23,18 +23,16 @@ async function registerMasternode(
   // get collateral index
   const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('outputs');
 
-  const collateralOutputIndices = masternodeOutputs
+  const collateralOutputIndex = masternodeOutputs
     .find((outpoint) => outpoint.startsWith(collateralHash))
-    .map((outpoint) => outpoint.split('-'));
-
-  const collateralOutputIndex = parseInt(collateralOutputIndices[0], 10);
+    .split('-')[1];
 
   const ipAndPort = `${config.get('externalIp', true)}:${config.get('core.p2p.port')}`;
 
   const { result: proRegTxId } = await coreService.getRpcClient().protx(
     'register',
     collateralHash, // The txid of the 1000 Dash collateral funding transaction
-    collateralOutputIndex, // The output index of the 1000 Dash funding transaction
+    parseInt(collateralOutputIndex, 10), // The output index of the 1000 Dash funding transaction
     ipAndPort, // Masternode IP address and port, in the format x.x.x.x:yyyy
     ownerAddress, // The new Dash address for the owner/voting address
     operatorPublicKey, // The Operator BLS public key
