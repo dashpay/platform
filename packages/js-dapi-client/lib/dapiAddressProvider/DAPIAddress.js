@@ -12,8 +12,6 @@ class DAPIAddress {
     if (typeof address === 'string') {
       const [host, httpPort, grpcPort, ssl] = address.split(':');
 
-      console.log(host, httpPort, grpcPort, ssl);
-
       // eslint-disable-next-line no-param-reassign
       address = {
         host,
