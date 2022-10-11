@@ -288,6 +288,7 @@ class CachedStateRepositoryDecorator {
    * @returns {Promise<number>}
    */
   async fetchLatestWithdrawalTransactionIndex() {
+    // TODO: handle dry run via passing state transition execution context
     return this.stateRepository.fetchLatestWithdrawalTransactionIndex();
   }
 
@@ -300,6 +301,7 @@ class CachedStateRepositoryDecorator {
    * @returns {Promise<void>}
    */
   async enqueueWithdrawalTransaction(index, transactionBytes) {
+    // TODO: handle dry run via passing state transition execution context
     return this.stateRepository.enqueueWithdrawalTransaction(
       index,
       transactionBytes,
