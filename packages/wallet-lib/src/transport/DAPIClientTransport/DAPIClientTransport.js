@@ -22,7 +22,7 @@ DAPIClientTransport.prototype.getBlockHeaderByHeight = require('./methods/getBlo
 DAPIClientTransport.prototype.getStatus = require('./methods/getStatus');
 DAPIClientTransport.prototype.getTransaction = require('./methods/getTransaction');
 DAPIClientTransport.prototype.sendTransaction = require('./methods/sendTransaction');
-DAPIClientTransport.prototype.getIdentityIdsByPublicKeyHash = require('./methods/getIdentityIdsByPublicKeyHashes');
+DAPIClientTransport.prototype.getIdentitiesByPublicKeyHashes = require('./methods/getIdentitiesByPublicKeyHashes');
 DAPIClientTransport.prototype.subscribeToTransactionsWithProofs = require('./methods/subscribeToTransactionsWithProofs');
 
 module.exports = DAPIClientTransport;
