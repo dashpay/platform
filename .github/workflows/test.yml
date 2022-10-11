@@ -12,8 +12,8 @@ on:
         type: boolean
         default: false
         required: false
-      ignore-build:
-        description: Ignores build command execution
+      skip-tests:
+        description: Skip running tests
         type: boolean
         default: false
         required: false
@@ -53,16 +53,16 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Run ESLinter
-        run: yarn lint --filter "${{ inputs.package }}"
-
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
-        if: ${{ !inputs.start-local-network && !inputs.ignore-build }}
+        if: ${{ !inputs.start-local-network }}
 
       - name: Build all packages
         run: yarn build
         if: ${{ inputs.start-local-network }}
+
+      - name: Run ESLinter
+        run: yarn workspace "${{ inputs.package }}" lint
 
       - name: Create necessary dotenv files
         run: |
@@ -106,6 +106,7 @@ jobs:
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"
+        if: ${{ !inputs.skip-tests }}
 
       - name: Show Docker logs
         if: ${{ failure() }}

@@ -201,6 +201,8 @@ class Account extends EventEmitter {
      */
     this.txFetchListener = null;
 
+    this.broadcastRetryAttempts = 0;
+
     // Increases a limit of max listeners for transactions related events
     // 25 - mempool limit
     this.setMaxListeners(25);
@@ -252,7 +254,6 @@ class Account extends EventEmitter {
   /**
    * @param {string} transactionHash
    * @param {function} callback
-   * @returns {function} - cancel subscription
    */
   subscribeToTransactionInstantLock(transactionHash, callback) {
     const eventName = Account.getInstantLockTopicName(transactionHash);

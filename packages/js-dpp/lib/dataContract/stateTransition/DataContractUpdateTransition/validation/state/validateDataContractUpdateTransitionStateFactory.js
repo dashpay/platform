@@ -19,11 +19,19 @@ function validateDataContractUpdateTransitionStateFactory(
   async function validateDataContractUpdateTransitionState(stateTransition) {
     const result = new ValidationResult();
 
+    const executionContext = stateTransition.getExecutionContext();
     const dataContract = stateTransition.getDataContract();
     const dataContractId = dataContract.getId();
 
     // Data contract should exist
-    const existingDataContract = await stateRepository.fetchDataContract(dataContractId);
+    const existingDataContract = await stateRepository.fetchDataContract(
+      dataContractId,
+      executionContext,
+    );
+
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     if (!existingDataContract) {
       result.addError(

@@ -60,6 +60,11 @@ function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSch
       ),
     };
 
+    // In case `unique` is false it still must be in the new index snapshot
+    if (Object.prototype.hasOwnProperty.call(indexDefinition, 'unique')) {
+      newIndexSnapshot.unique = indexDefinition.unique;
+    }
+
     if (!serializer.encode(indexDefinition).equals(
       serializer.encode(newIndexSnapshot),
     )) {
@@ -170,6 +175,7 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
 /**
  * Validate indices have not been changed
  *
+ * @typedef {validateIndicesAreBackwardCompatible}
  * @param {Object} existingDocumentDefinitions
  * @param {Object} newDocumentDefinitions
  *

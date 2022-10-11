@@ -5,7 +5,7 @@ const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors
 const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const ValidationResult = require('../../../validation/ValidationResult');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
-const InvalidAssetLockTransactionOutputReturnSize = require('../../../errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSize');
+const InvalidAssetLockTransactionOutputReturnSizeError = require('../../../errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSizeError');
 
 /**
  *
@@ -17,10 +17,10 @@ function validateAssetLockTransactionFactory(stateRepository) {
    * @typedef validateAssetLockTransaction
    * @param {Buffer} rawTransaction
    * @param {number} outputIndex
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {Promise<ValidationResult>}
    */
-
-  async function validateAssetLockTransaction(rawTransaction, outputIndex) {
+  async function validateAssetLockTransaction(rawTransaction, outputIndex, executionContext) {
     const result = new ValidationResult();
     const { Transaction } = DashCoreLib;
 
@@ -62,7 +62,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
 
     if (publicKeyHash.length !== 20) {
       result.addError(
-        new InvalidAssetLockTransactionOutputReturnSize(outputIndex),
+        new InvalidAssetLockTransactionOutputReturnSizeError(outputIndex),
       );
 
       return result;
@@ -71,6 +71,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
     const outPointBuffer = transaction.getOutPointBuffer(outputIndex);
     const outPointIsUsed = await stateRepository.isAssetLockTransactionOutPointAlreadyUsed(
       outPointBuffer,
+      executionContext,
     );
 
     if (outPointIsUsed) {

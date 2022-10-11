@@ -11,7 +11,7 @@
       "name": "rating",
       "properties": [
         {
-          "rating": "desc"
+          "rating": "asc"
         }
       ]
     }],

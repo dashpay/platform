@@ -16,22 +16,17 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
  *
  * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
   signedIdentityRepository,
   createQueryResponse,
-  blockExecutionContext,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -42,11 +37,6 @@ function identityQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      throw new NotFoundAbciError('Identity not found');
-    }
-
     let identifier;
     try {
       identifier = new Identifier(id);
@@ -58,19 +48,21 @@ function identityQueryHandlerFactory(
       throw e;
     }
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
-    const identity = await signedIdentityRepository.fetch(identifier);
+    if (request.prove) {
+      const proof = await signedIdentityRepository.prove(identifier);
 
-    if (!identity) {
-      throw new NotFoundAbciError('Identity not found');
+      response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const identityResult = await signedIdentityRepository.fetch(identifier);
+
+      if (identityResult.isNull()) {
+        throw new NotFoundAbciError('Identity not found');
+      }
+
+      response.setIdentity(identityResult.getValue().toBuffer());
     }
-
-    response.setIdentity(identity.toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),

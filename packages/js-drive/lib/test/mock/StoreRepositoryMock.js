@@ -8,6 +8,8 @@ class StoreRepositoryMock {
   constructor(sinon) {
     this.store = sinon.stub();
     this.fetch = sinon.stub();
+    this.prove = sinon.stub();
+    this.proveMany = sinon.stub();
     this.createTree = sinon.stub();
   }
 }

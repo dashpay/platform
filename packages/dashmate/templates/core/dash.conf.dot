@@ -1,5 +1,6 @@
 # general
 daemon=0  # leave this set to 0 for Docker
+reindex={{?it.core.reindex.enable}}1{{??}}0{{?}}
 logtimestamps=1
 maxconnections=256
 printtoconsole=1
@@ -41,6 +42,10 @@ zmqpubrawchainlocksig=tcp://0.0.0.0:29998
 zmqpubrawchainlock=tcp://0.0.0.0:29998
 zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 
+{{? it.core.masternode.enable === true}}
+masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
+{{?}}
+
 {{? it.network === 'testnet'}}testnet=1
 [test]
 {{?? it.network === 'local'}}
@@ -69,3 +74,4 @@ port={{=it.core.p2p.port}}
 bind=0.0.0.0
 rpcbind=0.0.0.0
 rpcport={{=it.core.rpc.port}}
+

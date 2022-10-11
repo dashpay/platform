@@ -1,6 +1,8 @@
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
+const MAX_DOCUMENTS = 16;
+
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DocumentRepository} documentRepository
@@ -16,7 +18,7 @@ function createRewardShareDocumentFactory(
    * @param {Identifier} masternodeIdentifier
    * @param {Identifier} operatorIdentifier
    * @param {number} percentage
-   * @returns {Promise<boolean>}
+   * @returns {Promise<Document|null>}
    */
   async function createRewardShareDocument(
     dataContract,
@@ -24,21 +26,31 @@ function createRewardShareDocumentFactory(
     operatorIdentifier,
     percentage,
   ) {
-    const documents = await documentRepository.find(
+    const documentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier.toBuffer()],
-          ['payToId', '==', operatorIdentifier.toBuffer()],
         ],
+        useTransaction: true,
       },
-      true,
     );
 
-    // Reward share for this operator is already exists
-    if (documents.length > 0) {
-      return false;
+    // Do not create a share if it's exist already
+    // or max shares limit is reached
+    if (!documentsResult.isEmpty()) {
+      if (documentsResult.getValue().length > MAX_DOCUMENTS) {
+        return null;
+      }
+
+      const operatorShare = documentsResult.getValue().find((shareDocument) => (
+        shareDocument.get('payToId').equals(operatorIdentifier)
+      ));
+
+      if (operatorShare) {
+        return null;
+      }
     }
 
     const rewardShareDocument = dpp.document.create(
@@ -61,9 +73,11 @@ function createRewardShareDocumentFactory(
 
     rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
-    await documentRepository.store(rewardShareDocument, true);
+    await documentRepository.create(rewardShareDocument, {
+      useTransaction: true,
+    });
 
-    return true;
+    return rewardShareDocument;
   }
 
   return createRewardShareDocument;

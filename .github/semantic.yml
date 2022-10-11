@@ -3,16 +3,19 @@
 titleOnly: true
 
 scopes:
+  - bench-suite
   - dapi
   - dapi-grpc
-  - dapi-client
   - dashmate
   - dashpay-contract
   - dpns-contract
+  - feature-flags-contract
+  - dapi-client
   - sdk
   - dpp
   - drive
   - grpc-common
+  - masternode-reward-shares-contract
   - test-suite
   - wallet-lib
   - release

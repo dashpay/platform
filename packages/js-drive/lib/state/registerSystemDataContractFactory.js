@@ -1,10 +1,12 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
 
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
- * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {LRUCache} dataContractCache
  *
@@ -14,7 +16,7 @@ function registerSystemDataContractFactory(
   dpp,
   identityRepository,
   dataContractRepository,
-  publicKeyToIdentityIdRepository,
+  publicKeyToIdentitiesRepository,
   blockExecutionContext,
   dataContractCache,
 ) {
@@ -23,7 +25,8 @@ function registerSystemDataContractFactory(
    *
    * @param {Identifier} ownerId
    * @param {Identifier} contractId
-   * @param {PublicKey} publicKey
+   * @param {PublicKey} masterPublicKey
+   * @param {PublicKey} secondPublicKey
    * @param {Object} documentDefinitions
    *
    * @returns {Promise<DataContract>}
@@ -31,7 +34,8 @@ function registerSystemDataContractFactory(
   async function registerSystemDataContract(
     ownerId,
     contractId,
-    publicKey,
+    masterPublicKey,
+    secondPublicKey,
     documentDefinitions,
   ) {
     const ownerIdentity = dpp.identity.create(
@@ -39,15 +43,23 @@ function registerSystemDataContractFactory(
         createIdentifier: () => ownerId,
       },
       [{
-        key: publicKey,
+        key: masterPublicKey,
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      }, {
+        key: secondPublicKey,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
       }],
     );
 
-    await identityRepository.store(ownerIdentity, true);
+    await identityRepository.create(ownerIdentity, {
+      useTransaction: true,
+    });
 
-    await publicKeyToIdentityIdRepository.store(publicKey.hash, ownerId, true);
+    await publicKeyToIdentitiesRepository.store(masterPublicKey.hash, ownerId, {
+      useTransaction: true,
+    });
 
     const dataContract = dpp.dataContract.create(
       ownerIdentity.getId(),
@@ -56,10 +68,16 @@ function registerSystemDataContractFactory(
 
     dataContract.id = contractId;
 
-    await dataContractRepository.store(dataContract, true);
+    await dataContractRepository.store(dataContract, {
+      useTransaction: true,
+    });
 
     // Store data contract in the cache
-    dataContractCache.set(dataContract.getId().toString(), dataContract);
+    const cacheItem = new DataContractCacheItem(dataContract, [
+      new ReadOperation(dataContract.toBuffer().length),
+    ]);
+
+    dataContractCache.set(cacheItem.getKey(), cacheItem);
 
     return dataContract;
   }

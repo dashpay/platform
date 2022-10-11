@@ -3,6 +3,7 @@ const IdentityPublicKey = require('./IdentityPublicKey');
 
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
+const IdentityUpdateTransition = require('./stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
@@ -37,25 +38,17 @@ class IdentityFactory {
       protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
-      publicKeys: publicKeyConfigs.map((publicKey, i) => {
-        const result = {
-          id: publicKey.id == null ? i : publicKey.id,
-          type: publicKey.type == null ? IdentityPublicKey.TYPES.ECDSA_SECP256K1 : publicKey.type,
-          purpose: publicKey.purpose == null ? IdentityPublicKey.PURPOSES.AUTHENTICATION
-            : publicKey.purpose,
-          securityLevel: publicKey.securityLevel == null
-            ? IdentityPublicKey.SECURITY_LEVELS.CRITICAL : publicKey.securityLevel,
-          // Copy data buffer
-          data: publicKey.key.toBuffer(),
-          readOnly: Boolean(publicKey.readOnly),
-        };
-
-        if (publicKey.readOnly) {
-          result.readOnly = publicKey.readOnly;
-        }
-
-        return result;
-      }),
+      publicKeys: publicKeyConfigs.map((publicKey, i) => ({
+        id: publicKey.id == null ? i : publicKey.id,
+        type: publicKey.type == null ? IdentityPublicKey.TYPES.ECDSA_SECP256K1 : publicKey.type,
+        purpose: publicKey.purpose == null ? IdentityPublicKey.PURPOSES.AUTHENTICATION
+          : publicKey.purpose,
+        securityLevel: publicKey.securityLevel == null
+          ? IdentityPublicKey.SECURITY_LEVELS.CRITICAL : publicKey.securityLevel,
+        // Copy data buffer
+        data: publicKey.key.toBuffer(),
+        readOnly: Boolean(publicKey.readOnly),
+      })),
       revision: 0,
     });
 
@@ -152,14 +145,15 @@ class IdentityFactory {
    * @return {IdentityCreateTransition}
    */
   createIdentityCreateTransition(identity) {
-    const stateTransition = new IdentityCreateTransition({
+    // Copy public keys
+    const publicKeys = identity.getPublicKeys()
+      .map((publicKey) => publicKey.toObject());
+
+    return new IdentityCreateTransition({
       protocolVersion: this.dpp.getProtocolVersion(),
       assetLockProof: identity.getAssetLockProof().toObject(),
+      publicKeys,
     });
-
-    stateTransition.setPublicKeys(identity.getPublicKeys());
-
-    return stateTransition;
   }
 
   /**
@@ -175,6 +169,41 @@ class IdentityFactory {
       identityId,
       assetLockProof: assetLockProof.toObject(),
     });
+  }
+
+  /**
+   * Create identity update transition
+   *
+   * @param {Identity} identity - identity to update
+   * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys - public
+   * keys to add or delete
+   * @return {IdentityUpdateTransition}
+   */
+  createIdentityUpdateTransition(
+    identity,
+    publicKeys = {},
+  ) {
+    const rawStateTransition = {
+      protocolVersion: this.dpp.getProtocolVersion(),
+      identityId: identity.getId(),
+      revision: identity.getRevision() + 1,
+    };
+
+    if (publicKeys.add) {
+      // Copy public keys
+      rawStateTransition.addPublicKeys = publicKeys.add.map((publicKey) => (
+        new IdentityPublicKey(publicKey.toObject())
+      ));
+    }
+
+    if (publicKeys.disable) {
+      const now = new Date().getTime();
+
+      rawStateTransition.disablePublicKeys = publicKeys.disable.map((pk) => pk.getId());
+      rawStateTransition.publicKeysDisabledAt = now;
+    }
+
+    return new IdentityUpdateTransition(rawStateTransition);
   }
 }
 

@@ -8,8 +8,12 @@ const {
 const EVENTS = require('../../../EVENTS');
 const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
 const logger = require('../../../logger');
+const sleep = require('../../../utils/sleep');
 
 const MEMPOOL_PROPAGATION_TIMEOUT = 360000;
+
+const MAX_RETRY_ATTEMPTS = 10;
+const RETRY_TIMEOUT = 500;
 
 function impactAffectedInputs({ transaction }) {
   const {
@@ -174,6 +178,20 @@ async function broadcastTransaction(transaction, options = {
     ]);
   } catch (error) {
     cancelMempoolSubscription();
+
+    if (error.message === 'invalid transaction: Missing inputs') {
+      if (this.broadcastRetryAttempts === MAX_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      this.broadcastRetryAttempts += 1;
+      await sleep(RETRY_TIMEOUT);
+      await broadcastTransaction.call(this, transaction, options);
+      this.broadcastRetryAttempts = 0;
+
+      return transaction.hash;
+    }
+
     throw error;
   }
 

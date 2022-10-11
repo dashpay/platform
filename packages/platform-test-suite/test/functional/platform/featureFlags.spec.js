@@ -21,7 +21,7 @@ describe('Platform', () => {
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
-        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 5000);
+        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 50000);
 
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
@@ -46,7 +46,7 @@ describe('Platform', () => {
         const evidence = oldConsensusParams.getEvidence();
 
         updateConsensusParamsFeatureFlag = {
-          enableAtHeight: lastBlockHeight + 2,
+          enableAtHeight: lastBlockHeight + 3,
           block: {
             maxBytes: +block.maxBytes + 1,
           },
@@ -62,7 +62,7 @@ describe('Platform', () => {
         };
 
         revertConsensusParamsFeatureFlag = {
-          enableAtHeight: lastBlockHeight + 4,
+          enableAtHeight: lastBlockHeight + 5,
           block: {
             maxBytes: +block.maxBytes,
           },

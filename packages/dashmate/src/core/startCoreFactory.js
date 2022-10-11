@@ -29,22 +29,30 @@ function startCoreFactory(
       ...options,
     };
 
-    // Run Core service
+    const isMasternode = config.get('core.masternode.enable');
 
+    if (isMasternode) {
+      // Check operatorPrivateKey is set (error will be thrown if not)
+      config.get('core.masternode.operator.privateKey', true);
+    }
+
+    // Run Core service
     const coreCommand = [
       'dashd',
     ];
-    const isMasternode = config.get('core.masternode.enable');
-    const operatorKey = config.get('core.masternode.operator.privateKey');
-
-    if (options.wallet) {
-      coreCommand.push('--disablewallet=0');
-    } else if (isMasternode && Boolean(operatorKey)) {
-      coreCommand.push(`-masternodeblsprivkey=${operatorKey}`);
-    }
 
     if (options.addressIndex) {
       coreCommand.push('--addressindex=1');
+    }
+
+    if (options.wallet) {
+      if (isMasternode) {
+        throw new Error('You cannot run masternode with wallet mode on');
+      }
+
+      coreCommand.push('--disablewallet=0');
+    } else {
+      coreCommand.push('--disablewallet=1');
     }
 
     const coreContainer = await dockerCompose.runService(
@@ -72,7 +80,6 @@ function startCoreFactory(
     );
 
     // Wait Core to start
-
     await waitForCoreStart(coreService);
 
     return coreService;

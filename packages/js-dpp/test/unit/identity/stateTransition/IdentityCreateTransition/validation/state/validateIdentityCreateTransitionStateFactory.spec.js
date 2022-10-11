@@ -56,4 +56,16 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
   });
+
+  it('should return valid result on dry run', async () => {
+    stateRepositoryMock.fetchIdentity.resolves({});
+
+    stateTransition.getExecutionContext().enableDryRun();
+
+    const result = await validateIdentityCreateTransitionState(stateTransition);
+
+    stateTransition.getExecutionContext().disableDryRun();
+
+    expect(result.isValid()).to.be.true();
+  });
 });

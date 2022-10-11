@@ -1,5 +1,4 @@
 const Dash = require('dash');
-const path = require('path');
 
 let storageAdapter;
 

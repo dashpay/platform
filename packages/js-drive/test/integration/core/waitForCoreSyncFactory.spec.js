@@ -7,7 +7,6 @@ describe('waitForCoreSyncFactory', function main() {
 
   let firstDashCore;
   let secondDashCore;
-  let thirdDashCore;
   let container;
   let waitForCoreSync;
 
@@ -18,10 +17,6 @@ describe('waitForCoreSyncFactory', function main() {
 
     if (secondDashCore) {
       await secondDashCore.remove();
-    }
-
-    if (thirdDashCore) {
-      await thirdDashCore.remove();
     }
   });
 
@@ -53,7 +48,7 @@ describe('waitForCoreSyncFactory', function main() {
       },
     } = await secondApi.getBlockchainInfo();
 
-    expect(currentBlockHeight).to.equal(1000);
     expect(currentHeadersNumber).to.equal(1000);
+    expect(currentBlockHeight).to.equal(1000);
   });
 });

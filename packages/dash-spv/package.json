@@ -1,10 +1,11 @@
 {
   "name": "@dashevo/dash-spv",
-  "version": "1.1.8",
+  "version": "0.23.0-alpha.3",
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
     "test": "mocha test/ --no-timeouts --recursive",
+    "build": "",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
@@ -13,7 +14,7 @@
   "dependencies": {
     "@dashevo/dark-gravity-wave": "^1.1.1",
     "@dashevo/dash-util": "^2.0.3",
-    "@dashevo/dashcore-lib": "~0.19.41",
+    "@dashevo/dashcore-lib": "~0.19.44",
     "levelup": "^4.4.0",
     "memdown": "^5.1.0"
   },

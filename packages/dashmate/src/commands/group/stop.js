@@ -51,7 +51,7 @@ class GroupStopCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         isVerbose,
-        isForce
+        isForce,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

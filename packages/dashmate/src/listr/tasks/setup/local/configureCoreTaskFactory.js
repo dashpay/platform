@@ -158,6 +158,10 @@ function configureCoreTaskFactory(
 
                         config.set('core.masternode.operator.privateKey', ctx.operator.privateKey);
 
+                        // Write configs
+                        const configFiles = renderServiceTemplates(config);
+                        writeServiceConfigs(config.getName(), configFiles);
+
                         // eslint-disable-next-line no-param-reassign
                         task.output = `Public key: ${ctx.operator.publicKey}\nPrivate key: ${ctx.operator.privateKey}`;
                       },

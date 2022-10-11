@@ -16,10 +16,11 @@ class BlockExecutionContextStackRepository {
    * Store block execution context
    *
    * @param {BlockExecutionContextStack} blockExecutionContextStack
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    * @return {this}
    */
-  async store(blockExecutionContextStack, useTransaction = false) {
+  async store(blockExecutionContextStack, options = {}) {
     const contexts = blockExecutionContextStack.getContexts()
       .map((context) => context.toObject({
         skipConsensusLogger: true,
@@ -28,7 +29,7 @@ class BlockExecutionContextStackRepository {
     await this.db.putAux(
       BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(contexts),
-      { useTransaction },
+      options,
     );
 
     return this;
@@ -37,15 +38,18 @@ class BlockExecutionContextStackRepository {
   /**
    * Fetch block execution stack
    *
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    *
    * @return {BlockExecutionContextStack}
    */
-  async fetch(useTransaction = false) {
-    const blockExecutionContextsEncoded = await this.db.getAux(
+  async fetch(options = {}) {
+    const blockExecutionContextsEncodedResult = await this.db.getAux(
       BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
-      { useTransaction },
+      options,
     );
+
+    const blockExecutionContextsEncoded = blockExecutionContextsEncodedResult.getValue();
 
     const blockExecutionContextStack = new BlockExecutionContextStack();
 

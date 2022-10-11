@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.22.15",
+  "version": "0.23.0-alpha.3",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "postpack": "rm -f oclif.manifest.json",
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
-    "version": "oclif readme && git add README.md"
+    "version": "oclif readme && git add README.md",
+    "test": ""
   },
   "repository": {
     "type": "git",
@@ -46,23 +47,23 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.41",
-    "@dashevo/dashd-rpc": "^2.3.1",
+    "@dashevo/dashcore-lib": "~0.19.44",
+    "@dashevo/dashd-rpc": "^2.4.2",
     "@dashevo/dashpay-contract": "workspace:~",
+    "@dashevo/docker-compose": "^0.24.1",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
-    "@oclif/core": "^1.3.4",
-    "@oclif/plugin-help": "^5.1.11",
+    "@oclif/core": "^1.16.3",
+    "@oclif/plugin-help": "^5.1.12",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
     "dash": "workspace:~",
-    "docker-compose": "0.23.3",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",
     "dotenv": "^8.6.0",
@@ -81,7 +82,7 @@
     "node-graceful": "^3.0.1",
     "pretty-bytes": "^5.3.0",
     "pretty-ms": "^7.0.0",
-    "public-ip": "^4.0.1",
+    "public-ip": "^4.0.4",
     "rxjs": "^6.6.7",
     "semver": "^7.3.2",
     "strip-ansi": "^6.0.1",
@@ -92,7 +93,7 @@
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "globby": "^11",
-    "oclif": "^2.4.5"
+    "oclif": "^3.2.2"
   },
   "files": [
     "bin",

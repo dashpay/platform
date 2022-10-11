@@ -7,8 +7,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const cbor = require('cbor');
-
 const GetIdentitiesByPublicKeyHashesResponseClass = require('../../../../../lib/methods/platform/getIdentitiesByPublicKeyHashes/GetIdentitiesByPublicKeyHashesResponse');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
@@ -31,7 +29,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proto = new GetIdentitiesByPublicKeyHashesResponse();
 
     proto.setIdentitiesList(
-      [cbor.encode([identityFixture.toBuffer()])],
+      [identityFixture.toBuffer()],
     );
 
     const metadata = new ResponseMetadata();
@@ -76,7 +74,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     expect(getIdentitiesResponse).to.be.an.instanceOf(
       GetIdentitiesByPublicKeyHashesResponseClass,
     );
-    expect(getIdentitiesResponse.getIdentities()).to.deep.members([[identityFixture.toBuffer()]]);
+    expect(getIdentitiesResponse.getIdentities()).to.deep.equal([identityFixture.toBuffer()]);
 
     expect(getIdentitiesResponse.getMetadata())
       .to.be.an.instanceOf(Metadata);

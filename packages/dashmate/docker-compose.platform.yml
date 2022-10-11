@@ -18,9 +18,13 @@ services:
       - CORE_ZMQ_HOST=core
       - CORE_ZMQ_PORT=29998
       - DPNS_MASTER_PUBLIC_KEY=${PLATFORM_DPNS_MASTER_PUBLIC_KEY}
+      - DPNS_SECOND_PUBLIC_KEY=${PLATFORM_DPNS_SECOND_PUBLIC_KEY}
       - DASHPAY_MASTER_PUBLIC_KEY=${PLATFORM_DASHPAY_MASTER_PUBLIC_KEY}
+      - DASHPAY_SECOND_PUBLIC_KEY=${PLATFORM_DASHPAY_SECOND_PUBLIC_KEY}
       - FEATURE_FLAGS_MASTER_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_MASTER_PUBLIC_KEY}
+      - FEATURE_FLAGS_SECOND_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_SECOND_PUBLIC_KEY}
       - MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY}
+      - MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY}
       - NODE_ENV=${ENVIRONMENT:?err}
       - LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
       - LOG_PRETTY_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
@@ -32,6 +36,7 @@ services:
       - NETWORK=${NETWORK}
       - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT}
     command: yarn workspace @dashevo/drive abci
+    stop_grace_period: 30s
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
@@ -44,6 +49,7 @@ services:
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
+    stop_grace_period: 10s
 
   dapi_api:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -65,9 +71,10 @@ services:
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
-      - TENDERMINT_RPC_PORT=26657
+      - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
     command: yarn workspace @dashevo/dapi api
+    stop_grace_period: 10s
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -89,6 +96,7 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
     command: yarn workspace @dashevo/dapi core-streams
+    stop_grace_period: 10s
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
@@ -101,6 +109,7 @@ services:
       - dapi_tx_filter_stream
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
+    stop_grace_period: 10s
 
 volumes:
   drive_abci_data:

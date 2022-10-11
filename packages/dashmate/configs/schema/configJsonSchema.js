@@ -226,8 +226,23 @@ module.exports = {
           type: 'integer',
           enum: [0, 1],
         },
+        reindex: {
+          type: 'object',
+          properties: {
+            enable: {
+              type: 'boolean',
+            },
+            containerId: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            additionalProperties: false,
+          },
+          required: ['enable', 'containerId'],
+          additionalProperties: false,
+        },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],
       additionalProperties: false,
     },
     platform: {
@@ -489,8 +504,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         dashpay: {
@@ -511,8 +530,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'masterPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         featureFlags: {
@@ -537,8 +560,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         sourcePath: {
@@ -563,8 +590,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'masterPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
       },
