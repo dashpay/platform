@@ -42,7 +42,10 @@ function expectOperatorIdentityFactory(
 
     const operatorIdentifier = createOperatorIdentifier(smlEntry);
 
-    const operatorIdentityResult = await identityRepository.fetch(operatorIdentifier);
+    const operatorIdentityResult = await identityRepository.fetch(
+      operatorIdentifier,
+      { useTransaction: true },
+    );
 
     const operatorIdentity = operatorIdentityResult.getValue();
 
@@ -77,7 +80,7 @@ function expectOperatorIdentityFactory(
       .equal(operatorPubKey);
 
     const firstOperatorIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
-      .fetch(firstOperatorMasternodePublicKey.hash());
+      .fetch(firstOperatorMasternodePublicKey.hash(), { useTransaction: true });
 
     const firstOperatorIdentityByPublicKeyHash = firstOperatorIdentityByPublicKeyHashResult
       .getValue();
@@ -105,7 +108,7 @@ function expectOperatorIdentityFactory(
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash());
+        .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
@@ -127,7 +130,7 @@ function expectOperatorIdentityFactory(
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash());
+        .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
@@ -229,7 +232,10 @@ function expectMasternodeIdentityFactory(
       Buffer.from(smlEntry.proRegTxHash, 'hex'),
     );
 
-    const masternodeIdentityResult = await identityRepository.fetch(masternodeIdentifier);
+    const masternodeIdentityResult = await identityRepository.fetch(
+      masternodeIdentifier,
+      { useTransaction: true },
+    );
 
     const masternodeIdentity = masternodeIdentityResult.getValue();
 
@@ -253,7 +259,7 @@ function expectMasternodeIdentityFactory(
     );
 
     const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
-      .fetch(masternodePublicKey.hash());
+      .fetch(masternodePublicKey.hash(), { useTransaction: true });
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
 
@@ -275,7 +281,7 @@ function expectMasternodeIdentityFactory(
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash());
+        .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
@@ -297,7 +303,7 @@ function expectMasternodeIdentityFactory(
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash());
+        .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
@@ -433,14 +439,16 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     container.register('simplifiedMasternodeList', asValue(simplifiedMasternodeListMock));
 
+    const groveDBStore = container.resolve('groveDBStore');
+    await groveDBStore.startTransaction();
+
     /**
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
-    await rsDrive.createInitialStateStructure();
+    await rsDrive.createInitialStateStructure(true);
 
     // Create misc tree
-    const groveDBStore = container.resolve('groveDBStore');
     await groveDBStore.createTree(
       [],
       Buffer.from([5]),
@@ -550,6 +558,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
           ['$ownerId', '==', firstMasternodeIdentifier],
           ['payToId', '==', firstOperatorIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -743,6 +752,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
           ['$ownerId', '==', newMasternodeIdentifier],
           ['payToId', '==', newOperatorIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -943,6 +953,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         where: [
           ['$ownerId', '==', changedMasternodeIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -1031,6 +1042,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         where: [
           ['$ownerId', '==', changedMasternodeIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
