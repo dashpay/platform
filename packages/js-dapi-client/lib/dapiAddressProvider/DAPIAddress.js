@@ -17,7 +17,8 @@ class DAPIAddress {
         host,
         httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
-        protocol: ssl === 'no-ssl' ? 'http' : 'https',
+        protocol: 'http',
+        // protocol: ssl === 'no-ssl' ? 'http' : 'https',
         allowSelfSignedCertificate: ssl === 'self-signed',
       };
     }

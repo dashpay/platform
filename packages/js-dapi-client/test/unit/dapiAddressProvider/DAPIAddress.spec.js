@@ -81,7 +81,7 @@ describe('DAPIAddress', () => {
         host,
         httpPort,
         proRegTxHash,
-        protocol: 'https',
+        protocol: 'http',
         allowSelfSignedCertificate: false,
       });
     });
