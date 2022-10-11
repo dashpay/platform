@@ -81,7 +81,7 @@ describe('DAPIAddress', () => {
         host,
         httpPort,
         proRegTxHash,
-        protocol: 'http',
+        protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
       });
     });
@@ -285,7 +285,7 @@ describe('DAPIAddress', () => {
         httpPort: dapiAddress.getHttpPort(),
         grpcPort: dapiAddress.getGrpcPort(),
         proRegTxHash: dapiAddress.getProRegTxHash(),
-        protocol: 'http',
+        protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
       });
     });

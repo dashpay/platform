@@ -17,8 +17,7 @@ class DAPIAddress {
         host,
         httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
-        protocol: 'http',
-        // protocol: ssl === 'no-ssl' ? 'http' : 'https',
+        protocol: ssl === 'no-ssl' ? 'http' : DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: ssl === 'self-signed',
       };
     }
@@ -27,7 +26,7 @@ class DAPIAddress {
       throw new DAPIAddressHostMissingError();
     }
 
-    this.protocol = address.protocol || 'http';
+    this.protocol = address.protocol || DAPIAddress.DEFAULT_PROTOCOL;
     this.host = address.host;
     this.httpPort = address.httpPort || DAPIAddress.DEFAULT_HTTP_PORT;
     this.grpcPort = address.grpcPort || DAPIAddress.DEFAULT_GRPC_PORT;
@@ -194,6 +193,7 @@ class DAPIAddress {
 
 DAPIAddress.DEFAULT_HTTP_PORT = 3000;
 DAPIAddress.DEFAULT_GRPC_PORT = 3010;
+DAPIAddress.DEFAULT_PROTOCOL = 'https';
 
 /**
  * @typedef {object} RawDAPIAddress

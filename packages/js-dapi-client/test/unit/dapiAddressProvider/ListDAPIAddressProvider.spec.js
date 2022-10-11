@@ -113,7 +113,7 @@ describe('ListDAPIAddressProvider', () => {
       const liveAddress = await listDAPIAddressProvider.getLiveAddress();
 
       expect(liveAddress.host).to.equal('127.0.0.1');
-      expect(liveAddress.protocol).to.equal('http');
+      expect(liveAddress.protocol).to.equal(DAPIAddress.DEFAULT_PROTOCOL);
       expect(liveAddress.allowSelfSignedCertificate).to.be.true();
     });
   });
