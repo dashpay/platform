@@ -285,7 +285,7 @@ describe('DAPIAddress', () => {
         httpPort: dapiAddress.getHttpPort(),
         grpcPort: dapiAddress.getGrpcPort(),
         proRegTxHash: dapiAddress.getProRegTxHash(),
-        protocol: 'https',
+        protocol: 'http',
         allowSelfSignedCertificate: false,
       });
     });
