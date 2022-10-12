@@ -31,6 +31,8 @@ describe('subscribeToNewBlockHeaders', () => {
       blockHash: Buffer.from('fakeHash'),
     });
 
+    this.sinon.stub(dashCoreRpcClient, 'getBestBlockHeight').resolves(100);
+
     zmqClient = new ZmqClient();
 
     blockHeadersCache = new BlockHeadersCache();
