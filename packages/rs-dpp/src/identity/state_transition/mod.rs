@@ -3,6 +3,7 @@ pub mod identity_create_transition;
 pub mod identity_credit_withdrawal_transition;
 pub mod identity_topup_transition;
 pub mod identity_update_transition;
+pub mod validate_public_key_signatures;
 
 pub(crate) mod properties {
     pub const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";

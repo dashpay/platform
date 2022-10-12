@@ -4,12 +4,13 @@ use serde_json::Value;
 
 use crate::assert_consensus_errors;
 use crate::errors::consensus::ConsensusError;
-use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
+use crate::identity::validation::{IdentityValidator, PublicKeysValidator, PUBLIC_KEY_SCHEMA};
 use crate::version::ProtocolVersionValidator;
 
 fn setup_test() -> (Value, IdentityValidator<PublicKeysValidator>) {
     let protocol_version_validator = ProtocolVersionValidator::default();
-    let public_keys_validator = PublicKeysValidator::new().unwrap();
+    let public_keys_validator =
+        PublicKeysValidator::new_with_schema(PUBLIC_KEY_SCHEMA.clone()).unwrap();
     (
         crate::tests::fixtures::identity_fixture_raw_object(),
         IdentityValidator::new(

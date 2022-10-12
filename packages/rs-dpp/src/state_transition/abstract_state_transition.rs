@@ -86,6 +86,23 @@ pub trait StateTransitionLike:
         Ok(())
     }
 
+    fn verify_by_public_key(
+        &self,
+        public_key: &[u8],
+        public_key_type: KeyType,
+    ) -> Result<(), ProtocolError> {
+        match public_key_type {
+            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key),
+            KeyType::ECDSA_HASH160 => {
+                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
+            }
+            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key),
+            KeyType::BIP13_SCRIPT_HASH => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+            }
+        }
+    }
+
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],

@@ -83,6 +83,7 @@ fn set_public_keys_to_add() {
             read_only: true,
             data: hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
             disabled_at : None,
+            signature : Default::default(),
         };
     transition.set_public_keys_to_add(vec![id_public_key.clone()]);
 
@@ -149,7 +150,8 @@ fn to_object() {
                 "type": 0,
                 "securityLevel" : 0,
                 "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
-                "readOnly" : false
+                "readOnly" : false,
+                "signature" : vec![0;65]
             }
         ]
     });
@@ -212,7 +214,8 @@ fn to_json() {
                 "type": 0,
                 "securityLevel" : 0,
                 "data" : "AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH",
-                "readOnly" : false
+                "readOnly" : false,
+                "signature" : base64::encode(vec![0;65]).to_string(),
             }
         ]
     });

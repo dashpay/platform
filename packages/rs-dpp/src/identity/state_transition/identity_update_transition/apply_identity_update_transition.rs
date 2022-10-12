@@ -35,7 +35,16 @@ pub async fn apply_identity_update_transition(
     }
 
     if !state_transition.get_public_keys_to_add().is_empty() {
-        identity.add_public_keys(state_transition.get_public_keys_to_add().iter().cloned());
+        identity.add_public_keys(
+            state_transition
+                .get_public_keys_to_add()
+                .iter()
+                .cloned()
+                .map(|mut pk| {
+                    pk.set_signature(vec![]);
+                    pk
+                }),
+        );
         let public_key_hashes: Vec<Vec<u8>> = state_transition
             .get_public_keys_to_add()
             .iter()

@@ -1,9 +1,12 @@
 use crate::{
     consensus::{basic::TestConsensusError, ConsensusError},
     identity::{
-        state_transition::identity_update_transition::{
-            identity_update_transition::{property_names, IdentityUpdateTransition},
-            validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic,
+        state_transition::{
+            identity_update_transition::{
+                identity_update_transition::{property_names, IdentityUpdateTransition},
+                validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic,
+            },
+            validate_public_key_signatures::TPublicKeysSignaturesValidator,
         },
         validation::MockTPublicKeysValidator,
         KeyType, Purpose, SecurityLevel,
@@ -37,6 +40,17 @@ struct TestData {
     raw_public_key_to_add: JsonValue,
 }
 
+pub struct SignaturesValidatorMock {}
+
+impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
+    fn validate_public_key_signatures<'a>(
+        _raw_state_transition: &JsonValue,
+        _raw_public_keys: impl IntoIterator<Item = &'a JsonValue>,
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        Ok(SimpleValidationResult::default())
+    }
+}
+
 fn setup_test() -> TestData {
     let protocol_version_validator = get_protocol_version_validator_fixture();
     let validate_public_keys_mock = MockTPublicKeysValidator::new();
@@ -56,6 +70,7 @@ fn setup_test() -> TestData {
         data: ec_public_key.try_into().unwrap(),
         read_only: false,
         disabled_at: None,
+        signature: vec![0; 65],
     };
 
     state_transition
@@ -99,11 +114,12 @@ fn property_should_be_present(property: &str) {
 
     raw_state_transition.remove(property).unwrap();
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -131,11 +147,12 @@ fn property_should_be_byte_array(property_name: &str) {
     let array = ["string"; 32];
     raw_state_transition[property_name] = json!(array);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -167,11 +184,12 @@ fn property_should_be_integer(property_name: &str) {
 
     raw_state_transition[property_name] = json!("1");
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -198,11 +216,12 @@ fn signature_should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize
     let array = vec![0u8; n_bytes - 1];
     raw_state_transition[property_name] = json!(array);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -229,11 +248,12 @@ fn signature_should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usi
     let array = vec![0u8; n_bytes + 1];
     raw_state_transition[property_name] = json!(array);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -258,11 +278,12 @@ fn protocol_version_should_be_valid() {
 
     raw_state_transition[property_names::PROTOCOL_VERSION] = json!(-1);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -282,11 +303,12 @@ fn raw_state_transition_type_should_be_valid() {
 
     raw_state_transition[property_names::TYPE] = json!(666);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -311,11 +333,12 @@ fn revision_should_be_greater_or_equal_0() {
 
     raw_state_transition[property_names::REVISION] = json!(-1);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -347,11 +370,12 @@ fn add_public_keys_should_return_valid_result() {
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!(vec![raw_public_key_to_add]);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -377,11 +401,12 @@ fn add_public_keys_should_not_be_empty() {
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!([]);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -415,11 +440,12 @@ fn add_public_keys_should_not_have_more_than_10_items() {
         (0..11).map(|_| raw_public_key_to_add.clone()).collect();
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!(public_keys_to_add);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -453,11 +479,12 @@ fn add_public_keys_should_be_unique() {
         (0..2).map(|_| raw_public_key_to_add.clone()).collect();
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!(public_keys_to_add);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -493,11 +520,12 @@ fn add_public_keys_should_be_valid() {
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!([raw_public_key_to_add]);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -525,11 +553,12 @@ fn disable_public_keys_should_be_used_only_with_public_keys_disabled_at() {
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -562,11 +591,12 @@ fn disable_public_keys_should_be_valid() {
     raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![0]);
     raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(0);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -591,11 +621,12 @@ fn disable_public_keys_should_contain_number_greater_or_equal_0() {
     raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![-1, 0]);
     raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(0);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -626,11 +657,12 @@ fn disable_public_keys_should_contain_integers() {
     raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![1.1]);
     raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(0);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -661,11 +693,12 @@ fn disable_public_keys_should_not_have_more_than_10_items() {
     let key_ids_to_disable: Vec<usize> = (0..11).collect();
     raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(key_ids_to_disable);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -696,11 +729,12 @@ fn disable_public_keys_should_be_unique() {
     let key_ids_to_disable: Vec<usize> = vec![0, 0];
     raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(key_ids_to_disable);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -730,11 +764,12 @@ fn public_keys_disabled_at_should_be_used_only_with_disable_public_keys() {
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -767,11 +802,12 @@ fn public_keys_disabled_at_should_be_greater_or_equal_0() {
     raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![0]);
     raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(-1);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -800,11 +836,12 @@ fn public_keys_disabled_at_should_return_valid_result() {
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
@@ -825,15 +862,17 @@ fn should_return_valid_result() {
         .expect_validate_keys()
         .returning(|_| Ok(Default::default()));
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)
         .expect("validation result should be returned");
+    println!("result is {:#?}", result);
     assert!(result.is_valid());
 }
 
@@ -854,11 +893,12 @@ fn should_have_either_add_public_keys_or_disable_public_keys() {
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
 
-    let validator = ValidateIdentityUpdateTransitionBasic::new(
-        Arc::new(protocol_version_validator),
-        Arc::new(validate_public_keys_mock),
-    )
-    .unwrap();
+    let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
+        ValidateIdentityUpdateTransitionBasic::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(validate_public_keys_mock),
+        )
+        .unwrap();
 
     let result = validator
         .validate(&raw_state_transition)

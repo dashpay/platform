@@ -1,9 +1,11 @@
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
 use serde_json::Value;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
+use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
@@ -20,16 +22,21 @@ lazy_static! {
 
 const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";
 
-pub struct IdentityCreateTransitionBasicValidator<T, S, SR: StateRepositoryLike> {
+pub struct IdentityCreateTransitionBasicValidator<T, S, SR: StateRepositoryLike, SV> {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<T>,
     public_keys_in_identity_transition_validator: Arc<S>,
     asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
+    _public_keys_signatures_validator: PhantomData<SV>,
 }
 
-impl<T: TPublicKeysValidator, S: TPublicKeysValidator, SR: StateRepositoryLike>
-    IdentityCreateTransitionBasicValidator<T, S, SR>
+impl<
+        T: TPublicKeysValidator,
+        S: TPublicKeysValidator,
+        SR: StateRepositoryLike,
+        SV: TPublicKeysSignaturesValidator,
+    > IdentityCreateTransitionBasicValidator<T, S, SR, SV>
 {
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
@@ -46,6 +53,7 @@ impl<T: TPublicKeysValidator, S: TPublicKeysValidator, SR: StateRepositoryLike>
             public_keys_validator,
             public_keys_in_identity_transition_validator,
             asset_lock_proof_validator,
+            _public_keys_signatures_validator: PhantomData,
         };
 
         Ok(identity_validator)
@@ -53,13 +61,11 @@ impl<T: TPublicKeysValidator, S: TPublicKeysValidator, SR: StateRepositoryLike>
 
     pub async fn validate(
         &self,
-        identity_topup_transition_json: &Value,
+        raw_transition: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = self
-            .json_schema_validator
-            .validate(identity_topup_transition_json)?;
+        let mut result = self.json_schema_validator.validate(raw_transition)?;
 
-        let identity_transition_map = identity_topup_transition_json
+        let identity_transition_map = raw_transition
             .as_object()
             .ok_or_else(|| SerdeParsingError::new("Expected identity to be a json object"))?;
 
@@ -71,14 +77,23 @@ impl<T: TPublicKeysValidator, S: TPublicKeysValidator, SR: StateRepositoryLike>
             self.protocol_version_validator
                 .validate(get_protocol_version(identity_transition_map)?)?,
         );
-
         if !result.is_valid() {
             return Ok(result);
         }
 
         let public_keys = get_raw_public_keys(identity_transition_map)?;
-
         result.merge(self.public_keys_validator.validate_keys(public_keys)?);
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        result.merge(SV::validate_public_key_signatures(
+            raw_transition,
+            public_keys,
+        )?);
+        if !result.is_valid() {
+            return Ok(result);
+        }
 
         result.merge(
             self.public_keys_in_identity_transition_validator

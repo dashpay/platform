@@ -22,16 +22,17 @@ use crate::{
 use super::errors::*;
 use super::extra::DocumentType;
 use super::extra::{get_definitions, get_document_types, get_mutability, ContractConfig};
-use super::properties::*;
+
+use super::property_names;
 
 pub type JsonSchema = JsonValue;
 type DefinitionName = String;
 type DocumentName = String;
 type PropertyPath = String;
 
-pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
+pub const SCHEMA_URI: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
-pub const IDENTIFIER_FIELDS: [&str; 2] = [PROPERTY_ID, PROPERTY_OWNER_ID];
+pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OWNER_ID];
 
 impl Convertible for DataContract {
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
@@ -122,10 +123,10 @@ impl DataContract {
                 ProtocolError::DecodingError(String::from("unable to decode contract"))
             })?;
 
-        let contract_id: [u8; 32] = data_contract_map.get_identifier(PROPERTY_ID)?;
-        let owner_id: [u8; 32] = data_contract_map.get_identifier(PROPERTY_OWNER_ID)?;
-        let schema = data_contract_map.get_string(PROPERTY_SCHEMA)?;
-        let version = data_contract_map.get_u32(PROPERTY_VERSION)?;
+        let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
+        let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
+        let schema = data_contract_map.get_string(property_names::SCHEMA)?;
+        let version = data_contract_map.get_u32(property_names::VERSION)?;
 
         // Defs
         let defs = match data_contract_map.get("$defs") {
@@ -249,19 +250,22 @@ impl DataContract {
     pub(crate) fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError> {
         let mut contract_cbor_map = CborCanonicalMap::new();
 
-        contract_cbor_map.insert(PROPERTY_ID, self.id().to_buffer().to_vec());
-        contract_cbor_map.insert(PROPERTY_SCHEMA, self.schema());
-        contract_cbor_map.insert(PROPERTY_VERSION, self.version());
-        contract_cbor_map.insert(PROPERTY_OWNER_ID, self.owner_id().to_buffer().to_vec());
+        contract_cbor_map.insert(property_names::ID, self.id().to_buffer().to_vec());
+        contract_cbor_map.insert(property_names::SCHEMA, self.schema());
+        contract_cbor_map.insert(property_names::VERSION, self.version());
+        contract_cbor_map.insert(
+            property_names::OWNER_ID,
+            self.owner_id().to_buffer().to_vec(),
+        );
 
         let docs = CborValue::serialized(&self.documents)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
-        contract_cbor_map.insert(PROPERTY_DOCUMENTS, docs);
+        contract_cbor_map.insert(property_names::DOCUMENTS, docs);
 
         if !self.defs.is_empty() {
             contract_cbor_map.insert(
-                PROPERTY_DEFINITIONS,
+                property_names::DEFINITIONS,
                 CborValue::serialized(&self.defs)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
             );
@@ -343,11 +347,11 @@ impl DataContract {
             .into());
         };
 
-        return Ok(format!(
+        Ok(format!(
             "{}/#documents/{}",
             self.id.to_string(Encoding::Base58),
             doc_type
-        ));
+        ))
     }
 
     /// Returns the binary properties for the given document type

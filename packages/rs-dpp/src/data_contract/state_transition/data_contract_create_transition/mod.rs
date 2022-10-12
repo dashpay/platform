@@ -16,7 +16,7 @@ use crate::{
     ProtocolError,
 };
 
-use super::properties::*;
+use super::property_names::*;
 
 pub mod apply_data_contract_create_transition_factory;
 pub mod validation;
@@ -53,21 +53,20 @@ impl DataContractCreateTransition {
         mut raw_data_contract_update_transition: JsonValue,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         Ok(DataContractCreateTransition {
-            protocol_version: raw_data_contract_update_transition
-                .get_u64(PROPERTY_PROTOCOL_VERSION)? as u32,
+            protocol_version: raw_data_contract_update_transition.get_u64(PROTOCOL_VERSION)? as u32,
             signature: raw_data_contract_update_transition
-                .remove_into(PROPERTY_SIGNATURE)
+                .remove_into(SIGNATURE)
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
-                .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
+                .get_u64(SIGNATURE_PUBLIC_KEY_ID)
                 .unwrap_or_default(),
             entropy: raw_data_contract_update_transition
-                .get_bytes(PROPERTY_ENTROPY)
+                .get_bytes(ENTROPY)
                 .unwrap_or_else(|_| [0u8; 32].to_vec())
                 .try_into()
                 .map_err(|_| anyhow!("entropy isn't 32 bytes long"))?,
             data_contract: DataContract::from_raw_object(
-                raw_data_contract_update_transition.remove(PROPERTY_DATA_CONTRACT)?,
+                raw_data_contract_update_transition.remove(DATA_CONTRACT)?,
             )?,
             ..Default::default()
         })
@@ -129,7 +128,7 @@ impl StateTransitionLike for DataContractCreateTransition {
 
 impl StateTransitionConvert for DataContractCreateTransition {
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE, PROPERTY_SIGNATURE_PUBLIC_KEY_ID]
+        vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
@@ -137,7 +136,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
     }
 
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE, PROPERTY_ENTROPY]
+        vec![SIGNATURE, ENTROPY]
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
@@ -146,10 +145,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
         json_value
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
 
-        json_value.insert(
-            PROPERTY_DATA_CONTRACT.to_string(),
-            self.data_contract.to_json()?,
-        )?;
+        json_value.insert(DATA_CONTRACT.to_string(), self.data_contract.to_json()?)?;
 
         Ok(json_value)
     }
@@ -164,7 +160,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
             }
         }
         json_object.insert(
-            String::from(PROPERTY_DATA_CONTRACT),
+            String::from(DATA_CONTRACT),
             self.data_contract.to_object(false)?,
         )?;
         Ok(json_object)
@@ -189,9 +185,9 @@ mod test {
         let data_contract = get_data_contract_fixture(None);
 
         let state_transition = DataContractCreateTransition::from_raw_object(json!({
-                    PROPERTY_PROTOCOL_VERSION: version::LATEST_VERSION,
-                                        PROPERTY_ENTROPY : data_contract.entropy,
-                    PROPERTY_DATA_CONTRACT : data_contract.to_object(false).unwrap(),
+                    PROTOCOL_VERSION: version::LATEST_VERSION,
+                                        ENTROPY : data_contract.entropy,
+                    DATA_CONTRACT : data_contract.to_object(false).unwrap(),
         }))
         .expect("state transition should be created without errors");
 
@@ -245,33 +241,33 @@ mod test {
         assert_eq!(
             version::LATEST_VERSION,
             json_object
-                .get_u64(PROPERTY_PROTOCOL_VERSION)
+                .get_u64(PROTOCOL_VERSION)
                 .expect("the protocol version should be present") as u32
         );
 
         assert_eq!(
             0,
             json_object
-                .get_u64(PROPERTY_TRANSITION_TYPE)
+                .get_u64(TRANSITION_TYPE)
                 .expect("the transition type should be present") as u8
         );
         assert_eq!(
             0,
             json_object
-                .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
+                .get_u64(SIGNATURE_PUBLIC_KEY_ID)
                 .expect("default public key id should be defined"),
         );
         assert_eq!(
             "",
             json_object
-                .remove_into::<String>(PROPERTY_SIGNATURE)
+                .remove_into::<String>(SIGNATURE)
                 .expect("default string value for signature should be present")
         );
 
         assert_eq!(
             base64::encode(data.data_contract.entropy),
             json_object
-                .remove_into::<String>(PROPERTY_ENTROPY)
+                .remove_into::<String>(ENTROPY)
                 .expect("the entropy should be present")
         )
     }

@@ -31,10 +31,14 @@ chrono = { version="0.4.20", default-features=false, features=["wasmbind", "cloc
 itertools = { version ="0.10"}
 regex = { version="1.5"}
 serde_cbor = "0.11.2"
-# lib not verified for web-assembly
 rand = { version="0.8"}
 integer-encoding = { version="3.0.4"}
 serde-big-array = "0.4.1"
+json-patch = "0.2.6"
+jsonptr = "0.1.5"
+num_enum = "0.5.7"
+
+
 
 
 [dev-dependencies]

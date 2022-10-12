@@ -64,6 +64,7 @@ pub async fn create_state_transition(
                 DocumentsBatchTransition::from_raw_object(raw_state_transition, data_contracts)?;
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
+        // TODO
         StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError),
     }
 }
@@ -91,7 +92,7 @@ async fn fetch_data_contracts_for_document_transition(
     Ok(data_contracts)
 }
 
-fn try_get_transition_type(
+pub fn try_get_transition_type(
     raw_state_transition: &JsonValue,
 ) -> Result<StateTransitionType, ProtocolError> {
     let transition_number = raw_state_transition

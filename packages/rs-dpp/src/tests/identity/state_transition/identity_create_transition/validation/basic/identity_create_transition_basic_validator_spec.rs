@@ -7,9 +7,22 @@ use crate::identity::state_transition::asset_lock_proof::{
     InstantAssetLockProofStructureValidator,
 };
 use crate::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
+use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::MockStateRepositoryLike;
+use crate::validation::SimpleValidationResult;
 use crate::version::ProtocolVersionValidator;
+
+pub struct SignaturesValidatorMock {}
+
+impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
+    fn validate_public_key_signatures<'a>(
+        _raw_state_transition: &Value,
+        _raw_public_keys: impl IntoIterator<Item = &'a Value>,
+    ) -> Result<crate::validation::SimpleValidationResult, crate::NonConsensusError> {
+        Ok(SimpleValidationResult::default())
+    }
+}
 
 pub fn setup_test(
     public_keys_validator: Arc<impl TPublicKeysValidator>,
@@ -21,6 +34,7 @@ pub fn setup_test(
         impl TPublicKeysValidator,
         impl TPublicKeysValidator,
         MockStateRepositoryLike,
+        SignaturesValidatorMock,
     >,
 ) {
     let state_repository = Arc::new(state_repository_mock);
@@ -78,6 +92,7 @@ mod validate_identity_create_transition_basic_factory {
             PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
         };
         use crate::state_repository::MockStateRepositoryLike;
+        use crate::tests::fixtures::get_public_keys_validator_for_transition;
         use crate::tests::utils::SerdeTestExtension;
         use crate::{assert_consensus_errors, NonConsensusError};
 
@@ -87,7 +102,7 @@ mod validate_identity_create_transition_basic_factory {
         pub async fn should_be_present() {
             let state_repository = MockStateRepositoryLike::new();
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 state_repository,
             );
@@ -112,7 +127,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_an_integer() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -131,7 +146,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -166,6 +181,7 @@ mod validate_identity_create_transition_basic_factory {
             PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
         };
         use crate::state_repository::MockStateRepositoryLike;
+        use crate::tests::fixtures::get_public_keys_validator_for_transition;
         use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
@@ -173,7 +189,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -198,7 +214,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_equal_to_2() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -227,20 +243,23 @@ mod validate_identity_create_transition_basic_factory {
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::{
             PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
         };
         use crate::state_repository::MockStateRepositoryLike;
+        use crate::tests::fixtures::{
+            get_public_keys_validator, get_public_keys_validator_for_transition,
+        };
         use crate::tests::utils::SerdeTestExtension;
+        use crate::{assert_consensus_errors, NonConsensusError};
 
         use super::super::setup_test;
 
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -266,7 +285,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_an_object() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -285,7 +304,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -315,11 +334,11 @@ mod validate_identity_create_transition_basic_factory {
         use crate::assert_consensus_errors;
         use crate::consensus::basic::TestConsensusError;
         use crate::consensus::ConsensusError;
-        use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
-        };
+        use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
-        use crate::tests::fixtures::PublicKeysValidatorMock;
+        use crate::tests::fixtures::{
+            get_public_keys_validator_for_transition, PublicKeysValidatorMock,
+        };
         use crate::tests::utils::SerdeTestExtension;
         use crate::validation::ValidationResult;
 
@@ -328,7 +347,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -354,7 +373,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_not_be_empty() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -373,7 +392,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_not_have_more_than_10_items() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -401,7 +420,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_unique() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -467,7 +486,7 @@ mod validate_identity_create_transition_basic_factory {
             });
 
             let (raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 pk_validator_mock.clone(),
                 MockStateRepositoryLike::new(),
             );
@@ -496,10 +515,9 @@ mod validate_identity_create_transition_basic_factory {
 
         use crate::assert_consensus_errors;
         use crate::consensus::ConsensusError;
-        use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
-        };
+        use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
+        use crate::tests::fixtures::get_public_keys_validator_for_transition;
         use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
@@ -507,7 +525,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -533,7 +551,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -552,7 +570,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_not_shorter_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
@@ -571,7 +589,7 @@ mod validate_identity_create_transition_basic_factory {
         #[tokio::test]
         pub async fn should_be_not_longer_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(
-                Arc::new(PublicKeysValidator::new().unwrap()),
+                Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );

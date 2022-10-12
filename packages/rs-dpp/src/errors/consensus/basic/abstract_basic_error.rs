@@ -1,6 +1,7 @@
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-use crate::{prelude::*, util::json_schema::Index};
+use crate::{identity::KeyID, prelude::*, util::json_schema::Index};
 
 #[derive(Error, Debug)]
 pub enum BasicError {
@@ -111,6 +112,26 @@ pub enum BasicError {
         actual_size_kbytes: usize,
         max_size_kbytes: usize,
     },
+
+    #[error("Only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
+    DataContractImmutablePropertiesUpdateError {
+        operation: String,
+        field_path: String,
+    },
+
+    #[error(
+        "Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
+    )]
+    IncompatibleDataContractSchemaError {
+        data_contract_id: Identifier,
+        operation: String,
+        field_path: String,
+        old_schema: JsonValue,
+        new_schema: JsonValue,
+    },
+
+    #[error("Identity key {public_key_id} has invalid signature")]
+    InvalidIdentityPublicKeySignatureError { public_key_id: KeyID },
 }
 
 impl From<IndexError> for BasicError {

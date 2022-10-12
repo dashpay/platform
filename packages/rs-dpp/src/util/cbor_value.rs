@@ -128,6 +128,7 @@ pub trait CborMapExtension {
     fn as_bool(&self, key: &str, error_message: &str) -> Result<bool, ProtocolError>;
     fn as_bytes(&self, key: &str, error_message: &str) -> Result<Vec<u8>, ProtocolError>;
     fn as_string(&self, key: &str, error_message: &str) -> Result<String, ProtocolError>;
+    fn as_u64(&self, key: &str, error_message: &str) -> Result<u64, ProtocolError>;
 }
 
 impl CborMapExtension for &Vec<(CborValue, CborValue)> {
@@ -186,6 +187,15 @@ impl CborMapExtension for &Vec<(CborValue, CborValue)> {
             .ok_or_else(|| ProtocolError::DecodingError(String::from(error_message)))?;
         if let CborValue::Text(string_value) = key_value {
             return Ok(string_value.clone());
+        }
+        Err(ProtocolError::DecodingError(String::from(error_message)))
+    }
+
+    fn as_u64(&self, key: &str, error_message: &str) -> Result<u64, ProtocolError> {
+        let key_value = get_key_from_cbor_map(self, key)
+            .ok_or_else(|| ProtocolError::DecodingError(String::from(error_message)))?;
+        if let CborValue::Integer(integer_value) = key_value {
+            return Ok(i128::from(*integer_value) as u64);
         }
         Err(ProtocolError::DecodingError(String::from(error_message)))
     }

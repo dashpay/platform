@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::anyhow;
 use serde_json::{json, Number, Value as JsonValue};
 
-use data_contract::state_transition::properties as st_prop;
+use data_contract::state_transition::property_names as st_prop;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
@@ -44,7 +44,7 @@ impl DataContractFactory {
 
         let mut data_contract = DataContract {
             protocol_version: self.protocol_version,
-            schema: String::from(data_contract::SCHEMA),
+            schema: String::from(data_contract::SCHEMA_URI),
             id: data_contract_id,
             version: 1,
             owner_id,
@@ -117,9 +117,9 @@ impl DataContractFactory {
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         DataContractCreateTransition::from_raw_object(json!({
-            st_prop::PROPERTY_PROTOCOL_VERSION: self.protocol_version,
-            st_prop::PROPERTY_DATA_CONTRACT: data_contract.to_object(false)?,
-            st_prop::PROPERTY_ENTROPY: data_contract.entropy,
+            st_prop::PROTOCOL_VERSION: self.protocol_version,
+            st_prop::DATA_CONTRACT: data_contract.to_object(false)?,
+            st_prop::ENTROPY: data_contract.entropy,
         }))
     }
 
@@ -128,8 +128,8 @@ impl DataContractFactory {
         data_contract: DataContract,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         DataContractUpdateTransition::from_raw_object(json!({
-            st_prop::PROPERTY_PROTOCOL_VERSION: self.protocol_version,
-            st_prop::PROPERTY_DATA_CONTRACT: data_contract.to_object(false)?,
+            st_prop::PROTOCOL_VERSION: self.protocol_version,
+            st_prop::DATA_CONTRACT: data_contract.to_object(false)?,
         }))
     }
 }
