@@ -192,6 +192,7 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   async onStop() {
+    logger.debug('[BlockHeadersSyncWorker] Stopping...');
     const { blockHeadersProvider } = this.transport.client;
     await blockHeadersProvider.stop();
   }
@@ -324,15 +325,11 @@ class BlockHeadersSyncWorker extends Worker {
 
       chainStore.updateChainHeight(newChainHeight);
       chainStore.updateLastSyncedHeaderHeight(newChainHeight);
-      chainStore.updateLastSyncedBlockHeight(newChainHeight);
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
 
-      const { orphanChunks } = spvChain;
-      const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      const totalChainLength = longestChain.length + totalOrphans;
-      logger.debug(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
-      logger.debug(`[--------------------->] Longest: ${longestChain.length}, Orphans: ${totalOrphans}`);
+      logger.debug(`[BlockHeadersSyncWorker] Chain height updated: ${newChainHeight}`);
+      logger.debug(`[--------------------->] Validity chain length: ${spvChain.getLongestChain().length}`);
       logger.debug(`[--------------------->] New block hash: ${block.hash}`);
 
       this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
