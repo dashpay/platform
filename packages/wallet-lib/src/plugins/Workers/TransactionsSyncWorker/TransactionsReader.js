@@ -2,6 +2,8 @@ const { EventEmitter } = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const { createBloomFilter, parseRawTransactions, parseRawMerkleBlock } = require('./utils');
 
+const logger = require('../../../logger');
+
 const EVENTS = {
   HISTORICAL_TRANSACTIONS: 'HISTORICAL_TRANSACTIONS',
   NEW_TRANSACTIONS: 'NEW_TRANSACTIONS',
@@ -68,6 +70,7 @@ class TransactionsReader extends EventEmitter {
     const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
     const count = toBlockHeight - fromBlockHeight + 1;
     this.historicalSyncStream = await subscribeWithRetries(fromBlockHeight, count, addresses);
+    logger.debug(`[TransactionsReader] Started syncing blocks from ${fromBlockHeight} to ${toBlockHeight}`);
   }
 
   /**
@@ -172,6 +175,11 @@ class TransactionsReader extends EventEmitter {
           // of producing a side effect that alters class state
           this.historicalSyncStream = null;
           if (restartArgs) {
+            logger.debug('[TransactionsReader] Restarting stream with', {
+              fromBlockHeight: restartArgs.fromBlockHeight,
+              count: restartArgs.count,
+              _addressesCount: addresses.length,
+            });
             subscribeWithRetries(
               restartArgs.fromBlockHeight,
               restartArgs.count,
@@ -185,10 +193,13 @@ class TransactionsReader extends EventEmitter {
             });
           }
 
+          logger.debug('[TransactionsReader] Stream canceled on client');
+
           return;
         }
 
         if (currentRetries < maxRetries) {
+          logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, streamError);
           if (!restartArgs) {
             const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
             const remainingCount = count - blocksRead;
@@ -222,6 +233,7 @@ class TransactionsReader extends EventEmitter {
 
       const endHandler = () => {
         if (!restartArgs) {
+          logger.debug('[----------------->] Historical data updated');
           this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
         }
       };
@@ -265,6 +277,11 @@ class TransactionsReader extends EventEmitter {
       count: 0,
     });
     this.continuousSyncStream = stream;
+
+    logger.debug('[TransactionsReader] Started continuous sync with', {
+      fromBlockHeight,
+      _addressesCount: addresses.length,
+    });
 
     // Arguments for the stream restart when it comes to a need to expand bloom filter
     let restartArgs = null;
@@ -343,6 +360,10 @@ class TransactionsReader extends EventEmitter {
       if (streamError.code === GrpcErrorCodes.CANCELLED) {
         this.continuousSyncStream = null;
         if (restartArgs) {
+          logger.debug('[TransactionsReader] Restarting stream with', {
+            fromBlockHeight: restartArgs.fromBlockHeight,
+            _addressesCount: restartArgs.addresses.length,
+          });
           this.startContinuousSync(
             restartArgs.fromBlockHeight,
             restartArgs.addresses,
@@ -355,6 +376,8 @@ class TransactionsReader extends EventEmitter {
           });
         }
 
+        logger.debug('[TransactionsReader] Stream canceled on client');
+
         return;
       }
 
@@ -363,6 +386,7 @@ class TransactionsReader extends EventEmitter {
 
     const beforeReconnectHandler = (updateArguments) => {
       if (restartArgs) {
+        logger.debug('[TransactionsReader] Stream is going to be restarted, skipping reconnect');
         return;
       }
       // If the lastSyncedBlockHeight was not updated yet, re-sync from the same block
@@ -373,6 +397,10 @@ class TransactionsReader extends EventEmitter {
       const newAddresses = addressesGenerated.length
         ? [...addresses, ...addressesGenerated] : addresses;
 
+      logger.debug('[TransactionsReader] Reconnecting to stream with', {
+        fromBlockHeight: newFromBlockHeight,
+        _addressesCount: newAddresses.length,
+      });
       updateArguments(
         createBloomFilter(newAddresses),
         {
@@ -384,6 +412,7 @@ class TransactionsReader extends EventEmitter {
     };
 
     const endHandler = () => {
+      logger.debug('[TransactionsReader] Continuous sync stream ended');
       this.continuousSyncStream = null;
     };
 
@@ -399,6 +428,7 @@ class TransactionsReader extends EventEmitter {
     if (this.historicalSyncStream) {
       await this.historicalSyncStream.cancel();
       this.emit(EVENTS.STOPPED);
+      logger.debug('[TransactionsReader] Stopped historical sync');
     }
   }
 
@@ -406,6 +436,7 @@ class TransactionsReader extends EventEmitter {
     if (this.continuousSyncStream) {
       await this.continuousSyncStream.cancel();
       this.emit(EVENTS.STOPPED);
+      logger.debug('[TransactionsReader] Stopped continuous sync');
     }
   }
 }

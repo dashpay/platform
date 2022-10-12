@@ -7,6 +7,8 @@ const {
   generateNewMnemonic,
 } = require('../../utils');
 
+const logger = require('../../logger');
+
 const defaultOptions = {
   debug: false,
   offlineMode: false,
@@ -110,6 +112,8 @@ class Wallet extends EventEmitter {
 
     // Notice : Most of the time, wallet id is deterministic
     this.generateNewWalletId();
+
+    logger.walletId = this.walletId;
 
     const storageOpts = {};
     if (opts.storage) {

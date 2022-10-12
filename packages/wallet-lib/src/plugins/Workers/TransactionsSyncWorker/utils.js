@@ -11,7 +11,7 @@ const createBloomFilter = (addresses) => {
   const bloomFilter = BloomFilter.create(addresses.length, BLOOM_FALSE_POSITIVE_RATE);
   addresses.forEach((addressString) => {
     const address = new Address(addressString);
-    bloomFilter.insert(address);
+    bloomFilter.insert(address.hashBuffer);
   });
 
   return bloomFilter;
