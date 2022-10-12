@@ -105,6 +105,7 @@ class ChainDataProvider extends EventEmitter {
    * @returns {Promise<BlockHeader>}
    */
   async getBlockHeader(blockHash) {
+    // Check if we already have header in cache
     const cached = this.blockHeadersCache.get(blockHash);
 
     if (cached) {
@@ -115,9 +116,10 @@ class ChainDataProvider extends EventEmitter {
     const blockHeaderBuffer = Buffer.from(rawBlockHeader, 'hex');
     const blockHeader = new BlockHeader(blockHeaderBuffer);
 
+    // Put header into cache
     this.blockHeadersCache.set(blockHash, blockHeader);
 
-    return new BlockHeader(blockHeaderBuffer);
+    return blockHeader;
   }
 
   /**
@@ -132,23 +134,37 @@ class ChainDataProvider extends EventEmitter {
     let startHeight = fromHeight;
     let fetchCount = count;
 
+    // TODO: optimize this logic with one for loop
+    // of range [startHeight...startHeight + fetchCount - 1]
+    // instead of producing intermediary arrays with heights and cached values
+
+    // Calculate heights for every header in the batch
     const blockHeights = Array.from({ length: count })
       .map((e, i) => startHeight + i);
 
+    // Obtain headers from cache. If there's no headers in cache
+    // array will be filled with undefined values
     const cachedBlockHeaders = blockHeights
       .map((blockHeight) => this.blockHeadersCache.get(blockHeight));
     const [firstCachedItem] = cachedBlockHeaders;
 
     let lastCachedIndex = -1;
 
+    // If we have first item in cache, then proceed finding the rest ones
+    // otherwise, re-fetch all headers from dashcore
     if (firstCachedItem) {
+      // Find index of the item that follows last cached item
       const firstMissingIndex = cachedBlockHeaders.indexOf(undefined);
 
+      // If we don't have some items in cache, then we need to fetch
+      // Otherwise the cache is considered complete, and we return values from it
       if (firstMissingIndex !== -1) {
         lastCachedIndex = firstMissingIndex - 1;
 
         const blockHeader = cachedBlockHeaders[lastCachedIndex];
 
+        // Update startHash, startHeight and fetchCount in order
+        // to fetch from dashcore only missing items
         startHash = blockHeader.hash;
         startHeight += lastCachedIndex;
         fetchCount -= lastCachedIndex;
@@ -158,15 +174,24 @@ class ChainDataProvider extends EventEmitter {
       }
     }
 
+    // Fetch missing items
     const missingBlockHeaders = await this.coreRpcAPI.getBlockHeaders(startHash, fetchCount);
+    // Concatenate all items together
     const rawBlockHeaders = [...((cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0)).map((e) => e.toString('hex'))), ...missingBlockHeaders];
 
+    // Calculate safe height in order to cache headers that are
+    // not subjected to reorgs
+
+    // Ignore last 6 headers by default
     let safeCacheHeight = this.chainHeight - REORG_SAFE_DEPTH;
+
+    // In case we have a chain lock with the higher value, use it
     if (this.chainLock && this.chainLock.height > safeCacheHeight) {
       safeCacheHeight = this.chainLock.height;
     }
 
+    // Put missing items in cache
     missingBlockHeaders.forEach((e, i) => {
       const headerHeight = startHeight + i;
       if (headerHeight <= safeCacheHeight) {
