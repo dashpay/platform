@@ -3,6 +3,8 @@ const { EventEmitter } = require('events');
 const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const log = require('../log');
 
+const REORG_SAFE_DEPTH = 6;
+
 /**
  * Data access layer with caching support
  */
@@ -21,6 +23,7 @@ class ChainDataProvider extends EventEmitter {
     this.blockHeadersCache = blockHeadersCache;
 
     this.chainLock = null;
+    this.initialChainHeight = -1;
   }
 
   /**
@@ -62,6 +65,8 @@ class ChainDataProvider extends EventEmitter {
    * @returns {Promise<void>}
    */
   async init() {
+    this.initialChainHeight = await this.coreRpcAPI.getBestBlockHeight();
+
     try {
       const chainLock = await this.coreRpcAPI.getBestChainLock();
 
@@ -152,10 +157,16 @@ class ChainDataProvider extends EventEmitter {
     const rawBlockHeaders = [...((cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0)).map((e) => e.toString('hex'))), ...missingBlockHeaders];
 
+    const safeCacheHeight = this.chainLock
+      ? this.chainLock.height
+      : this.initialChainHeight - REORG_SAFE_DEPTH;
+
     missingBlockHeaders.forEach((e, i) => {
       const headerHeight = startHeight + i;
-      const header = new BlockHeader(Buffer.from(e, 'hex'));
-      this.blockHeadersCache.set(headerHeight, header);
+      if (headerHeight <= safeCacheHeight) {
+        const header = new BlockHeader(Buffer.from(e, 'hex'));
+        this.blockHeadersCache.set(headerHeight, header);
+      }
     });
 
     return rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
@@ -169,6 +180,8 @@ class ChainDataProvider extends EventEmitter {
     return this.chainLock;
   }
 }
+
+ChainDataProvider.REORG_SAFE_DEPTH = REORG_SAFE_DEPTH;
 
 ChainDataProvider.prototype.events = {
   NEW_BLOCK_HEADER: 'NEW_BLOCK_HEADER',
