@@ -119,10 +119,11 @@ class ChainDataProvider extends EventEmitter {
    */
   async getBlockHeaders(fromHash, fromHeight, count) {
     let startHash = fromHash;
+    let startHeight = fromHeight;
     let fetchCount = count;
 
     const blockHeights = Array.from({ length: count })
-      .map((e, i) => fromHeight + i);
+      .map((e, i) => startHeight + i);
 
     const cachedBlockHeaders = blockHeights
       .map((blockHeight) => this.blockHeadersCache.get(blockHeight));
@@ -139,6 +140,7 @@ class ChainDataProvider extends EventEmitter {
         const blockHeader = cachedBlockHeaders[lastCachedIndex];
 
         startHash = blockHeader.hash;
+        startHeight += lastCachedIndex;
         fetchCount -= lastCachedIndex;
       } else {
         // return cache if we do not miss anything
@@ -150,7 +152,11 @@ class ChainDataProvider extends EventEmitter {
     const rawBlockHeaders = [...((cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0)).map((e) => e.toString('hex'))), ...missingBlockHeaders];
 
-    missingBlockHeaders.forEach((e, i) => this.blockHeadersCache.set(fromHeight + i, new BlockHeader(Buffer.from(e, 'hex'))));
+    missingBlockHeaders.forEach((e, i) => {
+      const headerHeight = startHeight + i;
+      const header = new BlockHeader(Buffer.from(e, 'hex'));
+      this.blockHeadersCache.set(headerHeight, header);
+    });
 
     return rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
   }
