@@ -341,7 +341,7 @@ describe('ChainDataProvider', () => {
     coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
 
     chainDataProvider.chainLock = null;
-    chainDataProvider.initialChainHeight = 107;
+    chainDataProvider.chainHeight = 107;
 
     await chainDataProvider.getBlockHeaders(first.hash, 98, 5);
 
@@ -352,6 +352,29 @@ describe('ChainDataProvider', () => {
 
     const expectedHeaders = fakeHeaders;
     const expectedStartHeight = 98;
+    for (let i = 0; i < 4; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
+  });
+
+  it(`should cache all but last ${ChainDataProvider.REORG_SAFE_DEPTH} headers in case chainlock is too old`, async () => {
+    const [first] = fakeHeaders;
+
+    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
+
+    chainDataProvider.chainHeight = 120;
+
+    await chainDataProvider.getBlockHeaders(first.hash, 111, 5);
+
+    expect(cacheSpy.get.callCount).to.be.equal(5);
+    expect(cacheSpy.set.callCount).to.be.equal(4);
+
+    expect(cacheSpy.get).to.always.returned(undefined);
+
+    const expectedHeaders = fakeHeaders;
+    const expectedStartHeight = 111;
     for (let i = 0; i < 4; i++) {
       expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
       expect(cacheSpy.set.getCall(i).args[1].toString())

@@ -23,7 +23,7 @@ class ChainDataProvider extends EventEmitter {
     this.blockHeadersCache = blockHeadersCache;
 
     this.chainLock = null;
-    this.initialChainHeight = -1;
+    this.chainHeight = -1;
   }
 
   /**
@@ -32,6 +32,11 @@ class ChainDataProvider extends EventEmitter {
    */
   blockHashHandler(blockHash) {
     this.emit(this.events.NEW_BLOCK_HEADER, blockHash.toString('hex'));
+    this.coreRpcAPI.getBestBlockHeight()
+      .then((height) => {
+        this.chainHeight = height;
+      })
+      .catch((e) => this.emit('error', e));
   }
 
   /**
@@ -65,7 +70,7 @@ class ChainDataProvider extends EventEmitter {
    * @returns {Promise<void>}
    */
   async init() {
-    this.initialChainHeight = await this.coreRpcAPI.getBestBlockHeight();
+    this.chainHeight = await this.coreRpcAPI.getBestBlockHeight();
 
     try {
       const chainLock = await this.coreRpcAPI.getBestChainLock();
@@ -157,9 +162,10 @@ class ChainDataProvider extends EventEmitter {
     const rawBlockHeaders = [...((cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0)).map((e) => e.toString('hex'))), ...missingBlockHeaders];
 
-    const safeCacheHeight = this.chainLock
-      ? this.chainLock.height
-      : this.initialChainHeight - REORG_SAFE_DEPTH;
+    let safeCacheHeight = this.chainHeight - REORG_SAFE_DEPTH;
+    if (this.chainLock && this.chainLock.height > safeCacheHeight) {
+      safeCacheHeight = this.chainLock.height;
+    }
 
     missingBlockHeaders.forEach((e, i) => {
       const headerHeight = startHeight + i;

@@ -331,4 +331,23 @@ describe('subscribeToNewBlockHeaders', () => {
 
     expect(dashCoreRpcClient.getBlockHeader.callCount).to.be.equal(0);
   });
+
+  it('should update chain height on new block', async () => {
+    subscribeToNewBlockHeaders(
+      mediator,
+      chainDataProvider,
+    );
+
+    const hashes = Object.keys(blockHeaders);
+
+    const newChainHeight = 105;
+    dashCoreRpcClient.getBestBlockHeight.resolves(newChainHeight);
+
+    zmqClient.subscriberSocket
+      .emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[0], 'hex'));
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(chainDataProvider.chainHeight).to.equal(newChainHeight);
+  });
 });
