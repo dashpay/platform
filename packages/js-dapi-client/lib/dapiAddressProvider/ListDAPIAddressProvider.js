@@ -36,6 +36,7 @@ class ListDAPIAddressProvider {
     if (network && network.regtestEnabled) {
       const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
 
+      liveAddress.protocol = 'https';
       liveAddress.host = '127.0.0.1';
       liveAddress.allowSelfSignedCertificate = true;
       liveAddress.httpPort = 3000 + randomNodeIndex * 100;
