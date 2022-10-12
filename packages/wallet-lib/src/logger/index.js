@@ -29,7 +29,15 @@ const logger = winston.createLogger({
         winston.format.colorize(),
         winston.format.printf(({
           level, message,
-        }) => `${level}: ${message}`),
+        }) => {
+          let messageString = `${level}: ${message}`;
+
+          if (process.env.LOG_WALLET_ID) {
+            messageString = `${level}: [Wallet: ${logger.walletId}] ${message}`;
+          }
+
+          return messageString;
+        }),
       ),
     }),
   ],
