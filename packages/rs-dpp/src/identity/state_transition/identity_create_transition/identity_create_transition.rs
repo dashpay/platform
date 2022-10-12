@@ -13,7 +13,7 @@ use crate::state_transition::{
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;
-use crate::{InvalidVectorSizeError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
@@ -193,7 +193,7 @@ impl IdentityCreateTransition {
         let pk_values = self
             .public_keys
             .iter()
-            .map(|pk| pk.to_raw_json_object())
+            .map(|pk| pk.to_raw_json_object(options.skip_signature))
             .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
 
         json_map.insert(

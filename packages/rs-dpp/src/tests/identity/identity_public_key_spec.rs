@@ -15,7 +15,7 @@ mod from_raw_object {
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json).unwrap();
+        let public_key = IdentityPublicKey::from_json_object(public_key_json).unwrap();
 
         assert_eq!(public_key.id, 0);
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
@@ -42,7 +42,7 @@ mod from_raw_object {
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json).unwrap();
+        let public_key = IdentityPublicKey::from_json_object(public_key_json).unwrap();
 
         assert_eq!(public_key.id, 0);
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
@@ -69,7 +69,7 @@ mod from_raw_object {
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json)
+        let public_key = IdentityPublicKey::from_json_object(public_key_json)
             .expect("the public key should be created");
         assert_eq!(public_key.get_type(), KeyType::BIP13_SCRIPT_HASH);
         assert_eq!(

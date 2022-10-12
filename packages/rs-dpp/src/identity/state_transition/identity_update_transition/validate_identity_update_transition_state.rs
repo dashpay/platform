@@ -124,7 +124,7 @@ where
         let raw_public_keys: Vec<Value> = identity
             .public_keys
             .iter()
-            .map(|pk| pk.to_raw_json_object())
+            .map(|pk| pk.to_raw_json_object(false))
             .collect::<Result<_, SerdeParsingError>>()?;
 
         if !state_transition.get_public_keys_to_add().is_empty() {

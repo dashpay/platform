@@ -311,6 +311,7 @@ mod test {
             data: ec_public_compressed_bytes.try_into().unwrap(),
             read_only: false,
             disabled_at: None,
+            signature: Default::default(),
         };
 
         Keys {

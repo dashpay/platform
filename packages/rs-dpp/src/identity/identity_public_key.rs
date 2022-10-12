@@ -55,7 +55,7 @@ impl Into<CborValue> for KeyType {
     }
 }
 
-pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
+pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
@@ -182,6 +182,8 @@ pub struct IdentityPublicKey {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<TimestampMillis>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub signature: Vec<u8>,
 }
 
 //? do we really need that???
@@ -292,6 +294,16 @@ impl IdentityPublicKey {
         self.security_level == SecurityLevel::MASTER
     }
 
+    /// Returns the signature
+    pub fn get_signature(&self) -> &[u8] {
+        &self.signature
+    }
+
+    /// Set the signature
+    pub fn set_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature;
+    }
+
     /// Get the original public key hash
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         if self.data.is_empty() {
@@ -331,9 +343,12 @@ impl IdentityPublicKey {
         vec::vec_to_array::<33>(&self.data)
     }
 
-    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
-        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
-        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+    pub fn from_raw_object(raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
+        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
+        Ok(identity_public_key)
+    }
+
+    pub fn from_json_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
         raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
         let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
 
@@ -341,15 +356,21 @@ impl IdentityPublicKey {
     }
 
     /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
-        let value = serde_json::to_value(&self)?;
+    pub fn to_raw_json_object(
+        &self,
+        skip_signatures: bool,
+    ) -> Result<JsonValue, SerdeParsingError> {
+        let mut value = serde_json::to_value(&self)?;
+        if skip_signatures {
+            let _ = value.remove("signature");
+        }
 
         Ok(value)
     }
 
     /// Return json with all binary data converted to base64
     pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object()?;
+        let mut value = self.to_raw_json_object(false)?;
 
         value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
 
@@ -374,6 +395,8 @@ impl IdentityPublicKey {
             key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
         let public_key_bytes =
             key_value_map.as_bytes("data", "Identity public key must have a data")?;
+        let signature_bytes = key_value_map.as_bytes("signature", "").unwrap_or_default();
+        let disabled_at = key_value_map.as_u64("disabledAt", "").ok();
 
         Ok(IdentityPublicKey {
             id: id.into(),
@@ -382,7 +405,8 @@ impl IdentityPublicKey {
             key_type: key_type.try_into()?,
             data: public_key_bytes,
             read_only: readonly,
-            disabled_at: None,
+            disabled_at,
+            signature: signature_bytes,
         })
     }
 
@@ -395,6 +419,13 @@ impl IdentityPublicKey {
         pk_map.insert("purpose", self.get_purpose());
         pk_map.insert("readOnly", self.get_readonly());
         pk_map.insert("securityLevel", self.get_security_level());
+        if let Some(ts) = self.get_disabled_at() {
+            pk_map.insert("disabledAt", ts)
+        }
+
+        if !self.get_signature().is_empty() {
+            pk_map.insert("signature", self.get_signature().to_owned())
+        }
 
         pk_map.to_value_sorted()
     }

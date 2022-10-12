@@ -1,10 +1,13 @@
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use serde_json::{json, Value as JsonValue};
-use std::sync::Arc;
+use serde_json::Value as JsonValue;
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    identity::validation::TPublicKeysValidator,
+    identity::{
+        state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator,
+        validation::TPublicKeysValidator,
+    },
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
@@ -20,16 +23,22 @@ lazy_static! {
     .expect("Identity Update Schema file should exist");
 }
 
-pub struct ValidateIdentityUpdateTransitionBasic<T> {
+pub struct ValidateIdentityUpdateTransitionBasic<KV, SV> {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
     json_schema_validator: JsonSchemaValidator,
-    public_keys_validator: Arc<T>,
+    public_keys_validator: Arc<KV>,
+
+    _public_keys_signatures_validator: PhantomData<SV>,
 }
 
-impl<T: TPublicKeysValidator> ValidateIdentityUpdateTransitionBasic<T> {
+impl<KV, SV> ValidateIdentityUpdateTransitionBasic<KV, SV>
+where
+    KV: TPublicKeysValidator,
+    SV: TPublicKeysSignaturesValidator,
+{
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
-        public_keys_validator: Arc<T>,
+        public_keys_validator: Arc<KV>,
     ) -> Result<Self, ProtocolError> {
         let json_schema_validator = JsonSchemaValidator::new(IDENTITY_UPDATE_SCHEMA.clone())
             .map_err(|e| {
@@ -42,6 +51,7 @@ impl<T: TPublicKeysValidator> ValidateIdentityUpdateTransitionBasic<T> {
             protocol_version_validator,
             public_keys_validator,
             json_schema_validator,
+            _public_keys_signatures_validator: PhantomData,
         })
     }
 
@@ -66,6 +76,7 @@ impl<T: TPublicKeysValidator> ValidateIdentityUpdateTransitionBasic<T> {
         }
 
         let maybe_raw_public_keys = raw_state_transition.get(property_names::ADD_PUBLIC_KEYS);
+
         match maybe_raw_public_keys {
             Some(raw_public_keys) => {
                 let raw_public_keys_list = raw_public_keys.as_array().ok_or_else(|| {
@@ -74,8 +85,20 @@ impl<T: TPublicKeysValidator> ValidateIdentityUpdateTransitionBasic<T> {
                         property_names::ADD_PUBLIC_KEYS
                     ))
                 })?;
-                self.public_keys_validator
-                    .validate_keys(raw_public_keys_list)
+                let result = self
+                    .public_keys_validator
+                    .validate_keys(raw_public_keys_list)?;
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+
+                let result =
+                    SV::validate_public_key_signatures(raw_state_transition, raw_public_keys_list)?;
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+
+                Ok(result)
             }
             None => Ok(result),
         }

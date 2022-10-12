@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use itertools::Itertools;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -35,7 +36,15 @@ where
         let identity = Identity {
             protocol_version: state_transition.get_protocol_version(),
             id: state_transition.get_identity_id().clone(),
-            public_keys: state_transition.get_public_keys().to_vec(),
+            public_keys: state_transition
+                .get_public_keys()
+                .iter()
+                .cloned()
+                .map(|mut pk| {
+                    pk.set_signature(vec![]);
+                    pk
+                })
+                .collect_vec(),
             balance: credits_amount,
             revision: 0,
             asset_lock_proof: None,

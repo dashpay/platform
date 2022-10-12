@@ -23,6 +23,7 @@ pub fn get_identity_update_transition_fixture() -> IdentityUpdateTransition {
             data: base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
             security_level: SecurityLevel::MASTER,
             disabled_at: None,
+            signature: vec![0; 65],
         }],
         disable_public_keys: vec![0],
         public_keys_disabled_at: Some(1234567),
