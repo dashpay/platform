@@ -67,6 +67,7 @@ class TransactionsSyncWorker extends Worker {
     this.historicalMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
     this.newTransactionsHandler = this.newTransactionsHandler.bind(this);
     this.newMerkleBlockHandler = this.newMerkleBlockHandler.bind(this);
+    this.updateProgress = this.updateProgress.bind(this);
 
     this.syncState = STATES.IDLE;
   }
@@ -120,6 +121,7 @@ class TransactionsSyncWorker extends Worker {
       throw new Error(`Start block height ${startFrom} is greater than chain height ${chainHeight}`);
     } else if (startFrom === chainHeight) {
       logger.debug(`Start block height is equal to chain height ${chainHeight}, no need to sync`);
+      this.syncCheckpoint = startFrom;
       // chainStore.clearHeadersMetadata();
       return;
     }
@@ -133,6 +135,7 @@ class TransactionsSyncWorker extends Worker {
       chainStore.updateLastSyncedBlockHeight(chainHeight);
       this.syncCheckpoint = chainHeight;
       // chainStore.clearHeadersMetadata();
+      return;
     }
 
     this.transactionsReader.on(
@@ -307,6 +310,7 @@ class TransactionsSyncWorker extends Worker {
   }
 
   async onStop() {
+    logger.debug('[TransactionsSyncWorker] Stopping...');
     if (this.syncState === STATES.HISTORICAL_SYNC) {
       await this.transactionsReader.stopHistoricalSync();
     } else if (this.syncState === STATES.CONTINUOUS_SYNC) {
@@ -320,6 +324,8 @@ class TransactionsSyncWorker extends Worker {
         .removeListener(EVENTS.BLOCKHEIGHT_CHANGED, this.blockHeightChangedHandler);
       this.blockHeightChangedHandler = null;
     }
+
+    this.syncState = STATES.IDLE;
   }
 
   /**
@@ -385,18 +391,8 @@ class TransactionsSyncWorker extends Worker {
    */
   historicalMerkleBlockHandler(payload) {
     const { merkleBlock, acceptMerkleBlock, rejectMerkleBlock } = payload;
-    if (!this.historicalTransactionsToVerify.size) {
-      rejectMerkleBlock(new Error(`No transactions to verify for merkle block ${merkleBlock.header.hash}`));
-      return;
-    }
-    const chainStore = this.storage.getDefaultChainStore();
 
-    const txHashesInTheBlock = merkleBlock
-      .hashes.reduce((set, hashHex) => {
-        const hash = Buffer.from(hashHex, 'hex').reverse();
-        set.add(hash.toString('hex'));
-        return set;
-      }, new Set());
+    const chainStore = this.storage.getDefaultChainStore();
 
     const headerHash = merkleBlock.header.hash;
     const headerMetadata = chainStore.state.headersMetadata.get(headerHash);
@@ -421,34 +417,43 @@ class TransactionsSyncWorker extends Worker {
       return;
     }
 
-    const metadata = {
-      blockHash: headerHash,
-      height: headerHeight,
-      time: new Date(headerTime * 1e3),
-      instantLocked: false, // TBD
-      chainLocked: false, // TBD
-    };
-
-    const transactionsWithMetadata = [];
-
-    try {
-      this.historicalTransactionsToVerify.forEach((tx) => {
-        if (!txHashesInTheBlock.has(tx.hash)) {
-          throw new Error(`Transaction ${tx.hash} was not found in merkle block ${headerHash}`);
-        }
-        transactionsWithMetadata.push([tx, metadata]);
-        this.historicalTransactionsToVerify.delete(tx.hash);
-      });
-    } catch (e) {
-      rejectMerkleBlock(e);
-      return;
-    }
-
-    // TODO(spv): verify transactions against the merkle block
-
     let addressesGenerated = [];
-    if (transactionsWithMetadata.length) {
-      ({ addressesGenerated } = this.importTransactions(transactionsWithMetadata));
+    if (this.historicalTransactionsToVerify.size) {
+      const txHashesInTheBlock = merkleBlock
+        .hashes.reduce((set, hashHex) => {
+          const hash = Buffer.from(hashHex, 'hex').reverse();
+          set.add(hash.toString('hex'));
+          return set;
+        }, new Set());
+
+      const metadata = {
+        blockHash: headerHash,
+        height: headerHeight,
+        time: new Date(headerTime * 1e3),
+        instantLocked: false, // TBD
+        chainLocked: false, // TBD
+      };
+
+      const transactionsWithMetadata = [];
+
+      try {
+        this.historicalTransactionsToVerify.forEach((tx) => {
+          if (!txHashesInTheBlock.has(tx.hash)) {
+            throw new Error(`Transaction ${tx.hash} was not found in merkle block ${headerHash}`);
+          }
+          transactionsWithMetadata.push([tx, metadata]);
+          this.historicalTransactionsToVerify.delete(tx.hash);
+        });
+      } catch (e) {
+        rejectMerkleBlock(e);
+        return;
+      }
+
+      // TODO(spv): verify transactions against the merkle block
+
+      if (transactionsWithMetadata.length) {
+        ({ addressesGenerated } = this.importTransactions(transactionsWithMetadata));
+      }
     }
 
     acceptMerkleBlock(headerHeight, addressesGenerated);
@@ -498,6 +503,7 @@ class TransactionsSyncWorker extends Worker {
     // Header metadata was not found, subscribe to BLOCKHEIGHT_CHANGED event
     // in order to check one more time
     if (!headerMetadata) {
+      logger.silly('[TransactionsSyncWorker#newMerkleBlockHandler] header metadata not found. Waiting for chain height to change.');
       if (this.blockHeightChangedHandler) {
         // This situation should not normally happen
         // because BlockHeadersSyncWorker should fire BLOCKHEIGHT_CHANGED either
@@ -525,12 +531,20 @@ class TransactionsSyncWorker extends Worker {
       return;
     }
 
-    const headerTime = headerMetadata.time;
-    if (headerTime <= 0 || Number.isNaN(headerTime)) {
-      rejectMerkleBlock(rejectMerkleBlock(Error(`Invalid header time: ${headerTime}`)));
+    if (headerMetadata.time <= 0 || Number.isNaN(headerMetadata.time)) {
+      rejectMerkleBlock(rejectMerkleBlock(Error(`Invalid header time: ${headerMetadata.time}`)));
       return;
     }
 
+    const headerTime = new Date(headerMetadata.time * 1e3);
+
+    logger.debug('[TransactionsSyncWorker#newMerkleBlockHandler] New merkle block received', {
+      hash: merkleBlock.header.hash,
+      height: headerHeight,
+      time: headerTime,
+    });
+
+    let $transactionsFound = 0;
     if (this.historicalTransactionsToVerify.size) {
       const txHashesInTheBlock = getTxHashesFromMerkleBlock(merkleBlock);
 
@@ -539,7 +553,7 @@ class TransactionsSyncWorker extends Worker {
       const metadata = {
         blockHash: headerHash,
         height: headerHeight,
-        time: new Date(headerTime * 1e3),
+        time: headerTime,
         instantLocked: false, // TBD
         chainLocked: false, // TBD
       };
@@ -559,6 +573,7 @@ class TransactionsSyncWorker extends Worker {
         transactionsWithMetadata.forEach(([tx]) => {
           this.parentEvents.emit(EVENTS.CONFIRMED_TRANSACTION, tx);
         });
+        $transactionsFound = transactionsWithMetadata.length;
       }
     }
 
@@ -566,6 +581,8 @@ class TransactionsSyncWorker extends Worker {
     this.syncCheckpoint = headerHeight;
     chainStore.updateLastSyncedBlockHeight(headerHeight);
     this.storage.scheduleStateSave();
+
+    logger.debug(`[TransactionsSyncWorker#newMerkleBlockHandler] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`);
   }
 
   /**
@@ -582,28 +599,28 @@ class TransactionsSyncWorker extends Worker {
    */
   // eslint-disable-next-line
   updateProgress() {
-    // if (this.progressUpdateTimeout) {
-    //   clearTimeout(this.progressUpdateTimeout);
-    //   this.progressUpdateTimeout = null;
-    // }
-    //
-    // const chainStore = this.storage.getChainStore(this.network.toString());
-    //
-    // const totalBlocksCount = chainStore.state.chainHeight + 1;
-    // const syncedBlocksCount = this.lastSyncedBlockHeight + 1;
-    // const transactionsCount = chainStore.state.transactions.size;
-    // let progress = syncedBlocksCount / totalBlocksCount;
-    // progress = Math.round(progress * 1000) / 10;
-    // logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress:
-    // ${this.lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
-    // logger.debug(`[-------------------------->] TXs: ${transactionsCount}`);
-    //
-    // this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
-    //   progress,
-    //   syncedBlocksCount,
-    //   totalBlocksCount,
-    //   transactionsCount,
-    // });
+    if (this.progressUpdateTimeout) {
+      clearTimeout(this.progressUpdateTimeout);
+      this.progressUpdateTimeout = null;
+    }
+
+    const chainStore = this.storage.getChainStore(this.network.toString());
+
+    const { chainHeight, lastSyncedBlockHeight, transactions } = chainStore.state;
+    const totalBlocksCount = chainHeight + 1;
+    const syncedBlocksCount = lastSyncedBlockHeight + 1;
+    const transactionsCount = transactions.size;
+    let progress = syncedBlocksCount / totalBlocksCount;
+    progress = Math.round(progress * 1000) / 10;
+    logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress: ${lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
+    logger.debug(`[-------------------------->] TXs: ${transactionsCount}`);
+
+    this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
+      progress,
+      syncedBlocksCount,
+      totalBlocksCount,
+      transactionsCount,
+    });
   }
 
   /**
