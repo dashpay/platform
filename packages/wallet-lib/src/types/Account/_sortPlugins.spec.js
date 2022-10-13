@@ -2,7 +2,7 @@ const {expect} = require('chai');
 const {WALLET_TYPES} = require('../../CONSTANTS');
 const sortPlugins = require('./_sortPlugins');
 
-const TransactionSyncStreamWorker = require('../../plugins/Workers/TransactionSyncStreamWorker/TransactionSyncStreamWorker');
+const TransactionsSyncWorker = require('../../plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
 const BlockHeadersSyncWorker = require('../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
 const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
 const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
@@ -75,7 +75,7 @@ class withSinglePluginAndSingleInjectBeforeDependenciesWorker extends Worker {
           'ChainPlugin'
         ],
         before: [
-          'TransactionSyncStreamWorker'
+          'TransactionsSyncWorker'
         ]
       }
     });
@@ -93,7 +93,7 @@ class withSinglePluginDependenciesWorker2 extends Worker {
       name: 'withSinglePluginDependenciesWorker2',
       injectionOrder: {
         before: [
-          'TransactionSyncStreamWorker'
+          'TransactionsSyncWorker'
         ]
       }
     });
@@ -121,7 +121,7 @@ class userDefinedConflictingDependenciesWorker extends Worker {
           'ChainPlugin'
         ],
         after: [
-          'TransactionSyncStreamWorker',
+          'TransactionsSyncWorker',
         ]
       }
     });
@@ -141,7 +141,7 @@ class pluginWithMultiplePluginDependencies extends Worker {
       name: 'pluginWithMultiplePluginDependencies',
       injectionOrder: {
         before: [
-          'TransactionSyncStreamWorker',
+          'TransactionsSyncWorker',
           'withSinglePluginDependenciesWorker'
         ]
       }
@@ -195,7 +195,7 @@ describe('Account - _sortPlugins', () => {
       expect(sortedPluginsOnlineWithDefault).to.deep.equal([
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [IdentitySyncWorker, true, true],
       ])
 
@@ -215,7 +215,7 @@ describe('Account - _sortPlugins', () => {
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true,true],
-        [TransactionSyncStreamWorker, true,true],
+        [TransactionsSyncWorker, true,true],
         [IdentitySyncWorker, true,true],
         [dummyWorker, false, false],
         [withoutPluginDependenciesWorker, false,false],
@@ -226,7 +226,7 @@ describe('Account - _sortPlugins', () => {
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [IdentitySyncWorker, true, true],
         [withSinglePluginDependenciesWorker, false, false],
         [dummyWorker, false, false],
@@ -237,7 +237,7 @@ describe('Account - _sortPlugins', () => {
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [withSingleInjectBeforePluginDependenciesWorker, false, false],
         [IdentitySyncWorker, true, true],
         [dummyWorker, false, false],
@@ -250,7 +250,7 @@ describe('Account - _sortPlugins', () => {
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
         [withSinglePluginDependenciesWorker2, false, false],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [IdentitySyncWorker, true, true],
         [dummyWorker, false, false],
       ])
@@ -262,7 +262,7 @@ describe('Account - _sortPlugins', () => {
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
         [withSinglePluginAndSingleInjectBeforeDependenciesWorker, false, false],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [IdentitySyncWorker, true, true],
         [dummyWorker, false, false],
       ])
@@ -274,7 +274,7 @@ describe('Account - _sortPlugins', () => {
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
         [withSinglePluginDependenciesWorker2, false, false],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [IdentitySyncWorker, true, true],
         [withSinglePluginDependenciesWorker, false, false],
         [dummyWorker, false, false],
@@ -292,7 +292,7 @@ describe('Account - _sortPlugins', () => {
         [ChainPlugin, true, true],
         [BlockHeadersSyncWorker, true, true],
         [pluginWithMultiplePluginDependencies, false, false],
-        [TransactionSyncStreamWorker, true, true],
+        [TransactionsSyncWorker, true, true],
         [IdentitySyncWorker, true, true],
         [withSinglePluginDependenciesWorker, false, false],
         [dummyWorker, false, false],
@@ -308,7 +308,7 @@ describe('Account - _sortPlugins', () => {
       // const sortedPlugins = await sortPlugins(accountOnlineWithDefaultPlugins, userDefinedComplexPluginDependenciesPlugins);
       // expect(sortedPlugins).to.deep.equal([
       //   [ChainPlugin, true],
-      //   [TransactionSyncStreamWorker, true],
+      //   [TransactionsSyncWorker, true],
       //   [IdentitySyncWorker, true],
       //   [dummyWorker, true],
       //   [withSinglePluginDependenciesWorker, true],

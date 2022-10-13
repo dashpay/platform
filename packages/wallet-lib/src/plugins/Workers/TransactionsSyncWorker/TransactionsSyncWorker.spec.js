@@ -25,6 +25,7 @@ describe('TransactionsSyncWorker', () => {
     const worker = new TransactionsSyncWorker({
       executeOnStart: false,
     });
+    worker.network = 'livenet';
 
     worker.keyChainStore = {
       getKeyChains: () => ADDRESSES.map((addresses) => ({
@@ -60,6 +61,7 @@ describe('TransactionsSyncWorker', () => {
             chainHeight: CHAIN_HEIGHT,
             lastSyncedBlockHeight: -1,
             headersMetadata: new Map(),
+            transactions: new Map(),
           };
           this.defaultChainStore = {
             state: chainStoreState,
@@ -621,28 +623,6 @@ describe('TransactionsSyncWorker', () => {
     });
 
     context('Reject merkle block', () => {
-      it('should reject in case tx verification pool is empty', function () {
-        const merkleBlock = mockMerkleBlock([]);
-
-        // Prepare event handler payload
-        const dataEventPayload = {
-          merkleBlock,
-          acceptMerkleBlock: this.sinon.spy(),
-          rejectMerkleBlock: this.sinon.spy(),
-        };
-
-        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
-
-        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
-        const { args } = dataEventPayload.rejectMerkleBlock.getCall(0);
-        expect(args[0].message)
-          .to.equal(`No transactions to verify for merkle block ${merkleBlock.header.hash}`);
-
-        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
-        expect(storage.scheduleStateSave).to.have.not.been.called();
-        expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
-      });
-
       it('should reject in case header metadata is missing', function () {
         // Create transactions
         const transactions = [

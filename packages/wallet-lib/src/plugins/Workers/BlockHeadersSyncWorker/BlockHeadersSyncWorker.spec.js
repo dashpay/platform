@@ -86,7 +86,6 @@ describe('BlockHeadersSyncWorker', () => {
               lastSyncedHeaderHeight: -1,
             },
             updateLastSyncedHeaderHeight: sinon.spy(),
-            updateLastSyncedBlockHeight: sinon.spy(),
             updateChainHeight: sinon.spy(),
             setBlockHeaders: sinon.spy(),
             updateHeadersMetadata: sinon.spy(),
@@ -413,8 +412,6 @@ describe('BlockHeadersSyncWorker', () => {
 
       expect(chainStore.updateChainHeight)
         .to.have.been.calledWith(batchHeadHeight);
-      expect(chainStore.updateLastSyncedBlockHeight)
-        .to.have.been.calledWith(batchHeadHeight);
       expect(chainStore.updateLastSyncedHeaderHeight)
         .to.have.been.calledWith(batchHeadHeight);
 
@@ -444,8 +441,6 @@ describe('BlockHeadersSyncWorker', () => {
       const newHeight = batchHeadHeight + headers.length - 1;
       expect(chainStore.updateChainHeight)
         .to.have.been.calledWith(newHeight);
-      expect(chainStore.updateLastSyncedBlockHeight)
-        .to.have.been.calledWith(newHeight);
       expect(chainStore.updateLastSyncedHeaderHeight)
         .to.have.been.calledWith(newHeight);
       expect(chainStore.setBlockHeaders)
@@ -462,7 +457,6 @@ describe('BlockHeadersSyncWorker', () => {
       );
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)
@@ -485,7 +479,6 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(`No new headers received for batch at height ${batchHeadHeight}`);
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)
@@ -508,7 +501,6 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal('New chain height 900 is less than latest height 1000');
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)

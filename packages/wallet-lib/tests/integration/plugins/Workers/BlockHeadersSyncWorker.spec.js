@@ -187,8 +187,6 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(newChainHeight);
       expect(chainStore.state.chainHeight)
         .to.equal(newChainHeight);
-      expect(chainStore.state.lastSyncedBlockHeight)
-        .to.equal(newChainHeight);
       expect(chainStore.state.headersMetadata.get(newHeader.hash))
         .to.deep.equal({
           height: newChainHeight,
@@ -329,8 +327,6 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(newChainHeight);
       expect(chainStore.state.chainHeight)
         .to.equal(newChainHeight);
-      expect(chainStore.state.lastSyncedBlockHeight)
-        .to.equal(newChainHeight);
       expect(chainStore.state.headersMetadata.get(newHeader.hash))
         .to.deep.equal({
           height: newChainHeight,
@@ -423,8 +419,6 @@ describe('BlockHeadersSyncWorker', () => {
       expect(chainStore.state.lastSyncedHeaderHeight)
         .to.equal(newChainHeight);
       expect(chainStore.state.chainHeight)
-        .to.equal(newChainHeight);
-      expect(chainStore.state.lastSyncedBlockHeight)
         .to.equal(newChainHeight);
       expect(chainStore.state.headersMetadata.get(newHeader.hash))
         .to.deep.equal({
