@@ -1297,12 +1297,12 @@ __metadata:
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/wallet-lib": "workspace:~"
+    "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/wallet-lib": "workspace:*"
     babel-eslint: ^10.1.0
     console-table-printer: ^2.11.0
-    dash: "workspace:~"
+    dash: "workspace:*"
     dotenv-safe: ^8.2.0
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1314,16 +1314,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dapi-client@workspace:packages/js-dapi-client, @dashevo/dapi-client@workspace:~":
+"@dashevo/dapi-client@workspace:*, @dashevo/dapi-client@workspace:packages/js-dapi-client":
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi-client@workspace:packages/js-dapi-client"
   dependencies:
     "@babel/core": ^7.15.5
-    "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dash-spv": "workspace:~"
+    "@dashevo/dapi-grpc": "workspace:*"
+    "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/grpc-common": "workspace:*"
     "@grpc/grpc-js": ^1.3.7
     assert-browserify: ^2.0.0
     axios: ^0.27.2
@@ -1361,17 +1361,16 @@ __metadata:
     string_decoder: ^1.3.0
     url: ^0.11.0
     util: ^0.12.4
-    wasm-x11-hash: ~0.0.2
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
   languageName: unknown
   linkType: soft
 
-"@dashevo/dapi-grpc@workspace:packages/dapi-grpc, @dashevo/dapi-grpc@workspace:~":
+"@dashevo/dapi-grpc@workspace:*, @dashevo/dapi-grpc@workspace:packages/dapi-grpc":
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi-grpc@workspace:packages/dapi-grpc"
   dependencies:
-    "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/grpc-common": "workspace:*"
     "@dashevo/protobufjs": 6.10.5
     "@grpc/grpc-js": ^1.3.7
     chai: ^4.3.4
@@ -1394,13 +1393,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi@workspace:packages/dapi"
   dependencies:
-    "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dapi-grpc": "workspace:~"
+    "@dashevo/dapi-client": "workspace:*"
+    "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/grpc-common": "workspace:*"
     "@grpc/grpc-js": ^1.3.7
     ajv: ^8.6.0
     bs58: ^4.0.1
@@ -1436,14 +1435,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dash-spv@workspace:packages/dash-spv, @dashevo/dash-spv@workspace:~":
+"@dashevo/dash-spv@workspace:*, @dashevo/dash-spv@workspace:packages/dash-spv":
   version: 0.0.0-use.local
   resolution: "@dashevo/dash-spv@workspace:packages/dash-spv"
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
     "@dashevo/dashcore-lib": ~0.19.44
-    chai: ^4.3.4
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
@@ -1500,11 +1498,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashpay-contract@workspace:packages/dashpay-contract, @dashevo/dashpay-contract@workspace:~":
+"@dashevo/dashpay-contract@workspace:*, @dashevo/dashpay-contract@workspace:packages/dashpay-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/dashpay-contract@workspace:packages/dashpay-contract"
   dependencies:
-    "@dashevo/dpp": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1545,11 +1543,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dpns-contract@workspace:packages/dpns-contract, @dashevo/dpns-contract@workspace:~":
+"@dashevo/dpns-contract@workspace:*, @dashevo/dpns-contract@workspace:packages/dpns-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpns-contract@workspace:packages/dpns-contract"
   dependencies:
-    "@dashevo/dpp": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1590,7 +1588,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~":
+"@dashevo/dpp@workspace:*, @dashevo/dpp@workspace:packages/js-dpp":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpp@workspace:packages/js-dpp"
   dependencies:
@@ -1598,10 +1596,10 @@ __metadata:
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashpay-contract": "workspace:~"
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
+    "@dashevo/dashpay-contract": "workspace:*"
+    "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/feature-flags-contract": "workspace:*"
+    "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wasm-re2": ~1.0.2
     acorn: ^8.5.0
     ajv: ^8.6.0
@@ -1662,16 +1660,16 @@ __metadata:
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
     "@dashevo/abci": ~0.23.0-dev.1
-    "@dashevo/dapi-grpc": "workspace:~"
+    "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
-    "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
+    "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/feature-flags-contract": "workspace:*"
+    "@dashevo/grpc-common": "workspace:*"
+    "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/rs-drive": 0.23.0-dev.8
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
@@ -1723,11 +1721,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract, @dashevo/feature-flags-contract@workspace:~":
+"@dashevo/feature-flags-contract@workspace:*, @dashevo/feature-flags-contract@workspace:packages/feature-flags-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
   dependencies:
-    "@dashevo/dpp": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1739,7 +1737,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/grpc-common@workspace:packages/js-grpc-common, @dashevo/grpc-common@workspace:~":
+"@dashevo/grpc-common@workspace:*, @dashevo/grpc-common@workspace:packages/js-grpc-common":
   version: 0.0.0-use.local
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
   dependencies:
@@ -1771,11 +1769,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract, @dashevo/masternode-reward-shares-contract@workspace:~":
+"@dashevo/masternode-reward-shares-contract@workspace:*, @dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
   dependencies:
-    "@dashevo/dpp": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1791,14 +1789,14 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
-    "@dashevo/dapi-client": "workspace:~"
+    "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wallet-lib": "workspace:~"
+    "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/feature-flags-contract": "workspace:*"
+    "@dashevo/grpc-common": "workspace:*"
+    "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/wallet-lib": "workspace:*"
     assert: ^2.0.0
     assert-browserify: ^2.0.0
     blake3: ^2.1.4
@@ -1808,7 +1806,7 @@ __metadata:
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
     crypto-browserify: ^3.12.0
-    dash: "workspace:~"
+    dash: "workspace:*"
     dirty-chai: ^2.0.1
     dotenv-safe: ^8.2.0
     eslint: ^7.32.0
@@ -1900,15 +1898,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/wallet-lib@workspace:packages/wallet-lib, @dashevo/wallet-lib@workspace:~":
+"@dashevo/wallet-lib@workspace:*, @dashevo/wallet-lib@workspace:packages/wallet-lib":
   version: 0.0.0-use.local
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
-    "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dash-spv": "workspace:~"
+    "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/grpc-common": "workspace:*"
     assert: ^2.0.0
     browserify-zlib: ^0.2.0
     buffer: ^6.0.3
@@ -1917,7 +1914,6 @@ __metadata:
     chai-as-promised: ^7.1.1
     crypto-browserify: ^3.12.0
     crypto-js: ^4.0.0
-    dirty-chai: ^2.0.1
     dotenv-safe: ^8.2.0
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1947,7 +1943,6 @@ __metadata:
     string_decoder: ^1.3.0
     url: ^0.11.0
     util: ^0.12.4
-    wasm-x11-hash: ~0.0.2
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
     winston: ^3.2.1
@@ -5502,18 +5497,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dash@workspace:packages/js-dash-sdk, dash@workspace:~":
+"dash@workspace:*, dash@workspace:packages/js-dash-sdk":
   version: 0.0.0-use.local
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
-    "@dashevo/dapi-client": "workspace:~"
+    "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashpay-contract": "workspace:~"
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wallet-lib": "workspace:~"
+    "@dashevo/dashpay-contract": "workspace:*"
+    "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/grpc-common": "workspace:*"
+    "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/wallet-lib": "workspace:*"
     "@types/chai": ^4.2.12
     "@types/dirty-chai": ^2.0.2
     "@types/expect": ^24.3.0
@@ -5572,13 +5567,13 @@ __metadata:
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
-    "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.1
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wallet-lib": "workspace:~"
+    "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
+    "@dashevo/feature-flags-contract": "workspace:*"
+    "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/wallet-lib": "workspace:*"
     "@oclif/core": ^1.16.3
     "@oclif/plugin-help": ^5.1.12
     ajv: ^8.6.0
@@ -5586,7 +5581,7 @@ __metadata:
     awilix: ^4.2.6
     bls-signatures: ^0.2.5
     chalk: ^4.1.0
-    dash: "workspace:~"
+    dash: "workspace:*"
     dockerode: ^3.2.0
     dot: ^1.1.3
     dotenv: ^8.6.0
@@ -14111,13 +14106,6 @@ typescript@^3.9.5:
   version: 1.0.0
   resolution: "walk-up-path@npm:1.0.0"
   checksum: b8019ac4fb9ba1576839ec66d2217f62ab773c1cc4c704bfd1c79b1359fef5366f1382d3ab230a66a14c3adb1bf0fe102d1fdaa3437881e69154dfd1432abd32
-  languageName: node
-  linkType: hard
-
-"wasm-x11-hash@npm:~0.0.2":
-  version: 0.0.2
-  resolution: "wasm-x11-hash@npm:0.0.2"
-  checksum: 67005c5d048a62f8987c0b47d3e526e7a3cc506e479fb401a7280cb00c9b247537cb21049c575bc7a713dc1a188d5ee7d35310dd1369093dc2b34c1093ff3636
   languageName: node
   linkType: hard
 
