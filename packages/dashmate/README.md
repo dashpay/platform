@@ -445,6 +445,52 @@ Then specify the created dotenv file as an option for the `docker compose` comma
 ```bash
 $ docker compose --env-file=.env.testnet up -d
 ```
+
+## Example Usage
+Once the devnet is setup, you can connect to it with the [Dash JS SDK](/packages/js-dash-sdk) as demonstrated below:
+```js
+const Dash = require('dash');
+
+// via Seed
+const client = new Dash.Client({
+  seeds: [{
+    // a url pointing to your server
+    host: 'seed-1.testnet.networks.dash.org',
+    httpPort: 3000,
+    grpcPort: 3010,
+  }],
+}); 
+
+// or via Address
+const client = new Dash.Client({
+  dapiAddresses: [
+    // IP or url(s) pointing to your server(s)
+    '127.0.0.1:3000:3010',
+    '127.0.0.2:3000:3010',
+  ],
+});
+
+async function connect() {
+  return await client.getDAPIClient().core.getBestBlockHash();
+}
+
+connect()
+  .then((d) => console.log('Connected. Best block hash:\n', d))
+  .catch((e) => console.error('Something went wrong:\n', e))
+  .finally(() => client.disconnect());
+```
+
+Or directly with the REST DAPI
+
+```sh
+curl --request POST \
+  # a url pointing to your server
+  --url http://seed-1.testnet.networks.dash.org:3000/ \
+  --header 'content-type: application/json' \
+  --data '{"method":"getBlockHash","id":1,"jsonrpc":"2.0","params":{"height": 100 }}'
+```
+See [Connect to a Devnet](https://dashplatform.readme.io/docs/tutorial-connecting-to-testnet#connect-to-a-devnet) for more info.
+
 ## Troubleshooting
 
 #### [FAILED] Node is not running
