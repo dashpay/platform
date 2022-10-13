@@ -18,4 +18,3 @@ jobs:
     with:
       package: '@dashevo/dash-spv'
       start-local-network: false
-      ignore-build: true

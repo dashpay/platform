@@ -1436,7 +1436,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dash-spv@workspace:*, @dashevo/dash-spv@workspace:packages/dash-spv, @dashevo/dash-spv@workspace:~":
+"@dashevo/dash-spv@workspace:*, @dashevo/dash-spv@workspace:packages/dash-spv":
   version: 0.0.0-use.local
   resolution: "@dashevo/dash-spv@workspace:packages/dash-spv"
   dependencies:
@@ -1905,7 +1905,7 @@ __metadata:
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dash-spv": "workspace:~"
+    "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
