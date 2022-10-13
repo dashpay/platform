@@ -167,7 +167,9 @@ function expectVotingIdentityFactory(
 
     const votingIdentifier = createVotingIdentifier(smlEntry);
 
-    const votingIdentityResult = await identityRepository.fetch(votingIdentifier);
+    const votingIdentityResult = await identityRepository.fetch(votingIdentifier, {
+      useTransaction: true,
+    });
 
     const votingIdentity = votingIdentityResult.getValue();
 
@@ -189,7 +191,9 @@ function expectVotingIdentityFactory(
     );
 
     const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
-      .fetch(masternodePublicKey.hash());
+      .fetch(masternodePublicKey.hash(), {
+        useTransaction: true,
+      });
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
 
