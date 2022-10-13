@@ -390,6 +390,10 @@ class TransactionsReader extends EventEmitter {
       // If the lastSyncedBlockHeight was not updated yet, re-sync from the same block
       // otherwise sync from the next block from lastSyncedBlockHeight
 
+      // TODO(spv): fix - either don't wipe addressesGenerated,
+      // or alter `addresses` to reflect new generated ones
+      // because we have a problem with the addresses gap in case of a
+      // reconnect and then consequent acceptMerkleBlock
       const newAddresses = addressesGenerated.length
         ? [...addresses, ...addressesGenerated] : addresses;
 

@@ -470,6 +470,7 @@ class TransactionsSyncWorker extends Worker {
    * Processing new TXs during the continuous sync
    */
   newTransactionsHandler(payload) {
+    // TODO(spv): make sure that we are not doing the same job for already processed transactions
     const { transactions, appendAddresses } = payload;
 
     if (!transactions.length) {
@@ -525,6 +526,8 @@ class TransactionsSyncWorker extends Worker {
 
       return;
     }
+
+    // TODO(spv): make sure that we are not doing the same job for already processed headerHeight
 
     const headerHeight = headerMetadata.height;
     if (headerHeight < 0 || Number.isNaN(headerHeight)) {

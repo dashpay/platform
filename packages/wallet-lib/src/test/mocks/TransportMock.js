@@ -43,6 +43,9 @@ class TransportMock extends EventEmitter {
 
     this.client = {
       blockHeadersProvider: provider,
+      core: {
+        subscribeToTransactionsWithProofs: sinonSandbox.stub().returns(transactionStreamMock),
+      },
     };
   }
 }
