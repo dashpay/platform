@@ -515,6 +515,7 @@ class TransactionsSyncWorker extends Worker {
 
       this.blockHeightChangedHandler = () => {
         this.newMerkleBlockHandler(payload);
+        this.blockHeightChangedHandler = null;
       };
 
       this.parentEvents.once(
@@ -604,7 +605,7 @@ class TransactionsSyncWorker extends Worker {
       this.progressUpdateTimeout = null;
     }
 
-    const chainStore = this.storage.getChainStore(this.network.toString());
+    const chainStore = this.storage.getDefaultChainStore();
 
     const { chainHeight, lastSyncedBlockHeight, transactions } = chainStore.state;
     const totalBlocksCount = chainHeight + 1;
