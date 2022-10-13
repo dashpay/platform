@@ -117,6 +117,8 @@ class Account extends EventEmitter {
       (data) => wallet.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, data));
     this.on(EVENTS.CONFIRMED_TRANSACTION,
       (data) => wallet.emit(EVENTS.CONFIRMED_TRANSACTION, data));
+    this.on(EVENTS.BLOCKHEIGHT_CHANGED,
+      (data) => wallet.emit(EVENTS.BLOCKHEIGHT_CHANGED, data));
 
     if (this.debug) {
       this.emit = (...args) => {
