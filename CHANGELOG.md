@@ -1,3 +1,23 @@
+## [0.24.0-dev.2](https://github.com/dashpay/platform/compare/v0.23.0-alpha.5...v0.24.0-dev.2) (2022-10-13)
+
+
+### Bug Fixes
+
+* 0.23-dev.10 version installed instead of alpha ([#581](https://github.com/dashpay/platform/issues/581))
+* **dapi-client:** temporary use http protocol by default ([#573](https://github.com/dashpay/platform/issues/573))
+* **dapi:** caching of headers prone to reorgs ([#578](https://github.com/dashpay/platform/issues/578))
+
+
+### Documentation
+
+* update URL from dashevo to dashpay ([#579](https://github.com/dashpay/platform/issues/579))
+
+
+### Tests
+
+* **drive:** synchronizeMasternodeIdentitiesFactory ([#586](https://github.com/dashpay/platform/issues/586))
+
+
 ## [0.23.0-alpha.6](https://github.com/dashpay/platform/compare/v0.23.0-alpha.5...v0.23.0-alpha.6) (2022-10-12)
 
 
