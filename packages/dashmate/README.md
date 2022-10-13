@@ -23,6 +23,7 @@ Distribution package for Dash Masternode installation
   - [Node groups](#node-groups)
   - [Development](#development)
   - [Docker Compose](#docker-compose)
+  - [Example Usage](#example-usage)
 - [Contributing](#contributing)
 - [License](#license)
 
