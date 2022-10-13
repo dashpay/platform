@@ -101,7 +101,7 @@ client.core.getBestBlockHash(options).then((r) => {
 
 ## Documentation
 
-More extensive documentation available at https://dashevo.github.io/platform/DAPI-Client/.
+More extensive documentation available at https://dashpay.github.io/platform/DAPI-Client/.
 
 
 ## Contributing

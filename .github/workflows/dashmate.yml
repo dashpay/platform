@@ -9,6 +9,7 @@ on:
     paths:
       - .github/workflows/dashmate.yml
       - .github/workflows/test.yml
+      - packages/dashmate/**
       - packages/js-dash-sdk/**
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
