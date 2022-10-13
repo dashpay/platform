@@ -8,7 +8,7 @@ const headers = [
     prevHash: '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c',
     merkleRoot: 'b4fd581bc4bfe51a5a66d8b823bd6ee2b492f0ddc44cf7e820550714cedc117f',
     time: 1398712771,
-    bits: '1e0fffff',
+    bits: 504365055,
     nonce: 31475,
   },
   {
@@ -17,7 +17,7 @@ const headers = [
     merkleRoot: '0d6d332e68eb8ecc66a5baaa95dc4b10c0b32841aed57dc99a5ae0b2f9e4294d',
     time: 1398712772,
     nonce: 6523,
-    bits: '1e0ffff0',
+    bits: 504365055,
   },
   {
     version: 2,
@@ -25,7 +25,7 @@ const headers = [
     merkleRoot: '1cc711129405a328c58d1948e748c3b8f3d610e66d9901db88c42c5247829658',
     time: 1398712774,
     nonce: 53194,
-    bits: '1e0ffff0',
+    bits: 504365055,
   },
   {
     version: 2,
@@ -33,7 +33,7 @@ const headers = [
     merkleRoot: '7e6b1b1457308bf6ccb1e325c64607ba7dfac05e26c08887cd28f97d4d4ab3e2',
     time: 1398712782,
     nonce: 193159,
-    bits: '1e0ffff0',
+    bits: 504365055,
   },
   {
     version: 2,
@@ -41,7 +41,7 @@ const headers = [
     merkleRoot: '4cf4f3b788e8dc847a9e0ff3b279340207c555a6bc0736f93e95dbdc2e3c2f16',
     time: 1398712784,
     nonce: 41103,
-    bits: '1e0ffff0',
+    bits: 504365055,
   }];
 
 describe('ChainDataProvider', () => {
@@ -56,10 +56,10 @@ describe('ChainDataProvider', () => {
     const blockHash = fakeHeaders[0].hash;
 
     coreAPIMock = {
+      getBestBlockHeight: this.sinon.stub(),
       getBestChainLock: this.sinon.stub(),
       getBlockHeader: this.sinon.stub(),
       getBlockHeaders: this.sinon.stub(),
-      getBlockStats: this.sinon.stub(),
     };
     const zmqClientMock = { on: this.sinon.stub(), topics: { rawblock: '', rawtx: '' } };
 
@@ -67,8 +67,10 @@ describe('ChainDataProvider', () => {
     cacheSpy = this.sinon.spy(blockHeadersCache);
     chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock, blockHeadersCache);
 
+    coreAPIMock.getBestBlockHeight.resolves(100);
+
     coreAPIMock.getBestChainLock.resolves({
-      height: 1,
+      height: 100,
       signature: Buffer.from('fakeSig'),
       blockHash,
     });
@@ -119,7 +121,6 @@ describe('ChainDataProvider', () => {
   it('should call for rpc when nothing is cached', async () => {
     const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
 
     await chainDataProvider.getBlockHeaders(first.hash, 1, 5);
@@ -149,8 +150,6 @@ describe('ChainDataProvider', () => {
   it('should use cache and do not call for blockHeaders', async () => {
     const [first, second, third] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
-
     blockHeadersCache.set(1, first);
     blockHeadersCache.set(2, second);
     blockHeadersCache.set(3, third);
@@ -175,24 +174,31 @@ describe('ChainDataProvider', () => {
   it('should use cache when miss something in the tail', async () => {
     const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves([third.toString(), fourth.toString(),
       fifth.toString()]);
 
     // should use cache and does not hit rpc
-    blockHeadersCache.set(1, first);
-    blockHeadersCache.set(2, second);
-    blockHeadersCache.set(3, third);
-    blockHeadersCache.set(4, undefined);
-    blockHeadersCache.set(5, undefined);
+    blockHeadersCache.set(10, first);
+    blockHeadersCache.set(11, second);
+    blockHeadersCache.set(12, third);
+    blockHeadersCache.set(13, undefined);
+    blockHeadersCache.set(14, undefined);
     cacheSpy.set.resetHistory();
 
-    await chainDataProvider.getBlockHeaders(first.hash, 1, 5);
+    await chainDataProvider.getBlockHeaders(first.hash, 10, 5);
 
     expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(third.hash, 3);
 
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(3);
+
+    const expectedHeaders = [third, fourth, fifth];
+    const expectedStartHeight = 12;
+    for (let i = 0; i < 3; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
 
     expect(cacheSpy.get.getCall(0).returnValue.toString()).to.deep.equal(first.toString());
     expect(cacheSpy.get.getCall(1).returnValue.toString()).to.deep.equal(second.toString());
@@ -207,7 +213,6 @@ describe('ChainDataProvider', () => {
   it('should use cache when missing in the middle', async () => {
     const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves([second.toString(), third.toString(),
       fourth.toString(), fifth.toString()]);
 
@@ -223,6 +228,14 @@ describe('ChainDataProvider', () => {
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(4);
 
+    const expectedHeaders = [second, third, fourth, fifth];
+    const expectedStartHeight = 2;
+    for (let i = 0; i < 3; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
+
     expect(cacheSpy.get.getCall(0).returnValue.toString()).to.deep.equal(first.toString());
     expect(cacheSpy.get.getCall(1).returnValue.toString()).to.deep.equal(second.toString());
     expect(cacheSpy.get.getCall(2).returnValue).to.deep.equal(undefined);
@@ -235,7 +248,6 @@ describe('ChainDataProvider', () => {
   it('should not use cache when miss something in the beginning', async () => {
     const [first,, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
 
     blockHeadersCache.set(1, undefined);
@@ -253,6 +265,14 @@ describe('ChainDataProvider', () => {
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(5);
 
+    const expectedHeaders = fakeHeaders;
+    const expectedStartHeight = 1;
+    for (let i = 0; i < 3; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
+
     expect(cacheSpy.get.getCall(0).returnValue).to.deep.equal(undefined);
     expect(cacheSpy.get.getCall(1).returnValue).to.deep.equal(undefined);
     expect(cacheSpy.get.getCall(2).returnValue.toString()).to.deep.equal(third.toString());
@@ -265,7 +285,6 @@ describe('ChainDataProvider', () => {
   it('should not use cache when miss something in the beginning', async () => {
     const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves([first.toString(), second.toString(),
       third.toString(), fourth.toString(), fifth.toString()]);
 
@@ -283,5 +302,83 @@ describe('ChainDataProvider', () => {
 
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(5);
+
+    const expectedHeaders = fakeHeaders;
+    const expectedStartHeight = 1;
+    for (let i = 0; i < 3; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
+  });
+
+  it('should save only chain locked headers', async () => {
+    const [first] = fakeHeaders;
+
+    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
+    coreAPIMock.getBestChainLock.resolves({
+      height: 100,
+    });
+    await chainDataProvider.getBlockHeaders(first.hash, 98, 5);
+
+    expect(cacheSpy.get.callCount).to.be.equal(5);
+    expect(cacheSpy.set.callCount).to.be.equal(3);
+
+    expect(cacheSpy.get).to.always.returned(undefined);
+
+    const expectedHeaders = fakeHeaders;
+    const expectedStartHeight = 98;
+    for (let i = 0; i < 3; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
+  });
+
+  it(`should cache all but last ${ChainDataProvider.REORG_SAFE_DEPTH} headers in case of chainlock absence`, async () => {
+    const [first] = fakeHeaders;
+
+    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
+
+    chainDataProvider.chainLock = null;
+    chainDataProvider.chainHeight = 107;
+
+    await chainDataProvider.getBlockHeaders(first.hash, 98, 5);
+
+    expect(cacheSpy.get.callCount).to.be.equal(5);
+    expect(cacheSpy.set.callCount).to.be.equal(4);
+
+    expect(cacheSpy.get).to.always.returned(undefined);
+
+    const expectedHeaders = fakeHeaders;
+    const expectedStartHeight = 98;
+    for (let i = 0; i < 4; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
+  });
+
+  it(`should cache all but last ${ChainDataProvider.REORG_SAFE_DEPTH} headers in case chainlock is too old`, async () => {
+    const [first] = fakeHeaders;
+
+    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
+
+    chainDataProvider.chainHeight = 120;
+
+    await chainDataProvider.getBlockHeaders(first.hash, 111, 5);
+
+    expect(cacheSpy.get.callCount).to.be.equal(5);
+    expect(cacheSpy.set.callCount).to.be.equal(4);
+
+    expect(cacheSpy.get).to.always.returned(undefined);
+
+    const expectedHeaders = fakeHeaders;
+    const expectedStartHeight = 111;
+    for (let i = 0; i < 4; i++) {
+      expect(cacheSpy.set.getCall(i).args[0]).to.equal(expectedStartHeight + i);
+      expect(cacheSpy.set.getCall(i).args[1].toString())
+        .to.equal(expectedHeaders[i].toString());
+    }
   });
 });
