@@ -389,20 +389,18 @@ class TransactionsReader extends EventEmitter {
       }
       // If the lastSyncedBlockHeight was not updated yet, re-sync from the same block
       // otherwise sync from the next block from lastSyncedBlockHeight
-      const newFromBlockHeight = fromBlockHeight === lastSyncedBlockHeight
-        ? fromBlockHeight : lastSyncedBlockHeight + 1;
 
       const newAddresses = addressesGenerated.length
         ? [...addresses, ...addressesGenerated] : addresses;
 
       logger.debug('[TransactionsReader] Reconnecting to stream with', {
-        fromBlockHeight: newFromBlockHeight,
+        fromBlockHeight: lastSyncedBlockHeight,
         _addressesCount: newAddresses.length,
       });
       updateArguments(
         createBloomFilter(newAddresses),
         {
-          fromBlockHeight: newFromBlockHeight,
+          fromBlockHeight: lastSyncedBlockHeight,
           count: 0,
         },
       );

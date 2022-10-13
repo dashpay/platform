@@ -904,7 +904,7 @@ describe('TransactionsReader - unit', () => {
         expect(newArgs).to.deep.equal([
           createBloomFilter(DEFAULT_ADDRESSES),
           {
-            fromBlockHeight: fromBlockHeight + 2,
+            fromBlockHeight: fromBlockHeight + 1,
             count: 0,
           },
         ]);
