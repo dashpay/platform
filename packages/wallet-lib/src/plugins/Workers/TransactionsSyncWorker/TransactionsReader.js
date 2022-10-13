@@ -331,7 +331,7 @@ class TransactionsReader extends EventEmitter {
           lastSyncedBlockHeight = height;
           if (addressesGenerated.length) {
             restartArgs = {
-              fromBlockHeight: height + 1,
+              fromBlockHeight: height,
               addresses: [...addresses, ...addressesGenerated],
             };
 
