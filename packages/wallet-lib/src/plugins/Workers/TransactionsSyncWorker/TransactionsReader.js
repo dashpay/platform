@@ -1,12 +1,15 @@
 const { EventEmitter } = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const { createBloomFilter, parseRawTransactions, parseRawMerkleBlock } = require('./utils');
+const {
+  createBloomFilter, parseRawTransactions, parseRawMerkleBlock, parseRawInstantLocks,
+} = require('./utils');
 
 const logger = require('../../../logger');
 
 const EVENTS = {
   HISTORICAL_TRANSACTIONS: 'HISTORICAL_TRANSACTIONS',
   NEW_TRANSACTIONS: 'NEW_TRANSACTIONS',
+  INSTANT_LOCKS: 'INSTANT_LOCKS',
   MERKLE_BLOCK: 'MERKLE_BLOCK',
   HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
   ERROR: 'error',
@@ -105,7 +108,6 @@ class TransactionsReader extends EventEmitter {
 
       const dataHandler = (data) => {
         const rawTransactions = data.getRawTransactions();
-        // TBD: const rawInstantLocks = data.getInstantSendLockMessages();
         const rawMerkleBlock = data.getRawMerkleBlock();
 
         if (rawTransactions) {
@@ -289,7 +291,7 @@ class TransactionsReader extends EventEmitter {
 
     const dataHandler = (data) => {
       const rawTransactions = data.getRawTransactions();
-      // TBD: const rawInstantLocks = data.getInstantSendLockMessages();
+      const rawInstantLocks = data.getInstantSendLockMessages();
       const rawMerkleBlock = data.getRawMerkleBlock();
 
       if (rawTransactions) {
@@ -351,6 +353,10 @@ class TransactionsReader extends EventEmitter {
         };
 
         this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });
+      } else if (rawInstantLocks) {
+        // TODO(spv): write tests
+        const instantLocks = parseRawInstantLocks(rawInstantLocks);
+        this.emit(EVENTS.INSTANT_LOCKS, instantLocks);
       }
     };
 

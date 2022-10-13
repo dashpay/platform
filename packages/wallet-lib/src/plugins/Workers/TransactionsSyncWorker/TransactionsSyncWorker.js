@@ -38,6 +38,7 @@ class TransactionsSyncWorker extends Worker {
       workerIntervalTime: 0,
       dependencies: [
         'importTransactions',
+        'importInstantLock',
         'storage',
         'keyChainStore',
         'transport',
@@ -67,6 +68,7 @@ class TransactionsSyncWorker extends Worker {
     this.historicalMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
     this.newTransactionsHandler = this.newTransactionsHandler.bind(this);
     this.newMerkleBlockHandler = this.newMerkleBlockHandler.bind(this);
+    this.instantLocksHandler = this.instantLocksHandler.bind(this);
     this.updateProgress = this.updateProgress.bind(this);
 
     this.syncState = STATES.IDLE;
@@ -268,6 +270,11 @@ class TransactionsSyncWorker extends Worker {
       this.newMerkleBlockHandler,
     );
 
+    this.transactionsReader.on(
+      TransactionsReader.EVENTS.INSTANT_LOCKS,
+      this.instantLocksHandler,
+    );
+
     this.transactionsReaderErrorHandler = (e) => {
       this.emitError(e);
       logger.debug('[TransactionsSyncWorker] Error handling continuous chain update', e);
@@ -282,6 +289,11 @@ class TransactionsSyncWorker extends Worker {
       this.transactionsReader.removeListener(
         TransactionsReader.EVENTS.NEW_TRANSACTIONS,
         this.newTransactionsHandler,
+      );
+
+      this.transactionsReader.removeListener(
+        TransactionsReader.EVENTS.INSTANT_LOCKS,
+        this.instantLocksHandler,
       );
 
       this.transactionsReader.removeListener(
@@ -587,6 +599,17 @@ class TransactionsSyncWorker extends Worker {
     this.storage.scheduleStateSave();
 
     logger.debug(`[TransactionsSyncWorker#newMerkleBlockHandler] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`);
+  }
+
+  /**
+   * @private
+   * Processing is locks during the continuous sync
+   * @param {InstantLock[]} instantLocks
+   */
+  instantLocksHandler(instantLocks) {
+    instantLocks.forEach((instantLock) => {
+      this.importInstantLock(instantLock);
+    });
   }
 
   /**

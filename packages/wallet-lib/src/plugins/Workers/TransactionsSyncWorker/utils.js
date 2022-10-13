@@ -1,5 +1,5 @@
 const {
-  BloomFilter, Address, MerkleBlock, Transaction,
+  BloomFilter, Address, MerkleBlock, Transaction, InstantLock,
 } = require('@dashevo/dashcore-lib');
 const { BLOOM_FALSE_POSITIVE_RATE } = require('../../../CONSTANTS');
 
@@ -79,6 +79,15 @@ const getAddressesToSync = (keyChainStore) => keyChainStore.getKeyChains()
   .reduce((pre, cur) => pre.concat(cur));
 
 /**
+ * @private
+ * @param {proto.org.dash.platform.dapi.v0.InstantSendLockMessages} rawInstantLocks
+ * @returns {InstantLock[]} instantLocks
+ */
+const parseRawInstantLocks = (rawInstantLocks) => rawInstantLocks
+  .getMessagesList()
+  .map((instantSendLock) => new InstantLock(Buffer.from(instantSendLock)));
+
+/**
  * @param merkleBlock
  * @returns {Set<string>}
  */
@@ -94,6 +103,7 @@ module.exports = {
   filterTransactionsForAddresses,
   parseRawTransactions,
   parseRawMerkleBlock,
+  parseRawInstantLocks,
   getAddressesToSync,
   getTxHashesFromMerkleBlock,
 };
