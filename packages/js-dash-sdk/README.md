@@ -129,7 +129,7 @@ Some features might be more extensive in those libs, as Dash SDK only wraps arou
 
 ## Documentation
 
-More extensive documentation available at https://dashevo.github.io/platform/SDK/.
+More extensive documentation available at https://dashpay.github.io/platform/SDK/.
 
 ## Contributing
 
