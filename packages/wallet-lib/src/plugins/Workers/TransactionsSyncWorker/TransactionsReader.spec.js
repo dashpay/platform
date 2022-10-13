@@ -700,7 +700,7 @@ describe('TransactionsReader - unit', () => {
             expect(secondCall.args).to.deep.equal([
               createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
               {
-                fromBlockHeight: merkleBlockHeight + 1, // Reconnect from the next merkle block
+                fromBlockHeight: merkleBlockHeight, // Reconnect
                 count: 0,
               },
             ]);
