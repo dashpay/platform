@@ -2,7 +2,7 @@
 
 Several of the packages in this repository contain developer documentation. This
 folder is used to aggregate docs from several packages and then produce a
-consolidated [GitHub Pages site](https://dashevo.github.io/platform/) using
+consolidated [GitHub Pages site](https://dashpay.github.io/platform/) using
 MkDocs. The GitHub workflow described in [docs.yml](/.github/workflows/docs.yml)
 builds the documents and publishes them.
 
