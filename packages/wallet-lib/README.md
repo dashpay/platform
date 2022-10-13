@@ -82,7 +82,7 @@ Insight-Client has been removed from MVP and is not working since Wallet-lib v3.
 
 You can see some [examples here](docs/usage/examples.md).
 
-More extensive documentation is available at https://dashevo.github.io/platform/Wallet-library/ along with additional [examples & snippets](https://dashevo.github.io/platform/Wallet-library/usage/examples/).
+More extensive documentation is available at https://dashpay.github.io/platform/Wallet-library/ along with additional [examples & snippets](https://dashpay.github.io/platform/Wallet-library/usage/examples/).
 
 ## Maintainers
 

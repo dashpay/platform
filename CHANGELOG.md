@@ -1,3 +1,23 @@
+## [0.23.0-alpha.6](https://github.com/dashpay/platform/compare/v0.23.0-alpha.5...v0.23.0-alpha.6) (2022-10-12)
+
+
+### Bug Fixes
+
+* 0.23-dev.10 version installed instead of alpha ([#581](https://github.com/dashpay/platform/issues/581))
+
+
+## [0.23.0-alpha.5](https://github.com/dashevo/platform/compare/v0.23.0-alpha.4...v0.23.0-alpha.5) (2022-10-12)
+
+
+### Continuous Integration
+
+* run dashmate and test suite workflow ([#576](https://github.com/dashevo/platform/issues/576))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update testnet credentials ([#571](https://github.com/dashevo/platform/issues/571))
+
 ## [0.23.0-alpha.4](https://github.com/dashevo/platform/compare/v0.23.0-alpha.3...v0.23.0-alpha.4) (2022-10-11)
 
 

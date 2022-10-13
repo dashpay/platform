@@ -9,6 +9,7 @@ on:
     paths:
       - .github/workflows/platform-test-suite.yml
       - .github/workflows/test.yml
+      - packages/platform-test-suite/**
       - packages/js-dash-sdk/**
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
