@@ -150,8 +150,7 @@ class TransactionsReader extends EventEmitter {
               };
 
               // Restart stream to expand bloom filter
-              stream.cancel()
-                .catch((e) => this.emit(EVENTS.ERROR, e));
+              stream.cancel();
             }
 
             accepted = true;
@@ -337,8 +336,7 @@ class TransactionsReader extends EventEmitter {
             addressesGenerated = [];
 
             // Restart stream to expand bloom filter
-            stream.cancel()
-              .catch((e) => this.emit(EVENTS.ERROR, e));
+            stream.cancel();
           }
 
           accepted = true;
