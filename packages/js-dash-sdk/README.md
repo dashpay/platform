@@ -88,7 +88,7 @@ client.wallet.getAccount().then(async (account) => {
   }
 });
 ```
-
+### Connecting to a Devnet
 There are several ways to [Connect to a Devnet](https://dashplatform.readme.io/docs/tutorial-connecting-to-testnet#connect-to-a-devnet) while building & testing. If you've already setup a devnet with [dashmate](/packages/dashmate) you can connect to it as demonstrated below:
 ```js
 const Dash = require('dash');
@@ -120,16 +120,6 @@ connect()
   .then((d) => console.log('Connected. Best block hash:\n', d))
   .catch((e) => console.error('Something went wrong:\n', e))
   .finally(() => client.disconnect());
-```
-
-Or directly with the REST DAPI
-
-```sh
-curl --request POST \
-  # a url pointing to your server
-  --url http://seed-1.testnet.networks.dash.org:3000/ \
-  --header 'content-type: application/json' \
-  --data '{"method":"getBlockHash","id":1,"jsonrpc":"2.0","params":{"height": 100 }}'
 ```
 
 ### Primitives and essentials
