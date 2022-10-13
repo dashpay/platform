@@ -1,3 +1,74 @@
+## [0.24.0-dev.2](https://github.com/dashpay/platform/compare/v0.23.0-alpha.4...v0.24.0-dev.2) (2022-10-13)
+
+
+### Bug Fixes
+
+* **dapi-client:** temporary use http protocol by default ([#573](https://github.com/dashpay/platform/issues/573))
+
+## [0.24.0-dev.1](https://github.com/dashpay/platform/compare/v0.23.0-alpha.2...v0.24.0-dev.1) (2022-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate to ABCI++ (#464)
+
+### Features
+
+* **dashmate:** update tenderdash to 0.9.0-dev.1 ([#525](https://github.com/dashpay/platform/issues/525))
+* **dashmate:** zeroSSL certificate renewal helper ([#554](https://github.com/dashpay/platform/issues/554))
+* **dpp:** add wasm-dpp template package ([#529](https://github.com/dashpay/platform/issues/529))
+* implement masternode voting identities ([#467](https://github.com/dashpay/platform/issues/467))
+* migrate to ABCI++ ([#464](https://github.com/dashpay/platform/issues/464))
+* SSL certificate for DAPI ([#519](https://github.com/dashpay/platform/issues/519))
+
+
+### Bug Fixes
+
+* **ci:** support alpha prereleases ([#560](https://github.com/dashpay/platform/issues/560))
+
+
+### Build System
+
+* release script could not find previous tag in some cases ([#558](https://github.com/dashpay/platform/issues/558))
+
+
+### Miscellaneous Chores
+
+* bump version of main package
+* bump versions
+* **release:** update changelog and bump version to 0.24.0-dev.1 ([#565](https://github.com/dashpay/platform/issues/565))
+
+## [0.23.0-alpha.4](https://github.com/dashpay/platform/compare/v0.23.0-alpha.3...v0.23.0-alpha.4) (2022-10-11)
+
+
+### Bug Fixes
+
+* **dashmate:** Core RPC is not responding ([#575](https://github.com/dashpay/platform/issues/575))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** update dapi addresses white list ([#574](https://github.com/dashpay/platform/issues/574))
+* **release:** update changelog and version to 0.23.0-alpha.4 ([#577](https://github.com/dashpay/platform/issues/577))
+
+## [0.23.0-alpha.3](https://github.com/dashpay/platform/compare/v0.24.0-dev.1...v0.23.0-alpha.3) (2022-10-10)
+
+
+### Bug Fixes
+
+* **drive:** db is in readonly mode due to the active transaction ([#567](https://github.com/dashpay/platform/issues/567))
+
+
+### Build System
+
+* fix release script wrong param names ([#566](https://github.com/dashpay/platform/issues/566))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** use latest DAPI and Drive 0.23.0-alpha ([#568](https://github.com/dashpay/platform/issues/568))
+* **release:** update changelog and version to 0.23.0-alpha.3 ([#569](https://github.com/dashpay/platform/issues/569))
+
 ## [0.23.0-alpha.4](https://github.com/dashevo/platform/compare/v0.23.0-alpha.3...v0.23.0-alpha.4) (2022-10-11)
 
 
