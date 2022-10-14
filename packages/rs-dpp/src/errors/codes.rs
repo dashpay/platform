@@ -157,6 +157,10 @@ impl ErrorWithCode for SignatureError {
             Self::InvalidIdentityPublicKeyTypeError { .. } => 2001,
             Self::InvalidStateTransitionSignatureError => 2002,
             Self::MissingPublicKeyError { .. } => 2003,
+            Self::InvalidSignaturePublicKeySecurityLevelError { .. } => 2004,
+            Self::WrongPublicKeyPurposeError { .. } => 2005,
+            Self::PublicKeyIsDisabledError { .. } => 2006,
+            Self::PublicKeySecurityLevelNotMetError { .. } => 2007,
         }
     }
 }
