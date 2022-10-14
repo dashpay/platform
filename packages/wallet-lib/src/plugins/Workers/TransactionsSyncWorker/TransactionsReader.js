@@ -200,7 +200,7 @@ class TransactionsReader extends EventEmitter {
         }
 
         if (currentRetries < maxRetries) {
-          logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, streamError);
+          logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, `"${streamError.message}"`);
           if (!restartArgs) {
             const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
             const remainingCount = count - blocksRead;

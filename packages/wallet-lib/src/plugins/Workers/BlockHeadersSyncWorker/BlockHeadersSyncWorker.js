@@ -132,6 +132,7 @@ class BlockHeadersSyncWorker extends Worker {
       );
     });
 
+    logger.debug(`[BlockHeadersSyncWorker] Start reading historical headers from ${startFrom} to ${bestBlockHeight}`);
     await blockHeadersProvider.readHistorical(startFrom, bestBlockHeight);
     this.syncState = STATES.HISTORICAL_SYNC;
 
@@ -254,8 +255,8 @@ class BlockHeadersSyncWorker extends Worker {
       const { lastSyncedHeaderHeight } = chainStore.state;
 
       // TODO(spv): abstract this in spv chain?
-      const totalHeadersCount = startBlockHeight + longestChain.length;
-      const syncedHeadersCount = lastSyncedHeaderHeight + 1;
+      const totalHeadersCount = startBlockHeight + longestChain.length - 1; // Ignore genesis block
+      const syncedHeadersCount = lastSyncedHeaderHeight;
 
       if (syncedHeadersCount > totalHeadersCount) {
         const error = new Error(`Synced headers count ${syncedHeadersCount} is greater than total headers count ${totalHeadersCount}.`);
@@ -268,8 +269,8 @@ class BlockHeadersSyncWorker extends Worker {
         // Update headers in the store
         chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
 
-        const newLastSyncedHeaderHeight = totalHeadersCount - 1;
-        const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount));
+        const newLastSyncedHeaderHeight = totalHeadersCount;
+        const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount + 1));
 
         chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
         chainStore.updateLastSyncedHeaderHeight(newLastSyncedHeaderHeight);
@@ -354,10 +355,10 @@ class BlockHeadersSyncWorker extends Worker {
     const { orphanChunks, startBlockHeight } = blockHeadersProvider.spvChain;
     const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
 
-    const totalCount = chainStore.state.chainHeight + 1; // Including root block
+    const totalCount = chainStore.state.chainHeight; // Including root block
 
     // TODO(spv): hide these calculations in the SPVChain
-    const confirmedSyncedCount = startBlockHeight + longestChain.length;
+    const confirmedSyncedCount = startBlockHeight + longestChain.length - 1; // Ignore genesis block
     const totalSyncedCount = confirmedSyncedCount + totalOrphans;
 
     const confirmedProgress = Math.round((confirmedSyncedCount / totalCount) * 1000) / 10;

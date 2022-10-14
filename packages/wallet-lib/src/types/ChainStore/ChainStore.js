@@ -77,10 +77,6 @@ class ChainStore extends EventEmitter {
    */
   updateHeadersMetadata(headers, tipHeight) {
     headers.forEach((header, index) => {
-      if (this.state.headersMetadata.get(header.hash)) {
-        throw new Error(`Header ${header.hash} already exists`);
-      }
-
       const height = tipHeight - headers.length + index + 1;
       this.state.headersMetadata.set(header.hash, {
         height,

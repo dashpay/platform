@@ -102,6 +102,7 @@ class DAPIStream extends EventEmitter {
         this.emit(EVENTS.ERROR, e);
       }
     } else {
+      this.stopReconnectTimeout();
       this.emit(EVENTS.ERROR, e);
     }
   }

@@ -113,8 +113,6 @@ class Wallet extends EventEmitter {
     // Notice : Most of the time, wallet id is deterministic
     this.generateNewWalletId();
 
-    logger.walletId = this.walletId;
-
     const storageOpts = {};
     if (opts.storage) {
       if (typeof opts.storage.purgeOnError === 'boolean') {

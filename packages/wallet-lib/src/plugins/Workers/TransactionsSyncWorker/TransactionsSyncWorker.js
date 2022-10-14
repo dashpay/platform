@@ -230,13 +230,12 @@ class TransactionsSyncWorker extends Worker {
 
     chainStore.updateLastSyncedBlockHeight(chainHeight - 1);
     this.updateProgress();
-    this.storage.saveState();
 
     if (!syncResult.stopped) {
       chainStore.pruneHeadersMetadata(chainHeight);
       this.syncCheckpoint = chainHeight;
     }
-
+    this.storage.saveState();
     this.historicalTransactionsToVerify.clear();
 
     this.syncState = STATES.IDLE;
