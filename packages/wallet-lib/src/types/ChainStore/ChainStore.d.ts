@@ -14,6 +14,7 @@ export declare interface ChainStoreState {
   lastSyncedBlockHeight: number,
   blockHeaders: any[],
   headersMetadata: Map<string, HeaderMetadata>,
+  hashesByHeight: Map<number, string>,
   transactions: Map<string, any>
   instantLocks: Map<string, any>
   addresses: Map<string, any>

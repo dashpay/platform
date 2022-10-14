@@ -6,7 +6,7 @@ const TxStreamMock = require('../../../../src/test/mocks/TxStreamMock');
 const { Wallet } = require('../../../../src');
 const LocalForageAdapterMock = require('../../../../src/test/mocks/LocalForageAdapterMock');
 const { waitOneTick } = require('../../../../src/test/utils');
-const mockMerkleBlock = require('../../../../src/test/mocks/mockMerkleBlock');
+const { mockMerkleBlock } = require('../../../../src/test/mocks/dashcore/block');
 const EVENTS = require('../../../../src/EVENTS');
 
 describe('TransactionsSyncWorker', () => {
@@ -90,6 +90,7 @@ describe('TransactionsSyncWorker', () => {
     };
 
     chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
+    chainStore.state.hashesByHeight.set(atHeight, merkleBlock.header.hash);
 
     historicalStream.sendTransactions(transactions);
     historicalStream.sendMerkleBlock(merkleBlock);
@@ -121,6 +122,7 @@ describe('TransactionsSyncWorker', () => {
       time: merkleBlock.header.time,
     };
     chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
+    chainStore.state.hashesByHeight.set(atHeight, merkleBlock.header.hash);
 
     continuousStream.sendMerkleBlock(merkleBlock);
 

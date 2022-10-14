@@ -122,21 +122,11 @@ class TransactionsSyncWorker extends Worker {
     } else if (startFrom > chainHeight) {
       throw new Error(`Start block height ${startFrom} is greater than chain height ${chainHeight}`);
     } else if (startFrom === chainHeight) {
-      logger.debug(`Start block height is equal to chain height ${chainHeight}, no need to sync`);
-      this.syncCheckpoint = startFrom;
-      // chainStore.clearHeadersMetadata();
-      return;
-    }
-
-    const {
-      skipSynchronization,
-    } = (this.storage.application.syncOptions || {});
-
-    if (skipSynchronization) {
-      logger.debug(`[TransactionSyncStreamWorker] Wallet created from a new mnemonic. Sync from the current chain height ${chainHeight}`);
-      chainStore.updateLastSyncedBlockHeight(chainHeight);
+      logger.debug(`[TransactionsSyncWorker] Start block height is equal to chain height ${chainHeight}, no need to sync`);
       this.syncCheckpoint = chainHeight;
-      // chainStore.clearHeadersMetadata();
+      chainStore.updateLastSyncedBlockHeight(chainHeight);
+      chainStore.pruneHeadersMetadata(chainHeight);
+      this.storage.saveState();
       return;
     }
 
@@ -243,8 +233,7 @@ class TransactionsSyncWorker extends Worker {
     this.storage.saveState();
 
     if (!syncResult.stopped) {
-      // TODO(spv): rework to clear only metadata that was actually used
-      // chainStore.clearHeadersMetadata();
+      chainStore.pruneHeadersMetadata(chainHeight);
       this.syncCheckpoint = chainHeight;
     }
 
@@ -472,6 +461,7 @@ class TransactionsSyncWorker extends Worker {
 
     this.syncCheckpoint = headerHeight;
     chainStore.updateLastSyncedBlockHeight(headerHeight);
+    chainStore.pruneHeadersMetadata(headerHeight);
     this.storage.scheduleStateSave();
     this.scheduleProgressUpdate();
   }
@@ -596,6 +586,7 @@ class TransactionsSyncWorker extends Worker {
     acceptMerkleBlock(headerHeight);
     this.syncCheckpoint = headerHeight;
     chainStore.updateLastSyncedBlockHeight(headerHeight);
+    chainStore.pruneHeadersMetadata(headerHeight);
     this.storage.scheduleStateSave();
 
     logger.debug(`[TransactionsSyncWorker#newMerkleBlockHandler] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`);

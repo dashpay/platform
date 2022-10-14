@@ -6,12 +6,6 @@ const {
 const CONSTANTS = require('../../CONSTANTS');
 
 const SCHEMA = {
-  headersMetadata: {
-    '*': {
-      height: 'number',
-      time: 'number',
-    },
-  },
   lastSyncedHeaderHeight: 'number',
   lastSyncedBlockHeight: 'number',
   chainHeight: 'number',
@@ -61,6 +55,7 @@ class ChainStore extends EventEmitter {
       chainHeight: 0,
       blockHeaders: [],
       headersMetadata: new Map(),
+      hashesByHeight: new Map(),
       transactions: new Map(),
       instantLocks: new Map(),
       addresses: new Map(),
@@ -75,21 +70,41 @@ class ChainStore extends EventEmitter {
     this.state.blockHeaders = headers;
   }
 
+  /**
+   * Sets headers metadata and hashes by height
+   * @param headers
+   * @param tipHeight
+   */
   updateHeadersMetadata(headers, tipHeight) {
     headers.forEach((header, index) => {
       if (this.state.headersMetadata.get(header.hash)) {
         throw new Error(`Header ${header.hash} already exists`);
       }
 
+      const height = tipHeight - headers.length + index + 1;
       this.state.headersMetadata.set(header.hash, {
-        height: tipHeight - headers.length + index + 1,
+        height,
         time: header.time,
       });
+
+      this.state.hashesByHeight.set(height, header.hash);
     });
   }
 
-  clearHeadersMetadata() {
-    this.state.headersMetadata.clear();
+  /**
+   * Prunes headers metadata starting lower than specified height
+   * @param {number} belowHeight
+   */
+  pruneHeadersMetadata(belowHeight) {
+    let currentHeight = belowHeight - 1;
+    let currentHash = this.state.hashesByHeight.get(currentHeight);
+
+    while (currentHash) {
+      this.state.headersMetadata.delete(currentHash);
+      this.state.hashesByHeight.delete(currentHeight);
+      currentHeight -= 1;
+      currentHash = this.state.hashesByHeight.get(currentHeight);
+    }
   }
 
   updateLastSyncedHeaderHeight(height) {

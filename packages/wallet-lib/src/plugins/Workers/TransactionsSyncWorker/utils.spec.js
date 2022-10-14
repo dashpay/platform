@@ -4,7 +4,7 @@ const {
   PrivateKey, Transaction,
 } = require('@dashevo/dashcore-lib');
 
-const { mockUtxo } = require('../../../test/mocks/transactionMocks');
+const { mockUtxo } = require('../../../test/mocks/dashcore/transaction');
 
 const utils = require('./utils');
 

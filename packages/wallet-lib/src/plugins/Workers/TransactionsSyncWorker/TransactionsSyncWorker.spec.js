@@ -4,7 +4,7 @@ const { Transaction } = require('@dashevo/dashcore-lib');
 const TransactionsSyncWorker = require('./TransactionsSyncWorker');
 const TransactionsReader = require('./TransactionsReader');
 const { waitOneTick } = require('../../../test/utils');
-const mockMerkleBlock = require('../../../test/mocks/mockMerkleBlock');
+const { mockMerkleBlock } = require('../../../test/mocks/dashcore/block');
 const EVENTS = require('../../../EVENTS');
 
 describe('TransactionsSyncWorker', () => {
@@ -65,7 +65,7 @@ describe('TransactionsSyncWorker', () => {
           };
           this.defaultChainStore = {
             state: chainStoreState,
-            clearHeadersMetadata: sinon.spy(),
+            pruneHeadersMetadata: sinon.spy(),
             updateLastSyncedBlockHeight: sinon.spy(),
           };
         }
@@ -86,7 +86,7 @@ describe('TransactionsSyncWorker', () => {
       expect(startBlockHeight).to.equal(1);
     });
 
-    it('should return last synced block height if present', () => {
+    it('should return last synced block height + 1 if present', () => {
       const { storage } = transactionsSyncWorker;
       storage.getDefaultChainStore().state.lastSyncedBlockHeight = 1200;
 
@@ -208,8 +208,11 @@ describe('TransactionsSyncWorker', () => {
         storage.getDefaultChainStore().state.lastSyncedBlockHeight = CHAIN_HEIGHT;
         await transactionsSyncWorker.onStart();
 
-        // const chainStore = storage.getDefaultChainStore();
-        // expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
+        const chainStore = storage.getDefaultChainStore();
+        expect(transactionsSyncWorker.syncCheckpoint).to.equal(CHAIN_HEIGHT);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(CHAIN_HEIGHT);
+        expect(chainStore.pruneHeadersMetadata).to.have.been.calledWith(CHAIN_HEIGHT);
+        expect(storage.saveState).to.have.been.calledOnce();
         expect(transactionsReader.startHistoricalSync).to.have.not.been.called();
       });
     });
@@ -320,7 +323,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsSyncWorker.updateProgress).to.have.been.calledOnce();
         expect(transactionsSyncWorker.storage.saveState).to.have.been.calledOnce();
 
-        // expect(chainStore.clearHeadersMetadata).to.have.been.calledOnce();
+        expect(chainStore.pruneHeadersMetadata).to.have.been.calledOnceWith(CHAIN_HEIGHT);
       });
       it('should throw an error in case there are transactions to verify left', async () => {
         const { transactionsReader } = transactionsSyncWorker;
@@ -616,6 +619,7 @@ describe('TransactionsSyncWorker', () => {
         expect(dataEventPayload.acceptMerkleBlock)
           .to.have.been.calledWith(merkleBlockHeight, [ADDRESSES_KEYCHAIN_1[2]]);
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
+        expect(chainStore.pruneHeadersMetadata).to.have.been.calledWith(merkleBlockHeight);
         expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(merkleBlockHeight);
         expect(storage.scheduleStateSave).to.have.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.been.called();
@@ -652,6 +656,7 @@ describe('TransactionsSyncWorker', () => {
           .to.equal('Header metadata was not found during the merkle block processing');
 
         expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(chainStore.pruneHeadersMetadata).to.have.not.been.called();
         expect(storage.scheduleStateSave).to.have.not.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
@@ -690,6 +695,7 @@ describe('TransactionsSyncWorker', () => {
         expect(args[0].message)
           .to.equal('Invalid header time: 0');
         expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(chainStore.pruneHeadersMetadata).to.have.not.been.called();
         expect(storage.scheduleStateSave).to.have.not.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
@@ -727,6 +733,7 @@ describe('TransactionsSyncWorker', () => {
         expect(args[0].message)
           .to.equal('Invalid header height: -1');
         expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(chainStore.pruneHeadersMetadata).to.have.not.been.called();
         expect(storage.scheduleStateSave).to.have.not.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
@@ -768,6 +775,7 @@ describe('TransactionsSyncWorker', () => {
         expect(args[0].message)
           .to.equal(`Transaction ${transactions[0].hash} was not found in merkle block ${merkleBlock.header.hash}`);
         expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(chainStore.pruneHeadersMetadata).to.have.not.been.called();
         expect(storage.scheduleStateSave).to.have.not.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
@@ -876,6 +884,7 @@ describe('TransactionsSyncWorker', () => {
           .to.have.been.calledWith(merkleBlockHeight);
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
         expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(merkleBlockHeight);
+        expect(chainStore.pruneHeadersMetadata).to.have.been.calledWith(merkleBlockHeight);
         expect(storage.scheduleStateSave).to.have.been.called();
         expect(transactionsSyncWorker.parentEvents.emit)
           .to.have.been.calledTwice();
@@ -913,6 +922,7 @@ describe('TransactionsSyncWorker', () => {
           .to.have.not.been.called();
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
         expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(merkleBlockHeight);
+        expect(chainStore.pruneHeadersMetadata).to.have.been.calledWith(merkleBlockHeight);
         expect(storage.scheduleStateSave).to.have.been.called();
       });
 
@@ -945,6 +955,7 @@ describe('TransactionsSyncWorker', () => {
           .to.have.been.calledOnceWith(merkleBlockHeight);
         expect(chainStore.updateLastSyncedBlockHeight)
           .to.have.been.calledOnceWith(merkleBlockHeight);
+        expect(chainStore.pruneHeadersMetadata).to.have.been.calledWith(merkleBlockHeight);
         expect(storage.scheduleStateSave).to.have.been.calledOnce();
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(merkleBlockHeight);
       });
@@ -975,6 +986,7 @@ describe('TransactionsSyncWorker', () => {
         expect(args[0].message)
           .to.equal('Invalid header time: 0');
         expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(chainStore.pruneHeadersMetadata).to.have.not.been.called();
         expect(storage.scheduleStateSave).to.have.not.been.called();
       });
 
@@ -1001,6 +1013,7 @@ describe('TransactionsSyncWorker', () => {
         expect(args[0].message)
           .to.equal('Invalid header height: -1');
         expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(chainStore.pruneHeadersMetadata).to.have.not.been.called();
         expect(storage.scheduleStateSave).to.have.not.been.called();
       });
 

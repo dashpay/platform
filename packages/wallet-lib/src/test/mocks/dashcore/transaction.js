@@ -27,8 +27,8 @@ const mockUtxo = (options = {}) => {
   return new Transaction.UnspentOutput(utxo);
 };
 
-const transactionMocks = {
+const transaction = {
   mockUtxo,
 };
 
-module.exports = transactionMocks;
+module.exports = transaction;

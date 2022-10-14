@@ -2,6 +2,7 @@ const { Transaction } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
 const ChainStore = require('./ChainStore');
 const fixtures1 = require('../../../fixtures/wallets/2a331817b9d6bf85100ef0/chain-store.json');
+const { mockHeadersChain } = require("../../test/mocks/dashcore/block");
 
 describe('ChainStore - class', () => {
   let testnetChainStore;
@@ -93,6 +94,95 @@ describe('ChainStore - class', () => {
 
       expect(importedTransactions.get(txHash).metadata)
         .to.deep.equal(expectedTransactions.get(txHash).metadata);
+    });
+  });
+
+  context('Handling headers metadata', () => {
+    let headers;
+    let chainStore;
+    const TAIL_HEIGHT = 100;
+
+    before(async () => {
+      headers = mockHeadersChain('livenet', 10);
+
+    })
+
+    beforeEach(() => {
+      chainStore = new ChainStore('livenet');
+    })
+
+    it('should update headers metadata', async () => {
+      chainStore.updateHeadersMetadata(headers, TAIL_HEIGHT);
+
+      const expectedMetadata = new Map();
+      const expectedHashesByHeight = new Map();
+
+      headers.forEach((header, index) => {
+        const height = TAIL_HEIGHT - headers.length + index + 1;
+
+        expectedHashesByHeight.set(height, header.hash);
+        expectedMetadata.set(header.hash, {
+          height,
+          time: header.time,
+        });
+      }, new Map());
+
+      expect(chainStore.state.headersMetadata).to.deep.equal(expectedMetadata)
+      expect(chainStore.state.hashesByHeight).to.deep.equal(expectedHashesByHeight)
+    });
+
+    it('should prune headers metadata below specified height', () => {
+      chainStore.updateHeadersMetadata(headers, TAIL_HEIGHT);
+
+      let removeBelowHeight = TAIL_HEIGHT - 5;
+      let remainingAmount = TAIL_HEIGHT - removeBelowHeight + 1;
+
+      // Prune first 4 headers
+      chainStore.pruneHeadersMetadata(removeBelowHeight)
+      let expectedMetadata = new Map();
+      let expectedHashesByHeight = new Map();
+
+      let headHeight = removeBelowHeight;
+      headers.slice(headers.length - remainingAmount).forEach((header, index) => {
+        const height = headHeight + index;
+
+        expectedHashesByHeight.set(height, header.hash);
+        expectedMetadata.set(header.hash, {
+          height,
+          time: header.time,
+        });
+      }, new Map());
+
+      let { headersMetadata, hashesByHeight } = chainStore.state;
+      expect(headersMetadata.size).to.equal(remainingAmount);
+      expect(hashesByHeight.size).to.equal(remainingAmount);
+      expect(headersMetadata).to.deep.equal(expectedMetadata)
+      expect(hashesByHeight).to.deep.equal(expectedHashesByHeight)
+
+      expectedMetadata.clear();
+      expectedHashesByHeight.clear();
+
+      removeBelowHeight = TAIL_HEIGHT - 1;
+      remainingAmount = TAIL_HEIGHT - removeBelowHeight + 1;
+
+      // Prune last 5 headers
+      chainStore.pruneHeadersMetadata(removeBelowHeight)
+
+      headHeight = removeBelowHeight;
+      headers.slice(headers.length - remainingAmount).forEach((header, index) => {
+        const height = headHeight + index;
+
+        expectedHashesByHeight.set(height, header.hash);
+        expectedMetadata.set(header.hash, {
+          height,
+          time: header.time,
+        });
+      }, new Map());
+
+      expect(headersMetadata.size).to.equal(remainingAmount);
+      expect(hashesByHeight.size).to.equal(remainingAmount);
+      expect(chainStore.state.headersMetadata).to.deep.equal(expectedMetadata)
+      expect(chainStore.state.hashesByHeight).to.deep.equal(expectedHashesByHeight)
     });
   });
 });

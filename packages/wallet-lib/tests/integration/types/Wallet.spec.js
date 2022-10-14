@@ -11,7 +11,7 @@ const TransactionsSyncWorker = require("../../../src/plugins/Workers/Transaction
 const ChainPlugin = require("../../../src/plugins/Plugins/ChainPlugin");
 const LocalForageAdapterMock = require("../../../src/test/mocks/LocalForageAdapterMock");
 const {waitOneTick} = require("../../../src/test/utils");
-const mockMerkleBlock = require("../../../src/test/mocks/mockMerkleBlock");
+const {mockMerkleBlock} = require("../../../src/test/mocks/dashcore/block");
 const createTransportFromOptions = require("../../../src/transport/createTransportFromOptions");
 const TxStreamMock = require("../../../src/test/mocks/TxStreamMock");
 

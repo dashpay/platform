@@ -4,7 +4,7 @@ const { Transaction, PrivateKey } = require('@dashevo/dashcore-lib');
 const TransactionsReader = require('./TransactionsReader');
 const TxStreamMock = require('../../../test/mocks/TxStreamMock');
 const { createBloomFilter } = require('./utils');
-const mockMerkleBlock = require('../../../test/mocks/mockMerkleBlock');
+const { mockMerkleBlock } = require('../../../test/mocks/dashcore/block');
 const { waitOneTick } = require('../../../test/utils');
 
 describe('TransactionsReader - unit', () => {
