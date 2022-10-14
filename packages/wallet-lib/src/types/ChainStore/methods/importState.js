@@ -1,7 +1,7 @@
 const castStorageItemsTypes = require('../../../utils/castStorageItemsTypes');
 
 function importState(rawState) {
-  const stateToImport = rawState;
+  const stateToImport = { ...rawState };
 
   const { headersMetadata } = stateToImport;
   // Delete headers metadata from state to import because
