@@ -152,6 +152,15 @@ impl Identity {
         self
     }
 
+    /// Get the biggest public KeyID
+    pub fn get_public_key_max_id(&self) -> KeyID {
+        self.public_keys
+            .iter()
+            .map(|pk| pk.id)
+            .max()
+            .unwrap_or_default()
+    }
+
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         self.to_cbor()
     }
