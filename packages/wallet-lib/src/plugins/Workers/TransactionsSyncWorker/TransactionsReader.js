@@ -25,6 +25,14 @@ const EVENTS = {
  */
 
 /**
+ * @typedef StreamListeners
+ * @property {Function} [onData]
+ * @property {Function} [onError]
+ * @property {Function} [onEnd]
+ * @property {Function} [onBeforeReconnect]
+ */
+
+/**
  * @typedef TransactionsReader
  * @extends {EventEmitter}
  * @class
@@ -42,6 +50,8 @@ class TransactionsReader extends EventEmitter {
 
     this.historicalSyncStream = null;
     this.continuousSyncStream = null;
+
+    this.cancelStream = this.cancelStream.bind(this);
   }
 
   /**
@@ -124,15 +134,15 @@ class TransactionsReader extends EventEmitter {
 
           /**
            * Accepts merkle block
-           * @param {number} height
+           * @param {number} merkleBlockHeight
            * @param {string[]} newAddresses
            */
-          const acceptMerkleBlock = (height, newAddresses) => {
+          const acceptMerkleBlock = (merkleBlockHeight, newAddresses) => {
             if (rejected) {
               throw new Error('Unable to accept rejected merkle block');
             }
 
-            lastSyncedBlockHeight = height;
+            lastSyncedBlockHeight = merkleBlockHeight;
             const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
             const remainingCount = count - blocksRead;
 
@@ -141,18 +151,36 @@ class TransactionsReader extends EventEmitter {
             }
 
             if (remainingCount < 0) {
-              throw new Error(`Merkle block height is greater than expected range: ${height} > ${fromBlockHeight + count - 1}`);
+              throw new Error(`Merkle block height is greater than expected range: ${merkleBlockHeight} > ${fromBlockHeight + count - 1}`);
             }
 
+            // Restart stream to expand bloom filter
             if (newAddresses.length) {
+              this.cancelStream(stream);
+              this.historicalSyncStream = null;
+
               restartArgs = {
-                fromBlockHeight: height + 1,
+                fromBlockHeight: merkleBlockHeight + 1,
                 count: remainingCount,
                 addresses: [...addresses, ...newAddresses],
               };
 
-              // Restart stream to expand bloom filter
-              stream.cancel();
+              logger.debug('[TransactionsReader] Restarting stream with', {
+                fromBlockHeight: restartArgs.fromBlockHeight,
+                count: restartArgs.count,
+                _addressesCount: addresses.length,
+              });
+              subscribeWithRetries(
+                restartArgs.fromBlockHeight,
+                restartArgs.count,
+                restartArgs.addresses,
+              ).then((newStream) => {
+                this.historicalSyncStream = newStream;
+              }).catch((e) => {
+                this.emit(EVENTS.ERROR, e);
+              }).finally(() => {
+                restartArgs = null;
+              });
             }
 
             accepted = true;
@@ -172,53 +200,22 @@ class TransactionsReader extends EventEmitter {
 
       const errorHandler = (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          // TODO: consider reworking with COMMANDS instead
-          // of producing a side effect that alters class state
-          this.historicalSyncStream = null;
-          if (restartArgs) {
-            logger.debug('[TransactionsReader] Restarting stream with', {
-              fromBlockHeight: restartArgs.fromBlockHeight,
-              count: restartArgs.count,
-              _addressesCount: addresses.length,
-            });
-            subscribeWithRetries(
-              restartArgs.fromBlockHeight,
-              restartArgs.count,
-              restartArgs.addresses,
-            ).then((newStream) => {
-              this.historicalSyncStream = newStream;
-            }).catch((e) => {
-              this.emit(EVENTS.ERROR, e);
-            }).finally(() => {
-              restartArgs = null;
-            });
-          }
-
-          logger.debug('[TransactionsReader] Stream canceled on client');
-
           return;
         }
 
         if (currentRetries < maxRetries) {
           logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, `"${streamError.message}"`);
-          if (!restartArgs) {
-            const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
-            const remainingCount = count - blocksRead;
-            if (remainingCount <= 0) {
-              return;
-            }
 
-            restartArgs = {
-              fromBlockHeight: lastSyncedBlockHeight + 1,
-              count: remainingCount,
-              addresses,
-            };
+          const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
+          const remainingCount = count - blocksRead;
+          if (remainingCount <= 0) {
+            return;
           }
 
           subscribeWithRetries(
-            restartArgs.fromBlockHeight,
-            restartArgs.count,
-            restartArgs.addresses,
+            lastSyncedBlockHeight + 1,
+            remainingCount,
+            addresses,
           ).then((newStream) => {
             this.historicalSyncStream = newStream;
             currentRetries += 1;
@@ -233,15 +230,18 @@ class TransactionsReader extends EventEmitter {
       };
 
       const endHandler = () => {
-        if (!restartArgs) {
-          logger.debug('[----------------->] Historical data updated');
-          this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-        }
+        logger.debug('TransactionsReader#stream.endHandler] Historical data updated');
+        this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
       };
 
       stream.on('data', dataHandler);
       stream.on('error', errorHandler);
       stream.on('end', endHandler);
+
+      stream.removeAllListeners = () => {
+        stream.removeListener('data', dataHandler);
+        stream.removeListener('end', endHandler);
+      };
 
       return stream;
     };
@@ -285,7 +285,6 @@ class TransactionsReader extends EventEmitter {
     });
 
     // Arguments for the stream restart when it comes to a need to expand bloom filter
-    let restartArgs = null;
     let addressesGenerated = [];
     let lastSyncedBlockHeight = fromBlockHeight;
 
@@ -315,30 +314,40 @@ class TransactionsReader extends EventEmitter {
 
         /**
          * Accepts merkle block
-         * @param {number} height
+         * @param {number} merkleBlockHeight
          */
-        const acceptMerkleBlock = (height) => {
+        const acceptMerkleBlock = (merkleBlockHeight) => {
           if (rejected) {
             throw new Error('Unable to accept rejected merkle block');
           }
 
-          if (height < fromBlockHeight) {
-            const error = new Error(`Merkle block height is lesser than expected startBlockHeight: ${height} < ${fromBlockHeight}`);
+          if (merkleBlockHeight < fromBlockHeight) {
+            const error = new Error(`Merkle block height is lesser than expected startBlockHeight: ${merkleBlockHeight} < ${fromBlockHeight}`);
             stream.destroy(error);
             return;
           }
 
-          lastSyncedBlockHeight = height;
+          lastSyncedBlockHeight = merkleBlockHeight;
           if (addressesGenerated.length) {
-            restartArgs = {
-              fromBlockHeight: height,
+            // Restart stream to expand bloom filter
+            this.cancelStream(stream);
+            this.continuousSyncStream = null;
+
+            const restartArgs = {
+              fromBlockHeight: merkleBlockHeight,
               addresses: [...addresses, ...addressesGenerated],
             };
 
-            addressesGenerated = [];
+            this.startContinuousSync(
+              restartArgs.fromBlockHeight,
+              restartArgs.addresses,
+            ).then((newStream) => {
+              this.continuousSyncStream = newStream;
+            }).catch((e) => {
+              this.emit(EVENTS.ERROR, e);
+            });
 
-            // Restart stream to expand bloom filter
-            stream.cancel();
+            addressesGenerated = [];
           }
 
           accepted = true;
@@ -362,26 +371,7 @@ class TransactionsReader extends EventEmitter {
 
     const errorHandler = (streamError) => {
       if (streamError.code === GrpcErrorCodes.CANCELLED) {
-        this.continuousSyncStream = null;
-        if (restartArgs) {
-          logger.debug('[TransactionsReader] Restarting stream with', {
-            fromBlockHeight: restartArgs.fromBlockHeight,
-            _addressesCount: restartArgs.addresses.length,
-          });
-          this.startContinuousSync(
-            restartArgs.fromBlockHeight,
-            restartArgs.addresses,
-          ).then((newStream) => {
-            this.continuousSyncStream = newStream;
-          }).catch((e) => {
-            this.emit(EVENTS.ERROR, e);
-          }).finally(() => {
-            restartArgs = null;
-          });
-        }
-
         logger.debug('[TransactionsReader] Stream canceled on client');
-
         return;
       }
 
@@ -389,32 +379,22 @@ class TransactionsReader extends EventEmitter {
     };
 
     const beforeReconnectHandler = (updateArguments) => {
-      if (restartArgs) {
-        logger.debug('[TransactionsReader] Stream is going to be restarted, skipping reconnect');
+      if (addressesGenerated.length) {
+        // No need to reconnect, stream will restart itself for newly generated addresses
         return;
       }
-      // If the lastSyncedBlockHeight was not updated yet, re-sync from the same block
-      // otherwise sync from the next block from lastSyncedBlockHeight
-
-      // TODO(spv): fix - either don't wipe addressesGenerated,
-      // or alter `addresses` to reflect new generated ones
-      // because we have a problem with the addresses gap in case of a
-      // reconnect and then consequent acceptMerkleBlock
-      const newAddresses = addressesGenerated.length
-        ? [...addresses, ...addressesGenerated] : addresses;
 
       logger.debug('[TransactionsReader] Reconnecting to stream with', {
         fromBlockHeight: lastSyncedBlockHeight,
-        _addressesCount: newAddresses.length,
+        _addressesCount: addresses.length,
       });
       updateArguments(
-        createBloomFilter(newAddresses),
+        createBloomFilter(addresses),
         {
           fromBlockHeight: lastSyncedBlockHeight,
           count: 0,
         },
       );
-      addressesGenerated = [];
     };
 
     const endHandler = () => {
@@ -427,12 +407,19 @@ class TransactionsReader extends EventEmitter {
     stream.on('end', endHandler);
     stream.on('beforeReconnect', beforeReconnectHandler);
 
+    stream.removeAllListeners = () => {
+      stream.removeListener('data', dataHandler);
+      stream.removeListener('end', endHandler);
+      stream.removeListener('beforeReconnect', beforeReconnectHandler);
+    };
+
     return stream;
   }
 
   async stopHistoricalSync() {
     if (this.historicalSyncStream) {
-      await this.historicalSyncStream.cancel();
+      await this.cancelStream(this.historicalSyncStream);
+      this.historicalSyncStream = null;
       this.emit(EVENTS.STOPPED);
       logger.debug('[TransactionsReader] Stopped historical sync');
     }
@@ -440,10 +427,16 @@ class TransactionsReader extends EventEmitter {
 
   async stopContinuousSync() {
     if (this.continuousSyncStream) {
-      await this.continuousSyncStream.cancel();
+      await this.cancelStream(this.continuousSyncStream);
+      this.continuousSyncStream = null;
       this.emit(EVENTS.STOPPED);
       logger.debug('[TransactionsReader] Stopped continuous sync');
     }
+  }
+
+  async cancelStream(stream) {
+    stream.removeAllListeners();
+    stream.cancel();
   }
 }
 

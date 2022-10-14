@@ -336,7 +336,6 @@ describe('TransactionsReader - unit', () => {
       it('should handle stream cancellation', async () => {
         await subscribeToHistoricalBatch(fromBlockHeight, CHAIN_HEIGHT, DEFAULT_ADDRESSES);
         await historicalSyncStream.cancel();
-        expect(transactionsReader.historicalSyncStream).to.equal(null);
         expect(transactionsReader.emit)
           .to.have.not.been.calledWith(TransactionsReader.EVENTS.ERROR);
       });
@@ -374,6 +373,8 @@ describe('TransactionsReader - unit', () => {
           });
 
         historicalSyncStream.sendMerkleBlock(merkleBlock);
+
+        await waitOneTick();
 
         historicalSyncStream.emit('error', new Error('Fake stream error'));
 
@@ -837,7 +838,6 @@ describe('TransactionsReader - unit', () => {
           .startContinuousSync(1, DEFAULT_ADDRESSES);
         await continuousSyncStream.cancel();
         expect(transactionsReader.startContinuousSync).to.have.been.calledOnce();
-        expect(transactionsReader.continuousSyncStream).to.equal(null);
         expect(transactionsReader.emit)
           .to.have.not.been.calledWith(TransactionsReader.EVENTS.ERROR);
       });
@@ -910,7 +910,7 @@ describe('TransactionsReader - unit', () => {
         ]);
       });
 
-      it('should not update args in case new addresses were generated and stream restarted', async () => {
+      it('should not update args in case new addresses were generated and stream is about to restart', async function () {
         await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
         transactionsReader
@@ -927,15 +927,15 @@ describe('TransactionsReader - unit', () => {
           new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
         ];
         continuousSyncStream.sendTransactions(transactions);
-        await waitOneTick();
+
+        const listener = this.sinon.stub();
+        continuousSyncStream.emit('beforeReconnect', listener);
+
         continuousSyncStream.sendMerkleBlock(merkleBlock);
 
-        let newArgs = null;
-        continuousSyncStream.emit('beforeReconnect', (...updatedArgs) => {
-          newArgs = updatedArgs;
-        });
+        await waitOneTick();
 
-        expect(newArgs).to.equal(null);
+        expect(listener).to.have.not.been.called();
       });
     });
   });

@@ -156,7 +156,7 @@ describe('TransactionsSyncWorker', () => {
 
       it('should process first transactions and a merkle block', async () => {
         // Start historical sync
-        onStartPromise = transactionsSyncWorker.onStart();
+        onStartPromise = transactionsSyncWorker.onStart().catch(console.error);
         await waitOneTick();
 
         const toAddresses = [
