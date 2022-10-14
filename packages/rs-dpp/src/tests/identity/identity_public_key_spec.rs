@@ -80,4 +80,38 @@ mod from_raw_object {
             ]
         );
     }
+
+    #[test]
+    pub fn should_return_true_if_public_key_is_master() {
+        let public_key_json = json!({
+            "id": 0,
+            "type": KeyType::BIP13_SCRIPT_HASH,
+            "purpose": Purpose::AUTHENTICATION,
+            "securityLevel": SecurityLevel::MASTER,
+            "data": "AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di",
+            "readOnly": false
+        });
+
+        let public_key = IdentityPublicKey::from_json_object(public_key_json)
+            .expect("the public key should be created");
+        assert!(public_key.is_master());
+    }
+
+    #[test]
+    pub fn should_return_false_if_public_key_is_not_master() {
+        let public_key_json = json!({
+            "id": 0,
+            "type": KeyType::BIP13_SCRIPT_HASH,
+            "purpose": Purpose::AUTHENTICATION,
+            "securityLevel": SecurityLevel::CRITICAL,
+
+            "data": "AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di",
+            "readOnly": false
+        });
+
+        let public_key = IdentityPublicKey::from_json_object(public_key_json)
+            .expect("the public key should be created");
+
+        assert!(!public_key.is_master());
+    }
 }

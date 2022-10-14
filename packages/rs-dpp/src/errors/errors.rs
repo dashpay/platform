@@ -55,13 +55,13 @@ pub enum ProtocolError {
     #[error("State Transition is not signed")]
     StateTransitionIsNotIsSignedError { state_transition: StateTransition },
     #[error(
-        "State transition is signed with a key with security level '{public_key_security_level}', but expected at leas '{required_security_level}'"
+        "Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}"
     )]
     PublicKeySecurityLevelNotMetError {
         public_key_security_level: SecurityLevel,
         required_security_level: SecurityLevel,
     },
-    #[error("State transition must be signed with a key that has purpose '{key_purpose_requirement}' but got '{public_key_purpose}'")]
+    #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
     WrongPublicKeyPurposeError {
         public_key_purpose: Purpose,
         key_purpose_requirement: Purpose,

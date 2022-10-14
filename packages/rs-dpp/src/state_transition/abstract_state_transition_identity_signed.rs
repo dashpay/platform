@@ -249,7 +249,7 @@ mod test {
             &self.owner_id
         }
         fn get_security_level_requirement(&self) -> SecurityLevel {
-            SecurityLevel::MASTER
+            SecurityLevel::HIGH
         }
 
         fn get_signature_public_key_id(&self) -> KeyID {
@@ -307,7 +307,7 @@ mod test {
             id: public_key_id,
             key_type: KeyType::ECDSA_SECP256K1,
             purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
+            security_level: SecurityLevel::HIGH,
             data: ec_public_compressed_bytes.try_into().unwrap(),
             read_only: false,
             disabled_at: None,
@@ -454,7 +454,7 @@ mod test {
                 required_security_level: req_sec_level,
             } => {
                 assert_eq!(SecurityLevel::MEDIUM, sec_level);
-                assert_eq!(SecurityLevel::MASTER, req_sec_level);
+                assert_eq!(SecurityLevel::HIGH, req_sec_level);
             }
             error => {
                 panic!("invalid error type: {}", error)
@@ -557,6 +557,31 @@ mod test {
         assert!(matches!(
             result,
             ProtocolError::PublicKeyIsDisabledError { .. }
+        ))
+    }
+
+    #[test]
+    fn should_throw_invalid_signature_public_key_security_level_error() {
+        // should throw InvalidSignaturePublicKeySecurityLevel Error if public key with master level is used to sign non update state transition
+        let mut st = get_mock_state_transition();
+        let keys = get_test_keys();
+
+        st.transition_type = StateTransitionType::DataContractCreate;
+        let identity_public_key = keys
+            .identity_public_key
+            .set_security_level(SecurityLevel::MASTER);
+
+        let result = st
+            .sign(&identity_public_key, &keys.bls_private)
+            .expect_err("the protocol error should be returned");
+
+        assert!(matches!(
+            result,
+            ProtocolError::InvalidSignaturePublicKeySecurityLevelError { public_key_security_level, required_security_level } if
+            {
+                public_key_security_level == SecurityLevel::MASTER &&
+                required_security_level == SecurityLevel::HIGH
+            }
         ))
     }
 }
