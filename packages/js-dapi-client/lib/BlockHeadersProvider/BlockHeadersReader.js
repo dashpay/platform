@@ -98,6 +98,7 @@ class BlockHeadersReader extends EventEmitter {
    * @returns {Promise<DAPIStream>}
    */
   async subscribeToNew(fromBlockHeight) {
+    // TODO(spv): FIX!!!! Restart failure in browsers because of the cancel logic behaviour
     if (this.continuousSyncStream) {
       throw new Error('Continuous sync has already been started');
     }
