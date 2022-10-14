@@ -434,6 +434,7 @@ class TransactionsReader extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line class-methods-use-this
   async cancelStream(stream) {
     stream.removeAllListeners();
     stream.cancel();

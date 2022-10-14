@@ -7,8 +7,6 @@ const {
   generateNewMnemonic,
 } = require('../../utils');
 
-const logger = require('../../logger');
-
 const defaultOptions = {
   debug: false,
   offlineMode: false,
