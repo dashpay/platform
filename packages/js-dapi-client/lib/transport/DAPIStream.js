@@ -87,7 +87,7 @@ class DAPIStream extends EventEmitter {
     this.stream.cancel = () => {
       this.stream.removeListener(EVENTS.DATA, this.dataHandler);
       this.stream.removeListener(EVENTS.END, this.endHandler);
-      cancel();
+      cancel.call(this.stream);
     };
   }
 
