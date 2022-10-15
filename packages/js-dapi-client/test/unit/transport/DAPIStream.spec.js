@@ -26,6 +26,7 @@ describe('DAPIStream', () => {
 
     this.sinon.spy(dapiStream, 'addListeners');
     this.sinon.spy(dapiStream, 'connect');
+    this.sinon.spy(dapiStream, 'reconnect');
     this.sinon.spy(dapiStream, 'endHandler');
     this.sinon.spy(dapiStream, 'emit');
     this.sinon.spy(dapiStream, 'stopReconnectTimeout');
@@ -43,13 +44,14 @@ describe('DAPIStream', () => {
       expect(dapiStream.reconnectTimeout).to.exist();
     });
 
-    it('should cancel stream after timeout', async () => {
+    it('should trigger reconnect after timeout', async () => {
       await dapiStream.connect();
       timeoutCallback();
-      expect(stream.cancel).to.have.been.calledOnce();
-      expect(dapiStream.connect).to.have.been.calledTwice();
+      expect(dapiStream.reconnect).to.have.been.calledOnce();
     });
+  });
 
+  describe('#reconnect', () => {
     it('should update connect arguments', async () => {
       await dapiStream.connect();
 
@@ -57,7 +59,7 @@ describe('DAPIStream', () => {
         updateArgs('newArg1', 'newArg2');
       });
 
-      timeoutCallback();
+      dapiStream.reconnect();
       expect(dapiStream.connect).to.have.been.calledWith('newArg1', 'newArg2');
     });
 
@@ -69,9 +71,32 @@ describe('DAPIStream', () => {
 
       const err = new Error('test error');
       dapiStream.streamFunction.throws(err);
-      timeoutCallback();
+      dapiStream.reconnect();
       const emittedError = await errorEventPromise;
       expect(emittedError).to.equal(err);
+    });
+  });
+
+  describe('#addListeners', () => {
+    it('should add listeners', async function () {
+      dapiStream.stream = new EventEmitter();
+      this.sinon.spy(dapiStream.stream, 'on');
+      dapiStream.addListeners();
+      expect(dapiStream.stream.on).to.have.been.calledWith('error');
+      expect(dapiStream.stream.on).to.have.been.calledWith('data');
+      expect(dapiStream.stream.on).to.have.been.calledWith('end');
+    });
+
+    it('should rewire cancel logic', async function () {
+      dapiStream.stream = new EventEmitter();
+      dapiStream.stream.cancel = this.sinon.stub();
+      this.sinon.spy(dapiStream.stream, 'removeListener');
+      dapiStream.addListeners();
+      dapiStream.stream.cancel();
+      expect(dapiStream.stream.removeListener)
+        .to.have.been.calledWith('data', dapiStream.dataHandler);
+      expect(dapiStream.stream.removeListener)
+        .to.have.been.calledWith('end', dapiStream.endHandler);
     });
   });
 
@@ -91,22 +116,8 @@ describe('DAPIStream', () => {
 
     it('should handle cancellation', async () => {
       await dapiStream.connect();
-      let emittedError;
-      dapiStream.on('error', (e) => {
-        emittedError = e;
-      });
       stream.cancel();
-      expect(dapiStream.stopReconnectTimeout).to.have.been.calledOnce();
-      expect(emittedError.message).to.equal('CANCELED_ON_CLIENT');
-    });
-
-    it('should handle cancellation triggered by reconnect logic', async () => {
-      await dapiStream.connect();
-      timeoutCallback();
-      expect(dapiStream.emit)
-        .to.have.been.calledWith(DAPIStream.EVENTS.BEFORE_RECONNECT);
-      expect(dapiStream.reconnectingAfterTimeout).to.be.false();
-      expect(dapiStream.connect).to.have.been.calledTwice();
+      expect(dapiStream.emit).to.have.not.been.called();
     });
   });
 
@@ -128,16 +139,12 @@ describe('DAPIStream', () => {
   });
 
   describe('#cancel', async () => {
-    it('should cancel stream', async () => {
-      await dapiStream.connect();
-      let emittedError;
-      dapiStream.on('error', (e) => {
-        emittedError = e;
-      });
+    it('should cancel stream', async function () {
+      dapiStream.stream = new EventEmitter();
+      dapiStream.stream.cancel = this.sinon.stub();
       dapiStream.cancel();
       expect(dapiStream.stopReconnectTimeout).to.have.been.calledOnce();
-      expect(stream.cancel).to.have.been.calledOnce();
-      expect(emittedError.message).to.equal('CANCELED_ON_CLIENT');
+      expect(dapiStream.stream.cancel).to.have.been.calledOnce();
     });
   });
 

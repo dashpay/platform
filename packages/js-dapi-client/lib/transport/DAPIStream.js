@@ -29,12 +29,7 @@ class DAPIStream extends EventEmitter {
     this.stream = null;
     this.streamFunction = streamFunction;
     this.reconnectTimeout = null;
-    /**
-     * A supplemental flag to handle deliberate stream cancellations
-     *
-     * @type {boolean}
-     */
-    this.reconnectingAfterTimeout = false;
+
     this.options = { ...defaultOptions, ...options };
 
     /**
@@ -43,9 +38,11 @@ class DAPIStream extends EventEmitter {
     this.args = null;
 
     this.connect = this.connect.bind(this);
+    this.reconnect = this.reconnect.bind(this);
     this.cancel = this.cancel.bind(this);
     this.destroy = this.destroy.bind(this);
     this.errorHandler = this.errorHandler.bind(this);
+    this.dataHandler = this.dataHandler.bind(this);
     this.endHandler = this.endHandler.bind(this);
     this.addListeners = this.addListeners.bind(this);
   }
@@ -54,20 +51,48 @@ class DAPIStream extends EventEmitter {
     this.args = args;
     this.stream = await this.streamFunction(...this.args);
     this.addListeners();
-    this.reconnectTimeout = setTimeout(() => {
-      this.reconnectingAfterTimeout = true;
+
+    this.reconnectTimeout = setTimeout(
+      this.reconnect,
+      this.options.reconnectTimeoutDelay,
+    );
+  }
+
+  reconnect() {
+    if (this.reconnectTimeout) {
       this.reconnectTimeout = null;
       this.stream.cancel();
-    }, this.options.reconnectTimeoutDelay);
+
+      let newArgs = this.args;
+      const updateArgs = (...args) => {
+        newArgs = args;
+      };
+
+      this.emit(EVENTS.BEFORE_RECONNECT, updateArgs);
+      this.connect(...newArgs)
+        .catch((connectError) => this.emit(EVENTS.ERROR, connectError));
+    }
   }
 
   /**
    * @private
    */
   addListeners() {
-    this.stream.on(EVENTS.DATA, (data) => this.emit(EVENTS.DATA, data));
+    this.stream.on(EVENTS.DATA, this.dataHandler);
     this.stream.on(EVENTS.ERROR, this.errorHandler);
     this.stream.on(EVENTS.END, this.endHandler);
+
+    const { cancel } = this.stream;
+
+    this.stream.cancel = () => {
+      this.stream.removeListener(EVENTS.DATA, this.dataHandler);
+      this.stream.removeListener(EVENTS.END, this.endHandler);
+      cancel();
+    };
+  }
+
+  dataHandler(data) {
+    this.emit(EVENTS.DATA, data);
   }
 
   /**
@@ -84,27 +109,12 @@ class DAPIStream extends EventEmitter {
    * @param e
    */
   errorHandler(e) {
-    this.stream = null;
+    this.stream.removeListener(EVENTS.ERROR, this.errorHandler);
     if (e.code === GrpcErrorCodes.CANCELLED) {
-      if (this.reconnectingAfterTimeout) {
-        this.reconnectingAfterTimeout = false;
-
-        let newArgs = this.args;
-        const updateArgs = (...args) => {
-          newArgs = args;
-        };
-
-        this.emit(EVENTS.BEFORE_RECONNECT, updateArgs);
-        this.connect(...newArgs)
-          .catch((connectError) => this.emit(EVENTS.ERROR, connectError));
-      } else {
-        this.stopReconnectTimeout();
-        this.emit(EVENTS.ERROR, e);
-      }
-    } else {
-      this.stopReconnectTimeout();
-      this.emit(EVENTS.ERROR, e);
+      return;
     }
+    this.stopReconnectTimeout();
+    this.emit(EVENTS.ERROR, e);
   }
 
   /**
@@ -118,12 +128,12 @@ class DAPIStream extends EventEmitter {
   }
 
   cancel() {
+    this.stopReconnectTimeout();
     return this.stream.cancel();
   }
 
   destroy(e) {
     this.stream.destroy(e);
-    this.stopReconnectTimeout();
   }
 }
 
