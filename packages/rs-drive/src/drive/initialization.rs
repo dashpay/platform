@@ -37,6 +37,8 @@ use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
 use grovedb::TransactionArg;
 
+use super::identity::withdrawal_queue::add_initial_withdrawal_state_structure_operations;
+
 impl Drive {
     /// Creates the initial state structure.
     pub fn create_initial_state_structure(&self, transaction: TransactionArg) -> Result<(), Error> {
@@ -51,6 +53,8 @@ impl Drive {
         batch.add_insert_empty_tree(vec![], vec![RootTree::SpentAssetLockTransactions as u8]);
 
         batch.add_insert_empty_tree(vec![], vec![RootTree::Pools as u8]);
+
+        add_initial_withdrawal_state_structure_operations(&mut batch);
 
         // initialize the pools with epochs
         add_create_fee_pool_trees_operations(&mut batch);
@@ -95,6 +99,6 @@ mod tests {
                 &mut drive_operations,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 5);
+        assert_eq!(elements.len(), 6);
     }
 }

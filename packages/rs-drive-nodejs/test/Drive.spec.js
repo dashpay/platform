@@ -395,6 +395,32 @@ describe('Drive', () => {
     });
   });
 
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should return 0 on the first call', async () => {
+      const result = await drive.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(0);
+    });
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should enqueue withdrawal transaction into the queue', async () => {
+      await drive.enqueueWithdrawalTransaction(1, Buffer.alloc(32, 1));
+
+      const result = await drive.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(1);
+    });
+  });
+
   describe('ABCI', () => {
     describe('InitChain', () => {
       it('should successfully init chain', async () => {
@@ -416,11 +442,12 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
+          validatorSetQuorumHash: Buffer.alloc(32, 2),
         };
 
         const response = await drive.getAbci().blockBegin(request);
 
-        expect(response).to.be.empty('object');
+        expect(response.unsignedWithdrawalTransactions).to.be.empty();
       });
 
       it('should process a block with previous block time', async () => {
@@ -430,6 +457,7 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs,
           proposerProTxHash: Buffer.alloc(32, 1),
+          validatorSetQuorumHash: Buffer.alloc(32, 2),
         });
 
         const response = await drive.getAbci().blockBegin({
@@ -437,9 +465,10 @@ describe('Drive', () => {
           blockTimeMs: blockTimeMs + 100,
           proposerProTxHash: Buffer.alloc(32, 1),
           previousBlockTimeMs: blockTimeMs,
+          validatorSetQuorumHash: Buffer.alloc(32, 2),
         });
 
-        expect(response).to.be.empty('object');
+        expect(response.unsignedWithdrawalTransactions).to.be.empty();
       });
     });
 
@@ -450,6 +479,7 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
+          validatorSetQuorumHash: Buffer.alloc(32, 2),
         });
       });
 
