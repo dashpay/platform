@@ -25,4 +25,4 @@ client.wallet.getAccount().then(payToRecipient);
 
 ```
 
-See more on create [transaction options here](https://dashevo.github.io/platform/Wallet-library/account/createTransaction/).
+See more on create [transaction options here](https://dashpay.github.io/platform/Wallet-library/account/createTransaction/).

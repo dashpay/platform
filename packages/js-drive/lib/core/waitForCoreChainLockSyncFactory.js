@@ -43,10 +43,13 @@ function waitForCoreChainLockSyncFactory(
       try {
         ({ chainLock } = new ChainLockSigMessage(rawChainLockMessage));
       } catch (e) {
-        logger.error({ err: e }, 'Error on creating ChainLockSigMessage');
-        logger.debug({
-          rawChainLockMessage: rawChainLockMessage.toString('hex'),
-        });
+        logger.error(
+          {
+            err: e,
+            rawChainLockMessage: rawChainLockMessage.toString('hex'),
+          },
+          'Error on creating ChainLockSigMessage',
+        );
 
         return;
       }
@@ -55,7 +58,7 @@ function waitForCoreChainLockSyncFactory(
 
       logger.trace(
         {
-          rawChainLockMessage: rawChainLockMessage.toString('hex'),
+          chainLock,
         },
         `Updated latestCoreChainLock for core height ${chainLock.height}`,
       );
@@ -76,7 +79,7 @@ function waitForCoreChainLockSyncFactory(
     } catch (e) {
       // Unable to find any ChainLock
       if (e.code === -32603) {
-        logger.debug('There is no chain locks currently. Waiting for a first one...');
+        logger.debug('There are no ChainLocks currently. Waiting for the first one...');
 
         // We need to wait for a new ChainLock from ZMQ socket
         await firstChainLockFromZMQPromise;

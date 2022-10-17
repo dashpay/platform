@@ -1,6 +1,5 @@
 const Dash = require('dash');
 const { MerkleProof, MerkleTree } = require('js-merkle');
-const { executeProof/* , verifyProof */ } = require('@dashevo/merk');
 const {
   contractId: dpnsContractId,
   ownerId: dpnsOwnerId,
@@ -20,6 +19,10 @@ const {
     Identifier,
   },
 } = Dash;
+
+function executeProof() {
+
+}
 
 describe('Platform', () => {
   describe('Proofs', () => {

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/masternode-reward-shares-contract",
-  "version": "0.23.0-dev.9",
+  "version": "0.24.0-dev.2",
   "description": "A contract and helper scripts for reward sharing",
   "scripts": {
     "lint": "eslint .",
@@ -31,7 +31,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dpp": "workspace:~",
+    "@dashevo/dpp": "workspace:*",
     "chai": "^4.3.4",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",

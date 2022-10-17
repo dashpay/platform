@@ -70,7 +70,12 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Save certificate',
-        task: async () => saveCertificateTask(config),
+        task: async (ctx) => {
+          config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.response.id);
+          config.set('platform.dapi.envoy.ssl.provider', 'zerossl');
+
+          await saveCertificateTask(config);
+        },
       },
       {
         title: 'Stop verification server',
