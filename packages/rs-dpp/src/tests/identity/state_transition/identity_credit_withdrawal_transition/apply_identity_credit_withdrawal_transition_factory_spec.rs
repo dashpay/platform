@@ -14,6 +14,17 @@ mod apply_identity_credit_withdrawal_transition_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
+            .expect_fetch_latest_withdrawal_transaction_index()
+            .times(1)
+            // trying to use values other than default to check they are actually set
+            .returning(|| anyhow::Ok(42));
+
+        state_repository
+            .expect_enqueue_withdrawal_transaction()
+            .withf(|index, _| *index == 42)
+            .returning(|_, _| anyhow::Ok(()));
+
+        state_repository
             .expect_fetch_identity::<Identity>()
             .times(1)
             .withf(|id| *id == Identifier::default())
