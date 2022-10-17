@@ -609,6 +609,7 @@ function createDIContainer(options) {
       dataContractCache,
       blockExecutionContext,
       simplifiedMasternodeList,
+      rsDrive,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -620,6 +621,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        rsDrive,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -640,6 +642,7 @@ function createDIContainer(options) {
       blockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
+      rsDrive,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -651,6 +654,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        rsDrive,
         {
           useTransaction: true,
         },

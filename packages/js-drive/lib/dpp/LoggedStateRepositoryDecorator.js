@@ -432,7 +432,7 @@ class LoggedStateRepositoryDecorator {
     try {
       response = await this.stateRepository.fetchLatestPlatformBlockHeight();
     } finally {
-      this.log('fetchLatestPlatformBlockHeight', { }, response);
+      this.log('fetchLatestPlatformBlockHeight', {}, response);
     }
 
     return response;
@@ -449,7 +449,7 @@ class LoggedStateRepositoryDecorator {
     try {
       response = await this.stateRepository.fetchLatestPlatformBlockTime();
     } finally {
-      this.log('fetchLatestPlatformBlockTime', { }, response);
+      this.log('fetchLatestPlatformBlockTime', {}, response);
     }
 
     return response;
@@ -466,7 +466,7 @@ class LoggedStateRepositoryDecorator {
     try {
       response = await this.stateRepository.fetchLatestPlatformCoreChainLockedHeight();
     } finally {
-      this.log('fetchLatestPlatformCoreChainLockedHeight', { }, response);
+      this.log('fetchLatestPlatformCoreChainLockedHeight', {}, response);
     }
 
     return response;
@@ -490,6 +490,42 @@ class LoggedStateRepositoryDecorator {
     }
 
     return response;
+  }
+
+  /**
+   * Fetch latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestWithdrawalTransactionIndex();
+    } finally {
+      this.log('fetchLatestWithdrawalTransactionIndex', {}, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    try {
+      await this.stateRepository.enqueueWithdrawalTransaction(
+        index,
+        transactionBytes,
+      );
+    } finally {
+      this.log('enqueueWithdrawalTransaction', { index, transactionBytes });
+    }
   }
 }
 

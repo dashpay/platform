@@ -233,4 +233,35 @@ describe('CachedStateRepositoryDecorator', () => {
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     });
   });
+
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    it('should call fetchLatestWithdrawalTransactionIndex', async () => {
+      stateRepositoryMock.fetchLatestWithdrawalTransactionIndex.resolves(42);
+
+      const result = await cachedStateRepository.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(42);
+      expect(
+        stateRepositoryMock.fetchLatestWithdrawalTransactionIndex,
+      ).to.have.been.calledOnce();
+    });
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    it('should call enqueueWithdrawalTransaction', async () => {
+      const index = 42;
+      const transactionBytes = Buffer.alloc(32, 1);
+
+      await cachedStateRepository.enqueueWithdrawalTransaction(
+        index, transactionBytes,
+      );
+
+      expect(
+        stateRepositoryMock.enqueueWithdrawalTransaction,
+      ).to.have.been.calledOnceWithExactly(
+        index,
+        transactionBytes,
+      );
+    });
+  });
 });
