@@ -93,14 +93,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23.0-alpha.3',
+          image: 'dashpay/dapi:0.23.0-alpha.6',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23.0-alpha.3',
+          image: 'dashpay/drive:0.23.0-alpha.6',
         },
         log: {
           stdout: {
