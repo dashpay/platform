@@ -17,16 +17,27 @@ on:
         type: boolean
         default: false
         required: false
+      install-browsers:
+        description: Install browsers
+        type: boolean
+        default: false
+        required: false
 jobs:
   test:
     name: Test package
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.9.1
         with:
           access_token: ${{ github.token }}
+
+      - name: Setup Firefox
+        uses: browser-actions/setup-firefox@latest
+        if: ${{ inputs.install-browsers }}
+        with:
+          firefox-version: 'latest'
 
       - name: Check out repo
         uses: actions/checkout@v2

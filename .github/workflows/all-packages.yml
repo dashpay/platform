@@ -10,7 +10,7 @@ on:
 jobs:
   workspaces:
     name: Validate project workspaces
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -28,7 +28,7 @@ jobs:
 
   test-suite:
     name: Run Platform Test Suite
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Cancel previous runs
@@ -102,7 +102,7 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Cancel previous runs

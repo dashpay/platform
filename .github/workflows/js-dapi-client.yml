@@ -25,3 +25,4 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/dapi-client'
+      install-browsers: true
