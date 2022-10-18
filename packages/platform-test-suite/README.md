@@ -1,7 +1,7 @@
 # Dash Platform Test Suite
 
-[![Latest Release](https://img.shields.io/github/v/release/dashevo/platform-test-suite)](https://github.com/dashevo/platform-test-suite/releases/latest)
-[![Build Status](https://github.com/dashevo/platform-test-suite/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/platform-test-suite/actions/workflows/test_and_release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/dashevo/platform-test-suite)](https://github.com/dashpay/platform-test-suite/releases/latest)
+[![Build Status](https://github.com/dashpay/platform-test-suite/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashpay/platform-test-suite/actions/workflows/test_and_release.yml)
 [![Release Date](https://img.shields.io/github/release-date/dashevo/platform-test-suite)](https://img.shields.io/github/release-date/dashevo/platform-test-suite)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
@@ -15,7 +15,7 @@ The test suite for end-to-end and functional testing the Dash Platform by runnin
 
 ## Pre-requisites
 
-You may run test-suite against any platform compatible network, or even [local node](https://github.com/dashevo/platform/tree/master/packages/dashmate).
+You may run test-suite against any platform compatible network, or even [local node](https://github.com/dashpay/platform/tree/master/packages/dashmate).
 To run locally make sure you have [Node.js](https://nodejs.org/) installed.
 To run using [Docker](https://www.docker.com/), make sure you have it installed.
 
@@ -107,7 +107,7 @@ Usage: test <seed> [options]
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
 
 ## License
 

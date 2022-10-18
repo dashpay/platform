@@ -1,8 +1,8 @@
 # DAPI GRPC
 
-[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
+[![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
 [![NPM version](https://img.shields.io/npm/v/@dashevo/dapi-grpc.svg)](https://npmjs.org/package/@dashevo/dapi-grpc)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashpay/platform/releases/latest)
 [![license](https://img.shields.io/github/license/dashevo/dapi-grpc.svg)](LICENSE)
 
 Decentralized API GRPC definition files and generated clients
@@ -135,7 +135,7 @@ Available methods :
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
 
 ## License
 
