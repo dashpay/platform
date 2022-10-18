@@ -86,7 +86,7 @@ More extensive documentation is available at https://dashpay.github.io/platform/
 
 ## Maintainers
 
-Wallet-Lib is maintained by the [Dash Core Developers](https://www.github.com/dashevo).
+Wallet-Lib is maintained by the [Dash Core Developers](https://www.github.com/dashpay).
 We want to thank all members of the community that have submitted suggestions, issues and pull requests.
 
 ## Contributing
