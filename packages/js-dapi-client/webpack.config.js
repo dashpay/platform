@@ -9,6 +9,7 @@ const commonJSConfig = {
       fs: false,
       http: false,
       https: false,
+      ws: false,
       crypto: require.resolve('crypto-browserify'),
       buffer: require.resolve('buffer/'),
       assert: require.resolve('assert-browserify'),
