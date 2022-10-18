@@ -92,6 +92,7 @@ describe('Fee Pools', () => {
         blockHeight,
         blockTimeMs,
         proposerProTxHash: mnIdentity.getId(),
+        validatorSetQuorumHash: Buffer.alloc(32),
       };
 
       if (previousBlockTimeMs) {
