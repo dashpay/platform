@@ -25,7 +25,7 @@ on:
 jobs:
   platform-test-suite-tests:
     name: Run Test Suite
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/platform-test-suite'
       skip-tests: true
