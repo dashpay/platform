@@ -17,6 +17,11 @@ on:
         type: boolean
         default: false
         required: false
+      install-browsers:
+        description: Install browsers
+        type: boolean
+        default: false
+        required: false
 jobs:
   test:
     name: Test package
@@ -30,6 +35,7 @@ jobs:
 
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@latest
+        if: ${{ inputs.install-browsers }}
         with:
           firefox-version: 'latest'
 

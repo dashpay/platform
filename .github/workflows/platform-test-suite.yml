@@ -29,3 +29,4 @@ jobs:
     with:
       package: '@dashevo/platform-test-suite'
       skip-tests: true
+      install-browsers: true
