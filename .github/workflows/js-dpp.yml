@@ -21,3 +21,4 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/dpp'
+      install-browsers: true
