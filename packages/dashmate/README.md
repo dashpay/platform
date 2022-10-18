@@ -1,7 +1,7 @@
 # Dashmate
 
 [![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashpay/platform/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation

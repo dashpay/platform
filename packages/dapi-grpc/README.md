@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
 [![NPM version](https://img.shields.io/npm/v/@dashevo/dapi-grpc.svg)](https://npmjs.org/package/@dashevo/dapi-grpc)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashpay/platform/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![license](https://img.shields.io/github/license/dashevo/dapi-grpc.svg)](LICENSE)
 
 Decentralized API GRPC definition files and generated clients

@@ -2,7 +2,7 @@
 
 [![NPM Version](https://img.shields.io/npm/v/@dashevo/dashpay-contract)](https://www.npmjs.com/package/@dashevo/dashpay-contract)
 [![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashpay/platform/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![license](https://img.shields.io/github/license/dashevo/dashpay-contract.svg)](LICENSE)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
