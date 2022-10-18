@@ -128,7 +128,7 @@ function beginBlockHandlerFactory(
       blockHeight: header.height.toNumber(),
       blockTimeMs: timeToMillis(header.time.seconds, header.time.nanos),
       proposerProTxHash: header.proposerProTxHash,
-      validatorSetQuorumHash: Buffer.from(validatorSet.getQuorum().quorumHash,'hex'),
+      validatorSetQuorumHash: Buffer.from(validatorSet.getQuorum().quorumHash, 'hex'),
     };
 
     if (previousContext) {
