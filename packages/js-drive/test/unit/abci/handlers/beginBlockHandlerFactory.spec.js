@@ -36,8 +36,6 @@ describe('beginBlockHandlerFactory', () => {
   let blockExecutionContextStackMock;
   let executionTimerMock;
   let rsAbciMock;
-  let validatorSetMock;
-  let validatorSetQuorumHash;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -78,14 +76,6 @@ describe('beginBlockHandlerFactory', () => {
       blockBegin: this.sinon.stub(),
     };
 
-    validatorSetQuorumHash = Buffer.alloc(32).fill(1);
-
-    validatorSetMock = {
-      getQuorum: this.sinon.stub().returns({
-        quorumHash: validatorSetQuorumHash.toString('hex'),
-      }),
-    };
-
     beginBlockHandler = beginBlockHandlerFactory(
       groveDBStoreMock,
       blockExecutionContextMock,
@@ -99,7 +89,6 @@ describe('beginBlockHandlerFactory', () => {
       loggerMock,
       executionTimerMock,
       rsAbciMock,
-      validatorSetMock,
     );
 
     blockHeight = new Long(1);

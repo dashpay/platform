@@ -25,7 +25,6 @@ const timeToMillis = require('../../util/timeToMillis');
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {RSAbci} rsAbci
- * @param {ValidatorSet} validatorSet
  *
  * @return {beginBlockHandler}
  */
@@ -42,7 +41,6 @@ function beginBlockHandlerFactory(
   logger,
   executionTimer,
   rsAbci,
-  validatorSet,
 ) {
   /**
    * @typedef beginBlockHandler
@@ -128,7 +126,7 @@ function beginBlockHandlerFactory(
       blockHeight: header.height.toNumber(),
       blockTimeMs: timeToMillis(header.time.seconds, header.time.nanos),
       proposerProTxHash: header.proposerProTxHash,
-      validatorSetQuorumHash: Buffer.from(validatorSet.getQuorum().quorumHash, 'hex'),
+      validatorSetQuorumHash: Buffer.alloc(32),
     };
 
     if (previousContext) {
