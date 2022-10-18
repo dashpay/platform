@@ -3,7 +3,8 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** update RS Drive to 0.23.0-dev.9 (#588)
+* Previous data is not compatible with new Drive
+
 
 ### Bug Fixes
 
