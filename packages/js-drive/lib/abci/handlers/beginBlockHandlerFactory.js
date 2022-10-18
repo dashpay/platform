@@ -126,6 +126,7 @@ function beginBlockHandlerFactory(
       blockHeight: header.height.toNumber(),
       blockTimeMs: timeToMillis(header.time.seconds, header.time.nanos),
       proposerProTxHash: header.proposerProTxHash,
+      validatorSetQuorumHash: Buffer.alloc(32),
     };
 
     if (previousContext) {
