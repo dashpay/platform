@@ -37,8 +37,8 @@ By creating a simple function algorithm that you pass to the createTransaction p
 To implements your own algorithm, you might want to take example on the [already existing one](https://github.com/dashpay/platform/tree/master/packages/wallet-lib/src/utils/coinSelections/strategies).  
 You will need your algorithm to handle multiples parameter : 
 
-- `utxosList` - An array consisting of multiple [unspent output](https://github.com/dashevo/dashcore-lib/blob/master/docs/unspentoutput.md).
-- `outputsList` - An array consisting of multiple [Output](https://github.com/dashevo/dashcore-lib/blob/master/docs/transaction.md#handling-outputs).
+- `utxosList` - An array consisting of multiple [unspent output](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/unspentoutput.md).
+- `outputsList` - An array consisting of multiple [Output](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/transaction.md#handling-outputs).
 - `deductFee` - A simple boolean that indicates if we want to deduct fee from our outputs. (Can be useful for a control on how much we wish to spend at maximum).
 - `feeCategory` - A simple enum of the fee category (normal, slow, fast,...).
 
