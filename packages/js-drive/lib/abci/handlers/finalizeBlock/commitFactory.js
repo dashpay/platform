@@ -4,9 +4,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
 
 /**
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContextStack} blockExecutionContextStack
- * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
- * @param {rotateSignedStore} rotateSignedStore
+ * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {GroveDBStore} groveDBStore
  * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
@@ -15,9 +13,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
  */
 function commitFactory(
   blockExecutionContext,
-  blockExecutionContextStack,
-  blockExecutionContextStackRepository,
-  rotateSignedStore,
+  blockExecutionContextRepository,
   dataContractCache,
   groveDBStore,
   coreRpcClient,
@@ -46,10 +42,8 @@ function commitFactory(
     const clonedBlockExecutionContext = new BlockExecutionContext();
     clonedBlockExecutionContext.populate(blockExecutionContext);
 
-    blockExecutionContextStack.add(clonedBlockExecutionContext);
-
-    blockExecutionContextStackRepository.store(
-      blockExecutionContextStack,
+    blockExecutionContextRepository.store(
+      clonedBlockExecutionContext,
       {
         useTransaction: true,
       },
@@ -92,24 +86,6 @@ function commitFactory(
         await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
       }
     }
-
-    // Rotate signed store
-    // Create a new GroveDB checkpoint and remove the old one
-    // TODO: We do not rotate signed state for now
-    // await rotateSignedStore(blockHeight);
-
-    const appHash = await groveDBStore.getRootHash();
-
-    consensusLogger.info(
-      {
-        appHash: appHash.toString('hex').toUpperCase(),
-      },
-      `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
-    );
-
-    return {
-      appHash,
-    };
   }
 
   return commit;

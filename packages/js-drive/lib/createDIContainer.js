@@ -93,10 +93,14 @@ const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHa
 const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
 const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
 
-const beginBlockFactory = require('./abci/handlers/finalizeBlock/beginBlockFactory');
 const commitFactory = require('./abci/handlers/finalizeBlock/commitFactory');
-const deliverTxFactory = require('./abci/handlers/finalizeBlock/deliverTxFactory');
-const endBlockFactory = require('./abci/handlers/finalizeBlock/endBlockFactory');
+
+const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
+const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
+const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
+const rotateValidatorsFactory = require('./abci/handlers/proposal/rotateValidatorsFactory');
+const updateConsensusParamsFactory = require('./abci/handlers/proposal/updateConsensusParamsFactory');
+const updateCoreChainLockFactory = require('./abci/handlers/proposal/updateCoreChainLockFactory');
 
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
@@ -116,9 +120,7 @@ const createValidatorSetUpdate = require('./abci/handlers/validator/createValida
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
-const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
-const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
-const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
+const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -454,10 +456,6 @@ function createDIContainer(options) {
     rsAbci: asFunction((rsDrive) => rsDrive.getAbci()).singleton(),
 
     groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
-
-    signedGroveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
-
-    rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
   });
 
   /**
@@ -466,18 +464,7 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
-    signedIdentityRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
-
     publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
-
-    signedPublicKeyToIdentitiesRepository: asFunction((
-      signedGroveDBStore,
-    ) => (
-      new PublicKeyToIdentitiesStoreRepository(signedGroveDBStore)
-    )).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
@@ -508,12 +495,6 @@ function createDIContainer(options) {
    */
   container.register({
     spentAssetLockTransactionsRepository: asClass(SpentAssetLockTransactionsRepository).singleton(),
-
-    signedSpentAssetLockTransactionsRepository: asFunction((
-      signedGroveDBStore,
-    ) => (
-      new SpentAssetLockTransactionsRepository(signedGroveDBStore)
-    )).singleton(),
   });
 
   /**
@@ -525,16 +506,7 @@ function createDIContainer(options) {
       decodeProtocolEntity,
     ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
 
-    signedDataContractRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (new DataContractStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
-
     dataContractCache: asFunction((dataContractCacheSize) => (
-      new LRUCache(dataContractCacheSize)
-    )).singleton(),
-
-    signedDataContractCache: asFunction((dataContractCacheSize) => (
       new LRUCache(dataContractCacheSize)
     )).singleton(),
   });
@@ -547,40 +519,9 @@ function createDIContainer(options) {
       groveDBStore,
     ) => new DocumentRepository(groveDBStore)).singleton(),
 
-    signedDocumentRepository: asFunction((
-      signedGroveDBStore,
-    ) => (new DocumentRepository(
-      signedGroveDBStore,
-    ))).singleton(),
-
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
     fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
     proveDocuments: asFunction(proveDocumentsFactory).singleton(),
-    fetchSignedDataContract: asFunction((
-      signedDataContractRepository,
-      signedDataContractCache,
-    ) => (
-      fetchDataContractFactory(
-        signedDataContractRepository,
-        signedDataContractCache,
-      )
-    )).singleton(),
-    fetchSignedDocuments: asFunction((
-      signedDocumentRepository,
-      fetchSignedDataContract,
-    ) => (
-      fetchDocumentsFactory(
-        signedDocumentRepository,
-        fetchSignedDataContract,
-      )
-    )).singleton(),
-    proveSignedDocuments: asFunction((
-      signedDocumentRepository,
-    ) => (
-      proveDocumentsFactory(
-        signedDocumentRepository,
-      )
-    )).singleton(),
   });
 
   /**
@@ -588,8 +529,7 @@ function createDIContainer(options) {
    */
   container.register({
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
-    blockExecutionContextStack: asClass(BlockExecutionContextStack).singleton(),
-    blockExecutionContextStackRepository: asClass(BlockExecutionContextStackRepository).singleton(),
+    blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
   });
 
   /**
@@ -807,6 +747,21 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       endBlockHandler,
     ) => enrichErrorWithConsensusError(endBlockHandler)).singleton(),
+    rotateValidatorsHandler: asFunction(rotateValidatorsFactory).singleton(),
+    rotateValidators: asFunction((
+      enrichErrorWithConsensusError,
+      rotateValidatorsHandler,
+    ) => enrichErrorWithConsensusError(rotateValidatorsHandler)).singleton(),
+    updateConsensusParamsHandler: asFunction(updateConsensusParamsFactory).singleton(),
+    updateConsensusParams: asFunction((
+      enrichErrorWithConsensusError,
+      updateConsensusParamsHandler,
+    ) => enrichErrorWithConsensusError(updateConsensusParamsHandler)).singleton(),
+    updateCoreChainLockHandler: asFunction(updateCoreChainLockFactory).singleton(),
+    updateCoreChainLock: asFunction((
+      enrichErrorWithConsensusError,
+      updateCoreChainLockHandler,
+    ) => enrichErrorWithConsensusError(updateCoreChainLockHandler)).singleton(),
     initChainHandler: asFunction(initChainHandlerFactory).singleton(),
     queryHandler: asFunction(queryHandlerFactory).singleton(),
     extendVoteHandler: asFunction(extendVoteHandlerFactory).singleton(),

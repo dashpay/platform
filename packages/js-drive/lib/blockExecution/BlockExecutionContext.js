@@ -20,7 +20,7 @@ const Long = require('long');
 
 class BlockExecutionContext {
   constructor() {
-    this.reset();
+    this.init();
   }
 
   /**
@@ -270,6 +270,75 @@ class BlockExecutionContext {
   }
 
   /**
+   * @param {Long} height
+   * @return {BlockExecutionContext}
+   */
+  setPreviousHeight(height) {
+    this.previousHeight = height;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {Long}
+   */
+  getPreviousHeight() {
+    return this.previousHeight;
+  }
+
+  /**
+   *
+   * @param {ITimestamp} time
+   * @return {BlockExecutionContext}
+   */
+  setPreviousTime(time) {
+    this.previousBlockTime = time;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {ITimestamp}
+   */
+  getPreviousTime() {
+    return this.previousBlockTime;
+  }
+
+  /**
+   *
+   * @param {number} coreChainLockedHeight
+   * @return {BlockExecutionContext}
+   */
+  setPreviousCoreChainLockedHeight(coreChainLockedHeight) {
+    this.previousCoreChainLockedHeight = coreChainLockedHeight;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {number}
+   */
+  getPreviousCoreChainLockedHeight() {
+    return this.previousCoreChainLockedHeight;
+  }
+
+  /**
+   * @private
+   *
+   * init store
+   */
+  init() {
+    this.previousBlockTime = null;
+    this.previousHeight = null;
+    this.previousCoreChainLockedHeight = null;
+
+    this.reset();
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -313,6 +382,9 @@ class BlockExecutionContext {
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
+    this.previousBlockTime = blockExecutionContext.previousBlockTime;
+    this.previousHeight = blockExecutionContext.previousHeight;
+    this.previousCoreChainLockedHeight = blockExecutionContext.previousCoreChainLockedHeight;
     this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
   }
 
@@ -340,6 +412,13 @@ class BlockExecutionContext {
     this.height = Long.fromNumber(object.height);
     this.coreChainLockedHeight = object.coreChainLockedHeight;
     this.version = Consensus.fromObject(object.version);
+
+    this.previousBlockTime = new Timestamp({
+      seconds: Long.fromNumber(object.previousBlockTime.seconds),
+    });
+
+    this.previousHeight = Long.fromNumber(object.previousHeight);
+    this.previousCoreChainLockedHeight = object.previousCoreChainLockedHeight;
     this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
   }
 
@@ -357,6 +436,9 @@ class BlockExecutionContext {
    *  cumulativeStorageFee: number,
    *  coreChainLockedHeight: number,
    *  lastCommitInfo: number,
+   *  previousBlockTime: number,
+   *  previousHeight: number,
+   *  previousCoreChainLockedHeight: number,
    *  withdrawalTransactionsMap: Object,
    * }}
    */
@@ -379,6 +461,9 @@ class BlockExecutionContext {
       lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
+      previousBlockTime: this.previousBlockTime,
+      previousHeight: this.previousHeight,
+      previousCoreChainLockedHeight: this.previousCoreChainLockedHeight,
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
     };
 

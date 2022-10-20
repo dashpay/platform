@@ -67,7 +67,7 @@ function deliverTxFactory(
     const consensusLogger = logger.child({
       height: blockHeight.toString(),
       txId: stHash,
-      abciMethod: 'finalizeBlock#deliverTx',
+      abciMethod: 'deliverTx',
     });
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
