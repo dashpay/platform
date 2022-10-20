@@ -23,7 +23,7 @@ async function blsPrivateKeyFactory(privateKey) {
     bytes = privateKey;
   }
 
-  return BlsPrivateKey.fromBytes(bytes, true);
+  return BlsPrivateKey.from_bytes(bytes, true);
 }
 
 module.exports = blsPrivateKeyFactory;

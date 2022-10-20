@@ -110,7 +110,7 @@ function validatePublicKeysFactory(validator, jsonSchema, bls) {
           }
           case IdentityPublicKey.TYPES.BLS12_381: {
             try {
-              bls.PublicKey.fromBytes(
+              bls.G1Element.from_bytes(
                 Uint8Array.from(rawPublicKey.data),
               );
             } catch (e) {

@@ -178,8 +178,9 @@ class AbstractStateTransition {
         break;
       }
       case IdentityPublicKey.TYPES.BLS12_381: {
+        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
         const privateKeyModel = await blsPrivateKeyFactory(privateKey);
-        const blsSignature = privateKeyModel.sign(new Uint8Array(data)).serialize();
+        const blsSignature = BasicSchemeMPL.sign(privateKeyModel, data).serialize();
 
         this.setSignature(Buffer.from(blsSignature));
         break;
@@ -264,7 +265,7 @@ class AbstractStateTransition {
   /**
    * Verify signature with public key
    * @protected
-   * @param {string|Buffer|Uint8Array|PublicKey} publicKey string must be hex
+   * @param {string|Buffer|Uint8Array|G1Element} publicKey string must be hex
    * @returns {Promise<boolean>}
    */
   async verifyBLSSignatureByPublicKey(publicKey) {
@@ -277,11 +278,10 @@ class AbstractStateTransition {
 
     const publicKeyModel = await blsPublicKeyFactory(publicKey);
 
-    const { Signature: BlsSignature, AggregationInfo } = await BlsSignatures.getInstance();
-    const aggregationInfo = AggregationInfo.fromMsg(publicKeyModel, new Uint8Array(data));
-    const blsSignature = BlsSignature.fromBytesAndAggregationInfo(signature, aggregationInfo);
+    const { BasicSchemeMPL, G2Element } = await BlsSignatures.getInstance();
+    const blsSignature = G2Element.from_bytes(signature);
 
-    return blsSignature.verify();
+    return BasicSchemeMPL.verify(publicKeyModel, data, blsSignature);
   }
 
   /**

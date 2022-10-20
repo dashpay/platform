@@ -47,6 +47,7 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
+    "@dashevo/bls": "~1.0.0-beta.2",
     "@dashevo/dashcore-lib": "~0.19.44",
     "@dashevo/dashd-rpc": "^2.4.2",
     "@dashevo/dashpay-contract": "workspace:*",
@@ -62,7 +63,6 @@
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
     "axios": "^0.27.2",
-    "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
     "cron": "^2.1.0",
     "dash": "workspace:*",

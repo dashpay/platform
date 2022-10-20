@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const publicIp = require('public-ip');
 
-const BlsSignatures = require('bls-signatures');
+const BlsSignatures = require('@dashevo/bls');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
@@ -107,10 +107,10 @@ function setupRegularPresetTaskFactory(
           const operatorBlsPrivateKeyBuffer = Buffer.from(ctx.operatorBlsPrivateKey, 'hex');
 
           const blsSignatures = await BlsSignatures();
-          const { PrivateKey: BlsPrivateKey } = blsSignatures;
+          const { PrivateKey: BlsPrivateKey, BasicSchemeMPL } = blsSignatures;
 
-          const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
-          const publicKey = privateKey.getPublicKey();
+          const privateKey = BlsPrivateKey.from_bytes(operatorBlsPrivateKeyBuffer, true);
+          const publicKey = BasicSchemeMPL.sk_to_g1(privateKey);
           const publicKeyHex = Buffer.from(publicKey.serialize()).toString('hex');
 
           ctx.config.set('core.masternode.operator.privateKey', ctx.operatorBlsPrivateKey);

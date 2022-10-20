@@ -3,12 +3,12 @@ const BlsSignatures = require('./bls');
 /**
  * Create an instance of BlsPrivateKey
  *
- * @param {string|Buffer|Uint8Array|PrivateKey} publicKey string must be hex
- * @returns {Promise<PublicKey>}
+ * @param {string|Buffer|Uint8Array|G1Element} publicKey string must be hex
+ * @returns {Promise<G1Element>}
    */
 async function blsPublicKeyFactory(publicKey) {
   const blsSignatures = await BlsSignatures.getInstance();
-  const { PublicKey } = blsSignatures;
+  const { G1Element } = blsSignatures;
 
   let bytes;
 
@@ -17,13 +17,13 @@ async function blsPublicKeyFactory(publicKey) {
     bytes = new Uint8Array(buf);
   } else if (Buffer.isBuffer(publicKey)) {
     bytes = new Uint8Array(publicKey);
-  } else if (publicKey instanceof PublicKey) {
+  } else if (publicKey instanceof G1Element) {
     return publicKey;
   } else {
     bytes = publicKey;
   }
 
-  return PublicKey.fromBytes(bytes);
+  return G1Element.from_bytes(bytes);
 }
 
 module.exports = blsPublicKeyFactory;
