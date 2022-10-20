@@ -1,3 +1,32 @@
+## [0.23.0-alpha.7](https://github.com/dashpay/platform/compare/v0.23.0-alpha.6...v0.23.0-alpha.7) (2022-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous data is not compatible with new Drive
+
+
+### Bug Fixes
+
+* **dapi:** caching of headers prone to reorgs ([#578](https://github.com/dashpay/platform/issues/578))
+
+
+### Documentation
+
+* update URL from dashevo to dashpay ([#579](https://github.com/dashpay/platform/issues/579))
+
+
+### Build System
+
+* **dapi-grpc:** update grpc protoc image ([#553](https://github.com/dashpay/platform/issues/553))
+* remove buildx bake workaround ([#541](https://github.com/dashpay/platform/issues/541))
+
+
+### Miscellaneous Chores
+
+* **drive:** update RS Drive to 0.23.0-dev.9 ([#588](https://github.com/dashpay/platform/issues/588))
+
+
 ## [0.24.0-dev.2](https://github.com/dashpay/platform/compare/v0.23.0-alpha.5...v0.24.0-dev.2) (2022-10-13)
 
 
