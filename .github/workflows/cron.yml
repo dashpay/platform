@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     name: Test all packages
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Cancel previous runs
@@ -50,7 +50,7 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v1
         with:
-          version: v0.6.3
+          version: v0.9.1
           install: true
           driver-opts: image=moby/buildkit:buildx-stable-1
 
@@ -68,6 +68,11 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
+
+      - name: Setup Firefox
+        uses: browser-actions/setup-firefox@latest
+        with:
+          firefox-version: 'latest'
 
       - name: Setup local network
         run: yarn configure
