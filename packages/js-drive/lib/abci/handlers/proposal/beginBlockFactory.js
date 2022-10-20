@@ -24,7 +24,6 @@ const timeToMillis = require('../../../util/timeToMillis');
 function beginBlockFactory(
   groveDBStore,
   blockExecutionContext,
-  blockExecutionContextStack,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -58,7 +57,7 @@ function beginBlockFactory(
 
     const consensusLogger = logger.child({
       height: height.toString(),
-      abciMethod: 'finalizeBlock#beginBlock',
+      abciMethod: 'beginBlock',
     });
 
     // Validate protocol version
@@ -79,19 +78,6 @@ function beginBlockFactory(
     await waitForChainLockedHeight(coreChainLockedHeight);
 
     // Set block execution context
-
-    // in case previous block execution failed in process
-    // and not committed. We need to make sure
-    // previous context properly reset.
-    const previousContext = blockExecutionContextStack.getFirst();
-    if (
-      previousContext
-      && previousContext.getHeight()
-      && previousContext.getHeight().equals(height)
-    ) {
-      // Remove failed block context from the stack
-      blockExecutionContextStack.removeFirst();
-    }
 
     blockExecutionContext.reset();
 
@@ -125,8 +111,8 @@ function beginBlockFactory(
       proposerProTxHash,
     };
 
-    if (previousContext) {
-      const previousTime = previousContext.getTime();
+    if (blockExecutionContext.getPreviousTime()) {
+      const previousTime = blockExecutionContext.getPreviousTime();
 
       rsRequest.previousBlockTimeMs = timeToMillis(
         previousTime.seconds, previousTime.nanos,
@@ -148,7 +134,6 @@ function beginBlockFactory(
     blockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
 
     // Update SML
-
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
       coreChainLockedHeight,
       {

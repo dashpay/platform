@@ -9,19 +9,15 @@ const {
 /**
  *
  * @return {finalizeBlockHandler}
+ * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {beginBlock} beginBlock
- * @param {deliverTx} deliverTx
- * @param {endBlock} endBlock
  * @param {commit} commit
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  */
 function finalizeBlockHandlerFactory(
+  groveDBStore,
   blockExecutionContext,
-  beginBlock,
-  deliverTx,
-  endBlock,
   commit,
   logger,
   executionTimer,
@@ -39,13 +35,10 @@ function finalizeBlockHandlerFactory(
     executionTimer.startTimer('blockExecution');
 
     const {
-      txs,
       decidedLastCommit: lastCommitInfo,
       height,
       time,
       coreChainLockedHeight,
-      version,
-      proposerProTxHash,
     } = request;
 
     const consensusLogger = logger.child({
@@ -56,26 +49,11 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    await beginBlock(
-      {
-        lastCommitInfo,
-        height,
-        coreChainLockedHeight,
-        version,
-        time,
-        proposerProTxHash: Buffer.from(proposerProTxHash),
-      },
-      consensusLogger,
-    );
+    blockExecutionContext.setPreviousTime(time);
+    blockExecutionContext.setPreviousHeight(height);
+    blockExecutionContext.setPreviousCoreChainLockedHeight(coreChainLockedHeight);
 
-    const txResults = [];
-
-    for (const tx of txs) {
-      txResults.push(await deliverTx(tx, consensusLogger));
-    }
-
-    const endBlockResult = await endBlock(height, consensusLogger);
-    const commitResult = await commit(lastCommitInfo, consensusLogger);
+    await commit(lastCommitInfo, consensusLogger);
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
     const blockHeight = blockExecutionContext.getHeight();
@@ -87,11 +65,7 @@ function finalizeBlockHandlerFactory(
       `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
     );
 
-    return new ResponseFinalizeBlock({
-      txResults,
-      ...commitResult,
-      ...endBlockResult,
-    });
+    return new ResponseFinalizeBlock();
   }
 
   return finalizeBlockHandler;
