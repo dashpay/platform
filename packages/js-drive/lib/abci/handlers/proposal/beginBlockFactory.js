@@ -109,6 +109,7 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: timeToMillis(time.seconds, time.nanos),
       proposerProTxHash,
+      validatorSetQuorumHash: Buffer.alloc(32),
     };
 
     if (blockExecutionContext.getPreviousTime()) {
