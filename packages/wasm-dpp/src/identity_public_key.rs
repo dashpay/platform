@@ -22,6 +22,8 @@ pub(crate) struct JsPublicKey {
     pub data: JsBuffer,
     pub read_only: bool,
     pub disabled_at: Option<TimestampMillis>,
+    #[serde(default)]
+    pub signature: JsBuffer,
 }
 
 impl From<JsPublicKey> for IdentityPublicKey {
@@ -34,6 +36,7 @@ impl From<JsPublicKey> for IdentityPublicKey {
             data: js_pk.data.data.clone(),
             read_only: js_pk.read_only,
             disabled_at: js_pk.disabled_at,
+            signature: js_pk.signature.data,
         }
     }
 }
@@ -48,6 +51,7 @@ impl From<&JsPublicKey> for IdentityPublicKey {
             data: js_pk.data.data.clone(),
             read_only: js_pk.read_only,
             disabled_at: js_pk.disabled_at,
+            signature: js_pk.signature.data.clone(),
         }
     }
 }
@@ -214,7 +218,8 @@ impl IdentityPublicKeyWasm {
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let val = self
             .0
-            .to_raw_json_object()
+            // !fixme
+            .to_raw_json_object(false)
             .map_err(|e| from_dpp_err(e.into()))?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)
