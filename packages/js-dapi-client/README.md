@@ -1,8 +1,8 @@
 # DAPI Client
 
 [![NPM Version](https://img.shields.io/npm/v/@dashevo/dapi-client)](https://www.npmjs.com/package/@dashevo/dapi-client)
-[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
+[![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
 Client library used to access Dash DAPI endpoints
@@ -12,7 +12,7 @@ Platform via the decentralized API ([DAPI](https://github.com/dashevo/dapi))
 hosted on Dash masternodes.
 
  - `DAPI-Client` provides automatic server (masternode) discovery using either a default seed node or a user-supplied one
- - `DAPI-Client` maps to DAPI's [RPC](https://github.com/dashevo/platform/tree/master/packages/dapi/lib/rpcServer/commands) and [gRPC](https://github.com/dashevo/platform/tree/master/packages/dapi/lib/grpcServer/handlers) endpoints
+ - `DAPI-Client` maps to DAPI's [RPC](https://github.com/dashpay/platform/tree/master/packages/dapi/lib/rpcServer/commands) and [gRPC](https://github.com/dashpay/platform/tree/master/packages/dapi/lib/grpcServer/handlers) endpoints
 
 ## Table of Contents
 - [Install](#install)
@@ -106,7 +106,7 @@ More extensive documentation available at https://dashpay.github.io/platform/DAP
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
 
 ## License
 
