@@ -1,3 +1,11 @@
+## [0.24.0-dev.3](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.24.0-dev.3) (2022-10-20)
+
+
+### Features
+
+* **drive:** AssetUnlock transactions processing ([#530](https://github.com/dashpay/platform/issues/530))
+
+
 ## [0.23.0-alpha.7](https://github.com/dashpay/platform/compare/v0.23.0-alpha.6...v0.23.0-alpha.7) (2022-10-18)
 
 
