@@ -186,46 +186,6 @@ class BlockExecutionContext {
   }
 
   /**
-   * Increment number of valid txs processed
-   *
-   * @return {BlockExecutionContext}
-   */
-  incrementValidTxCount() {
-    this.validTxs += 1;
-
-    return this;
-  }
-
-  /**
-   * Increment number of invalid txs processed
-   *
-   * @return {BlockExecutionContext}
-   */
-  incrementInvalidTxCount() {
-    this.invalidTxs += 1;
-
-    return this;
-  }
-
-  /**
-   * Get number of valid txs processed
-   *
-   * @return {number}
-   */
-  getValidTxCount() {
-    return this.validTxs;
-  }
-
-  /**
-   * Get number of invalid txs processed
-   *
-   * @return {number}
-   */
-  getInvalidTxCount() {
-    return this.invalidTxs;
-  }
-
-  /**
    * Set consensus logger
    *
    * @param {BaseLogger} logger
@@ -350,8 +310,6 @@ class BlockExecutionContext {
     this.version = null;
     this.time = null;
     this.lastCommitInfo = null;
-    this.validTxs = 0;
-    this.invalidTxs = 0;
     this.consensusLogger = null;
     this.withdrawalTransactionsMap = {};
   }
@@ -379,8 +337,6 @@ class BlockExecutionContext {
     this.height = blockExecutionContext.height;
     this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
     this.version = blockExecutionContext.version;
-    this.validTxs = blockExecutionContext.validTxs;
-    this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
     this.previousBlockTime = blockExecutionContext.previousBlockTime;
     this.previousHeight = blockExecutionContext.previousHeight;
@@ -399,8 +355,6 @@ class BlockExecutionContext {
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
     this.cumulativeProcessingFee = object.cumulativeProcessingFee;
     this.cumulativeStorageFee = object.cumulativeStorageFee;
-    this.validTxs = object.validTxs;
-    this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
 
     if (object.time) {
@@ -427,11 +381,9 @@ class BlockExecutionContext {
    * @param {boolean} [options.skipConsensusLogger=false]
    * @return {{
    *  dataContracts: Object[],
-   *  invalidTxs: number,
    *  height: number,
    *  version: Object,
    *  time: Object,
-   *  validTxs: number,
    *  cumulativeProcessingFee: number,
    *  cumulativeStorageFee: number,
    *  coreChainLockedHeight: number,
@@ -459,8 +411,6 @@ class BlockExecutionContext {
       version: this.version ? this.version.toJSON() : null,
       coreChainLockedHeight: this.coreChainLockedHeight,
       lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
-      validTxs: this.validTxs,
-      invalidTxs: this.invalidTxs,
       previousBlockTime: this.previousBlockTime,
       previousHeight: this.previousHeight,
       previousCoreChainLockedHeight: this.previousCoreChainLockedHeight,

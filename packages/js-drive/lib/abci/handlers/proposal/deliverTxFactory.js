@@ -74,20 +74,13 @@ function deliverTxFactory(
 
     consensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
-    let stateTransition;
-    try {
-      stateTransition = await transactionalUnserializeStateTransition(
-        stateTransitionByteArray,
-        {
-          logger: consensusLogger,
-          executionTimer,
-        },
-      );
-    } catch (e) {
-      blockExecutionContext.incrementInvalidTxCount();
-
-      throw e;
-    }
+    const stateTransition = await transactionalUnserializeStateTransition(
+      stateTransitionByteArray,
+      {
+        logger: consensusLogger,
+        executionTimer,
+      },
+    );
 
     // Keep only actual operations
     const stateTransitionExecutionContext = stateTransition.getExecutionContext();
@@ -110,8 +103,6 @@ function deliverTxFactory(
         consensusError,
       });
 
-      blockExecutionContext.incrementInvalidTxCount();
-
       throw new DPPValidationAbciError(message, result.getFirstError());
     }
 
@@ -123,8 +114,6 @@ function deliverTxFactory(
     await transactionalDpp.stateTransition.apply(stateTransition);
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
-
-    blockExecutionContext.incrementValidTxCount();
 
     // Reduce an identity balance and accumulate fees for all STs in the block
     // in order to store them in credits distribution pool
