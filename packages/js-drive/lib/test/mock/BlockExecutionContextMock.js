@@ -15,8 +15,6 @@
  * @method getLastCommitInfo
  * @method getValidTxCount
  * @method getInvalidTxCount
- * @method incrementValidTxCount
- * @method incrementInvalidTxCount
  * @method setConsensusLogger
  * @method getConsensusLogger
  */
@@ -43,10 +41,6 @@ class BlockExecutionContextMock {
     this.getVersion = sinon.stub();
     this.setLastCommitInfo = sinon.stub();
     this.getLastCommitInfo = sinon.stub();
-    this.getValidTxCount = sinon.stub();
-    this.getInvalidTxCount = sinon.stub();
-    this.incrementValidTxCount = sinon.stub();
-    this.incrementInvalidTxCount = sinon.stub();
     this.setConsensusLogger = sinon.stub();
     this.getConsensusLogger = sinon.stub();
     this.setWithdrawalTransactionsMap = sinon.stub();

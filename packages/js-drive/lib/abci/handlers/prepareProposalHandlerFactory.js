@@ -20,9 +20,8 @@ const txAction = {
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
- * @param {updateConsensusParams} updateConsensusParams
- * @param {rotateValidators} rotateValidators
  * @param {updateCoreChainLock} updateCoreChainLock
+ * @param {ExecutionTimer} executionTimer
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
@@ -32,9 +31,8 @@ function prepareProposalHandlerFactory(
   blockExecutionContext,
   beginBlock,
   endBlock,
-  updateConsensusParams,
-  rotateValidators,
   updateCoreChainLock,
+  executionTimer,
 ) {
   /**
    * @typedef prepareProposalHandler
@@ -57,6 +55,21 @@ function prepareProposalHandlerFactory(
       abciMethod: 'prepareProposal',
     });
 
+    consensusLogger.info(
+      {
+        height,
+      },
+      `Prepare proposal #${height}`,
+    );
+    consensusLogger.debug('PrepareProposal ABCI method requested');
+    consensusLogger.trace({ abciRequest: request });
+
+    executionTimer.clearTimer('prepareProposal');
+    executionTimer.startTimer('prepareProposal');
+
+    executionTimer.clearTimer('blockExecution');
+    executionTimer.startTimer('blockExecution');
+
     await beginBlock(
       {
         lastCommitInfo,
@@ -73,6 +86,8 @@ function prepareProposalHandlerFactory(
 
     const txRecords = [];
     const txResults = [];
+    let validTxCount = 0;
+    let invalidTxCount = 0;
 
     for (const tx of txs) {
       totalSizeBytes += tx.length;
@@ -85,35 +100,40 @@ function prepareProposalHandlerFactory(
         tx,
         action: txAction.UNMODIFIED,
       });
-      txResults.push(await deliverTx(tx, consensusLogger));
+
+      const txResult = await deliverTx(tx, consensusLogger);
+
+      if (txResult.code === 0) {
+        validTxCount += 1;
+      } else {
+        invalidTxCount += 1;
+      }
+
+      txResults.push(txResult);
     }
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
-    await endBlock(height, consensusLogger);
+    const processingFees = blockExecutionContext.getCumulativeProcessingFee();
+    const storageFees = blockExecutionContext.getCumulativeStorageFee();
 
-    const consensusParamUpdates = await updateConsensusParams(height, consensusLogger);
-    const validatorSetUpdate = await rotateValidators(height, consensusLogger);
     const coreChainLockUpdate = await updateCoreChainLock(consensusLogger);
 
-    const validTxCount = blockExecutionContext.getValidTxCount();
-    const invalidTxCount = blockExecutionContext.getInvalidTxCount();
+    const {
+      consensusParamUpdates,
+      validatorSetUpdate,
+      appHash,
+    } = await endBlock(height, processingFees, storageFees, consensusLogger);
+
+    const prepareProposalTimings = executionTimer.stopTimer('prepareProposal');
 
     consensusLogger.info(
       {
         validTxCount,
         invalidTxCount,
       },
-      `Prepare proposal #${height} (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
-    );
-
-    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    consensusLogger.info(
-      {
-        appHash: appHash.toString('hex').toUpperCase(),
-      },
-      `Block prepareProposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`,
+      `Prepare proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
+      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}). Took ${prepareProposalTimings} seconds`,
     );
 
     return new ResponsePrepareProposal({

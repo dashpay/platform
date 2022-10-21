@@ -93,8 +93,6 @@ const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHa
 const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
 const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
 
-const commitFactory = require('./abci/handlers/finalizeBlock/commitFactory');
-
 const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
 const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
 const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
@@ -728,11 +726,6 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       beginBlockHandler,
     ) => enrichErrorWithConsensusError(beginBlockHandler)).singleton(),
-    commitHandler: asFunction(commitFactory).singleton(),
-    commit: asFunction((
-      enrichErrorWithConsensusError,
-      commitHandler,
-    ) => enrichErrorWithConsensusError(commitHandler)).singleton(),
     deliverTxHandler: asFunction(deliverTxFactory).singleton(),
     deliverTx: asFunction((
       wrapInErrorHandler,

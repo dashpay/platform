@@ -19,8 +19,7 @@ const proposalStatus = {
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
- * @param {updateConsensusParams} updateConsensusParams
- * @param {rotateValidators} rotateValidators
+ * @param {ExecutionTimer} executionTimer
  * @return {processProposalHandler}
  */
 function processProposalHandlerFactory(
@@ -30,26 +29,42 @@ function processProposalHandlerFactory(
   blockExecutionContext,
   beginBlock,
   endBlock,
-  updateConsensusParams,
-  rotateValidators,
+  executionTimer,
 ) {
   /**
    * @typedef processProposalHandler
    * @return {Promise<abci.ResponseProcessProposal>}
    */
-  async function processProposalHandler({
-    height,
-    txs,
-    coreChainLockedHeight,
-    version,
-    proposedLastCommit: lastCommitInfo,
-    time,
-    proposerProTxHash,
-  }) {
+  async function processProposalHandler(request) {
+    const {
+      height,
+      txs,
+      coreChainLockedHeight,
+      version,
+      proposedLastCommit: lastCommitInfo,
+      time,
+      proposerProTxHash,
+    } = request;
+
     const consensusLogger = logger.child({
       height: height.toString(),
       abciMethod: 'processProposal',
     });
+
+    consensusLogger.info(
+      {
+        height,
+      },
+      `Process proposal #${height}`,
+    );
+    consensusLogger.debug('ProcessProposal ABCI method requested');
+    consensusLogger.trace({ abciRequest: request });
+
+    executionTimer.clearTimer('processProposal');
+    executionTimer.startTimer('processProposal');
+
+    executionTimer.clearTimer('blockExecution');
+    executionTimer.startTimer('blockExecution');
 
     await beginBlock(
       {
@@ -64,36 +79,41 @@ function processProposalHandlerFactory(
     );
 
     const txResults = [];
+    let validTxCount = 0;
+    let invalidTxCount = 0;
 
     for (const tx of txs) {
-      txResults.push(await deliverTx(tx, consensusLogger));
+      const txResult = await deliverTx(tx, consensusLogger);
+
+      if (txResult.code === 0) {
+        validTxCount += 1;
+      } else {
+        invalidTxCount += 1;
+      }
+
+      txResults.push(txResult);
     }
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
-    await endBlock(height, consensusLogger);
+    const processingFees = blockExecutionContext.getCumulativeProcessingFee();
+    const storageFees = blockExecutionContext.getCumulativeStorageFee();
 
-    const consensusParamUpdates = await updateConsensusParams(height, consensusLogger);
-    const validatorSetUpdate = await rotateValidators(height, consensusLogger);
+    const {
+      consensusParamUpdates,
+      validatorSetUpdate,
+      appHash,
+    } = await endBlock(height, processingFees, storageFees, consensusLogger);
 
-    const validTxCount = blockExecutionContext.getValidTxCount();
-    const invalidTxCount = blockExecutionContext.getInvalidTxCount();
+    const processProposalTimings = executionTimer.stopTimer('processProposal');
 
     consensusLogger.info(
       {
         validTxCount,
         invalidTxCount,
       },
-      `Process proposal #${height} (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
-    );
-
-    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    consensusLogger.info(
-      {
-        appHash: appHash.toString('hex').toUpperCase(),
-      },
-      `Block prepareProposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`,
+      `Process proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
+      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}). Took ${processProposalTimings} seconds`,
     );
 
     return new ResponseProcessProposal({

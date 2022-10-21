@@ -8,6 +8,9 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  * @param {RSAbci} rsAbci
+ * @param {updateConsensusParams} updateConsensusParams
+ * @param {rotateValidators} rotateValidators
+ * @param {GroveDBStore} groveDBStore
  *
  * @return {endBlock}
  */
@@ -17,11 +20,16 @@ function endBlockFactory(
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
   rsAbci,
+  updateConsensusParams,
+  rotateValidators,
+  groveDBStore,
 ) {
   /**
    * @typedef endBlock
    *
    * @param {number} height
+   * @param {number} processingFees
+   * @param {number} storageFees
    * @param {BaseLogger} logger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
@@ -29,7 +37,12 @@ function endBlockFactory(
    *   nextCoreChainLockUpdate: CoreChainLock,
    * }>}
    */
-  async function endBlock(height, logger) {
+  async function endBlock(
+    height,
+    processingFees,
+    storageFees,
+    logger,
+  ) {
     const consensusLogger = logger.child({
       height: height.toString(),
       abciMethod: 'endBlock',
@@ -40,8 +53,6 @@ function endBlockFactory(
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
     // Call RS ABCI
-    const processingFees = blockExecutionContext.getCumulativeProcessingFee();
-    const storageFees = blockExecutionContext.getCumulativeStorageFee();
 
     const rsRequest = {
       fees: {
@@ -88,6 +99,16 @@ function endBlockFactory(
         paidEpochIndex: rsResponse.paidEpochIndex,
       }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
+
+    const consensusParamUpdates = await updateConsensusParams(height, consensusLogger);
+    const validatorSetUpdate = await rotateValidators(height, consensusLogger);
+    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
+
+    return {
+      consensusParamUpdates,
+      validatorSetUpdate,
+      appHash,
+    };
   }
 
   return endBlock;
