@@ -52,16 +52,22 @@ $ dashmate update
 $ dashmate start
 ```
 
-If the platform layer has been wiped, you must additionally reset platform data:
+In some cases, you must also additionally reset platform data:
+
+* Upgrade contains non-compatible changes (f.e. switching between v22/v23)
+* Command ``dashmate setup`` finished with errors or interrupted in the process
+* Platform layer has been wiped in the network
 
 ```bash
 $ dashmate stop
 $ npm update -g dashmate
 $ dashmate reset --platform-only --hard
 $ dashmate update
-$ dashmate setup -k <bls-key>
+$ dashmate setup
 $ dashmate start
 ```
+
+Before applying an upgrade, local network should be stopped and reset via ``dashmate reset --hard``. 
 
 ## Usage
 
@@ -232,11 +238,58 @@ DESCRIPTION
   Reset node data
 ```
 
+To reset a node:
+```bash
+$ dashmate reset
+```
+
+### Reindex dashcore chain data
+
+The `reindex` command rebuilds the block chain index using the downloaded block data.
+
+It modifies the configuration, runs the core container in `reindex=1` mode, waits until it fully resynces, and returns it to the normal mode.
+
+The process is interactive (shows progress) and can be interrupted any time, but you cannot start your configuration until the resync is fully complete.
+
+The `reindex` command works for regular and local configurations.
+
+```
+Reindex Core
+
+USAGE
+  $ dashmate core reindex [-v] [--config <value>]
+
+FLAGS
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
+
+DESCRIPTION
+  Reindex Core
+
+  Reindex Core data
+```
+
 With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
 
 To reset a node:
 ```bash
 $ dashmate reset
+=======
+#### Hard reset
+
+``dashmate reset --hard``
+
+With the hard reset mode enabled, the corresponding config will be reset as well. This command cleans up all related containers and volumes. To proceed, running the node [setup](#setup-node) is required.
+
+#### Manual reset
+
+Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
+
+```bash
+docker stop $(docker ps -q)
+docker system prune
+docker volume prune
+rm -rf ~/.dashmate/
 ```
 
 ### Full node
@@ -392,6 +445,30 @@ Then specify the created dotenv file as an option for the `docker compose` comma
 ```bash
 $ docker compose --env-file=.env.testnet up -d
 ```
+## Troubleshooting
+
+#### [FAILED] Node is not running
+One of your nodes is not running, you may retry with the --force option:
+
+`dashmate stop --force` to stop single node (fullnode / masternode)
+
+`dashmate group:stop --force` to stop group of nodes (local)
+
+#### Running services detected. Please ensure all services are stopped for this config before starting
+Some nodes are still running and preventing dashmate to make a proper start, that might be left after unsuccessful close. Try to stop them forcibly with --force option before trying to start
+
+`dashmate stop --force` to stop single node (fullnode / masternode)
+
+`dashmate group:stop --force` to stop group of nodes (local)
+
+#### externalIp option is not set in base config
+This may happen when you switch between multiple major versions, so your config became incompatible. In this case, do a manual reset and run setup again
+
+#### TypeError Plugin: dashmate: Cannot read properties of undefined (reading 'dash')
+This could happen if you have other .yarnrc and node_modules in your upper directories. Check your home directory for any .yarnrc and node_modules, wipe them all and try again
+
+
+
 
 ## Contributing
 

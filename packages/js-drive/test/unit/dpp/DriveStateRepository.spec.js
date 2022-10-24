@@ -29,6 +29,7 @@ describe('DriveStateRepository', () => {
   let repositoryOptions;
   let executionContext;
   let operations;
+  let rsDriveMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -80,6 +81,13 @@ describe('DriveStateRepository', () => {
 
     repositoryOptions = { useTransaction: true };
 
+    rsDriveMock = {
+      fetchLatestWithdrawalTransactionIndex: this.sinon.stub(),
+      enqueueWithdrawalTransaction: this.sinon.stub(),
+    };
+
+    rsDriveMock.fetchLatestWithdrawalTransactionIndex.resolves(42);
+
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
       publicKeyIdentityIdRepositoryMock,
@@ -90,6 +98,7 @@ describe('DriveStateRepository', () => {
       coreRpcClientMock,
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
+      rsDriveMock,
       repositoryOptions,
     );
 
@@ -602,6 +611,38 @@ describe('DriveStateRepository', () => {
 
       expect(result).to.equal('store');
       expect(simplifiedMasternodeListMock.getStore).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    it('should call fetchLatestWithdrawalTransactionIndex', async () => {
+      const result = await stateRepository.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(42);
+      expect(
+        rsDriveMock.fetchLatestWithdrawalTransactionIndex,
+      ).to.have.been.calledOnceWithExactly(
+        repositoryOptions.useTransaction,
+      );
+    });
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    it('should call enqueueWithdrawalTransaction', async () => {
+      const index = 42;
+      const transactionBytes = Buffer.alloc(32, 1);
+
+      await stateRepository.enqueueWithdrawalTransaction(
+        index, transactionBytes,
+      );
+
+      expect(
+        rsDriveMock.enqueueWithdrawalTransaction,
+      ).to.have.been.calledOnceWithExactly(
+        index,
+        transactionBytes,
+        repositoryOptions.useTransaction,
+      );
     });
   });
 });

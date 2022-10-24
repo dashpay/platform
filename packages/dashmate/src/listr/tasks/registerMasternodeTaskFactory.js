@@ -71,9 +71,10 @@ function registerMasternodeTaskFactory(
         task: async (ctx) => (
           new Observable(async (observer) => {
             await waitForCoreSync(
-              ctx.coreService.getRpcClient(),
+              ctx.coreService,
               (verificationProgress) => {
-                observer.next(`${(verificationProgress * 100).toFixed(2)}% complete`);
+                const { percent, headers, blocks } = verificationProgress;
+                observer.next(`${(percent * 100).toFixed(2)}% complete (${blocks} / ${headers})`);
               },
             );
 

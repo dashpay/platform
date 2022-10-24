@@ -31,7 +31,7 @@ function handleRemovedMasternodeFactory(
         dataContract,
         'rewardShare',
         document.getId(),
-        true,
+        { useTransaction: true },
       );
 
       result.push(

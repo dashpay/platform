@@ -1,3 +1,5 @@
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+
 const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
@@ -121,6 +123,7 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: timeToMillis(time.seconds, time.nanos),
       proposerProTxHash,
+      validatorSetQuorumHash: Buffer.alloc(32),
     };
 
     if (previousContext) {
@@ -133,7 +136,17 @@ function beginBlockFactory(
 
     logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    await rsAbci.blockBegin(rsRequest, true);
+    const { unsignedWithdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
+
+    const withdrawalTransactionsMap = (unsignedWithdrawalTransactions || []).reduce(
+      (map, transactionBytes) => ({
+        ...map,
+        [hash(transactionBytes).toString('hex')]: transactionBytes,
+      }),
+      {},
+    );
+
+    blockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
 
     // Update SML
 

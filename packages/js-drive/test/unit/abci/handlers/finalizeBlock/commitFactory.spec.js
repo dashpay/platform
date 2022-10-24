@@ -2,6 +2,7 @@ const Long = require('long');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 const commitFactory = require('../../../../../lib/abci/handlers/finalizeBlock/commitFactory');
 
@@ -27,6 +28,7 @@ describe('commitFactory', () => {
   let groveDBStoreMock;
   let rotateSignedStoreMock;
   let loggerMock;
+  let coreRpcClientMock;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
@@ -63,6 +65,10 @@ describe('commitFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
 
+    coreRpcClientMock = {
+      sendRawTransaction: this.sinon.stub(),
+    };
+
     commit = commitFactory(
       blockExecutionContextMock,
       blockExecutionContextStackMock,
@@ -70,11 +76,12 @@ describe('commitFactory', () => {
       rotateSignedStoreMock,
       dataContractCacheMock,
       groveDBStoreMock,
+      coreRpcClientMock,
     );
   });
 
   it('should commit db transactions, create document dbs and return ResponseCommit', async () => {
-    const response = await commit(loggerMock);
+    const response = await commit({}, loggerMock);
 
     expect(response).to.deep.equal({ appHash });
 
@@ -94,5 +101,32 @@ describe('commitFactory', () => {
     expect(blockExecutionContextMock.getDataContracts).to.be.calledOnceWithExactly();
 
     expect(groveDBStoreMock.getRootHash).to.be.calledOnceWithExactly();
+  });
+
+  it('should send withdrawal transaction if vote extensions are present', async () => {
+    const [txOneBytes, txTwoBytes] = [
+      Buffer.alloc(32, 0),
+      Buffer.alloc(32, 1),
+    ];
+
+    blockExecutionContextMock.getWithdrawalTransactionsMap.returns({
+      [hash(txOneBytes).toString('hex')]: txOneBytes,
+      [hash(txTwoBytes).toString('hex')]: txTwoBytes,
+    });
+
+    const thresholdVoteExtensions = [
+      {
+        extension: hash(txOneBytes),
+        signature: Buffer.alloc(96, 3),
+      },
+      {
+        extension: hash(txTwoBytes),
+        signature: Buffer.alloc(96, 4),
+      },
+    ];
+
+    await commit({ thresholdVoteExtensions }, loggerMock);
+
+    expect(coreRpcClientMock.sendRawTransaction).to.have.been.calledTwice();
   });
 });

@@ -14,6 +14,7 @@ const {
 const pino = require('pino');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 /**
  * @param {DataContract} [dataContract]
@@ -29,6 +30,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
  *   cumulativeStorageFee: number,
  *   cumulativeProcessingFee: number,
  *   consensusLogger: Logger,
+ *   withdrawalTransactionsMap: Object,
  * }}
  */
 function getBlockExecutionContextObjectFixture(dataContract = getDataContractFixture()) {
@@ -48,6 +50,11 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     block: '2',
   };
 
+  const [txOneBytes, txTwoBytes] = [
+    Buffer.alloc(32, 0),
+    Buffer.alloc(32, 1),
+  ];
+
   return {
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: CommitInfo.toObject(lastCommitInfo),
@@ -60,6 +67,10 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     validTxs: 2,
     invalidTxs: 1,
     consensusLogger: pino(),
+    withdrawalTransactionsMap: {
+      [hash(txOneBytes).toString('hex')]: txOneBytes,
+      [hash(txTwoBytes).toString('hex')]: txTwoBytes,
+    },
   };
 }
 

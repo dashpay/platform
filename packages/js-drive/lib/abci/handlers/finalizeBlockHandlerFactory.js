@@ -9,7 +9,6 @@ const {
 /**
  *
  * @return {finalizeBlockHandler}
- * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {deliverTx} deliverTx
@@ -19,7 +18,6 @@ const {
  * @param {ExecutionTimer} executionTimer
  */
 function finalizeBlockHandlerFactory(
-  groveDBStore,
   blockExecutionContext,
   beginBlock,
   deliverTx,
@@ -77,7 +75,7 @@ function finalizeBlockHandlerFactory(
     }
 
     const endBlockResult = await endBlock(height, consensusLogger);
-    const commitResult = await commit(consensusLogger);
+    const commitResult = await commit(lastCommitInfo, consensusLogger);
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
     const blockHeight = blockExecutionContext.getHeight();

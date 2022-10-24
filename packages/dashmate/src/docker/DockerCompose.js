@@ -1,11 +1,10 @@
 const path = require('path');
+const { Observable } = require('rxjs');
 
 const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
-
-const { exec } = require('child_process');
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
@@ -120,31 +119,33 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
-   * @return {Promise<ChildProcess>}
+   * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
-  async build(envs, serviceName = undefined) {
-    await this.throwErrorIfNotInstalled();
-
+  async build(envs, serviceName = undefined, options = []) {
     try {
-      // Temporarily build with buildx bake until docker compose build selects correct builder
-      // https://github.com/docker/compose-cli/issues/1840
-      const childProcess = exec(
-        'docker buildx bake --progress plain --load -f docker-compose.platform.build.yml',
-        this.getOptions(envs),
-      );
+      return new Observable(async (observer) => {
+        await this.throwErrorIfNotInstalled();
 
-      childProcess.isReady = new Promise((resolve, reject) => {
-        childProcess.on('exit', (code) => {
-          if (code === 0) {
-            resolve(childProcess);
-          } else {
-            reject(childProcess);
-          }
-        });
+        const callback = (e) => {
+          observer.next(e.toString());
+        };
+
+        if (serviceName) {
+          await dockerCompose.buildOne(serviceName, {
+            ...this.getOptions(envs),
+            callback,
+            commandOptions: options,
+          });
+        } else {
+          await dockerCompose.buildAll({
+            ...this.getOptions(envs),
+            callback,
+          });
+        }
+
+        observer.complete();
       });
-
-      return childProcess;
     } catch (e) {
       throw new DockerComposeError(e);
     }

@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.1.0-alpha.2',
+      image: 'dashpay/dashd:18.1.0-rc.1',
     },
     p2p: {
       port: 20001,
@@ -66,13 +66,17 @@ module.exports = {
       },
     },
     debug: 0,
+    reindex: {
+      enable: false,
+      containerId: null,
+    },
     devnetName: null,
   },
   platform: {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.22-latest',
+          image: 'dashpay/envoy:0.24-dev',
         },
         http: {
           port: 3000,
@@ -92,20 +96,21 @@ module.exports = {
           providerConfigs: {
             zerossl: {
               apiKey: null,
+              id: null,
             },
           },
         },
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23-dev',
+          image: 'dashpay/dapi:0.23.0-alpha',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23-dev',
+          image: 'dashpay/drive:0.23.0-alpha',
         },
         log: {
           stdout: {
@@ -188,6 +193,13 @@ module.exports = {
       },
       masterPublicKey: null,
       secondPublicKey: null,
+    },
+  },
+  dashmate: {
+    helper: {
+      docker: {
+        image: 'dashpay/dashamte-helper:0.24-dev',
+      },
     },
   },
   externalIp: null,

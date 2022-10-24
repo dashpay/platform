@@ -22,6 +22,7 @@ on:
 jobs:
   js-dapi-client-tests:
     name: Run DAPI Client tests
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/dapi-client'
+      install-browsers: true

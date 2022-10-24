@@ -281,6 +281,30 @@ class CachedStateRepositoryDecorator {
   async fetchSMLStore() {
     return this.stateRepository.fetchSMLStore();
   }
+
+  /**
+   * Fetch latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    return this.stateRepository.fetchLatestWithdrawalTransactionIndex();
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    return this.stateRepository.enqueueWithdrawalTransaction(
+      index,
+      transactionBytes,
+    );
+  }
 }
 
 module.exports = CachedStateRepositoryDecorator;

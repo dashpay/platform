@@ -1,12 +1,15 @@
 const validateStateTransitionKeySignatureFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionKeySignatureFactory');
 
 const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 const InvalidStateTransitionSignatureError = require('../../../../lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
+const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const IdentityNotFoundError = require('../../../../lib/errors/consensus/signature/IdentityNotFoundError');
 
 describe('validateStateTransitionKeySignatureFactory', () => {
   let publicKeyHash;
@@ -16,9 +19,12 @@ describe('validateStateTransitionKeySignatureFactory', () => {
   let validateStateTransitionKeySignature;
   let fetchAssetLockPublicKeyHashMock;
   let executionContext;
+  let stateRepositoryMock;
 
   beforeEach(function beforeEach() {
     publicKeyHash = Buffer.alloc(20).fill(1);
+
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     stateTransition = getIdentityCreateTransitionFixture();
     stateTransitionHash = stateTransition.hash({ skipSignature: true });
@@ -34,6 +40,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
     validateStateTransitionKeySignature = validateStateTransitionKeySignatureFactory(
       verifyHashSignatureMock,
       fetchAssetLockPublicKeyHashMock,
+      stateRepositoryMock,
     );
   });
 
@@ -81,6 +88,26 @@ describe('validateStateTransitionKeySignatureFactory', () => {
       stateTransitionHash,
       stateTransition.getSignature(),
       publicKeyHash,
+    );
+  });
+
+  it('should return IdentityNotFoundError if identity not exist on topup transaction', async () => {
+    stateTransition = getIdentityTopUpTransitionFixture();
+    stateRepositoryMock.fetchIdentity.resolves(null);
+
+    const result = await validateStateTransitionKeySignature(
+      stateTransition,
+    );
+
+    expectValidationError(result, IdentityNotFoundError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(2000);
+
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      stateTransition.getIdentityId(),
+      new StateTransitionExecutionContext(),
     );
   });
 });

@@ -94,7 +94,10 @@ class GroveDBStore {
           {
             type: 'reference',
             epoch: 0,
-            value: referencePath,
+            value: {
+              type: 'absolutePathReference',
+              path: referencePath,
+            },
           },
           options.useTransaction || false,
         );

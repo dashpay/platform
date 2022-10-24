@@ -2,7 +2,6 @@ const Dash = require('dash');
 const crypto = require('crypto');
 
 const { MerkleProof } = require('js-merkle');
-const { executeProof } = require('@dashevo/merk');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
@@ -69,6 +68,10 @@ describe.skip('Platform', () => {
       const identitiesProofBuffer = result.proof.storeTreeProofs.identitiesProof;
 
       const parsedStoreTreeProof = parseStoreTreeProof(identitiesProofBuffer);
+
+      function executeProof() {
+
+      }
 
       const { rootHash: identityLeafRoot } = executeProof(identitiesProofBuffer);
 
