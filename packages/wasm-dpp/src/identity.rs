@@ -218,12 +218,12 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, some_option: Option<bool>) -> Result<JsValue, JsValue> {
         let pks = self
             .0
             .public_keys
             .iter()
-            .map(|pk| pk.to_raw_json_object())
+            .map(|pk| pk.to_raw_json_object(some_option.unwrap_or(false)))
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
         let mut identity_json =

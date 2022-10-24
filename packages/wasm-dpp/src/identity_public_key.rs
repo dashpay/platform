@@ -22,6 +22,7 @@ pub(crate) struct JsPublicKey {
     pub data: JsBuffer,
     pub read_only: bool,
     pub disabled_at: Option<TimestampMillis>,
+    pub signature: Vec<u8>,
 }
 
 impl From<JsPublicKey> for IdentityPublicKey {
@@ -34,6 +35,7 @@ impl From<JsPublicKey> for IdentityPublicKey {
             data: js_pk.data.data.clone(),
             read_only: js_pk.read_only,
             disabled_at: js_pk.disabled_at,
+            signature: js_pk.signature.clone()
         }
     }
 }
@@ -48,6 +50,7 @@ impl From<&JsPublicKey> for IdentityPublicKey {
             data: js_pk.data.data.clone(),
             read_only: js_pk.read_only,
             disabled_at: js_pk.disabled_at,
+            signature: js_pk.signature.clone()
         }
     }
 }
@@ -211,10 +214,10 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, some_option: Option<bool>) -> Result<JsValue, JsValue> {
         let val = self
             .0
-            .to_raw_json_object()
+            .to_raw_json_object(some_option.unwrap_or(false))
             .map_err(|e| from_dpp_err(e.into()))?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)
