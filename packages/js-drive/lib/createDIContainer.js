@@ -80,8 +80,6 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/
 
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
-const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
-
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
@@ -99,6 +97,7 @@ const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
 const rotateValidatorsFactory = require('./abci/handlers/proposal/rotateValidatorsFactory');
 const updateConsensusParamsFactory = require('./abci/handlers/proposal/updateConsensusParamsFactory');
 const updateCoreChainLockFactory = require('./abci/handlers/proposal/updateCoreChainLockFactory');
+const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
 
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
@@ -107,7 +106,6 @@ const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMa
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
-const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
@@ -343,7 +341,6 @@ function createDIContainer(options) {
   container.register({
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
-    decodeChainLock: asValue(decodeChainLock),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     getRandomQuorum: asValue(getRandomQuorum),
     coreZMQClient: asFunction((
@@ -694,14 +691,12 @@ function createDIContainer(options) {
     getProofsQueryHandler: asFunction(getProofsQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
-    verifyChainLockQueryHandler: asFunction(verifyChainLockQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
       dataContractQueryHandler,
       documentQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
-      verifyChainLockQueryHandler,
       getProofsQueryHandler,
     ) => {
       const router = findMyWay({
@@ -713,7 +708,6 @@ function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/proofs', getProofsQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
-      router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
 
       return router;
     }).singleton(),
@@ -740,6 +734,11 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       endBlockHandler,
     ) => enrichErrorWithConsensusError(endBlockHandler)).singleton(),
+    verifyChainLockHandler: asFunction(verifyChainLockFactory).singleton(),
+    verifyChainLock: asFunction((
+      enrichErrorWithConsensusError,
+      verifyChainLockHandler,
+    ) => enrichErrorWithConsensusError(verifyChainLockHandler)).singleton(),
     rotateValidatorsHandler: asFunction(rotateValidatorsFactory).singleton(),
     rotateValidators: asFunction((
       enrichErrorWithConsensusError,

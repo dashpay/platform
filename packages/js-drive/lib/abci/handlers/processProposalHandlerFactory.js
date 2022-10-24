@@ -3,6 +3,9 @@ const {
     abci: {
       ResponseProcessProposal,
     },
+    types: {
+      CoreChainLock,
+    },
   },
 } = require('@dashevo/abci/types');
 
@@ -19,6 +22,7 @@ const proposalStatus = {
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
+ * @param {verifyChainLock} verifyChainLock
  * @param {ExecutionTimer} executionTimer
  * @return {processProposalHandler}
  */
@@ -29,6 +33,7 @@ function processProposalHandlerFactory(
   blockExecutionContext,
   beginBlock,
   endBlock,
+  verifyChainLock,
   executionTimer,
 ) {
   /**
@@ -44,6 +49,7 @@ function processProposalHandlerFactory(
       proposedLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
+      coreChainLockUpdate,
     } = request;
 
     const consensusLogger = logger.child({
@@ -104,6 +110,16 @@ function processProposalHandlerFactory(
       validatorSetUpdate,
       appHash,
     } = await endBlock(height, processingFees, storageFees, consensusLogger);
+
+    if (coreChainLockUpdate) {
+      const coreChainLock = new CoreChainLock({
+        coreBlockHeight: coreChainLockUpdate.coreBlockHeight,
+        coreBlockHash: Buffer.from(coreChainLockUpdate.coreBlockHash),
+        signature: Buffer.from(coreChainLockUpdate.signature),
+      });
+
+      await verifyChainLock(coreChainLock);
+    }
 
     const processProposalTimings = executionTimer.stopTimer('processProposal');
 
