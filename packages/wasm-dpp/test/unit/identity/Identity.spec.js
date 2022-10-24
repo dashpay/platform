@@ -35,6 +35,7 @@ describe('Identity', () => {
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
           readOnly: false,
+          signature: Array.from(Uint8Array.from(Buffer.alloc(36).fill('a')))
         },
       ],
       balance: 0,
