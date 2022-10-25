@@ -1,3 +1,5 @@
+extern crate web_sys;
+
 pub use dash_platform_protocol::*;
 pub use data_contract::*;
 pub use document::*;

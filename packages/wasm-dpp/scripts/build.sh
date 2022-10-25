@@ -1,12 +1,24 @@
+#!/bin/bash
+
 TARGET=wasm32-unknown-unknown
 PROFILE=release
 
 OUTPUT_DIR="$PWD/wasm"
 OUTPUT_FILE="$OUTPUT_DIR/wasm_dpp_bg.wasm"
 OUTPUT_FILE_JS="$OUTPUT_DIR/wasm_dpp_bg.js"
-
 BUILD_COMMAND="cargo build --target=$TARGET --$PROFILE"
 BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$PROFILE/wasm_dpp.wasm"
+
+
+if ! [[ -d $OUTPUT_DIR ]];  then
+  mkdipr -p $OUTPUT_DIR
+fi
+
+if ! [ -x "$(command -v wasm-bindgen)" ]; then
+    echo 'Wasm-bindgen CLI is not installed. Installing';
+    cargo install -f wasm-bindgen-cli
+fi
+
 
 # On a mac, bundled clang won't work - you need to install LLVM manually through brew,
 # and then set the correct env for the build to work

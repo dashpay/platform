@@ -8,6 +8,7 @@ const OldIdentity = require('@dashevo/dpp/lib/identity/Identity');
 const serializer = require('@dashevo/dpp/lib/util/serializer');
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const hash = require('@dashevo/dpp/lib/util/hash');
+const { expect } = require('chai');
 
 describe('Identity', () => {
   let rawIdentity;
@@ -85,9 +86,32 @@ describe('Identity', () => {
   });
 
   describe('#setPublicKeys', () => {
+    it('should reject input which is not array of public keys', () => {
+
+      try {
+        identity.setPublicKeys(42);
+      } catch (e) {
+        expect(e).eq("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys")
+      }
+      expect(identity.getPublicKeys()).length(1)
+    });
+
     it('should set public keys', () => {
-      identity.setPublicKeys(42);
-      expect(identity.getPublicKeys()).to.equal(42);
+      const ipk = new IdentityPublicKey({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.alloc(36).fill('a'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+      });
+
+
+
+
+      identity.setPublicKeys([new IdentityPublicKey()]);
+
+      expect(identity.getPublicKeys()).length(2)
     });
   });
 
@@ -105,26 +129,11 @@ describe('Identity', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return serialized Identity', () => {
-      // const encodeMockData = Buffer.from('42');
-      // encodeMock.returns(encodeMockData); // for example
+    it('should return serialized identity', () => {
       const oldIdentity = new OldIdentity(rawIdentity);
-      console.log(oldIdentity);
-      console.log(5);
-      console.log(oldIdentity.toBuffer().toString("hex"));
-      console.log(6);
-
       const result = identity.toBuffer();
 
-      const identityDataToEncode = identity.toObject();
-      delete identityDataToEncode.protocolVersion;
-
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
-
-      let oldBuffer = Buffer.from('01000000a46269645820e2d17bfd0ffe749215c3367bc8c667f541a02e85fc51fb99ba18bbdf3192c4f26762616c616e636500687265766973696f6e006a7075626c69634b65797381a6626964006464617461582461616161616161616161616161616161616161616161616161616161616161616161616164747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00', 'hex')
-
-      expect(result).to.deep.equal(Uint8Array.from(oldBuffer));
+      expect(result).to.deep.eq(oldIdentity.toBuffer())
     });
   });
 
@@ -145,12 +154,24 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-      const buf = Buffer.from('ff', 'hex');
-      console.log(buf.valueOf());
+      // const buf = Buffer.from('ff', 'hex');
+      // console.log(buf.valueOf());
 
-      console.log(identity.toObject());
-      console.log(rawIdentity.id.valueOf());
+      // console.log(identity.toObject());
+      // console.log(rawIdentity.id.valueOf());
+
+
+      // console.log(identity.toObject());
+      // console.log(rawIdentity);
+
+      const object = identity.toObject();
+
+      console.log(`the object is: ${object}`);
+      console.log(`the original object is ${rawIdentity}`);
+
+
       expect(identity.toObject()).to.deep.equal(rawIdentity);
+      // expect(identity.toObject()).to.deep.equal(rawIdentity);
     });
   });
 
@@ -230,6 +251,7 @@ describe('Identity', () => {
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
+
       identity.addPublicKeys([
         new IdentityPublicKeyWasm({
           id: 99,
@@ -239,6 +261,7 @@ describe('Identity', () => {
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
           readOnly: false,
         }),
+
         new IdentityPublicKeyWasm({
           id: 50,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -248,6 +271,7 @@ describe('Identity', () => {
           readOnly: false,
         })
       ]);
+
 
       const maxId = identity.getPublicKeyMaxId();
 

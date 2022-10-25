@@ -1,4 +1,10 @@
+use dpp::dashcore::anyhow::Context;
 use dpp::identifier::Identifier;
+use js_sys::Array;
+use js_sys::ArrayIter;
+use js_sys::Function;
+use serde_json::Value;
+use wasm_bindgen::convert::IntoWasmAbi;
 use wasm_bindgen::prelude::*;
 
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -7,6 +13,8 @@ use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
 use dpp::util::json_value::JsonValueExt;
 use dpp::{ProtocolError, SerdeParsingError};
+use web_sys::console::log_1;
+use web_sys::console::log_2;
 
 use core::iter::FromIterator;
 use std::borrow::Borrow;
@@ -18,9 +26,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
+use crate::utils;
 use crate::utils::into_vec;
+use crate::utils::to_vec_of_serde_values;
+use crate::utils::ToSerdeJSONExt;
+use crate::IdentityPublicKeyWasm;
 use crate::{identity_public_key, MetadataWasm};
-use crate::{IdentityPublicKeyWasm, JsPublicKey};
 
 #[wasm_bindgen(js_name=Identity)]
 pub struct IdentityWasm(Identity);
@@ -33,39 +44,6 @@ impl From<AssetLockProof> for AssetLockProofWasm {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct JsIdentity {
-    pub protocol_version: f64,
-    pub id: String,
-    pub public_keys: Vec<JsPublicKey>,
-    pub balance: f64,
-    pub revision: f64,
-    #[serde(skip)]
-    pub asset_lock_proof: Option<AssetLockProof>,
-    #[serde(skip)]
-    pub metadata: Option<Metadata>,
-}
-
-impl From<JsIdentity> for Identity {
-    fn from(js_identity: JsIdentity) -> Self {
-        Identity {
-            protocol_version: js_identity.protocol_version as u32,
-            id: Identifier::from_string(&js_identity.id, Encoding::Base58).unwrap(),
-            // id: Identifier::from_bytes(&js_identity.id).unwrap(),
-            public_keys: js_identity
-                .public_keys
-                .iter()
-                .map(|js_key| js_key.into())
-                .collect(),
-            balance: js_identity.balance as u64,
-            revision: js_identity.revision as u64,
-            asset_lock_proof: None,
-            metadata: None,
-        }
-    }
-}
-
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(js_name=doStuff)]
@@ -75,10 +53,12 @@ impl IdentityWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
-        let identity_json = String::from(js_sys::JSON::stringify(&raw_identity)?);
-        let js_identity: JsIdentity =
+        let identity_json = utils::stringify(&raw_identity)?;
+        log_1(&format!("new idenityt: {}", identity_json).into());
+        let raw_identity: Value =
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
-        let identity = Identity::from(js_identity);
+
+        let identity = Identity::from_raw_identity(raw_identity).unwrap();
         Ok(IdentityWasm(identity))
     }
 
@@ -93,21 +73,27 @@ impl IdentityWasm {
     }
 
     // TODO: There's a problem here - if the value is not a vec, this method just won't return
-    //  anything
     #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<usize, JsValue> {
-        let public_keys_wasm = into_vec::<IdentityPublicKeyWasm>(public_keys)?;
-        let len = public_keys_wasm.len();
+    pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
+        let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
+        if raw_public_keys.is_empty() {
+            return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());
+        }
 
-        self.0
-            .set_public_keys(public_keys_wasm.into_iter().map(Into::into).collect());
-        Ok(len)
+        let public_keys = raw_public_keys
+            .into_iter()
+            .map(IdentityPublicKey::from_raw_object)
+            .collect::<Result<_, _>>()
+            .map_err(|e| {
+                format!(
+                    "converting to collection of IdentityPublicKeys failed: {:#}",
+                    e
+                )
+            })?;
 
-        // let keys: Vec<IdentityPublicKey> = pub_keys
-        //     .into_iter()
-        //     .map(|v| JsValue::into_serde(&v).expect("unable to convert pub keys"))
-        //     .collect();
-        // self.0.set_public_keys(keys);
+        self.0.set_public_keys(public_keys);
+
+        Ok(self.0.get_public_keys().len())
     }
 
     #[wasm_bindgen(js_name=getPublicKeys)]
@@ -223,7 +209,8 @@ impl IdentityWasm {
             .0
             .public_keys
             .iter()
-            .map(|pk| pk.to_raw_json_object())
+            // !FIXME
+            .map(|pk| pk.to_raw_json_object(false))
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
         let mut identity_json =
@@ -258,7 +245,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen]
     pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.hash().map_err(|e| from_dpp_err(e))
+        self.0.hash().map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=addPublicKey)]
@@ -266,23 +253,27 @@ impl IdentityWasm {
         self.0.public_keys.push(public_key.into());
     }
 
+    // The method `addPublicKeys()` takes an array of `IdentityPublicKeyWasm` as an input. But elements of the array
+    // are available ONLY as `JsValue`. WASM-bindgen uses output from `toJSON()` to store WASM-object as `JsValue`.
+    // `toJSON()` converts binary data to `base64` or `base58`. Therefore we need to use `from_json_object()` constructor to
+    // to convert strings back into bytes and get `IdentityPublicKeyWasm`
     #[wasm_bindgen(js_name=addPublicKeys)]
-    pub fn add_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
-        let public_keys_wasm = into_vec::<IdentityPublicKeyWasm>(public_keys)?;
+    pub fn add_public_keys(&mut self, js_public_keys: js_sys::Array) -> Result<(), JsValue> {
+        let json_objects = to_vec_of_serde_values(js_public_keys.iter())?;
+
+        let public_keys: Vec<IdentityPublicKey> = json_objects
+            .into_iter()
+            .map(IdentityPublicKey::from_json_object)
+            .collect::<Result<Vec<IdentityPublicKey>, ProtocolError>>()
+            .map_err(from_dpp_err)?;
 
         self.0
-            .add_public_keys(public_keys_wasm.into_iter().map(Into::into).into_iter());
+            .add_public_keys(public_keys.into_iter().map(Into::into));
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getPublicKeyMaxId)]
     pub fn get_public_ke_max_id(&self) -> f64 {
-        let keks = self
-            .0
-            .public_keys
-            .iter()
-            .max_by(|a, b| a.get_id().cmp(b.get_id().borrow()));
-
-        keks.map_or_else(|| 0.0, |v| v.get_id() as f64)
+        self.0.get_public_key_max_id() as f64
     }
 }

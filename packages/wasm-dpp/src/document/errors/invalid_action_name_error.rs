@@ -13,7 +13,7 @@ pub struct InvalidActionNameError {
 impl InvalidActionNameError {
     #[wasm_bindgen(constructor)]
     pub fn new(actions: Vec<JsValue>) -> Self {
-        let actions: Vec<String> = from_vec_js(&actions);
+        let actions: Vec<String> = into_vec_of(&actions);
         Self { actions }
     }
 

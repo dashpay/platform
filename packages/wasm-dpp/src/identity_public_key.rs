@@ -1,114 +1,31 @@
 use dpp::dashcore::anyhow;
+use js_sys::Function;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::js_buffer::JsBuffer;
+use crate::utils;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::util::string_encoding::Encoding;
 use dpp::ProtocolError;
 use wasm_bindgen::describe::WasmDescribe;
 use wasm_bindgen::{JsCast, JsObject};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct JsPublicKey {
-    pub id: KeyID,
-    pub purpose: Purpose,
-    pub security_level: SecurityLevel,
-    #[serde(rename = "type")]
-    pub key_type: KeyType,
-    pub data: JsBuffer,
-    pub read_only: bool,
-    pub disabled_at: Option<TimestampMillis>,
-    #[serde(default)]
-    pub signature: JsBuffer,
-}
-
-impl From<JsPublicKey> for IdentityPublicKey {
-    fn from(js_pk: JsPublicKey) -> Self {
-        IdentityPublicKey {
-            id: js_pk.id,
-            purpose: js_pk.purpose,
-            security_level: js_pk.security_level,
-            key_type: js_pk.key_type,
-            data: js_pk.data.data.clone(),
-            read_only: js_pk.read_only,
-            disabled_at: js_pk.disabled_at,
-            signature: js_pk.signature.data,
-        }
-    }
-}
-
-impl From<&JsPublicKey> for IdentityPublicKey {
-    fn from(js_pk: &JsPublicKey) -> Self {
-        IdentityPublicKey {
-            id: js_pk.id,
-            purpose: js_pk.purpose,
-            security_level: js_pk.security_level,
-            key_type: js_pk.key_type,
-            data: js_pk.data.data.clone(),
-            read_only: js_pk.read_only,
-            disabled_at: js_pk.disabled_at,
-            signature: js_pk.signature.data.clone(),
-        }
-    }
-}
-
-// pub(crate) struct JsonPublicKey {
-//     pub id: KeyID,
-//     pub purpose: Purpose,
-//     pub security_level: SecurityLevel,
-//     #[serde(rename = "type")]
-//     pub key_type: KeyType,
-//     pub data: String,
-//     pub read_only: bool,
-//     pub disabled_at: Option<TimestampMillis>,
-// }
-
-// #[derive(Debug, Serialize, Deserialize, Clone)]
-// #[serde(rename_all = "camelCase")]
-// pub(crate) struct JsonPublicKey {
-//     pub id: KeyID,
-//     pub purpose: Purpose,
-//     pub security_level: SecurityLevel,
-//     #[serde(rename = "type")]
-//     pub key_type: KeyType,
-//     pub data: String,
-//     pub read_only: bool,
-//     pub disabled_at: Option<TimestampMillis>,
-// }
-//
-// impl From<IdentityPublicKey> for JsonPublicKey {
-//     fn from(public_key: &IdentityPublicKey) -> Self {
-//         Self {
-//             id: public_key.id,
-//             purpose: public_key.purpose,
-//             security_level: public_key.security_level,
-//             key_type: public_key.key_type,
-//             data: dpp::util::string_encoding::encode(&public_key.data,Encoding::Base64),
-//             read_only: public_key.read_only,
-//             disabled_at: public_key.disabled_at
-//         }
-//     }
-// }
-
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IdentityPublicKeyWasm(IdentityPublicKey);
-
-// TODO
 
 #[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
-        let pk_json_string = String::from(js_sys::JSON::stringify(&raw_public_key)?);
-        let js_public_key: JsPublicKey =
-            serde_json::from_str(&pk_json_string).map_err(|e| e.to_string())?;
-        let pk = IdentityPublicKey::from(js_public_key);
-        Ok(pk.into())
+        let data_string = utils::stringify(&raw_public_key)?;
+        let pk: IdentityPublicKeyWasm =
+            serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
+
+        Ok(pk)
     }
 
     #[wasm_bindgen(js_name=getId)]

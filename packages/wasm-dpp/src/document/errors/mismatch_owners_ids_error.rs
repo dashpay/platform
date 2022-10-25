@@ -16,7 +16,7 @@ impl MismatchOwnersIdsError {
     #[wasm_bindgen(constructor)]
     pub fn new(documents: Vec<JsValue>) -> MismatchOwnersIdsError {
         Self {
-            documents: from_vec_js(&documents),
+            documents: into_vec_of(&documents),
         }
     }
 
