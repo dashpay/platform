@@ -1,4 +1,3 @@
-const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 const ChainlockVerificationFailedError = require('../../errors/ChainlockVerificationFailedError');
 
 /**
@@ -33,10 +32,10 @@ function verifyChainLockFactory(
             err: e,
             chainLock: coreChainLock.toJSON(),
           },
-          `Chainlock verification failed using verifyChainLock method: ${e.message}`,
+          `Chainlock verification failed using verifyChainLock method: ${e.message} ${e.code}`,
         );
 
-        throw new ChainlockVerificationFailedError(e.message, e.code);
+        throw new ChainlockVerificationFailedError(e.message, coreChainLock.toJSON());
       }
 
       throw e;
@@ -45,8 +44,8 @@ function verifyChainLockFactory(
     if (!isVerified) {
       logger.debug(`Invalid chainLock for height ${coreChainLock.coreBlockHeight}`);
 
-      throw new InvalidArgumentAbciError(
-        'ChainLock verification failed', coreChainLock.toJSON(),
+      throw new ChainlockVerificationFailedError(
+        'ChainLock is not valid', coreChainLock.toJSON(),
       );
     }
 

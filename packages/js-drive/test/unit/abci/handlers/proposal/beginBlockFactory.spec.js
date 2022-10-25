@@ -2,14 +2,13 @@ const Long = require('long');
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
-const beginBlockFactory = require('../../../../../lib/abci/handlers/finalizeBlock/beginBlockFactory');
+const beginBlockFactory = require('../../../../../lib/abci/handlers/proposal/beginBlockFactory');
 
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const NotSupportedNetworkProtocolVersionError = require('../../../../../lib/abci/handlers/errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
 const GroveDBStoreMock = require('../../../../../lib/test/mock/GroveDBStoreMock');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('beginBlockFactory', () => {
   let protocolVersion;
@@ -26,7 +25,6 @@ describe('beginBlockFactory', () => {
   let transactionalDppMock;
   let synchronizeMasternodeIdentitiesMock;
   let groveDBStoreMock;
-  let blockExecutionContextStackMock;
   let version;
   let time;
   let rsAbciMock;
@@ -57,7 +55,6 @@ describe('beginBlockFactory', () => {
     });
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
     rsAbciMock = {
       blockBegin: this.sinon.stub(),
@@ -68,7 +65,6 @@ describe('beginBlockFactory', () => {
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
       blockExecutionContextMock,
-      blockExecutionContextStackMock,
       protocolVersion,
       dppMock,
       transactionalDppMock,
@@ -172,48 +168,6 @@ describe('beginBlockFactory', () => {
     } catch (err) {
       expect(err).to.be.an.instanceOf(NetworkProtocolVersionIsNotSetError);
     }
-  });
-
-  it('should abort db transaction and reset previous execution context if previous block failed', async function it() {
-    blockExecutionContextMock.getHeight.returns({
-      equals: this.sinon.stub().returns(true),
-    });
-
-    blockExecutionContextStackMock.getFirst.returns({
-      getHeight: this.sinon.stub().returns(
-        {
-          equals: this.sinon.stub().returns(true),
-        },
-      ),
-      getTime: this.sinon.stub().returns({
-        seconds: Math.ceil(new Date().getTime() / 1000),
-        nanos: 0,
-      }),
-    });
-
-    groveDBStoreMock.isTransactionStarted.resolves(true);
-
-    await beginBlock(request, loggerMock);
-
-    expect(groveDBStoreMock.abortTransaction).to.be.calledOnceWithExactly();
-    expect(blockExecutionContextStackMock.removeFirst).to.be.calledOnceWithExactly();
-
-    expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
-    expect(blockExecutionContextMock.setConsensusLogger).to.be.calledOnceWithExactly(loggerMock);
-    expect(blockExecutionContextMock.setHeight).to.be.calledOnceWithExactly(blockHeight);
-    expect(blockExecutionContextMock.setVersion).to.be.calledOnceWithExactly(version);
-    expect(blockExecutionContextMock.setTime).to.be.calledOnceWithExactly(time);
-    expect(blockExecutionContextMock.setCoreChainLockedHeight).to.be.calledOnceWithExactly(
-      coreChainLockedHeight,
-    );
-    expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
-
-    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
-      coreChainLockedHeight, { logger: loggerMock },
-    );
-
-    expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
-    expect(synchronizeMasternodeIdentitiesMock).to.have.not.been.called();
   });
 
   it('should set withdrawal transactions map if present', async () => {
