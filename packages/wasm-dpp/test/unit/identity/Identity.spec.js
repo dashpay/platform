@@ -89,11 +89,10 @@ describe('Identity', () => {
   describe('#setPublicKeys', () => {
     it('should reject input which is not array of public keys', () => {
 
-      try {
-        identity.setPublicKeys(42);
-      } catch (e) {
-        expect(e).eq("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys")
-      }
+      // TODO: that's a better way to assert throws
+      expect(() => { identity.setPublicKeys(42) })
+        .throws("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys");
+
       expect(identity.getPublicKeys()).length(1)
     });
 
@@ -104,13 +103,12 @@ describe('Identity', () => {
         data: Buffer.alloc(36).fill('a'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        signature: Buffer.alloc(36).fill('a'),
         readOnly: false,
       });
 
-
-
-
-      identity.setPublicKeys([new IdentityPublicKey()]);
+      // TODO: I've changed that line. It seems serialization doesn't correctly process the field "signature"
+      identity.setPublicKeys([ipk]);
 
       expect(identity.getPublicKeys()).length(2)
     });
@@ -132,9 +130,12 @@ describe('Identity', () => {
   describe('#toBuffer', () => {
     it('should return serialized identity', () => {
       const oldIdentity = new OldIdentity(rawIdentity);
-      const result = identity.toBuffer();
 
-      expect(result).to.deep.eq(oldIdentity.toBuffer())
+      // TODO: it should return an instance of a Buffer, can be done on the Rust side through something that looks like
+      //  "extern C { type Buffer }", and returning that type later
+      const result = Buffer.from(identity.toBuffer());
+
+      expect(result).to.deep.eq(oldIdentity.toBuffer());
     });
   });
 
@@ -165,6 +166,8 @@ describe('Identity', () => {
       // console.log(identity.toObject());
       // console.log(rawIdentity);
 
+      // TODO: data and identifier aren't correctly seirailzed to buffers, but for different reasons.
+      //  Please check comment in toBuffer test to get some more info
       const object = identity.toObject();
 
       console.log(`the object is: ${object}`);
@@ -180,6 +183,8 @@ describe('Identity', () => {
     it('should return json representation', () => {
       const jsonIdentity = identity.toJSON();
 
+      // TODO: signature serializes way incorrectly. The problem is likely in rs-dpp itself, probably signature
+      //  isn't considered as a binary property here
       expect(jsonIdentity).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         id: rawIdentity.id.toString(),
@@ -190,6 +195,7 @@ describe('Identity', () => {
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            signature: rawIdentity.publicKeys[0].signature.toString('base64'),
             readOnly: false,
           },
         ],
@@ -260,19 +266,19 @@ describe('Identity', () => {
           data: Buffer.alloc(36).fill('a'),
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
         }),
-
         new IdentityPublicKeyWasm({
           id: 50,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: Buffer.alloc(36).fill('a'),
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
         })
       ]);
-
 
       const maxId = identity.getPublicKeyMaxId();
 
