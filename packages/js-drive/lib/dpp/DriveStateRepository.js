@@ -19,6 +19,7 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
+   * @param {RSDrive} rsDrive
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -32,6 +33,7 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
+    rsDrive,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -43,6 +45,7 @@ class DriveStateRepository {
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
+    this.rsDrive = rsDrive;
     this.#options = options;
   }
 
@@ -456,6 +459,35 @@ class DriveStateRepository {
    */
   async fetchSMLStore() {
     return this.simplifiedMasternodeList.getStore();
+  }
+
+  /**
+   * Fetch latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    // TODO: handle dry run via passing state transition execution context
+    return this.rsDrive.fetchLatestWithdrawalTransactionIndex(
+      this.#options.useTransaction,
+    );
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    // TODO: handle dry run via passing state transition execution context
+    return this.rsDrive.enqueueWithdrawalTransaction(
+      index,
+      transactionBytes,
+      this.#options.useTransaction,
+    );
   }
 
   /**

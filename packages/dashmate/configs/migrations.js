@@ -343,9 +343,14 @@ module.exports = {
 
     return configFile;
   },
-  '0.23.0': (configFile) => {
+  '0.23.0-alpha.1': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        config.core.reindex = {
+          enable: false,
+          containerId: null,
+        };
+
         if (config.platform) {
           // Update images
           config.platform.dpns = systemConfigs.base.platform.dpns;
@@ -356,6 +361,35 @@ module.exports = {
         }
       });
 
+    configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
+    configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
+    configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
+    configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
+      .masternodeRewardShares;
+
+    return configFile;
+  },
+  '0.23.0-alpha.3': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        // Update images
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+
+        if (config.platform) {
+          config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
+            .drive.tenderdash.docker.image;
+
+          config.platform.drive.abci.docker.image = systemConfigs.base.platform
+            .drive.abci.docker.image;
+
+          config.platform.dapi.api.docker.image = systemConfigs.base.platform
+            .dapi.api.docker.image;
+        }
+      });
+
+    // Update testnet contracts
+    configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
+      .drive.tenderdash.genesis;
     configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
     configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;

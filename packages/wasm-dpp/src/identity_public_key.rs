@@ -132,11 +132,10 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, some_option: Option<bool>) -> Result<JsValue, JsValue> {
         let val = self
             .0
-            // !fixme
-            .to_raw_json_object(false)
+            .to_raw_json_object(some_option.unwrap_or(false))
             .map_err(|e| from_dpp_err(e.into()))?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)

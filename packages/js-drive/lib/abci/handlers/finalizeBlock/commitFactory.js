@@ -9,6 +9,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
  * @param {rotateSignedStore} rotateSignedStore
  * @param {GroveDBStore} groveDBStore
  * @param {LRUCache} dataContractCache
+ * @param {CoreRpcClient} coreRpcClient
  *
  * @return {commit}
  */
@@ -19,14 +20,17 @@ function commitFactory(
   rotateSignedStore,
   dataContractCache,
   groveDBStore,
+  coreRpcClient,
 ) {
   /**
    * @typedef commit
    *
+   * @param {ILastCommitInfo} lastCommitInfo
    * @param {BaseLogger} logger
+   *
    * @return {Promise<{ appHash: Buffer }>}
    */
-  async function commit(logger) {
+  async function commit(lastCommitInfo, logger) {
     const blockHeight = blockExecutionContext.getHeight();
 
     const consensusLogger = logger.child({
@@ -63,6 +67,29 @@ function commitFactory(
 
       if (dataContractCache.has(cacheItem.getKey())) {
         dataContractCache.set(cacheItem.getKey(), cacheItem);
+      }
+    }
+
+    // Send withdrawal transactions to Core
+    const unsignedWithdrawalTransactionsMap = blockExecutionContext.getWithdrawalTransactionsMap();
+
+    const { thresholdVoteExtensions } = lastCommitInfo;
+
+    for (const { extension, signature } of (thresholdVoteExtensions || [])) {
+      const withdrawalTransactionHash = extension.toString('hex');
+
+      const unsignedWithdrawalTransactionBytes = unsignedWithdrawalTransactionsMap[
+        withdrawalTransactionHash
+      ];
+
+      if (unsignedWithdrawalTransactionBytes) {
+        const transactionBytes = Buffer.concat([
+          unsignedWithdrawalTransactionBytes,
+          signature,
+        ]);
+
+        // TODO: think about Core error handling
+        await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
       }
     }
 

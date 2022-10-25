@@ -1,8 +1,6 @@
 import { Transaction } from "@dashevo/dashcore-lib";
 import { Platform } from "../../../Platform";
 
-import waitForCoreChainLockedHeight from "./waitForCoreChainLockedHeight";
-
 const { InstantLockTimeoutError, TxMetadataTimeoutError } = require('@dashevo/wallet-lib/src/errors');
 
 /**
@@ -75,8 +73,9 @@ export async function createAssetLockProof(this : Platform, assetLockTransaction
       // Wait for transaction is mined and platform chain synced core height to the transaction height
       txMetadataPromise
         .then((assetLockMetadata) => {
-          // @ts-ignore
-          return waitForCoreChainLockedHeight(platform, assetLockMetadata.height)
+          return platform.identities.utils
+            // @ts-ignore
+            .waitForCoreChainLockedHeight(assetLockMetadata.height)
             .then(({ promise, cancel }) => {
               cancelObtainCoreChainLockedHeight = cancel;
 

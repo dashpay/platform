@@ -138,6 +138,7 @@ const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
+const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 
 /**
  *
@@ -480,6 +481,8 @@ function createDIContainer(options) {
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
+    lastSyncedCoreHeightRepository: asClass(LastSyncedCoreHeightRepository).singleton(),
+
     createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
 
     createRewardShareDocument: asFunction(createRewardShareDocumentFactory).singleton(),
@@ -606,6 +609,7 @@ function createDIContainer(options) {
       dataContractCache,
       blockExecutionContext,
       simplifiedMasternodeList,
+      rsDrive,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -617,6 +621,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        rsDrive,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -637,6 +642,7 @@ function createDIContainer(options) {
       blockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
+      rsDrive,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -648,6 +654,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        rsDrive,
         {
           useTransaction: true,
         },

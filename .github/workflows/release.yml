@@ -13,7 +13,7 @@ on:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out repo
@@ -49,6 +49,21 @@ jobs:
       - name: Build packages
         run: yarn build
 
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = context.payload.release.tag_name;
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return suffix;
+            } else {
+              return '';
+            }
+
       - name: Set NPM release tag
         uses: actions/github-script@v5
         id: tag
@@ -57,7 +72,7 @@ jobs:
           script: |
             const tag = context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
-            return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
+            return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
       - name: Configure NPM auth token
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
@@ -67,7 +82,7 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -129,13 +144,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set suffix to Docker tags
-        uses: actions/github-script@v5
-        id: suffix
-        if: github.event_name != 'workflow_dispatch'
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
         with:
           result-encoding: string
-          script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
 
       - name: Set Docker tags and labels
         id: docker_meta
@@ -143,11 +172,10 @@ jobs:
         with:
           images: dashpay/drive
           tags: |
-            type=match,pattern=v(\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
-            type=match,pattern=v(.*),group=1,value=${{ github.event.inputs.tag }},enable=${{github.event_name == 'workflow_dispatch'}}
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
@@ -165,7 +193,7 @@ jobs:
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -227,13 +255,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set suffix to Docker tags
-        uses: actions/github-script@v5
-        id: suffix
-        if: github.event_name != 'workflow_dispatch'
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
         with:
           result-encoding: string
-          script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
 
       - name: Set Docker tags and labels
         id: docker_meta
@@ -241,11 +283,10 @@ jobs:
         with:
           images: dashpay/dapi
           tags: |
-            type=match,pattern=v(\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
-            type=match,pattern=v(.*),group=1,value=${{ github.event.inputs.tag }},enable=${{github.event_name == 'workflow_dispatch'}}
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
@@ -263,7 +304,7 @@ jobs:
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -325,13 +366,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set suffix to Docker tags
-        uses: actions/github-script@v5
-        id: suffix
-        if: github.event_name != 'workflow_dispatch'
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
         with:
           result-encoding: string
-          script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
 
       - name: Set Docker tags and labels
         id: docker_meta
@@ -339,11 +394,10 @@ jobs:
         with:
           images: dashpay/platform-test-suite
           tags: |
-            type=match,pattern=v(\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
-            type=match,pattern=v(.*),group=1,value=${{ github.event.inputs.tag }},enable=${{github.event_name == 'workflow_dispatch'}}
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}

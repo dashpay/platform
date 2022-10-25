@@ -54,7 +54,6 @@ impl IdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
         let identity_json = utils::stringify(&raw_identity)?;
-        log_1(&format!("new idenityt: {}", identity_json).into());
         let raw_identity: Value =
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
 
@@ -204,13 +203,12 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, some_option: Option<bool>) -> Result<JsValue, JsValue> {
         let pks = self
             .0
             .public_keys
             .iter()
-            // !FIXME
-            .map(|pk| pk.to_raw_json_object(false))
+            .map(|pk| pk.to_raw_json_object(some_option.unwrap_or(false)))
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
         let mut identity_json =
