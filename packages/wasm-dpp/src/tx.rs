@@ -14,11 +14,12 @@ impl WasmTx {
             lock_time: 0,
             input: vec![],
             output: vec![],
+            special_transaction_payload: None
         })
     }
 
     pub fn version(&self) -> u16 {
-        self.0.version as u16
+        self.0.version
     }
 }
 
