@@ -19,9 +19,9 @@ function endBlockFactory(
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
-  rsAbci,
   updateConsensusParams,
   rotateValidators,
+  rsAbci,
   groveDBStore,
 ) {
   /**

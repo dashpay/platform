@@ -12,7 +12,7 @@ const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
-const deliverTxFactory = require('../../../../../lib/abci/handlers/finalizeBlock/deliverTxFactory');
+const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
 
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
