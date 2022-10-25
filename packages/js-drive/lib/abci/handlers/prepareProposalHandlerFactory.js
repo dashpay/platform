@@ -16,7 +16,6 @@ const txAction = {
 /**
  * @param {deliverTx} deliverTx
  * @param {BaseLogger} logger
- * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
@@ -27,7 +26,6 @@ const txAction = {
 function prepareProposalHandlerFactory(
   deliverTx,
   logger,
-  groveDBStore,
   blockExecutionContext,
   beginBlock,
   endBlock,

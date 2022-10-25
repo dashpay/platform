@@ -18,7 +18,6 @@ const proposalStatus = {
 /**
  * @param {deliverTx} deliverTx
  * @param {BaseLogger} logger
- * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
@@ -29,7 +28,6 @@ const proposalStatus = {
 function processProposalHandlerFactory(
   deliverTx,
   logger,
-  groveDBStore,
   blockExecutionContext,
   beginBlock,
   endBlock,
@@ -134,7 +132,6 @@ function processProposalHandlerFactory(
 
     return new ResponseProcessProposal({
       status: proposalStatus.ACCEPT,
-
       appHash,
       txResults,
       consensusParamUpdates,

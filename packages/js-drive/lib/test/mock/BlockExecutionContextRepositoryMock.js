@@ -2,7 +2,7 @@
  * @method store
  * @method fetch
  */
-class BlockExecutionContextStackRepositoryMock {
+class BlockExecutionContextRepositoryMock {
   /**
    * @param {SinonSandbox} sinon
    */
@@ -12,4 +12,4 @@ class BlockExecutionContextStackRepositoryMock {
   }
 }
 
-module.exports = BlockExecutionContextStackRepositoryMock;
+module.exports = BlockExecutionContextRepositoryMock;
