@@ -11,8 +11,8 @@ const Long = require('long');
 const { version: driveVersion } = require('../../../package.json');
 
 /**
- * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {Long} latestProtocolVersion
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
@@ -20,8 +20,8 @@ const { version: driveVersion } = require('../../../package.json');
  * @return {infoHandler}
  */
 function infoHandlerFactory(
-  blockExecutionContextRepository,
   blockExecutionContext,
+  blockExecutionContextRepository,
   latestProtocolVersion,
   updateSimplifiedMasternodeList,
   logger,

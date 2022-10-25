@@ -15,8 +15,7 @@ const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
-const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
-const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
+const BlockExecutionContextRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextRepositoryMock');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;
@@ -27,8 +26,7 @@ describe('infoHandlerFactory', () => {
   let lastCoreChainLockedHeight;
   let loggerMock;
   let blockExecutionContextMock;
-  let blockExecutionContextStackMock;
-  let blockExecutionContextStackRepositoryMock;
+  let blockExecutionContextRepositoryMock;
   let groveDBStoreMock;
 
   beforeEach(function beforeEach() {
@@ -42,22 +40,20 @@ describe('infoHandlerFactory', () => {
     loggerMock = new LoggerMock(this.sinon);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-    blockExecutionContextStackRepositoryMock = new BlockExecutionContextStackRepositoryMock(
+    blockExecutionContextMock.getPreviousHeight.returns(lastBlockHeight);
+    blockExecutionContextMock.getPreviousCoreChainLockedHeight.returns(lastCoreChainLockedHeight);
+    blockExecutionContextRepositoryMock = new BlockExecutionContextRepositoryMock(
       this.sinon,
     );
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
 
-    blockExecutionContextStackRepositoryMock.fetch.resolves({
-      getContexts: this.sinon.stub(),
-    });
+    blockExecutionContextRepositoryMock.fetch.resolves(blockExecutionContextMock);
 
     groveDBStoreMock.getRootHash.resolves(lastBlockAppHash);
 
     infoHandler = infoHandlerFactory(
-      blockExecutionContextStackMock,
-      blockExecutionContextStackRepositoryMock,
       blockExecutionContextMock,
+      blockExecutionContextRepositoryMock,
       protocolVersion,
       updateSimplifiedMasternodeListMock,
       loggerMock,
@@ -66,6 +62,9 @@ describe('infoHandlerFactory', () => {
   });
 
   it('should return respond with genesis heights and app hash on the first run', async () => {
+    blockExecutionContextRepositoryMock.fetch.resolves(null);
+    blockExecutionContextMock.getPreviousHeight.returns(null);
+
     const response = await infoHandler();
 
     expect(response).to.be.an.instanceOf(ResponseInfo);
@@ -77,8 +76,7 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
-    expect(blockExecutionContextStackRepositoryMock.fetch).to.be.calledOnce();
-    expect(blockExecutionContextStackMock.getFirst).to.be.calledOnce();
+    expect(blockExecutionContextRepositoryMock.fetch).to.be.calledOnce();
     expect(blockExecutionContextMock.populate).to.not.be.called();
     expect(blockExecutionContextMock.getHeight).to.not.be.called();
     expect(blockExecutionContextMock.getCoreChainLockedHeight).to.not.be.called();
@@ -87,11 +85,6 @@ describe('infoHandlerFactory', () => {
   });
 
   it('should populate context and update SML on subsequent runs', async () => {
-    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
-
-    lastBlockHeight = Long.fromInt(1);
-    lastCoreChainLockedHeight = 2;
-
     blockExecutionContextMock.getHeight.returns(lastBlockHeight);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(lastCoreChainLockedHeight);
 
@@ -106,8 +99,7 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
-    expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
-    expect(blockExecutionContextMock.getCoreChainLockedHeight).to.be.calledOnce();
+    expect(blockExecutionContextMock.getPreviousHeight).to.be.calledThrice();
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       lastCoreChainLockedHeight,

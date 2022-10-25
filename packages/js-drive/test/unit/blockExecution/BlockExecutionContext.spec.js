@@ -23,12 +23,13 @@ describe('BlockExecutionContext', () => {
   let cumulativeProcessingFee;
   let cumulativeStorageFee;
   let plainObject;
-  let validTxs;
-  let invalidTxs;
   let height;
+  let previousHeight;
   let coreChainLockedHeight;
+  let previousCoreChainLockedHeight;
   let version;
   let time;
+  let previousTime;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -42,14 +43,15 @@ describe('BlockExecutionContext', () => {
     logger = plainObject.consensusLogger;
     cumulativeProcessingFee = plainObject.cumulativeProcessingFee;
     cumulativeStorageFee = plainObject.cumulativeStorageFee;
-    validTxs = plainObject.validTxs;
-    invalidTxs = plainObject.invalidTxs;
     height = Long.fromNumber(plainObject.height);
+    previousHeight = Long.fromNumber(plainObject.previousHeight);
     coreChainLockedHeight = plainObject.coreChainLockedHeight;
     version = Consensus.fromObject(plainObject.version);
     time = plainObject.time;
     time.seconds = Long.fromNumber(time.seconds);
-
+    previousTime = plainObject.previousBlockTime;
+    previousTime.seconds = Long.fromNumber(previousTime.seconds);
+    previousCoreChainLockedHeight = plainObject.previousCoreChainLockedHeight;
     plainObject.time = plainObject.time.toJSON();
     plainObject.time.seconds = Number(plainObject.time.seconds);
   });
@@ -165,6 +167,8 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.getCoreChainLockedHeight()).to.be.null();
       expect(blockExecutionContext.getVersion()).to.be.null();
       expect(blockExecutionContext.getTime()).to.be.null();
+      expect(blockExecutionContext.getLastCommitInfo()).to.be.null();
+      expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal({});
     });
   });
 
@@ -282,6 +286,82 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setPreviousHeight', () => {
+    it('should set previousHeight', async () => {
+      const result = blockExecutionContext.setPreviousHeight(previousHeight);
+
+      expect(result).to.deep.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.previousHeight).to.deep.equal(previousHeight);
+    });
+  });
+
+  describe('#getPreviousHeight', () => {
+    it('should get previousHeight', async () => {
+      blockExecutionContext.previousHeight = previousHeight;
+
+      expect(blockExecutionContext.getPreviousHeight()).to.deep.equal(previousHeight);
+    });
+  });
+
+  describe('#setPreviousTime', () => {
+    it('should set previousTime', async () => {
+      const result = blockExecutionContext.setPreviousTime(previousTime);
+
+      expect(result).to.deep.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.previousBlockTime).to.deep.equal(previousTime);
+    });
+  });
+
+  describe('#getPreviousTime', () => {
+    it('should get previousTime', async () => {
+      blockExecutionContext.previousBlockTime = previousTime;
+
+      expect(blockExecutionContext.getPreviousTime()).to.deep.equal(previousTime);
+    });
+  });
+
+  describe('#setPreviousCoreChainLockedHeight', () => {
+    it('should set previousCoreChainLockedHeight', () => {
+      const result = blockExecutionContext.setPreviousCoreChainLockedHeight(
+        previousCoreChainLockedHeight,
+      );
+
+      expect(result).to.deep.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.previousCoreChainLockedHeight).to.deep.equal(
+        previousCoreChainLockedHeight,
+      );
+    });
+  });
+
+  describe('#getPreviousCoreChainLockedHeight', () => {
+    it('should get previousCoreChainLockedHeight', () => {
+      blockExecutionContext.previousCoreChainLockedHeight = previousCoreChainLockedHeight;
+
+      expect(blockExecutionContext.getPreviousCoreChainLockedHeight()).to.deep.equal(
+        previousCoreChainLockedHeight,
+      );
+    });
+  });
+
+  describe('#init', () => {
+    it('should init state', () => {
+      blockExecutionContext.setPreviousCoreChainLockedHeight(
+        previousCoreChainLockedHeight,
+      );
+      blockExecutionContext.setPreviousTime(previousTime);
+      blockExecutionContext.setPreviousHeight(previousHeight);
+
+      blockExecutionContext.init();
+
+      expect(blockExecutionContext.getPreviousCoreChainLockedHeight()).to.be.null();
+      expect(blockExecutionContext.getPreviousTime()).to.be.null();
+      expect(blockExecutionContext.getPreviousHeight()).to.be.null();
+    });
+  });
+
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -294,9 +374,12 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.time = time;
       anotherBlockExecutionContext.version = version;
       anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
-      anotherBlockExecutionContext.validTxs = validTxs;
-      anotherBlockExecutionContext.invalidTxs = invalidTxs;
       anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.withdrawalTransactionsMap = plainObject
+        .withdrawalTransactionsMap;
+      anotherBlockExecutionContext.previousCoreChainLockedHeight = previousCoreChainLockedHeight;
+      anotherBlockExecutionContext.previousHeight = previousHeight;
+      anotherBlockExecutionContext.previousBlockTime = previousTime;
 
       blockExecutionContext.populate(anotherBlockExecutionContext);
 
@@ -324,14 +407,20 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.coreChainLockedHeight).to.equal(
         anotherBlockExecutionContext.coreChainLockedHeight,
       );
-      expect(blockExecutionContext.validTxs).to.equal(
-        anotherBlockExecutionContext.validTxs,
-      );
-      expect(blockExecutionContext.invalidTxs).to.equal(
-        anotherBlockExecutionContext.invalidTxs,
-      );
       expect(blockExecutionContext.consensusLogger).to.equal(
         anotherBlockExecutionContext.consensusLogger,
+      );
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.equal(
+        anotherBlockExecutionContext.withdrawalTransactionsMap,
+      );
+      expect(blockExecutionContext.previousHeight).to.equal(
+        anotherBlockExecutionContext.previousHeight,
+      );
+      expect(blockExecutionContext.previousCoreChainLockedHeight).to.equal(
+        anotherBlockExecutionContext.previousCoreChainLockedHeight,
+      );
+      expect(blockExecutionContext.previousBlockTime).to.equal(
+        anotherBlockExecutionContext.previousBlockTime,
       );
     });
   });
@@ -346,10 +435,11 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.time = time;
       blockExecutionContext.version = version;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.previousBlockTime = previousTime;
+      blockExecutionContext.previousHeight = previousHeight;
+      blockExecutionContext.previousCoreChainLockedHeight = previousCoreChainLockedHeight;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -364,10 +454,11 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.time = time;
       blockExecutionContext.time.seconds = time.seconds;
       blockExecutionContext.version = version;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.previousBlockTime = previousTime;
+      blockExecutionContext.previousHeight = previousHeight;
+      blockExecutionContext.previousCoreChainLockedHeight = previousCoreChainLockedHeight;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 
@@ -395,11 +486,18 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.version).to.deep.equal(version);
       expect(blockExecutionContext.time).to.deep.equal(time);
       expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
-      expect(blockExecutionContext.validTxs).to.equal(validTxs);
-      expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);
       expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
         plainObject.withdrawalTransactionsMap,
+      );
+      expect(blockExecutionContext.previousBlockTime).to.deep.equal(
+        previousTime,
+      );
+      expect(blockExecutionContext.previousHeight).to.deep.equal(
+        previousHeight,
+      );
+      expect(blockExecutionContext.previousCoreChainLockedHeight).to.deep.equal(
+        previousCoreChainLockedHeight,
       );
     });
   });

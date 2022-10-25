@@ -412,7 +412,7 @@ class BlockExecutionContext {
       coreChainLockedHeight: this.coreChainLockedHeight,
       lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
       previousBlockTime: this.previousBlockTime,
-      previousHeight: this.previousHeight,
+      previousHeight: this.previousHeight ? this.previousHeight.toNumber() : null,
       previousCoreChainLockedHeight: this.previousCoreChainLockedHeight,
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
     };

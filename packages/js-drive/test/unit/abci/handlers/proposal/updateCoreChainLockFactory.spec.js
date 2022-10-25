@@ -37,7 +37,6 @@ describe('updateCoreChainLockFactory', () => {
       getChainLock: this.sinon.stub().returns(chainLockMock),
     };
 
-
     updateCoreChainLock = updateCoreChainLockFactory(
       blockExecutionContextMock,
       latestCoreChainLockMock,

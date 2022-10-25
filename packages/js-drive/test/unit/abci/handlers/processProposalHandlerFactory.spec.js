@@ -2,22 +2,172 @@ const {
   tendermint: {
     abci: {
       ResponseProcessProposal,
+      ValidatorSetUpdate,
+    },
+    types: {
+      ConsensusParams,
+      CoreChainLock,
     },
   },
 } = require('@dashevo/abci/types');
+const Long = require('long');
+
 const processProposalHandlerFactory = require('../../../../lib/abci/handlers/processProposalHandlerFactory');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('processProposalHandlerFactory', () => {
   let processProposalHandler;
+  let request;
+  let blockExecutionContextMock;
+  let loggerMock;
+  let executionTimerMock;
+  let beginBlockMock;
+  let endBlockMock;
+  let verifyChainLockMock;
+  let deliverTxMock;
+  let appHash;
+  let validatorSetUpdate;
+  let consensusParamUpdates;
+  let processingFees;
+  let storageFees;
+  let coreChainLockUpdate;
 
-  beforeEach(() => {
-    processProposalHandler = processProposalHandlerFactory();
+  beforeEach(function beforeEach() {
+    appHash = Buffer.alloc(1, 1);
+    processingFees = 1;
+    storageFees = 3;
+
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextMock.getCumulativeProcessingFee.returns(processingFees);
+    blockExecutionContextMock.getCumulativeStorageFee.returns(storageFees);
+
+    loggerMock = new LoggerMock(this.sinon);
+    executionTimerMock = {
+      clearTimer: this.sinon.stub(),
+      startTimer: this.sinon.stub(),
+      stopTimer: this.sinon.stub(),
+    };
+
+    consensusParamUpdates = new ConsensusParams({
+      block: {
+        maxBytes: 1,
+        maxGas: 2,
+      },
+      evidence: {
+        maxAgeDuration: null,
+        maxAgeNumBlocks: 1,
+        maxBytes: 2,
+      },
+      version: {
+        appVersion: 1,
+      },
+    });
+    validatorSetUpdate = new ValidatorSetUpdate();
+
+    beginBlockMock = this.sinon.stub();
+    endBlockMock = this.sinon.stub().resolves({
+      consensusParamUpdates,
+      appHash,
+      validatorSetUpdate,
+    });
+    deliverTxMock = this.sinon.stub().resolves(
+      {
+        code: 0,
+      },
+    );
+    beginBlockMock = this.sinon.stub();
+    verifyChainLockMock = this.sinon.stub();
+
+    processProposalHandler = processProposalHandlerFactory(
+      deliverTxMock,
+      loggerMock,
+      blockExecutionContextMock,
+      beginBlockMock,
+      endBlockMock,
+      verifyChainLockMock,
+      executionTimerMock,
+    );
+
+    const txs = new Array(3).fill(Buffer.alloc(5, 0));
+
+    const height = new Long(42);
+
+    const time = {
+      seconds: Math.ceil(new Date().getTime() / 1000),
+    };
+    const version = {
+      app: Long.fromInt(1),
+    };
+    const proposerProTxHash = Uint8Array.from([1, 2, 3, 4]);
+    const coreChainLockedHeight = 10;
+    const proposedLastCommit = {};
+
+    coreChainLockUpdate = new CoreChainLock({
+      coreBlockHeight: 42,
+      coreBlockHash: '1528e523f4c20fa84ba70dd96372d34e00ce260f357d53ad1a8bc892ebf20e2d',
+      signature: '1897ce8f54d2070f44ca5c29983b68b391e8137c25e44f67416e579f3e3bdfef7b4fd22db7818399147e52907998857b0fbc8edfdc40a64f2c7df0e88544d31d12ca8c15e73d50dda25ca23f754ed3f789ed4bcb392161995f464017c10df404',
+    });
+
+    request = {
+      height,
+      txs,
+      coreChainLockedHeight,
+      version,
+      proposedLastCommit,
+      time,
+      proposerProTxHash,
+      coreChainLockUpdate,
+    };
   });
 
   it('should return ResponseProcessProposal', async () => {
-    const result = await processProposalHandler();
+    const result = await processProposalHandler(request);
 
     expect(result).to.be.an.instanceOf(ResponseProcessProposal);
     expect(result.status).to.equal(1);
+    expect(result.appHash).to.equal(appHash);
+    expect(result.txResults).to.be.deep.equal(new Array(3).fill({ code: 0 }));
+    expect(result.consensusParamUpdates).to.be.equal(consensusParamUpdates);
+    expect(result.validatorSetUpdate).to.be.equal(validatorSetUpdate);
+
+    expect(executionTimerMock.clearTimer).to.be.calledTwice();
+    expect(executionTimerMock.clearTimer.getCall(0)).to.be.calledWithExactly('processProposal');
+    expect(executionTimerMock.clearTimer.getCall(1)).to.be.calledWithExactly('blockExecution');
+
+    expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('processProposal');
+
+    expect(executionTimerMock.startTimer).to.be.calledTwice();
+    expect(executionTimerMock.startTimer.getCall(0)).to.be.calledWithExactly('processProposal');
+    expect(executionTimerMock.startTimer.getCall(1)).to.be.calledWithExactly('blockExecution');
+
+    expect(beginBlockMock).to.be.calledOnceWithExactly(
+      {
+        lastCommitInfo: request.proposedLastCommit,
+        height: request.height,
+        coreChainLockedHeight: request.coreChainLockedHeight,
+        version: request.version,
+        time: request.time,
+        proposerProTxHash: Buffer.from(request.proposerProTxHash),
+      },
+      loggerMock,
+    );
+
+    expect(deliverTxMock).to.be.calledThrice();
+
+    const coreChainLock = new CoreChainLock({
+      coreBlockHeight: coreChainLockUpdate.coreBlockHeight,
+      coreBlockHash: Buffer.from(coreChainLockUpdate.coreBlockHash),
+      signature: Buffer.from(coreChainLockUpdate.signature),
+    });
+
+    expect(verifyChainLockMock).to.be.calledOnceWithExactly(coreChainLock);
+
+    expect(endBlockMock).to.be.calledOnceWithExactly(
+      request.height,
+      processingFees,
+      storageFees,
+      loggerMock,
+    );
   });
 });

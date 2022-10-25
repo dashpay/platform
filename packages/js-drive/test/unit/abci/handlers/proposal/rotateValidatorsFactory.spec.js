@@ -59,7 +59,10 @@ describe('rotateValidatorsFactory', () => {
   it('should rotate validator set and return ValidatorSetUpdate if height is divisible by ROTATION_BLOCK_INTERVAL', async () => {
     height = Long.fromInt(15);
 
+    const quorumHash = Buffer.alloc(64).fill(1).toString('hex');
+
     validatorSetMock.rotate.resolves(true);
+    validatorSetMock.getQuorum.resolves({ quorumHash });
 
     const validatorSetUpdate = new ValidatorSetUpdate();
 

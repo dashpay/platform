@@ -3,30 +3,32 @@ const {
     abci: {
       ResponseFinalizeBlock,
     },
-    types: {
-      ConsensusParams,
-    },
   },
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
 
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const finalizeBlockHandlerFactory = require('../../../../lib/abci/handlers/finalizeBlockHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
+const BlockExecutionContextRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextRepositoryMock');
+const BlockExecutionContext = require('../../../../lib/blockExecution/BlockExecutionContext');
 
 describe('finalizeBlockHandlerFactory', () => {
   let finalizeBlockHandler;
   let executionTimerMock;
   let blockExecutionContextMock;
-  let beginBlockMock;
-  let deliverTxMock;
-  let endBlockMock;
-  let commitMock;
   let loggerMock;
   let requestMock;
   let appHash;
-  let endBlockResult;
+  let groveDBStoreMock;
+  let coreRpcClientMock;
+  let dataContractCacheMock;
+  let blockExecutionContextRepositoryMock;
+  let dataContract;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
@@ -38,27 +40,6 @@ describe('finalizeBlockHandlerFactory', () => {
       stopTimer: this.sinon.stub(),
     };
 
-    endBlockResult = {
-      consensusParamUpdates: new ConsensusParams({
-        block: {
-          maxBytes: 1,
-          maxGas: 2,
-        },
-        evidence: {
-          maxAgeDuration: null,
-          maxAgeNumBlocks: 1,
-          maxBytes: 2,
-        },
-        version: {
-          appVersion: 1,
-        },
-      }),
-      nextCoreChainLockUpdate: undefined,
-      validatorSetUpdate: undefined,
-    };
-
-    const txs = new Array(3).fill(Buffer.alloc(5, 0));
-
     const decidedLastCommit = {};
 
     const height = new Long(42);
@@ -69,75 +50,96 @@ describe('finalizeBlockHandlerFactory', () => {
 
     const coreChainLockedHeight = 10;
 
-    const version = {
-      app: Long.fromInt(1),
-    };
-
-    const proposerProTxHash = Uint8Array.from([1, 2, 3, 4]);
-
     requestMock = {
-      txs,
       decidedLastCommit,
       height,
       time,
       coreChainLockedHeight,
-      version,
-      proposerProTxHash,
     };
 
-    beginBlockMock = this.sinon.stub();
-    deliverTxMock = this.sinon.stub().resolves({
-      code: 0,
-    });
-    endBlockMock = this.sinon.stub().resolves(endBlockResult);
-    commitMock = this.sinon.stub().resolves({ appHash });
+    dataContract = getDataContractFixture();
 
     blockExecutionContextMock.getHeight.returns(42);
+    blockExecutionContextMock.getDataContracts.returns([dataContract]);
+
+    dataContractCacheMock = {
+      set: this.sinon.stub(),
+      get: this.sinon.stub(),
+      has: this.sinon.stub(),
+    };
+
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+    groveDBStoreMock.getRootHash.resolves(appHash);
+
+    coreRpcClientMock = {
+      sendRawTransaction: this.sinon.stub(),
+    };
+
+    blockExecutionContextRepositoryMock = new BlockExecutionContextRepositoryMock(
+      this.sinon,
+    );
 
     finalizeBlockHandler = finalizeBlockHandlerFactory(
+      groveDBStoreMock,
       blockExecutionContextMock,
-      beginBlockMock,
-      deliverTxMock,
-      endBlockMock,
-      commitMock,
+      blockExecutionContextRepositoryMock,
+      dataContractCacheMock,
+      coreRpcClientMock,
       loggerMock,
       executionTimerMock,
     );
   });
 
-  it('should finalize block', async () => {
+  it('should commit db transactions, create document dbs and return ResponseFinalizeBlock', async () => {
     const result = await finalizeBlockHandler(requestMock);
 
     expect(result).to.be.an.instanceOf(ResponseFinalizeBlock);
-    expect(result.txResults).to.be.deep.equal(new Array(3).fill({ code: 0 }));
-    expect(result.appHash).to.be.deep.equal(appHash);
-    expect(result.consensusParamUpdates).to.be.deep.equal(endBlockResult.consensusParamUpdates);
-    expect(result.nextCoreChainLockUpdate).to.be.null();
-    expect(result.validatorSetUpdate).to.be.null();
 
-    expect(executionTimerMock.clearTimer).to.be.calledOnceWithExactly('blockExecution');
-    expect(executionTimerMock.startTimer).to.be.calledOnceWithExactly('blockExecution');
     expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('blockExecution');
 
-    expect(beginBlockMock).to.be.calledOnceWithExactly(
+    expect(blockExecutionContextMock.getHeight).to.be.calledOnceWithExactly();
+
+    const clonedBlockExecutionContext = new BlockExecutionContext();
+    clonedBlockExecutionContext.populate(blockExecutionContextMock);
+
+    expect(blockExecutionContextRepositoryMock.store).to.be.calledOnceWithExactly(
+      clonedBlockExecutionContext,
       {
-        lastCommitInfo: requestMock.decidedLastCommit,
-        height: requestMock.height,
-        coreChainLockedHeight: requestMock.coreChainLockedHeight,
-        version: requestMock.version,
-        time: requestMock.time,
-        proposerProTxHash: Buffer.from(requestMock.proposerProTxHash),
+        useTransaction: true,
       },
-      loggerMock,
     );
 
-    expect(deliverTxMock).to.be.calledThrice();
-    expect(deliverTxMock.getCall(0)).to.be.calledWithExactly(requestMock.txs[0], loggerMock);
-    expect(deliverTxMock.getCall(0)).to.be.calledWithExactly(requestMock.txs[1], loggerMock);
-    expect(deliverTxMock.getCall(0)).to.be.calledWithExactly(requestMock.txs[2], loggerMock);
+    expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
-    expect(endBlockMock).to.be.calledOnceWithExactly(requestMock.height, loggerMock);
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnceWithExactly();
+  });
 
-    expect(commitMock).to.be.calledOnceWithExactly(requestMock.decidedLastCommit, loggerMock);
+  it('should send withdrawal transaction if vote extensions are present', async () => {
+    const [txOneBytes, txTwoBytes] = [
+      Buffer.alloc(32, 0),
+      Buffer.alloc(32, 1),
+    ];
+
+    blockExecutionContextMock.getWithdrawalTransactionsMap.returns({
+      [hash(txOneBytes).toString('hex')]: txOneBytes,
+      [hash(txTwoBytes).toString('hex')]: txTwoBytes,
+    });
+
+    const thresholdVoteExtensions = [
+      {
+        extension: hash(txOneBytes),
+        signature: Buffer.alloc(96, 3),
+      },
+      {
+        extension: hash(txTwoBytes),
+        signature: Buffer.alloc(96, 4),
+      },
+    ];
+
+    requestMock.decidedLastCommit = { thresholdVoteExtensions };
+
+    await finalizeBlockHandler(requestMock);
+
+    expect(coreRpcClientMock.sendRawTransaction).to.have.been.calledTwice();
   });
 });
