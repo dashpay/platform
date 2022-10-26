@@ -28,10 +28,11 @@ function updateConsensusParamsFactory(
     const consensusLogger = logger.child({
       height: height.toString(),
       abciMethod: 'updateConsensusParams',
-    })
-    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    });
 
-    const contextVersion = blockExecutionContext.getVersion();
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+
+    const contextVersion = proposalBlockExecutionContext.getVersion();
 
     // Update consensus params feature flag
 

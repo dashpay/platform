@@ -45,8 +45,8 @@ function deliverTxFactory(
    * @return {Promise<{ code: number }>}
    */
   async function deliverTx(stateTransitionByteArray, round, logger) {
-    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-    const blockHeight = blockExecutionContext.getHeight();
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const blockHeight = proposalBlockExecutionContext.getHeight();
 
     // Start execution timer
 
@@ -72,7 +72,7 @@ function deliverTxFactory(
       abciMethod: 'deliverTx',
     });
 
-    blockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
     consensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
@@ -150,7 +150,7 @@ function deliverTxFactory(
         const dataContract = stateTransition.getDataContract();
 
         // Save data contracts in order to create databases for documents on block commit
-        blockExecutionContext.addDataContract(dataContract);
+        proposalBlockExecutionContext.addDataContract(dataContract);
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
@@ -225,9 +225,6 @@ function deliverTxFactory(
       processingFee: actualProcessingFee,
     } = calculateOperationFees(actualStateTransitionOperations);
 
-    blockExecutionContext.incrementCumulativeProcessingFee(actualProcessingFee);
-    blockExecutionContext.incrementCumulativeStorageFee(actualStorageFee);
-
     const {
       storageFee: predictedStorageFee,
       processingFee: predictedProcessingFee,
@@ -263,7 +260,11 @@ function deliverTxFactory(
     );
 
     return {
-      code: 0,
+      txResult: {
+        code: 0,
+      },
+      actualProcessingFee,
+      actualStorageFee,
     };
   }
 

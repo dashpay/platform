@@ -524,7 +524,7 @@ function createDIContainer(options) {
    * Register block execution context
    */
   container.register({
-    blockExecutionContext: asClass(BlockExecutionContext).singleton(),
+    latestBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
     blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
     ProposalBlockExecutionContextCollection: asClass(ProposalBlockExecutionContextCollection).singleton(),
   });

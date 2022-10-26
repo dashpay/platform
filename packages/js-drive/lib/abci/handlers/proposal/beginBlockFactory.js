@@ -4,12 +4,13 @@ const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedN
 const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
 const timeToMillis = require('../../../util/timeToMillis');
+const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
 
 /**
  * Begin Block
  *
  * @param {GroveDBStore} groveDBStore
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
@@ -23,7 +24,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  */
 function beginBlockFactory(
   groveDBStore,
-  blockExecutionContext,
+  latestBlockExecutionContext,
   proposalBlockExecutionContextCollection,
   latestProtocolVersion,
   dpp,
@@ -81,7 +82,9 @@ function beginBlockFactory(
 
     // Set block execution context
 
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const proposalBlockExecutionContext = new BlockExecutionContext();
+
+    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
 
     // Set block execution context params
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
@@ -114,8 +117,8 @@ function beginBlockFactory(
       validatorSetQuorumHash: Buffer.alloc(32),
     };
 
-    if (blockExecutionContext.getTime()) {
-      const previousTime = blockExecutionContext.getTime();
+    if (latestBlockExecutionContext.getTime()) {
+      const previousTime = latestBlockExecutionContext.getTime();
 
       rsRequest.previousBlockTimeMs = timeToMillis(
         previousTime.seconds, previousTime.nanos,

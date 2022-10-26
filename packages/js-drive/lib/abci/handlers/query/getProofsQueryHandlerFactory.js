@@ -11,14 +11,14 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 /**
  *
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {DocumentRepository} documentRepository
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
-  blockExecutionContext,
+  latestBlockExecutionContext,
   identityRepository,
   dataContractRepository,
   documentRepository,
@@ -37,13 +37,13 @@ function getProofsQueryHandlerFactory(
     dataContractIds,
     documents,
   }) {
-    const blockHeight = blockExecutionContext.getHeight();
-    const coreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
+    const blockHeight = latestBlockExecutionContext.getHeight();
+    const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
 
     const {
       quorumHash: signatureLlmqHash,
       stateSignature: signature,
-    } = blockExecutionContext.getLastCommitInfo();
+    } = latestBlockExecutionContext.getLastCommitInfo();
 
     const response = {
       documentsProof: null,

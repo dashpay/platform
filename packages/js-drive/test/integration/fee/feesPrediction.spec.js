@@ -108,8 +108,8 @@ describe('feesPrediction', () => {
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
 
-    const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getTime = this.sinon.stub().returns(
+    const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
+    latestBlockExecutionContext.getTime = this.sinon.stub().returns(
       { seconds: new Date().getTime() / 1000 },
     );
 

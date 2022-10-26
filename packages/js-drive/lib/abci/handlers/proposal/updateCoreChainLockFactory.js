@@ -27,8 +27,8 @@ function updateCoreChainLockFactory(
     });
 
     // Update Core Chain Locks
-    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-    const contextCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const contextCoreChainLockedHeight = proposalBlockExecutionContext.getCoreChainLockedHeight();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
     let coreChainLockUpdate;
