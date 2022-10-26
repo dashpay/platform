@@ -55,7 +55,7 @@ function infoHandlerFactory(
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
 
-    if (blockExecutionContext.getHeight() !== null) {
+    if (!latestBlockExecutionContext.isEmpty()) {
       lastHeight = blockExecutionContext.getHeight();
       lastCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
     }
