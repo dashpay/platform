@@ -529,7 +529,7 @@ jobs:
         run: yarn install
 
       - name: Build packages
-        run: yarn build --filter "+@dashevo/dashamte-helper"
+        run: yarn build --filter "+@dashevo/dashmate-helper"
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
@@ -589,7 +589,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v4
         with:
-          images: dashpay/dashamte-helper
+          images: dashpay/dashmate-helper
           tags: |
             type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
             type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
