@@ -113,7 +113,7 @@ services:
       - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key
     stop_grace_period: 10s
 
-  dashamte_helper:
+  dashmate_helper:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
