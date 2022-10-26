@@ -198,7 +198,7 @@ module.exports = {
   dashmate: {
     helper: {
       docker: {
-        image: 'dashpay/dashamte-helper:0.24-dev',
+        image: 'dashpay/dashmate-helper:0.24-dev',
       },
     },
   },
