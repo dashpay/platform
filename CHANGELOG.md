@@ -1,3 +1,10 @@
+## [0.24.0-dev.5](https://github.com/dashpay/platform/compare/v0.24.0-dev.4...v0.24.0-dev.5) (2022-10-26)
+
+
+### Bug Fixes
+
+* release.yml contained wrong indentation ([#597](https://github.com/dashpay/platform/issues/597))
+
 ## [0.24.0-dev.4](https://github.com/dashpay/platform/compare/v0.24.0-dev.3...v0.24.0-dev.4) (2022-10-26)
 
 
