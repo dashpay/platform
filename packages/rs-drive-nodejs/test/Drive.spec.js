@@ -90,7 +90,7 @@ describe('Drive', () => {
     });
 
     it('should not create contract with dry run flag', async () => {
-      const result = await drive.applyContract(dataContract, blockTime, false, true);
+      const result = await drive.applyContract(dataContract, blockTime, undefined, true);
 
       expect(result).to.have.lengthOf(2);
       // expect(result[0]).to.be.greaterThan(0);
@@ -140,7 +140,7 @@ describe('Drive', () => {
     it('should not create a document with dry run flag', async () => {
       const documentWithoutIndices = documents[0];
 
-      const result = await drive.createDocument(documentWithoutIndices, blockTime, false, true);
+      const result = await drive.createDocument(documentWithoutIndices, blockTime, undefined, true);
 
       expect(result).to.have.lengthOf(2);
       // expect(result[0]).to.be.greaterThan(0);
@@ -204,7 +204,7 @@ describe('Drive', () => {
 
       documentWithoutIndices.set('name', 'Bob');
 
-      const result = await drive.updateDocument(documentWithoutIndices, blockTime, false, true);
+      const result = await drive.updateDocument(documentWithoutIndices, blockTime, undefined, true);
 
       expect(result).to.have.lengthOf(2);
       // expect(result[0]).to.be.greaterThan(0);
@@ -281,7 +281,7 @@ describe('Drive', () => {
         dataContract,
         documentWithoutIndices.getType(),
         documentWithoutIndices.getId(),
-        false,
+        undefined,
         true,
       );
 
