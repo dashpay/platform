@@ -10,7 +10,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  *
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
  * @param {DashPlatformProtocol} transactionalDpp
@@ -24,6 +24,7 @@ const timeToMillis = require('../../../util/timeToMillis');
 function beginBlockFactory(
   groveDBStore,
   blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -53,6 +54,7 @@ function beginBlockFactory(
       version,
       time,
       proposerProTxHash,
+      round,
     } = request;
 
     const consensusLogger = logger.child({
@@ -79,15 +81,15 @@ function beginBlockFactory(
 
     // Set block execution context
 
-    blockExecutionContext.reset();
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     // Set block execution context params
-    blockExecutionContext.setConsensusLogger(consensusLogger);
-    blockExecutionContext.setHeight(height);
-    blockExecutionContext.setVersion(version);
-    blockExecutionContext.setTime(time);
-    blockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
-    blockExecutionContext.setLastCommitInfo(lastCommitInfo);
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setHeight(height);
+    proposalBlockExecutionContext.setVersion(version);
+    proposalBlockExecutionContext.setTime(time);
+    proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
+    proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
@@ -112,8 +114,8 @@ function beginBlockFactory(
       validatorSetQuorumHash: Buffer.alloc(32),
     };
 
-    if (blockExecutionContext.getPreviousTime()) {
-      const previousTime = blockExecutionContext.getPreviousTime();
+    if (blockExecutionContext.getTime()) {
+      const previousTime = blockExecutionContext.getTime();
 
       rsRequest.previousBlockTimeMs = timeToMillis(
         previousTime.seconds, previousTime.nanos,
@@ -132,7 +134,7 @@ function beginBlockFactory(
       {},
     );
 
-    blockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
+    proposalBlockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
 
     // Update SML
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(

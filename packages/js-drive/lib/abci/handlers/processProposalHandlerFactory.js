@@ -8,6 +8,7 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 const proposalStatus = {
   UNKNOWN: 0, // Unknown status. Returning this from the application is always an error.
@@ -18,7 +19,7 @@ const proposalStatus = {
 /**
  * @param {deliverTx} deliverTx
  * @param {BaseLogger} logger
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {verifyChainLock} verifyChainLock
@@ -28,7 +29,7 @@ const proposalStatus = {
 function processProposalHandlerFactory(
   deliverTx,
   logger,
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   beginBlock,
   endBlock,
   verifyChainLock,
@@ -48,6 +49,7 @@ function processProposalHandlerFactory(
       time,
       proposerProTxHash,
       coreChainLockUpdate,
+      round,
     } = request;
 
     const consensusLogger = logger.child({
@@ -87,7 +89,7 @@ function processProposalHandlerFactory(
     let invalidTxCount = 0;
 
     for (const tx of txs) {
-      const txResult = await deliverTx(tx, consensusLogger);
+      const txResult = await deliverTx(tx, round, consensusLogger);
 
       if (txResult.code === 0) {
         validTxCount += 1;
@@ -98,16 +100,19 @@ function processProposalHandlerFactory(
       txResults.push(txResult);
     }
 
-    blockExecutionContext.setConsensusLogger(consensusLogger);
+    const proposalBlockExecutionContext = new BlockExecutionContext();
+    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
 
-    const processingFees = blockExecutionContext.getCumulativeProcessingFee();
-    const storageFees = blockExecutionContext.getCumulativeStorageFee();
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+
+    const processingFees = proposalBlockExecutionContext.getCumulativeProcessingFee();
+    const storageFees = proposalBlockExecutionContext.getCumulativeStorageFee();
 
     const {
       consensusParamUpdates,
       validatorSetUpdate,
       appHash,
-    } = await endBlock(height, processingFees, storageFees, consensusLogger);
+    } = await endBlock(height, round, processingFees, storageFees, consensusLogger);
 
     if (coreChainLockUpdate) {
       const coreChainLock = new CoreChainLock({

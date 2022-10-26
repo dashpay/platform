@@ -9,25 +9,27 @@ const {
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
 /**
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  * @return {updateConsensusParams}
  */
 function updateConsensusParamsFactory(
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   getFeatureFlagForHeight,
 ) {
   /**
    * @typedef updateConsensusParams
    * @param {number} height
+   * @param {number} round
    * @param {BaseLogger} logger
    * @return {Promise<ConsensusParams>}
    */
-  async function updateConsensusParams(height, logger) {
+  async function updateConsensusParams(height, round, logger) {
     const consensusLogger = logger.child({
       height: height.toString(),
       abciMethod: 'updateConsensusParams',
-    });
+    })
+    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     const contextVersion = blockExecutionContext.getVersion();
 

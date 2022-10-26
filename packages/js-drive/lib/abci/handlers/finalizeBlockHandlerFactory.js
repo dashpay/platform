@@ -15,6 +15,7 @@ const DataContractCacheItem = require('../../dataContract/DataContractCacheItem'
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
@@ -24,6 +25,7 @@ function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContext,
   blockExecutionContextRepository,
+  proposalBlockExecutionContextCollection,
   dataContractCache,
   coreRpcClient,
   logger,
@@ -41,6 +43,7 @@ function finalizeBlockHandlerFactory(
       height,
       time,
       coreChainLockedHeight,
+      round,
     } = request;
 
     const consensusLogger = logger.child({
@@ -51,15 +54,17 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    blockExecutionContext.setPreviousTime(time);
-    blockExecutionContext.setPreviousHeight(height);
-    blockExecutionContext.setPreviousCoreChainLockedHeight(coreChainLockedHeight);
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+
+    proposalBlockExecutionContext.setTime(time);
+    proposalBlockExecutionContext.setHeight(height);
+    proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
 
     consensusLogger.debug('Commit ABCI method requested');
 
     // Store block execution context
     const clonedBlockExecutionContext = new BlockExecutionContext();
-    clonedBlockExecutionContext.populate(blockExecutionContext);
+    clonedBlockExecutionContext.populate(proposalBlockExecutionContext);
 
     blockExecutionContextRepository.store(
       clonedBlockExecutionContext,
@@ -73,7 +78,7 @@ function finalizeBlockHandlerFactory(
 
     // Update data contract cache with new version of
     // committed data contract
-    for (const dataContract of blockExecutionContext.getDataContracts()) {
+    for (const dataContract of proposalBlockExecutionContext.getDataContracts()) {
       const operations = [new ReadOperation(dataContract.toBuffer().length)];
 
       const cacheItem = new DataContractCacheItem(dataContract, operations);
@@ -84,7 +89,8 @@ function finalizeBlockHandlerFactory(
     }
 
     // Send withdrawal transactions to Core
-    const unsignedWithdrawalTransactionsMap = blockExecutionContext.getWithdrawalTransactionsMap();
+    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
+      .getWithdrawalTransactionsMap();
 
     const { thresholdVoteExtensions } = lastCommitInfo;
 
@@ -106,14 +112,15 @@ function finalizeBlockHandlerFactory(
       }
     }
 
+    proposalBlockExecutionContextCollection.clear();
+
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
-    const blockHeight = blockExecutionContext.getHeight();
 
     consensusLogger.trace(
       {
         timings: blockExecutionTimings,
       },
-      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
+      `Block #${height} execution took ${blockExecutionTimings} seconds`,
     );
 
     return new ResponseFinalizeBlock();

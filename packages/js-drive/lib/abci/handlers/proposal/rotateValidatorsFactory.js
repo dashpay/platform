@@ -1,12 +1,12 @@
 /**
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @return {rotateValidators}
  */
 function rotateValidatorsFactory(
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   validatorSet,
   createValidatorSetUpdate,
   latestCoreChainLock,
@@ -14,15 +14,17 @@ function rotateValidatorsFactory(
   /**
    * @typedef rotateValidators
    * @param {number} height
+   * @param {number} round
    * @param {BaseLogger} logger
    * @return {Promise<ValidatorSetUpdate>}
    */
-  async function rotateValidators(height, logger) {
+  async function rotateValidators(height, round, logger) {
     const consensusLogger = logger.child({
       height: height.toString(),
       abciMethod: 'rotateValidators',
     });
 
+    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
 

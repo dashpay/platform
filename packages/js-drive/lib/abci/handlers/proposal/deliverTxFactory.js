@@ -25,7 +25,7 @@ const TIMERS = require('../timers');
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTx}
@@ -33,17 +33,19 @@ const TIMERS = require('../timers');
 function deliverTxFactory(
   transactionalUnserializeStateTransition,
   transactionalDpp,
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   executionTimer,
 ) {
   /**
    * @typedef deliverTx
    *
    * @param {Buffer} stateTransitionByteArray
+   * @param {number} round
    * @param {BaseLogger} logger
    * @return {Promise<{ code: number }>}
    */
-  async function deliverTx(stateTransitionByteArray, logger) {
+  async function deliverTx(stateTransitionByteArray, round, logger) {
+    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const blockHeight = blockExecutionContext.getHeight();
 
     // Start execution timer

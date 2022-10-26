@@ -55,9 +55,9 @@ function infoHandlerFactory(
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
 
-    if (blockExecutionContext.getPreviousHeight() !== null) {
-      lastHeight = blockExecutionContext.getPreviousHeight();
-      lastCoreChainLockedHeight = blockExecutionContext.getPreviousCoreChainLockedHeight();
+    if (blockExecutionContext.getHeight() !== null) {
+      lastHeight = blockExecutionContext.getHeight();
+      lastCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
     }
 
     contextLogger = contextLogger.child({
@@ -66,7 +66,7 @@ function infoHandlerFactory(
 
     // Update SML store to latest saved core chain lock to make sure
     // that verify chain lock handler has updated SML Store to verify signatures
-    if (blockExecutionContext.getPreviousHeight() !== null) {
+    if (blockExecutionContext.getHeight() !== null) {
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });
