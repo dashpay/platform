@@ -36,7 +36,7 @@ describe('Identity', () => {
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
           readOnly: false,
-          signature: Array.from(Uint8Array.from(Buffer.alloc(36).fill('a')))
+          signature: Buffer.alloc(36).fill('a'),
         },
       ],
       balance: 0,
@@ -182,6 +182,10 @@ describe('Identity', () => {
   describe('#toJSON', () => {
     it('should return json representation', () => {
       const jsonIdentity = identity.toJSON();
+
+      console.log(`the id from JS is: ${jsonIdentity.id}`)
+      console.log(`the signature from JS is: ${jsonIdentity.publicKeys[0].signature}`);
+      console.log(`the data from JS is: ${jsonIdentity.publicKeys[0].data}`);
 
       // TODO: signature serializes way incorrectly. The problem is likely in rs-dpp itself, probably signature
       //  isn't considered as a binary property here

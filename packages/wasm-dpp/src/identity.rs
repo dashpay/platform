@@ -187,6 +187,7 @@ impl IdentityWasm {
             .map(|pk| pk.to_json())
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
+
         let mut identity_json =
             serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;
 
@@ -199,6 +200,7 @@ impl IdentityWasm {
 
         let identity_json_string =
             serde_json::to_string(&identity_json).map_err(|e| from_dpp_err(e.into()))?;
+
         js_sys::JSON::parse(&identity_json_string)
     }
 
