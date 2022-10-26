@@ -55,42 +55,6 @@ class BlockExecutionContext {
   }
 
   /**
-   * @return {number}
-   */
-  getCumulativeStorageFee() {
-    return this.cumulativeStorageFee;
-  }
-
-  /**
-   * @return {number}
-   */
-  getCumulativeProcessingFee() {
-    return this.cumulativeProcessingFee;
-  }
-
-  /**
-   * Increment cumulative fees
-   *
-   * @param {number} fee
-   */
-  incrementCumulativeStorageFee(fee) {
-    this.cumulativeStorageFee += fee;
-
-    return this;
-  }
-
-  /**
-   * Increment cumulative fees
-   *
-   * @param {number} fee
-   */
-  incrementCumulativeProcessingFee(fee) {
-    this.cumulativeProcessingFee += fee;
-
-    return this;
-  }
-
-  /**
    *
    * @param {number} coreChainLockedHeight
    * @return {BlockExecutionContext}
@@ -234,8 +198,6 @@ class BlockExecutionContext {
    */
   reset() {
     this.dataContracts = [];
-    this.cumulativeProcessingFee = 0;
-    this.cumulativeStorageFee = 0;
     this.coreChainLockedHeight = null;
     this.height = null;
     this.version = null;
@@ -262,8 +224,6 @@ class BlockExecutionContext {
   populate(blockExecutionContext) {
     this.dataContracts = blockExecutionContext.dataContracts;
     this.lastCommitInfo = blockExecutionContext.lastCommitInfo;
-    this.cumulativeProcessingFee = blockExecutionContext.cumulativeProcessingFee;
-    this.cumulativeStorageFee = blockExecutionContext.cumulativeStorageFee;
     this.time = blockExecutionContext.time;
     this.height = blockExecutionContext.height;
     this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
@@ -281,8 +241,6 @@ class BlockExecutionContext {
     this.dataContracts = object.dataContracts
       .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
-    this.cumulativeProcessingFee = object.cumulativeProcessingFee;
-    this.cumulativeStorageFee = object.cumulativeStorageFee;
     this.consensusLogger = object.consensusLogger;
 
     if (object.time) {
@@ -305,8 +263,6 @@ class BlockExecutionContext {
    *  height: number,
    *  version: Object,
    *  time: Object,
-   *  cumulativeProcessingFee: number,
-   *  cumulativeStorageFee: number,
    *  coreChainLockedHeight: number,
    *  lastCommitInfo: number,
    *  previousBlockTime: number,
@@ -325,8 +281,6 @@ class BlockExecutionContext {
 
     const object = {
       dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
-      cumulativeProcessingFee: this.cumulativeProcessingFee,
-      cumulativeStorageFee: this.cumulativeStorageFee,
       time,
       height: this.height ? this.height.toNumber() : null,
       version: this.version ? this.version.toJSON() : null,

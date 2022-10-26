@@ -6,14 +6,12 @@ const {
   },
 } = require('@dashevo/abci/types');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
  *
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
- * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {LRUCache} dataContractCache
@@ -23,7 +21,6 @@ const DataContractCacheItem = require('../../dataContract/DataContractCacheItem'
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
-  blockExecutionContext,
   blockExecutionContextRepository,
   proposalBlockExecutionContextCollection,
   dataContractCache,
@@ -41,8 +38,6 @@ function finalizeBlockHandlerFactory(
     const {
       decidedLastCommit: lastCommitInfo,
       height,
-      time,
-      coreChainLockedHeight,
       round,
     } = request;
 
@@ -56,18 +51,9 @@ function finalizeBlockHandlerFactory(
 
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
-    proposalBlockExecutionContext.setTime(time);
-    proposalBlockExecutionContext.setHeight(height);
-    proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
-
-    consensusLogger.debug('Commit ABCI method requested');
-
     // Store block execution context
-    const clonedBlockExecutionContext = new BlockExecutionContext();
-    clonedBlockExecutionContext.populate(proposalBlockExecutionContext);
-
     blockExecutionContextRepository.store(
-      clonedBlockExecutionContext,
+      proposalBlockExecutionContext,
       {
         useTransaction: true,
       },

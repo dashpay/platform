@@ -8,7 +8,6 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 const proposalStatus = {
   UNKNOWN: 0, // Unknown status. Returning this from the application is always an error.
@@ -66,8 +65,8 @@ function processProposalHandlerFactory(
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    executionTimer.clearTimer('processProposal');
-    executionTimer.startTimer('processProposal');
+    executionTimer.clearTimer('roundExecution');
+    executionTimer.startTimer('roundExecution');
 
     executionTimer.clearTimer('blockExecution');
     executionTimer.startTimer('blockExecution');
@@ -84,15 +83,25 @@ function processProposalHandlerFactory(
       consensusLogger,
     );
 
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+
     const txResults = [];
     let validTxCount = 0;
     let invalidTxCount = 0;
+    let storageFee = 0;
+    let processingFee = 0;
 
     for (const tx of txs) {
-      const txResult = await deliverTx(tx, round, consensusLogger);
+      const {
+        txResult,
+        actualProcessingFee,
+        actualStorageFee,
+      } = await deliverTx(tx, round, consensusLogger);
 
       if (txResult.code === 0) {
         validTxCount += 1;
+        storageFee += actualStorageFee;
+        processingFee += actualProcessingFee;
       } else {
         invalidTxCount += 1;
       }
@@ -100,19 +109,13 @@ function processProposalHandlerFactory(
       txResults.push(txResult);
     }
 
-    const proposalBlockExecutionContext = new BlockExecutionContext();
-    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
-
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
-
-    const processingFees = proposalBlockExecutionContext.getCumulativeProcessingFee();
-    const storageFees = proposalBlockExecutionContext.getCumulativeStorageFee();
 
     const {
       consensusParamUpdates,
       validatorSetUpdate,
       appHash,
-    } = await endBlock(height, round, processingFees, storageFees, consensusLogger);
+    } = await endBlock(height, round, processingFee, storageFee, consensusLogger);
 
     if (coreChainLockUpdate) {
       const coreChainLock = new CoreChainLock({
@@ -124,7 +127,7 @@ function processProposalHandlerFactory(
       await verifyChainLock(coreChainLock);
     }
 
-    const processProposalTimings = executionTimer.stopTimer('processProposal');
+    const processProposalTimings = executionTimer.stopTimer('roundExecution');
 
     consensusLogger.info(
       {

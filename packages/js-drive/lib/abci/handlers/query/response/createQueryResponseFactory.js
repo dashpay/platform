@@ -8,11 +8,11 @@ const {
 const UnavailableAbciError = require('../../../errors/UnavailableAbciError');
 
 /**
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  * @return {createQueryResponse}
  */
 function createQueryResponseFactory(
-  blockExecutionContext,
+  latestBlockExecutionContext,
 ) {
   /**
    * @typedef {createQueryResponse}
@@ -20,12 +20,12 @@ function createQueryResponseFactory(
    * @param {boolean} [prove=false]
    */
   function createQueryResponse(ResponseClass, prove = false) {
-    if (!blockExecutionContext) {
+    if (!latestBlockExecutionContext) {
       throw new UnavailableAbciError('data is not available');
     }
 
-    const blockHeight = blockExecutionContext.getHeight();
-    const coreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
+    const blockHeight = latestBlockExecutionContext.getHeight();
+    const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
 
     const response = new ResponseClass();
 
@@ -39,7 +39,7 @@ function createQueryResponseFactory(
       const {
         quorumHash: signatureLlmqHash,
         stateSignature: signature,
-      } = blockExecutionContext.getLastCommitInfo();
+      } = latestBlockExecutionContext.getLastCommitInfo();
 
       const proof = new Proof();
 

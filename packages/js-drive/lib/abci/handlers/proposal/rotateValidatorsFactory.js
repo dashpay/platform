@@ -24,8 +24,8 @@ function rotateValidatorsFactory(
       abciMethod: 'rotateValidators',
     });
 
-    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-    const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const lastCommitInfo = proposalBlockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
     // Rotate validators

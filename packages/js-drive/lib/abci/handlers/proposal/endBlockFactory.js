@@ -51,9 +51,9 @@ function endBlockFactory(
     });
 
     consensusLogger.debug('EndBlock ABCI method requested');
-    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
-    blockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
     // Call RS ABCI
 
@@ -73,7 +73,7 @@ function endBlockFactory(
     const { currentEpochIndex, isEpochChange } = rsResponse;
 
     if (isEpochChange) {
-      const time = blockExecutionContext.getTime();
+      const time = proposalBlockExecutionContext.getTime();
 
       const blockTime = timeToMillis(time.seconds, time.nanos);
 
