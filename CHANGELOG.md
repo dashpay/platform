@@ -1,3 +1,10 @@
+## [0.24.0-dev.4](https://github.com/dashpay/platform/compare/v0.24.0-dev.3...v0.24.0-dev.4) (2022-10-26)
+
+
+### Build System
+
+* publish envoy and dashmate-helper docker images after release ([#595](https://github.com/dashpay/platform/issues/595))
+
 ## [0.24.0-dev.3](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.24.0-dev.3) (2022-10-20)
 
 
