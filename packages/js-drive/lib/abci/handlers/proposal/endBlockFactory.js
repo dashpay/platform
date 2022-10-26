@@ -3,7 +3,7 @@ const timeToMillis = require('../../../util/timeToMillis');
 /**
  * Begin block ABCI
  *
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
@@ -15,7 +15,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @return {endBlock}
  */
 function endBlockFactory(
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
@@ -28,6 +28,7 @@ function endBlockFactory(
    * @typedef endBlock
    *
    * @param {number} height
+   * @param {number} round
    * @param {number} processingFees
    * @param {number} storageFees
    * @param {BaseLogger} logger
@@ -39,6 +40,7 @@ function endBlockFactory(
    */
   async function endBlock(
     height,
+    round,
     processingFees,
     storageFees,
     logger,
@@ -49,6 +51,7 @@ function endBlockFactory(
     });
 
     consensusLogger.debug('EndBlock ABCI method requested');
+    const blockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
@@ -100,8 +103,8 @@ function endBlockFactory(
       }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
 
-    const consensusParamUpdates = await updateConsensusParams(height, consensusLogger);
-    const validatorSetUpdate = await rotateValidators(height, consensusLogger);
+    const consensusParamUpdates = await updateConsensusParams(height, round, consensusLogger);
+    const validatorSetUpdate = await rotateValidators(height, round, consensusLogger);
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });
 
     return {

@@ -5,6 +5,7 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 const txAction = {
   UNKNOWN: 0, // Unknown action
@@ -16,7 +17,7 @@ const txAction = {
 /**
  * @param {deliverTx} deliverTx
  * @param {BaseLogger} logger
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {updateCoreChainLock} updateCoreChainLock
@@ -26,7 +27,7 @@ const txAction = {
 function prepareProposalHandlerFactory(
   deliverTx,
   logger,
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   beginBlock,
   endBlock,
   updateCoreChainLock,
@@ -47,6 +48,7 @@ function prepareProposalHandlerFactory(
       localLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
+      round,
     } = request;
     const consensusLogger = logger.child({
       height: height.toString(),
@@ -67,6 +69,10 @@ function prepareProposalHandlerFactory(
 
     executionTimer.clearTimer('blockExecution');
     executionTimer.startTimer('blockExecution');
+
+    const proposalBlockExecutionContext = new BlockExecutionContext();
+
+    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
 
     await beginBlock(
       {
@@ -99,7 +105,7 @@ function prepareProposalHandlerFactory(
         action: txAction.UNMODIFIED,
       });
 
-      const txResult = await deliverTx(tx, consensusLogger);
+      const txResult = await deliverTx(tx, round, consensusLogger);
 
       if (txResult.code === 0) {
         validTxCount += 1;
@@ -110,18 +116,18 @@ function prepareProposalHandlerFactory(
       txResults.push(txResult);
     }
 
-    blockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
-    const processingFees = blockExecutionContext.getCumulativeProcessingFee();
-    const storageFees = blockExecutionContext.getCumulativeStorageFee();
+    const processingFees = proposalBlockExecutionContext.getCumulativeProcessingFee();
+    const storageFees = proposalBlockExecutionContext.getCumulativeStorageFee();
 
-    const coreChainLockUpdate = await updateCoreChainLock(consensusLogger);
+    const coreChainLockUpdate = await updateCoreChainLock(round, consensusLogger);
 
     const {
       consensusParamUpdates,
       validatorSetUpdate,
       appHash,
-    } = await endBlock(height, processingFees, storageFees, consensusLogger);
+    } = await endBlock(height, round, processingFees, storageFees, consensusLogger);
 
     const prepareProposalTimings = executionTimer.stopTimer('prepareProposal');
 
