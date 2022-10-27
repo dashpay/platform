@@ -237,7 +237,7 @@ describe('Identity', () => {
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
 
-      identity.addPublicKeys([
+      identity.addPublicKeys(
         new IdentityPublicKeyWasm({
           id: 99,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -256,7 +256,7 @@ describe('Identity', () => {
           signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
         })
-      ]);
+      );
 
       const maxId = identity.getPublicKeyMaxId();
 

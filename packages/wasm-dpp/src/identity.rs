@@ -1,3 +1,4 @@
+use js_sys::Array;
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
@@ -52,7 +53,6 @@ impl IdentityWasm {
         self.0.get_id().clone().into()
     }
 
-    // TODO: There's a problem here - if the value is not a vec, this method just won't return
     #[wasm_bindgen(js_name=setPublicKeys)]
     pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
         let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
@@ -231,13 +231,14 @@ impl IdentityWasm {
         self.0.public_keys.push(public_key.into());
     }
 
-    // The method `addPublicKeys()` takes an array of `IdentityPublicKeyWasm` as an input. But elements of the array
+    // The method `addPublicKeys()` takes an variadic array of `IdentityPublicKeyWasm` as an input. But elements of the array
     // are available ONLY as `JsValue`. WASM-bindgen uses output from `toJSON()` to store WASM-object as `JsValue`.
     // `toJSON()` converts binary data to `base64` or `base58`. Therefore we need to use `from_json_object()` constructor to
     // to convert strings back into bytes and get `IdentityPublicKeyWasm`
-    #[wasm_bindgen(js_name=addPublicKeys)]
-    pub fn add_public_keys(&mut self, js_public_keys: js_sys::Array) -> Result<(), JsValue> {
-        let json_objects = to_vec_of_serde_values(js_public_keys.iter())?;
+    #[wasm_bindgen(js_name=addPublicKeys, variadic)]
+    pub fn add_public_keys(&mut self, js_public_keys: JsValue) -> Result<(), JsValue> {
+        let js_public_keys_array = Array::from(&js_public_keys);
+        let json_objects = to_vec_of_serde_values(js_public_keys_array.iter())?;
 
         let public_keys: Vec<IdentityPublicKey> = json_objects
             .into_iter()
