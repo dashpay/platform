@@ -61,12 +61,17 @@ pub struct BlockBeginRequest {
     pub previous_block_time_ms: Option<u64>,
     /// The block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
+    /// Validator set quorum hash
+    pub validator_set_quorum_hash: [u8; 32],
 }
 
 /// A struct for handling block begin responses
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct BlockBeginResponse {}
+pub struct BlockBeginResponse {
+    /// List of unsigned withdrawal transaction bytes
+    pub unsigned_withdrawal_transactions: Vec<Vec<u8>>,
+}
 
 /// A struct for handling block end requests
 #[derive(Serialize, Deserialize)]

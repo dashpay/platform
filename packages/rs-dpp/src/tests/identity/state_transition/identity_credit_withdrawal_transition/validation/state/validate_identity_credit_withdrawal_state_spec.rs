@@ -89,7 +89,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
 
         let error = result.first_error().unwrap();
 
-        assert_eq!(error.code(), 4023);
+        assert_eq!(error.code(), 4024);
     }
 
     #[tokio::test]
