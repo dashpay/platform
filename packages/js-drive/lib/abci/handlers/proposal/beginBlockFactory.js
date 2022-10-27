@@ -65,7 +65,8 @@ function beginBlockFactory(
       abciMethod: 'beginBlock',
     });
 
-    if (round === 0) {
+    // TODO remove undefined when round is ready
+    if (round === 0 || round === undefined) {
       executionTimer.clearTimer('blockExecution');
       executionTimer.startTimer('blockExecution');
     }
