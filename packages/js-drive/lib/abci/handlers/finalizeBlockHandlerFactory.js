@@ -18,6 +18,7 @@ const DataContractCacheItem = require('../../dataContract/DataContractCacheItem'
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
@@ -53,7 +54,7 @@ function finalizeBlockHandlerFactory(
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     // TODO do we need it?
-    // latestBlockExecutionContext.populate(proposalBlockExecutionContext);
+    latestBlockExecutionContext.populate(proposalBlockExecutionContext);
 
     // Store block execution context
     await blockExecutionContextRepository.store(
