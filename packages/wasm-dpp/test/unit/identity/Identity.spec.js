@@ -1,6 +1,7 @@
 const { default: loadWasmDpp } = require('../../../dist');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
+const lodashCloneDeep = require('lodash.clonedeep');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const OldIdentity = require('@dashevo/dpp/lib/identity/Identity');
@@ -21,8 +22,9 @@ describe('Identity', () => {
   let IdentityPublicKeyWasm;
 
   before(async () => {
-    ({ Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
+    ({ Identifier, Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
   });
+
 
   beforeEach(async function beforeEach() {
     rawIdentity = {
@@ -36,7 +38,7 @@ describe('Identity', () => {
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
           readOnly: false,
-          signature: Array.from(Uint8Array.from(Buffer.alloc(36).fill('a')))
+          signature: Buffer.alloc(36).fill('a'),
         },
       ],
       balance: 0,
@@ -88,17 +90,14 @@ describe('Identity', () => {
 
   describe('#setPublicKeys', () => {
     it('should reject input which is not array of public keys', () => {
-
-      // TODO: that's a better way to assert throws
       expect(() => { identity.setPublicKeys(42) })
         .throws("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys");
-
       expect(identity.getPublicKeys()).length(1)
     });
 
     it('should set public keys', () => {
       const ipk = new IdentityPublicKey({
-        id: 0,
+        id: 2,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
@@ -107,10 +106,9 @@ describe('Identity', () => {
         readOnly: false,
       });
 
-      // TODO: I've changed that line. It seems serialization doesn't correctly process the field "signature"
       identity.setPublicKeys([ipk]);
-
-      expect(identity.getPublicKeys()).length(2)
+      expect(identity.getPublicKeys()).length(1);
+      expect(identity.getPublicKeys()[0].getId()).eq(2);
     });
   });
 
@@ -130,9 +128,6 @@ describe('Identity', () => {
   describe('#toBuffer', () => {
     it('should return serialized identity', () => {
       const oldIdentity = new OldIdentity(rawIdentity);
-
-      // TODO: it should return an instance of a Buffer, can be done on the Rust side through something that looks like
-      //  "extern C { type Buffer }", and returning that type later
       const result = Buffer.from(identity.toBuffer());
 
       expect(result).to.deep.eq(oldIdentity.toBuffer());
@@ -156,26 +151,15 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-      // const buf = Buffer.from('ff', 'hex');
-      // console.log(buf.valueOf());
+      let identityObject = identity.toObject();
 
-      // console.log(identity.toObject());
-      // console.log(rawIdentity.id.valueOf());
+      //! TODO The structures exported from WASM cannot be deeply inspected and hence: compared.
+      //! TODO The WASM structure contains `ptr` field with a pointer to memory in WASM space, and
+      //! TODO the address is always different
+      identityObject.id = identityObject.id.toJSON();
+      rawIdentity.id = rawIdentity.id.toJSON();
 
-
-      // console.log(identity.toObject());
-      // console.log(rawIdentity);
-
-      // TODO: data and identifier aren't correctly seirailzed to buffers, but for different reasons.
-      //  Please check comment in toBuffer test to get some more info
-      const object = identity.toObject();
-
-      console.log(`the object is: ${object}`);
-      console.log(`the original object is ${rawIdentity}`);
-
-
-      expect(identity.toObject()).to.deep.equal(rawIdentity);
-      // expect(identity.toObject()).to.deep.equal(rawIdentity);
+      expect(identityObject).to.deep.equal(rawIdentity);
     });
   });
 
@@ -183,8 +167,6 @@ describe('Identity', () => {
     it('should return json representation', () => {
       const jsonIdentity = identity.toJSON();
 
-      // TODO: signature serializes way incorrectly. The problem is likely in rs-dpp itself, probably signature
-      //  isn't considered as a binary property here
       expect(jsonIdentity).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         id: rawIdentity.id.toString(),
@@ -259,7 +241,7 @@ describe('Identity', () => {
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
 
-      identity.addPublicKeys([
+      identity.addPublicKeys(
         new IdentityPublicKeyWasm({
           id: 99,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -278,7 +260,7 @@ describe('Identity', () => {
           signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
         })
-      ]);
+      );
 
       const maxId = identity.getPublicKeyMaxId();
 

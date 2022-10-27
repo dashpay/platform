@@ -1,8 +1,11 @@
+use std::convert::TryInto;
+
 pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::errors::from_dpp_err;
+use crate::Buffer;
 use dpp::identifier;
 use js_sys::Uint8Array;
 
@@ -20,7 +23,7 @@ extern "C" {
     fn log(a: &str);
 }
 
-#[wasm_bindgen(js_name = Identifier)]
+#[wasm_bindgen(js_name = Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,
 }
