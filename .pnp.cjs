@@ -3000,7 +3000,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
             ["chai-exclude", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.1.0"],\
             ["chai-string", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:1.5.0"],\
-            ["dev", "npm:0.1.3"],\
             ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
             ["fast-json-patch", "npm:3.1.0"],\
             ["json-schema-diff-validator", "npm:0.4.1"],\
@@ -5866,16 +5865,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["bindings", [\
-        ["npm:1.5.0", {\
-          "packageLocation": "./.yarn/cache/bindings-npm-1.5.0-77ce1d213c-65b6b48095.zip/node_modules/bindings/",\
-          "packageDependencies": [\
-            ["bindings", "npm:1.5.0"],\
-            ["file-uri-to-path", "npm:1.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["bl", [\
         ["npm:1.2.3", {\
           "packageLocation": "./.yarn/cache/bl-npm-1.2.3-49c4213ca5-123f097989.zip/node_modules/bl/",\
@@ -7992,16 +7981,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["dev", [\
-        ["npm:0.1.3", {\
-          "packageLocation": "./.yarn/cache/dev-npm-0.1.3-32cc08dee4-a28f822a98.zip/node_modules/dev/",\
-          "packageDependencies": [\
-            ["dev", "npm:0.1.3"],\
-            ["inotify", "npm:1.4.6"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["dezalgo", [\
         ["npm:1.0.3", {\
           "packageLocation": "./.yarn/cache/dezalgo-npm-1.0.3-e2bc978ebd-8b26238db9.zip/node_modules/dezalgo/",\
@@ -9247,15 +9226,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["file-uri-to-path", [\
-        ["npm:1.0.0", {\
-          "packageLocation": "./.yarn/cache/file-uri-to-path-npm-1.0.0-1043ac6206-b648580bdd.zip/node_modules/file-uri-to-path/",\
-          "packageDependencies": [\
-            ["file-uri-to-path", "npm:1.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["filelist", [\
         ["npm:1.0.2", {\
           "packageLocation": "./.yarn/cache/filelist-npm-1.0.2-d98495ab20-4d6953cb6f.zip/node_modules/filelist/",\
@@ -10487,18 +10457,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/ini-npm-1.3.8-fb5040b4c0-dfd98b0ca3.zip/node_modules/ini/",\
           "packageDependencies": [\
             ["ini", "npm:1.3.8"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["inotify", [\
-        ["npm:1.4.6", {\
-          "packageLocation": "./.yarn/unplugged/inotify-npm-1.4.6-d8a5655766/node_modules/inotify/",\
-          "packageDependencies": [\
-            ["inotify", "npm:1.4.6"],\
-            ["bindings", "npm:1.5.0"],\
-            ["nan", "npm:2.17.0"],\
-            ["node-gyp", "npm:8.4.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -13064,14 +13022,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/unplugged/nan-npm-2.15.0-505c98ef4d/node_modules/nan/",\
           "packageDependencies": [\
             ["nan", "npm:2.15.0"],\
-            ["node-gyp", "npm:8.4.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:2.17.0", {\
-          "packageLocation": "./.yarn/unplugged/nan-npm-2.17.0-bf36a21d6f/node_modules/nan/",\
-          "packageDependencies": [\
-            ["nan", "npm:2.17.0"],\
             ["node-gyp", "npm:8.4.0"]\
           ],\
           "linkType": "HARD"\
