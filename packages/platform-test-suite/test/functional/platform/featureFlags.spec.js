@@ -95,8 +95,16 @@ describe('Platform', () => {
         );
 
         await ownerClient.platform.documents.broadcast({
-          create: [documentUpdate, documentRevert],
+          create: [documentUpdate],
         }, identity);
+
+        // forcing creation of additional block (enableAtHeight + 1)
+        await ownerClient.platform.documents.broadcast({
+          create: [documentRevert],
+        }, identity);
+
+        // forcing creation of additional block (enableAtHeight + 2)
+        await ownerClient.platform.identities.register(1400);
 
         // wait for block and check consensus params were changed
         let height;
