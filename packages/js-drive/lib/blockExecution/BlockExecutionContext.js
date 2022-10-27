@@ -285,7 +285,7 @@ class BlockExecutionContext {
       height: this.height ? this.height.toNumber() : null,
       version: this.version ? this.version.toJSON() : null,
       coreChainLockedHeight: this.coreChainLockedHeight,
-      lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
+      lastCommitInfo: this.lastCommitInfo ? CommitInfo.toObject(this.lastCommitInfo) : null,
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
     };
 
