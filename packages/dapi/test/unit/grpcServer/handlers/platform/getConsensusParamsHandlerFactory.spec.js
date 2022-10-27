@@ -80,7 +80,7 @@ describe('getConsensusParamsHandlerFactory', () => {
   });
 
   it('should throw FailedPreconditionGrpcError', async () => {
-    const error = new RPCError(32603, 'invalid height', 'some data');
+    const error = new RPCError(-32603, 'invalid height', 'some data');
     getConsensusParamsMock.throws(error);
 
     try {
