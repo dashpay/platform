@@ -128,9 +128,6 @@ describe('Identity', () => {
   describe('#toBuffer', () => {
     it('should return serialized identity', () => {
       const oldIdentity = new OldIdentity(rawIdentity);
-
-      // TODO: it should return an instance of a Buffer, can be done on the Rust side through something that looks like
-      //  "extern C { type Buffer }", and returning that type later
       const result = Buffer.from(identity.toBuffer());
 
       expect(result).to.deep.eq(oldIdentity.toBuffer());
