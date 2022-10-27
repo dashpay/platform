@@ -15,7 +15,6 @@ const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const BlockExecutionContextRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextRepositoryMock');
-const BlockExecutionContext = require('../../../../lib/blockExecution/BlockExecutionContext');
 
 describe('finalizeBlockHandlerFactory', () => {
   let finalizeBlockHandler;

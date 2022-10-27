@@ -28,7 +28,6 @@ describe('beginBlockFactory', () => {
   let request;
   let blockHeight;
   let coreChainLockedHeight;
-  let blockExecutionContextMock;
   let updateSimplifiedMasternodeListMock;
   let waitForChainLockedHeightMock;
   let loggerMock;
@@ -50,7 +49,6 @@ describe('beginBlockFactory', () => {
     round = 0;
     protocolVersion = Long.fromInt(1);
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);

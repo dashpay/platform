@@ -20,7 +20,8 @@ function extendVoteHandlerFactory(latestBlockExecutionContext) {
    * @return {Promise<abci.ResponseExtendVote>}
    */
   async function extendVoteHandler() {
-    const unsignedWithdrawalTransactionsMap = latestBlockExecutionContext.getWithdrawalTransactionsMap();
+    const unsignedWithdrawalTransactionsMap = latestBlockExecutionContext
+      .getWithdrawalTransactionsMap();
 
     const voteExtentions = Object.keys(unsignedWithdrawalTransactionsMap)
       .sort()
