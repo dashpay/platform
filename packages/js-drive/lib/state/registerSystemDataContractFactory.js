@@ -7,7 +7,7 @@ const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {LRUCache} dataContractCache
  *
  * @return {registerSystemDataContract}
@@ -17,7 +17,7 @@ function registerSystemDataContractFactory(
   identityRepository,
   dataContractRepository,
   publicKeyToIdentitiesRepository,
-  blockExecutionContext,
+  latestBlockExecutionContext,
   dataContractCache,
 ) {
   /**

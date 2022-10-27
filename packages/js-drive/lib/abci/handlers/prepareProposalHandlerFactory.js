@@ -20,7 +20,6 @@ const txAction = {
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {updateCoreChainLock} updateCoreChainLock
- * @param {ExecutionTimer} executionTimer
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
@@ -30,7 +29,6 @@ function prepareProposalHandlerFactory(
   beginBlock,
   endBlock,
   updateCoreChainLock,
-  executionTimer,
 ) {
   /**
    * @typedef prepareProposalHandler
@@ -62,12 +60,6 @@ function prepareProposalHandlerFactory(
     );
     consensusLogger.debug('PrepareProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
-
-    executionTimer.clearTimer('roundExecution');
-    executionTimer.startTimer('roundExecution');
-
-    executionTimer.clearTimer('blockExecution');
-    executionTimer.startTimer('blockExecution');
 
     await beginBlock(
       {
@@ -112,6 +104,7 @@ function prepareProposalHandlerFactory(
 
       if (txResult.code === 0) {
         validTxCount += 1;
+        // TODO We probably should calculate fees for invalid transitions as well
         storageFee += actualStorageFee;
         processingFee += actualProcessingFee;
       } else {
@@ -131,15 +124,13 @@ function prepareProposalHandlerFactory(
       appHash,
     } = await endBlock(height, round, processingFee, storageFee, consensusLogger);
 
-    const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
-
     consensusLogger.info(
       {
         validTxCount,
         invalidTxCount,
       },
       `Prepare proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
-      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}). Took ${prepareProposalTimings} seconds`,
+      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
     return new ResponsePrepareProposal({

@@ -1,5 +1,16 @@
 const Long = require('long');
-
+const {
+  tendermint: {
+    version: {
+      Consensus,
+    },
+  },
+  google: {
+    protobuf: {
+      Timestamp,
+    },
+  },
+} = require('@dashevo/abci/types');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 const beginBlockFactory = require('../../../../../lib/abci/handlers/proposal/beginBlockFactory');
@@ -9,6 +20,7 @@ const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const NotSupportedNetworkProtocolVersionError = require('../../../../../lib/abci/handlers/errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
 const GroveDBStoreMock = require('../../../../../lib/test/mock/GroveDBStoreMock');
+const ProposalBlockExecutionContextCollection = require('../../../../../lib/blockExecution/ProposalBlockExecutionContextCollection');
 
 describe('beginBlockFactory', () => {
   let protocolVersion;
@@ -29,11 +41,17 @@ describe('beginBlockFactory', () => {
   let time;
   let rsAbciMock;
   let proposerProTxHash;
+  let round;
+  let executionTimerMock;
+  let latestBlockExecutionContextMock;
+  let proposalBlockExecutionContextCollection;
 
   beforeEach(function beforeEach() {
+    round = 0;
     protocolVersion = Long.fromInt(1);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -42,6 +60,12 @@ describe('beginBlockFactory', () => {
     };
     transactionalDppMock = {
       setProtocolVersion: this.sinon.stub(),
+    };
+
+    executionTimerMock = {
+      clearTimer: this.sinon.stub(),
+      startTimer: this.sinon.stub(),
+      stopTimer: this.sinon.stub(),
     };
 
     updateSimplifiedMasternodeListMock = this.sinon.stub().resolves(false);
@@ -62,9 +86,12 @@ describe('beginBlockFactory', () => {
 
     rsAbciMock.blockBegin.resolves({});
 
+    proposalBlockExecutionContextCollection = new ProposalBlockExecutionContextCollection();
+
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
-      blockExecutionContextMock,
+      latestBlockExecutionContextMock,
+      proposalBlockExecutionContextCollection,
       protocolVersion,
       dppMock,
       transactionalDppMock,
@@ -72,19 +99,20 @@ describe('beginBlockFactory', () => {
       waitForChainLockedHeightMock,
       synchronizeMasternodeIdentitiesMock,
       rsAbciMock,
+      executionTimerMock,
     );
 
     blockHeight = new Long(1);
 
     lastCommitInfo = {};
 
-    version = {
+    version = Consensus.fromObject({
       app: protocolVersion,
-    };
+    });
 
-    time = {
-      seconds: Math.ceil(new Date().getTime() / 1000),
-    };
+    time = new Timestamp({
+      seconds: Long.fromNumber(Math.ceil(new Date().getTime() / 1000)),
+    });
 
     proposerProTxHash = Buffer.alloc(32, 1);
 
@@ -95,6 +123,7 @@ describe('beginBlockFactory', () => {
       version,
       time,
       proposerProTxHash,
+      round,
     };
   });
 
@@ -103,17 +132,6 @@ describe('beginBlockFactory', () => {
 
     // Wait for chain locked core block height
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
-
-    // Reset block execution context
-    expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
-    expect(blockExecutionContextMock.setConsensusLogger).to.be.calledOnceWithExactly(loggerMock);
-    expect(blockExecutionContextMock.setHeight).to.be.calledOnceWithExactly(blockHeight);
-    expect(blockExecutionContextMock.setVersion).to.be.calledOnceWithExactly(version);
-    expect(blockExecutionContextMock.setTime).to.be.calledOnceWithExactly(time);
-    expect(blockExecutionContextMock.setCoreChainLockedHeight).to.be.calledOnceWithExactly(
-      coreChainLockedHeight,
-    );
-    expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
 
     // Set current protocol version
     expect(dppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
@@ -132,6 +150,23 @@ describe('beginBlockFactory', () => {
     );
 
     expect(synchronizeMasternodeIdentitiesMock).to.not.been.called();
+
+    expect(executionTimerMock.clearTimer).to.be.calledTwice();
+    expect(executionTimerMock.clearTimer.getCall(1)).to.be.calledWithExactly('roundExecution');
+    expect(executionTimerMock.clearTimer.getCall(0)).to.be.calledWithExactly('blockExecution');
+
+    expect(executionTimerMock.startTimer).to.be.calledTwice();
+    expect(executionTimerMock.startTimer.getCall(1)).to.be.calledWithExactly('roundExecution');
+    expect(executionTimerMock.startTimer.getCall(0)).to.be.calledWithExactly('blockExecution');
+
+    const executionContext = proposalBlockExecutionContextCollection.get(round);
+
+    expect(executionContext.consensusLogger).to.equal(loggerMock);
+    expect(executionContext.height).to.equal(blockHeight);
+    expect(executionContext.version).to.equal(version);
+    expect(executionContext.time).to.equal(time);
+    expect(executionContext.coreChainLockedHeight).to.equal(coreChainLockedHeight);
+    expect(executionContext.lastCommitInfo).to.equal(lastCommitInfo);
   });
 
   it('should synchronize masternode identities if SML is updated', async () => {
@@ -182,9 +217,9 @@ describe('beginBlockFactory', () => {
 
     await beginBlock(request, loggerMock);
 
-    expect(
-      blockExecutionContextMock.setWithdrawalTransactionsMap,
-    ).to.have.been.calledOnceWithExactly({
+    const executionContext = proposalBlockExecutionContextCollection.get(round);
+
+    expect(executionContext.withdrawalTransactionsMap).to.deep.equal({
       [hash(txOneBytes).toString('hex')]: txOneBytes,
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     });

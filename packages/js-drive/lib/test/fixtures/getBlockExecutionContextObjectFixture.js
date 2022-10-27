@@ -26,13 +26,8 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
  *   version: number,
  *   time: Timestamp,
  *   validTxs: number,
- *   cumulativeStorageFee: number,
- *   cumulativeProcessingFee: number,
  *   consensusLogger: Logger,
  *   withdrawalTransactionsMap: Object,
- *   previousHeight: number,
- *   previousBlockTime: Timestamp,
- *   previousCoreChainLockedHeight: number
  * }}
  */
 function getBlockExecutionContextObjectFixture(dataContract = getDataContractFixture()) {
@@ -44,11 +39,6 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
 
   const time = new Timestamp({
     seconds: Math.ceil(new Date().getTime() / 1000),
-    nanos: 0,
-  });
-
-  const previousTime = new Timestamp({
-    seconds: Math.ceil(new Date().getTime() / 1000) - 86400,
     nanos: 0,
   });
 
@@ -65,8 +55,6 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
   return {
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: CommitInfo.toObject(lastCommitInfo),
-    cumulativeProcessingFee: 1000,
-    cumulativeStorageFee: 2000,
     time,
     height: 10,
     coreChainLockedHeight: 10,
@@ -76,9 +64,6 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
       [hash(txOneBytes).toString('hex')]: txOneBytes,
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     },
-    previousBlockTime: previousTime,
-    previousHeight: 9,
-    previousCoreChainLockedHeight: 9,
   };
 }
 

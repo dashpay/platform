@@ -526,7 +526,9 @@ function createDIContainer(options) {
   container.register({
     latestBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
     blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
-    ProposalBlockExecutionContextCollection: asClass(ProposalBlockExecutionContextCollection).singleton(),
+    proposalBlockExecutionContextCollection: asClass(
+      ProposalBlockExecutionContextCollection,
+    ).singleton(),
   });
 
   /**
@@ -544,7 +546,7 @@ function createDIContainer(options) {
       spentAssetLockTransactionsRepository,
       coreRpcClient,
       dataContractCache,
-      blockExecutionContext,
+      latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
     ) => {
@@ -556,7 +558,7 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        blockExecutionContext,
+        latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
       );
@@ -576,7 +578,7 @@ function createDIContainer(options) {
       spentAssetLockTransactionsRepository,
       coreRpcClient,
       dataContractCache,
-      blockExecutionContext,
+      latestBlockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
       rsDrive,
@@ -589,7 +591,7 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        blockExecutionContext,
+        latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
         {
@@ -607,7 +609,7 @@ function createDIContainer(options) {
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,
-        blockExecutionContext,
+        latestBlockExecutionContext,
       );
     }).singleton(),
 

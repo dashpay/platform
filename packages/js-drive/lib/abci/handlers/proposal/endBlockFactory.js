@@ -11,6 +11,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @param {updateConsensusParams} updateConsensusParams
  * @param {rotateValidators} rotateValidators
  * @param {GroveDBStore} groveDBStore
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {endBlock}
  */
@@ -23,6 +24,7 @@ function endBlockFactory(
   rotateValidators,
   rsAbci,
   groveDBStore,
+  executionTimer,
 ) {
   /**
    * @typedef endBlock
@@ -106,6 +108,12 @@ function endBlockFactory(
     const consensusParamUpdates = await updateConsensusParams(height, round, consensusLogger);
     const validatorSetUpdate = await rotateValidators(height, round, consensusLogger);
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });
+
+    const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
+
+    consensusLogger.info(
+      `Round execution took ${prepareProposalTimings} seconds`,
+    );
 
     return {
       consensusParamUpdates,

@@ -23,7 +23,7 @@ class ProposalBlockExecutionContextCollection {
    * @return {BlockExecutionContext}
    */
   get(round) {
-    this.collection.get(round);
+    return this.collection.get(round);
   }
 
   /**

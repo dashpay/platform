@@ -19,6 +19,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {RSAbci} rsAbci
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {beginBlock}
  */
@@ -33,6 +34,7 @@ function beginBlockFactory(
   waitForChainLockedHeight,
   synchronizeMasternodeIdentities,
   rsAbci,
+  executionTimer,
 ) {
   /**
    * @typedef beginBlock
@@ -62,6 +64,14 @@ function beginBlockFactory(
       height: height.toString(),
       abciMethod: 'beginBlock',
     });
+
+    if (round === 0) {
+      executionTimer.clearTimer('blockExecution');
+      executionTimer.startTimer('blockExecution');
+    }
+
+    executionTimer.clearTimer('roundExecution');
+    executionTimer.startTimer('roundExecution');
 
     // Validate protocol version
 

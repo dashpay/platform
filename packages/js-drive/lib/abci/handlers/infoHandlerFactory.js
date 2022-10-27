@@ -66,7 +66,7 @@ function infoHandlerFactory(
 
     // Update SML store to latest saved core chain lock to make sure
     // that verify chain lock handler has updated SML Store to verify signatures
-    if (latestBlockExecutionContext.getHeight() !== null) {
+    if (!latestBlockExecutionContext.isEmpty()) {
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });

@@ -26,16 +26,16 @@ describe('prepareProposalHandlerFactory', () => {
   let beginBlockMock;
   let endBlockMock;
   let updateCoreChainLockMock;
-  let executionTimerMock;
   let appHash;
   let consensusParamUpdates;
   let validatorSetUpdate;
   let coreChainLockUpdate;
   let endBlockResult;
-  let processingFees;
-  let storageFees;
+  let proposalBlockExecutionContextCollectionMock;
+  let round;
 
   beforeEach(function beforeEach() {
+    round = 1;
     appHash = Buffer.alloc(1, 1);
     coreChainLockUpdate = new CoreChainLock({
       coreBlockHeight: 42,
@@ -59,19 +59,9 @@ describe('prepareProposalHandlerFactory', () => {
     });
     validatorSetUpdate = new ValidatorSetUpdate();
 
-    processingFees = 1;
-    storageFees = 3;
-
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getCumulativeProcessingFee.returns(processingFees);
-    blockExecutionContextMock.getCumulativeStorageFee.returns(storageFees);
 
     loggerMock = new LoggerMock(this.sinon);
-    executionTimerMock = {
-      clearTimer: this.sinon.stub(),
-      startTimer: this.sinon.stub(),
-      stopTimer: this.sinon.stub(),
-    };
 
     endBlockResult = {
       consensusParamUpdates,
@@ -80,25 +70,30 @@ describe('prepareProposalHandlerFactory', () => {
     };
 
     beginBlockMock = this.sinon.stub();
-    deliverTxMock = this.sinon.stub().resolves(
-      {
+    deliverTxMock = this.sinon.stub().resolves({
+      txResult: {
         code: 0,
       },
-    );
+      actualProcessingFee: 1,
+      actualStorageFee: 2,
+    });
     endBlockMock = this.sinon.stub().resolves(
       endBlockResult,
     );
 
     updateCoreChainLockMock = this.sinon.stub().resolves(coreChainLockUpdate);
 
+    proposalBlockExecutionContextCollectionMock = {
+      get: this.sinon.stub().returns(blockExecutionContextMock),
+    };
+
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
-      blockExecutionContextMock,
+      proposalBlockExecutionContextCollectionMock,
       beginBlockMock,
       endBlockMock,
       updateCoreChainLockMock,
-      executionTimerMock,
     );
 
     const maxTxBytes = 42;
@@ -129,6 +124,7 @@ describe('prepareProposalHandlerFactory', () => {
       localLastCommit,
       time,
       proposerProTxHash,
+      round,
     };
   });
 
@@ -150,16 +146,6 @@ describe('prepareProposalHandlerFactory', () => {
     expect(result.coreChainLockUpdate).to.be.equal(coreChainLockUpdate);
     expect(result.txRecords).to.be.deep.equal(txRecords);
 
-    expect(executionTimerMock.clearTimer).to.be.calledTwice();
-    expect(executionTimerMock.clearTimer.getCall(0)).to.be.calledWithExactly('prepareProposal');
-    expect(executionTimerMock.clearTimer.getCall(1)).to.be.calledWithExactly('blockExecution');
-
-    expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('prepareProposal');
-
-    expect(executionTimerMock.startTimer).to.be.calledTwice();
-    expect(executionTimerMock.startTimer.getCall(0)).to.be.calledWithExactly('prepareProposal');
-    expect(executionTimerMock.startTimer.getCall(1)).to.be.calledWithExactly('blockExecution');
-
     expect(beginBlockMock).to.be.calledOnceWithExactly(
       {
         lastCommitInfo: request.localLastCommit,
@@ -174,12 +160,14 @@ describe('prepareProposalHandlerFactory', () => {
 
     expect(deliverTxMock).to.be.calledThrice();
 
-    expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(loggerMock);
+    expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(round, loggerMock);
+    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
 
     expect(endBlockMock).to.be.calledOnceWithExactly(
       request.height,
-      processingFees,
-      storageFees,
+      round,
+      3,
+      6,
       loggerMock,
     );
   });
