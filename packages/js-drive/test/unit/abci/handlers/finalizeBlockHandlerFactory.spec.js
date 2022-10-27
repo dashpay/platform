@@ -20,6 +20,7 @@ describe('finalizeBlockHandlerFactory', () => {
   let finalizeBlockHandler;
   let executionTimerMock;
   let blockExecutionContextMock;
+  let latestBlockExecutionContextMock;
   let loggerMock;
   let requestMock;
   let appHash;
@@ -35,6 +36,7 @@ describe('finalizeBlockHandlerFactory', () => {
     round = 0;
     appHash = Buffer.alloc(0);
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     loggerMock = new LoggerMock(this.sinon);
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -95,6 +97,7 @@ describe('finalizeBlockHandlerFactory', () => {
       coreRpcClientMock,
       loggerMock,
       executionTimerMock,
+      latestBlockExecutionContextMock,
     );
   });
 
@@ -117,7 +120,8 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnceWithExactly();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
+    expect(latestBlockExecutionContextMock.populate).to.be.calledOnce();
   });
 
   it('should send withdrawal transaction if vote extensions are present', async () => {
