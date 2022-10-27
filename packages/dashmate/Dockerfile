@@ -53,7 +53,7 @@ RUN apk update && \
     apk add --no-cache docker-cli
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="DAPI Helper Node.JS"
+LABEL description="Dashmate Helper Node.JS"
 
 
 WORKDIR /platform
