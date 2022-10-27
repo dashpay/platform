@@ -62,7 +62,7 @@ impl IdentityWasm {
 
         let public_keys = raw_public_keys
             .into_iter()
-            .map(IdentityPublicKey::from_raw_object)
+            .map(IdentityPublicKey::from_json_object)
             .collect::<Result<_, _>>()
             .map_err(|e| {
                 format!(
