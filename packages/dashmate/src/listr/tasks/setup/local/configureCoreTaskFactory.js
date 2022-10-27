@@ -141,7 +141,8 @@ function configureCoreTaskFactory(
                   createBlankWallet,
                   walletPassphrase,
                   avoidReuse,
-                  loadOnStartup);
+                  loadOnStartup,
+                );
               },
             },
             {
