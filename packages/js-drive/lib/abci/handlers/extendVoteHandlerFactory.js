@@ -10,17 +10,17 @@ const {
 } = require('@dashevo/abci/types');
 
 /**
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  *
  * @return {extendVoteHandler}
  */
-function extendVoteHandlerFactory(blockExecutionContext) {
+function extendVoteHandlerFactory(latestBlockExecutionContext) {
   /**
    * @typedef extendVoteHandler
    * @return {Promise<abci.ResponseExtendVote>}
    */
   async function extendVoteHandler() {
-    const unsignedWithdrawalTransactionsMap = blockExecutionContext.getWithdrawalTransactionsMap();
+    const unsignedWithdrawalTransactionsMap = latestBlockExecutionContext.getWithdrawalTransactionsMap();
 
     const voteExtentions = Object.keys(unsignedWithdrawalTransactionsMap)
       .sort()

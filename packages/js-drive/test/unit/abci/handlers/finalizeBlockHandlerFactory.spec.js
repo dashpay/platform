@@ -29,8 +29,11 @@ describe('finalizeBlockHandlerFactory', () => {
   let dataContractCacheMock;
   let blockExecutionContextRepositoryMock;
   let dataContract;
+  let proposalBlockExecutionContextCollectionMock;
+  let round;
 
   beforeEach(function beforeEach() {
+    round = 0;
     appHash = Buffer.alloc(0);
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     loggerMock = new LoggerMock(this.sinon);
@@ -55,6 +58,7 @@ describe('finalizeBlockHandlerFactory', () => {
       height,
       time,
       coreChainLockedHeight,
+      round,
     };
 
     dataContract = getDataContractFixture();
@@ -79,10 +83,15 @@ describe('finalizeBlockHandlerFactory', () => {
       this.sinon,
     );
 
+    proposalBlockExecutionContextCollectionMock = {
+      get: this.sinon.stub().returns(blockExecutionContextMock),
+      clear: this.sinon.stub(),
+    };
+
     finalizeBlockHandler = finalizeBlockHandlerFactory(
       groveDBStoreMock,
-      blockExecutionContextMock,
       blockExecutionContextRepositoryMock,
+      proposalBlockExecutionContextCollectionMock,
       dataContractCacheMock,
       coreRpcClientMock,
       loggerMock,
@@ -97,13 +106,11 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('blockExecution');
 
-    expect(blockExecutionContextMock.getHeight).to.be.calledOnceWithExactly();
-
-    const clonedBlockExecutionContext = new BlockExecutionContext();
-    clonedBlockExecutionContext.populate(blockExecutionContextMock);
+    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
+    expect(proposalBlockExecutionContextCollectionMock.clear).to.be.calledOnce();
 
     expect(blockExecutionContextRepositoryMock.store).to.be.calledOnceWithExactly(
-      clonedBlockExecutionContext,
+      blockExecutionContextMock,
       {
         useTransaction: true,
       },

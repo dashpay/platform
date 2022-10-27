@@ -40,8 +40,8 @@ describe('infoHandlerFactory', () => {
     loggerMock = new LoggerMock(this.sinon);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getPreviousHeight.returns(lastBlockHeight);
-    blockExecutionContextMock.getPreviousCoreChainLockedHeight.returns(lastCoreChainLockedHeight);
+    blockExecutionContextMock.getHeight.returns(lastBlockHeight);
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(lastCoreChainLockedHeight);
     blockExecutionContextRepositoryMock = new BlockExecutionContextRepositoryMock(
       this.sinon,
     );
@@ -63,7 +63,8 @@ describe('infoHandlerFactory', () => {
 
   it('should return respond with genesis heights and app hash on the first run', async () => {
     blockExecutionContextRepositoryMock.fetch.resolves(null);
-    blockExecutionContextMock.getPreviousHeight.returns(null);
+    blockExecutionContextMock.getHeight.returns(null);
+    blockExecutionContextMock.isEmpty.returns(true);
 
     const response = await infoHandler();
 
@@ -85,9 +86,6 @@ describe('infoHandlerFactory', () => {
   });
 
   it('should populate context and update SML on subsequent runs', async () => {
-    blockExecutionContextMock.getHeight.returns(lastBlockHeight);
-    blockExecutionContextMock.getCoreChainLockedHeight.returns(lastCoreChainLockedHeight);
-
     const response = await infoHandler();
 
     expect(response).to.be.an.instanceOf(ResponseInfo);
@@ -99,7 +97,7 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
-    expect(blockExecutionContextMock.getPreviousHeight).to.be.calledThrice();
+    expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       lastCoreChainLockedHeight,

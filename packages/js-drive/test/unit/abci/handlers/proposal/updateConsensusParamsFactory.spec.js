@@ -18,8 +18,11 @@ describe('updateConsensusParamsFactory', () => {
   let height;
   let version;
   let getLatestFeatureFlagGetMock;
+  let proposalBlockExecutionContextCollectionMock;
+  let round;
 
   beforeEach(function beforeEach() {
+    round = 42;
     loggerMock = new LoggerMock(this.sinon);
     height = Long.fromInt(15);
     version = {
@@ -32,8 +35,12 @@ describe('updateConsensusParamsFactory', () => {
     getFeatureFlagForHeightMock = this.sinon.stub().resolves(null);
     getLatestFeatureFlagGetMock = this.sinon.stub();
 
+    proposalBlockExecutionContextCollectionMock = {
+      get: this.sinon.stub().returns(blockExecutionContextMock),
+    };
+
     updateConsensusParams = updateConsensusParamsFactory(
-      blockExecutionContextMock,
+      proposalBlockExecutionContextCollectionMock,
       getFeatureFlagForHeightMock,
     );
   });
@@ -56,7 +63,7 @@ describe('updateConsensusParamsFactory', () => {
       get: getLatestFeatureFlagGetMock,
     });
 
-    const response = await updateConsensusParams(height, loggerMock);
+    const response = await updateConsensusParams(height, round, loggerMock);
 
     expect(response).to.deep.equal(new ConsensusParams({
       block: {
@@ -74,15 +81,21 @@ describe('updateConsensusParamsFactory', () => {
     }));
 
     expect(getFeatureFlagForHeightMock).to.be.calledOnce();
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
   });
 
   it('should return undefined', async () => {
     getFeatureFlagForHeightMock.resolves(null);
 
-    const response = await updateConsensusParams(height, loggerMock);
+    const response = await updateConsensusParams(height, round, loggerMock);
 
     expect(response).to.be.undefined();
 
     expect(getFeatureFlagForHeightMock).to.be.calledOnce();
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
   });
 });

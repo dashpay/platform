@@ -22,7 +22,6 @@ const proposalStatus = {
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {verifyChainLock} verifyChainLock
- * @param {ExecutionTimer} executionTimer
  * @return {processProposalHandler}
  */
 function processProposalHandlerFactory(
@@ -32,7 +31,6 @@ function processProposalHandlerFactory(
   beginBlock,
   endBlock,
   verifyChainLock,
-  executionTimer,
 ) {
   /**
    * @typedef processProposalHandler
@@ -65,12 +63,6 @@ function processProposalHandlerFactory(
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    executionTimer.clearTimer('roundExecution');
-    executionTimer.startTimer('roundExecution');
-
-    executionTimer.clearTimer('blockExecution');
-    executionTimer.startTimer('blockExecution');
-
     await beginBlock(
       {
         lastCommitInfo,
@@ -100,6 +92,7 @@ function processProposalHandlerFactory(
 
       if (txResult.code === 0) {
         validTxCount += 1;
+        // TODO We probably should calculate fees for invalid transitions as well
         storageFee += actualStorageFee;
         processingFee += actualProcessingFee;
       } else {
@@ -127,15 +120,13 @@ function processProposalHandlerFactory(
       await verifyChainLock(coreChainLock);
     }
 
-    const processProposalTimings = executionTimer.stopTimer('roundExecution');
-
     consensusLogger.info(
       {
         validTxCount,
         invalidTxCount,
       },
       `Process proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
-      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}). Took ${processProposalTimings} seconds`,
+      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
     return new ResponseProcessProposal({

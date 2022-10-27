@@ -20,8 +20,11 @@ describe('rotateValidatorsFactory', () => {
   let height;
   let loggerMock;
   let lastCommitInfoMock;
+  let round;
+  let proposalBlockExecutionContextCollectionMock;
 
   beforeEach(function beforeEach() {
+    round = 0;
     chainLockMock = {
       height: 1,
       blockHash: Buffer.alloc(0),
@@ -47,9 +50,12 @@ describe('rotateValidatorsFactory', () => {
     };
 
     loggerMock = new LoggerMock(this.sinon);
+    proposalBlockExecutionContextCollectionMock = {
+      get: this.sinon.stub().returns(blockExecutionContextMock),
+    };
 
     rotateValidators = rotateValidatorsFactory(
-      blockExecutionContextMock,
+      proposalBlockExecutionContextCollectionMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       latestCoreChainLockMock,
@@ -68,7 +74,7 @@ describe('rotateValidatorsFactory', () => {
 
     createValidatorSetUpdateMock.returns(validatorSetUpdate);
 
-    const response = await rotateValidators(height, loggerMock);
+    const response = await rotateValidators(height, round, loggerMock);
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
@@ -77,7 +83,9 @@ describe('rotateValidatorsFactory', () => {
     );
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
-
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
     expect(response).to.be.equal(validatorSetUpdate);
   });
 
@@ -86,7 +94,7 @@ describe('rotateValidatorsFactory', () => {
 
     validatorSetMock.rotate.resolves(false);
 
-    const response = await rotateValidators(height, loggerMock);
+    const response = await rotateValidators(height, round, loggerMock);
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
@@ -95,7 +103,9 @@ describe('rotateValidatorsFactory', () => {
     );
 
     expect(createValidatorSetUpdateMock).to.not.be.called();
-
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
     expect(response).to.be.undefined();
   });
 });

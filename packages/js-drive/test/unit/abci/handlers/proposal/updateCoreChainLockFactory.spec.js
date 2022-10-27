@@ -16,8 +16,11 @@ describe('updateCoreChainLockFactory', () => {
   let chainLockMock;
   let coreChainLockedHeight;
   let loggerMock;
+  let round;
+  let proposalBlockExecutionContextCollectionMock;
 
   beforeEach(function beforeEach() {
+    round = 0;
     loggerMock = new LoggerMock(this.sinon);
 
     chainLockMock = {
@@ -37,8 +40,12 @@ describe('updateCoreChainLockFactory', () => {
       getChainLock: this.sinon.stub().returns(chainLockMock),
     };
 
+    proposalBlockExecutionContextCollectionMock = {
+      get: this.sinon.stub().returns(blockExecutionContextMock),
+    };
+
     updateCoreChainLock = updateCoreChainLockFactory(
-      blockExecutionContextMock,
+      proposalBlockExecutionContextCollectionMock,
       latestCoreChainLockMock,
     );
   });
@@ -46,8 +53,11 @@ describe('updateCoreChainLockFactory', () => {
   it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
     chainLockMock.height = 3;
 
-    const response = await updateCoreChainLock(loggerMock);
+    const response = await updateCoreChainLock(round, loggerMock);
 
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
     const expectedCoreChainLock = new CoreChainLock({
@@ -62,8 +72,11 @@ describe('updateCoreChainLockFactory', () => {
   it('should return undefined', async () => {
     chainLockMock.height = 1;
 
-    const response = await updateCoreChainLock(loggerMock);
+    const response = await updateCoreChainLock(round, loggerMock);
 
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
     expect(response).to.be.undefined();
