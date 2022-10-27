@@ -49,7 +49,7 @@ function getConsensusParamsHandlerFactory(getConsensusParams) {
       consensusParams = await getConsensusParams(height);
     } catch (e) {
       if (e instanceof RPCError) {
-        if (e.code === 32603) {
+        if (e.code === -32603) {
           throw new FailedPreconditionGrpcError(`Invalid height: ${e.data}`);
         }
 
