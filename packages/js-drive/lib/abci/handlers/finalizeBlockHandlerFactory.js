@@ -27,6 +27,7 @@ function finalizeBlockHandlerFactory(
   coreRpcClient,
   logger,
   executionTimer,
+  latestBlockExecutionContext,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -51,8 +52,11 @@ function finalizeBlockHandlerFactory(
 
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
+    // TODO do we need it?
+    // latestBlockExecutionContext.populate(proposalBlockExecutionContext);
+
     // Store block execution context
-    blockExecutionContextRepository.store(
+    await blockExecutionContextRepository.store(
       proposalBlockExecutionContext,
       {
         useTransaction: true,
