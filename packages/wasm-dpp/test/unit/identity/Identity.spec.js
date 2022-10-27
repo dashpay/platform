@@ -1,6 +1,7 @@
 const { default: loadWasmDpp } = require('../../../dist');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
+const lodashCloneDeep = require('lodash.clonedeep');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const OldIdentity = require('@dashevo/dpp/lib/identity/Identity');
@@ -28,8 +29,7 @@ describe('Identity', () => {
   beforeEach(async function beforeEach() {
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
-      id: new Identifier(Buffer.alloc(32).fill('d')),
-      // id: await generateRandomIdentifierAsync(),
+      id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
           id: 0,
@@ -154,8 +154,15 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
+      let identityObject = identity.toObject();
 
-      expect(identity.toObject()).to.deep.equal(rawIdentity);
+      //! TODO The structures exported from WASM cannot be deeply inspected and hence: compared.
+      //! TODO The WASM structure contains `ptr` field with a pointer to memory in WASM space, and
+      //! TODO the address is always different
+      identityObject.id = identityObject.id.toJSON();
+      rawIdentity.id = rawIdentity.id.toJSON();
+
+      expect(identityObject).to.deep.equal(rawIdentity);
     });
   });
 

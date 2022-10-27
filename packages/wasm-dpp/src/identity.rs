@@ -16,6 +16,7 @@ use crate::IdentityPublicKeyWasm;
 use crate::MetadataWasm;
 
 #[wasm_bindgen(js_name=Identity)]
+#[derive(Clone)]
 pub struct IdentityWasm(Identity);
 
 #[wasm_bindgen(js_name=AssetLockProof)]
