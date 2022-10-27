@@ -1,17 +1,11 @@
 use dpp::dashcore::anyhow;
-use js_sys::Function;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
-use crate::js_buffer::JsBuffer;
-use crate::utils;
-use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
-use dpp::util::string_encoding::Encoding;
-use dpp::ProtocolError;
-use wasm_bindgen::describe::WasmDescribe;
-use wasm_bindgen::{JsCast, JsObject};
+use crate::{utils, Buffer};
+use dpp::identity::IdentityPublicKey;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -137,8 +131,26 @@ impl IdentityPublicKeyWasm {
             .0
             .to_raw_json_object(some_option.unwrap_or(false))
             .map_err(|e| from_dpp_err(e.into()))?;
+
+        let data_buffer = Buffer::from_bytes(self.0.get_data());
+        let signature_buffer = Buffer::from_bytes(self.0.get_signature());
+
         let json = val.to_string();
-        js_sys::JSON::parse(&json)
+        let js_object = js_sys::JSON::parse(&json)?;
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"data".to_owned().into(),
+            &JsValue::from(data_buffer),
+        )?;
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"signature".to_owned().into(),
+            &JsValue::from(signature_buffer),
+        )?;
+
+        Ok(js_object)
     }
 
     pub fn from_json(json_object: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
@@ -166,6 +178,6 @@ impl TryFrom<JsValue> for IdentityPublicKeyWasm {
 
 impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
     fn from(pk: IdentityPublicKeyWasm) -> Self {
-        pk.0.to_owned()
+        pk.0
     }
 }

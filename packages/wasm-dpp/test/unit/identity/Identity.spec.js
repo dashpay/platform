@@ -21,13 +21,15 @@ describe('Identity', () => {
   let IdentityPublicKeyWasm;
 
   before(async () => {
-    ({ Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
+    ({ Identifier, Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
   });
+
 
   beforeEach(async function beforeEach() {
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
-      id: await generateRandomIdentifierAsync(),
+      id: new Identifier(Buffer.alloc(32).fill('d')),
+      // id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
           id: 0,
@@ -156,26 +158,8 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-      // const buf = Buffer.from('ff', 'hex');
-      // console.log(buf.valueOf());
-
-      // console.log(identity.toObject());
-      // console.log(rawIdentity.id.valueOf());
-
-
-      // console.log(identity.toObject());
-      // console.log(rawIdentity);
-
-      // TODO: data and identifier aren't correctly seirailzed to buffers, but for different reasons.
-      //  Please check comment in toBuffer test to get some more info
-      const object = identity.toObject();
-
-      console.log(`the object is: ${object}`);
-      console.log(`the original object is ${rawIdentity}`);
-
 
       expect(identity.toObject()).to.deep.equal(rawIdentity);
-      // expect(identity.toObject()).to.deep.equal(rawIdentity);
     });
   });
 
@@ -183,12 +167,6 @@ describe('Identity', () => {
     it('should return json representation', () => {
       const jsonIdentity = identity.toJSON();
 
-      console.log(`the id from JS is: ${jsonIdentity.id}`)
-      console.log(`the signature from JS is: ${jsonIdentity.publicKeys[0].signature}`);
-      console.log(`the data from JS is: ${jsonIdentity.publicKeys[0].data}`);
-
-      // TODO: signature serializes way incorrectly. The problem is likely in rs-dpp itself, probably signature
-      //  isn't considered as a binary property here
       expect(jsonIdentity).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         id: rawIdentity.id.toString(),
