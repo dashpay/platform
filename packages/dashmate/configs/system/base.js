@@ -131,7 +131,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:add-core-chain-lock-to-process-proposal',
+          image: 'dashpay/tenderdash:abci-round',
         },
         p2p: {
           port: 26656,

@@ -1,3 +1,5 @@
+const BlockExecutionContextNotFoundError = require('../abci/errors/BlockExecutionContextNotFoundError');
+
 class ProposalBlockExecutionContextCollection {
   constructor() {
     this.collection = new Map();
@@ -23,7 +25,13 @@ class ProposalBlockExecutionContextCollection {
    * @return {BlockExecutionContext}
    */
   get(round) {
-    return this.collection.get(round);
+    const result = this.collection.get(round);
+
+    if (!result) {
+      throw new BlockExecutionContextNotFoundError(round);
+    }
+
+    return result;
   }
 
   /**
@@ -34,6 +42,15 @@ class ProposalBlockExecutionContextCollection {
     this.collection.clear();
 
     return this;
+  }
+
+  /**
+   * Check if collection contains contexts
+   *
+   * @return {boolean}
+   */
+  isEmpty() {
+    return this.collection.size === 0;
   }
 }
 

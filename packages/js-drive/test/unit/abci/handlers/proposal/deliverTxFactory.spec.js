@@ -108,9 +108,9 @@ describe('deliverTxFactory', () => {
     const response = await deliverTx(documentTx, round, loggerMock);
 
     expect(response).to.deep.equal({
-      txResult: { code: 0 },
-      actualProcessingFee: 0,
-      actualStorageFee: 0,
+      code: 0,
+      processingFees: 0,
+      storageFees: 0,
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
@@ -145,9 +145,9 @@ describe('deliverTxFactory', () => {
     const response = await deliverTx(dataContractTx, round, loggerMock);
 
     expect(response).to.deep.equal({
-      txResult: { code: 0 },
-      actualProcessingFee: 0,
-      actualStorageFee: 0,
+      code: 0,
+      processingFees: 0,
+      storageFees: 0,
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(

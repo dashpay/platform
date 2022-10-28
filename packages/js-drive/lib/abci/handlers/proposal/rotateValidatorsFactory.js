@@ -15,15 +15,10 @@ function rotateValidatorsFactory(
    * @typedef rotateValidators
    * @param {number} height
    * @param {number} round
-   * @param {BaseLogger} logger
+   * @param {BaseLogger} consensusLogger
    * @return {Promise<ValidatorSetUpdate>}
    */
-  async function rotateValidators(height, round, logger) {
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      abciMethod: 'rotateValidators',
-    });
-
+  async function rotateValidators(height, round, consensusLogger) {
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const lastCommitInfo = proposalBlockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();

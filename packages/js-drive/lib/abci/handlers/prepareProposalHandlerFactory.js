@@ -19,7 +19,7 @@ const txAction = {
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
- * @param {updateCoreChainLock} updateCoreChainLock
+ * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
@@ -28,7 +28,7 @@ function prepareProposalHandlerFactory(
   proposalBlockExecutionContextCollection,
   beginBlock,
   endBlock,
-  updateCoreChainLock,
+  createCoreChainLockUpdate,
 ) {
   /**
    * @typedef prepareProposalHandler
@@ -97,18 +97,25 @@ function prepareProposalHandlerFactory(
       });
 
       const {
-        txResult,
-        actualProcessingFee,
-        actualStorageFee,
+        code,
+        info,
+        processingFees,
+        storageFees,
       } = await wrappedDeliverTx(tx, round, consensusLogger);
 
-      if (txResult.code === 0) {
+      if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        storageFee += actualStorageFee;
-        processingFee += actualProcessingFee;
+        storageFee += storageFees;
+        processingFee += processingFees;
       } else {
         invalidTxCount += 1;
+      }
+
+      const txResult = { code };
+
+      if (info) {
+        txResult.info = info;
       }
 
       txResults.push(txResult);
@@ -116,13 +123,15 @@ function prepareProposalHandlerFactory(
 
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
-    const coreChainLockUpdate = await updateCoreChainLock(round, consensusLogger);
+    const coreChainLockUpdate = await createCoreChainLockUpdate(round, consensusLogger);
 
     const {
       consensusParamUpdates,
       validatorSetUpdate,
       appHash,
-    } = await endBlock(height, round, processingFee, storageFee, consensusLogger);
+    } = await endBlock({
+      height, round, processingFee, storageFee,
+    }, consensusLogger);
 
     consensusLogger.info(
       {

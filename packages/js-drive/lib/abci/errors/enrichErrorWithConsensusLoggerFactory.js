@@ -1,7 +1,7 @@
 /**
  * Add consensus logger to an error (factory)
  *
- * @param {blockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  *
  * @return {enrichErrorWithConsensusLogger}
  */

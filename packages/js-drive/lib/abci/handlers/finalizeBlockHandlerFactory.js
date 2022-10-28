@@ -53,9 +53,6 @@ function finalizeBlockHandlerFactory(
 
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
-    // TODO do we need it?
-    latestBlockExecutionContext.populate(proposalBlockExecutionContext);
-
     // Store block execution context
     await blockExecutionContextRepository.store(
       proposalBlockExecutionContext,
@@ -66,6 +63,8 @@ function finalizeBlockHandlerFactory(
 
     // Commit the current block db transactions
     await groveDBStore.commitTransaction();
+
+    latestBlockExecutionContext.populate(proposalBlockExecutionContext);
 
     // Update data contract cache with new version of
     // committed data contract

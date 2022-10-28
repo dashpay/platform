@@ -85,18 +85,25 @@ function processProposalHandlerFactory(
 
     for (const tx of txs) {
       const {
-        txResult,
-        actualProcessingFee,
-        actualStorageFee,
+        code,
+        info,
+        processingFees,
+        storageFees,
       } = await wrappedDeliverTx(tx, round, consensusLogger);
 
-      if (txResult.code === 0) {
+      if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        storageFee += actualStorageFee;
-        processingFee += actualProcessingFee;
+        storageFee += storageFees;
+        processingFee += processingFees;
       } else {
         invalidTxCount += 1;
+      }
+
+      const txResult = { code };
+
+      if (info) {
+        txResult.info = info;
       }
 
       txResults.push(txResult);
@@ -108,7 +115,9 @@ function processProposalHandlerFactory(
       consensusParamUpdates,
       validatorSetUpdate,
       appHash,
-    } = await endBlock(height, round, processingFee, storageFee, consensusLogger);
+    } = await endBlock({
+      height, round, processingFee, storageFee,
+    }, consensusLogger);
 
     if (coreChainLockUpdate) {
       const coreChainLock = new CoreChainLock({

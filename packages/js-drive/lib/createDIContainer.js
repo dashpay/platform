@@ -82,7 +82,6 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
-const wrapInDeliverTxResultHandler = require('./abci/errors/wrapInDeliverTxResult');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
@@ -97,8 +96,8 @@ const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
 const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
 const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
 const rotateValidatorsFactory = require('./abci/handlers/proposal/rotateValidatorsFactory');
-const updateConsensusParamsFactory = require('./abci/handlers/proposal/updateConsensusParamsFactory');
-const updateCoreChainLockFactory = require('./abci/handlers/proposal/updateCoreChainLockFactory');
+const createConsensusParamUpdateFactory = require('./abci/handlers/proposal/createConsensusParamUpdateFactory');
+const createCoreChainLockUpdateFactory = require('./abci/handlers/proposal/createCoreChainLockUpdateFactory');
 const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
 
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
@@ -727,12 +726,12 @@ function createDIContainer(options) {
     ) => enrichErrorWithConsensusError(beginBlockHandler)).singleton(),
     deliverTxHandler: asFunction(deliverTxFactory).singleton(),
     wrappedDeliverTx: asFunction((
-      wrapInDeliverTxResult,
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
       deliverTxHandler,
-    ) => wrapInDeliverTxResult(
+    ) => wrapInErrorHandler(
       enrichErrorWithConsensusError(deliverTxHandler),
+      { respondWithInternalError: true },
     )).singleton(),
     endBlockHandler: asFunction(endBlockFactory).singleton(),
     endBlock: asFunction((
@@ -749,16 +748,16 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       rotateValidatorsHandler,
     ) => enrichErrorWithConsensusError(rotateValidatorsHandler)).singleton(),
-    updateConsensusParamsHandler: asFunction(updateConsensusParamsFactory).singleton(),
-    updateConsensusParams: asFunction((
+    createConsensusParamUpdateHandler: asFunction(createConsensusParamUpdateFactory).singleton(),
+    createConsensusParamUpdate: asFunction((
       enrichErrorWithConsensusError,
-      updateConsensusParamsHandler,
-    ) => enrichErrorWithConsensusError(updateConsensusParamsHandler)).singleton(),
-    updateCoreChainLockHandler: asFunction(updateCoreChainLockFactory).singleton(),
-    updateCoreChainLock: asFunction((
+      createConsensusParamUpdateHandler,
+    ) => enrichErrorWithConsensusError(createConsensusParamUpdateHandler)).singleton(),
+    createCoreChainLockUpdateHandler: asFunction(createCoreChainLockUpdateFactory).singleton(),
+    createCoreChainLockUpdate: asFunction((
       enrichErrorWithConsensusError,
-      updateCoreChainLockHandler,
-    ) => enrichErrorWithConsensusError(updateCoreChainLockHandler)).singleton(),
+      createCoreChainLockUpdateHandler,
+    ) => enrichErrorWithConsensusError(createCoreChainLockUpdateHandler)).singleton(),
     initChainHandler: asFunction(initChainHandlerFactory).singleton(),
     queryHandler: asFunction(queryHandlerFactory).singleton(),
     extendVoteHandler: asFunction(extendVoteHandlerFactory).singleton(),
@@ -768,7 +767,6 @@ function createDIContainer(options) {
     verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
-    wrapInDeliverTxResult: asValue(wrapInDeliverTxResultHandler),
     enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
     errorHandler: asFunction(errorHandlerFactory).singleton(),
 

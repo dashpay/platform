@@ -1,5 +1,6 @@
 const ProposalBlockExecutionContextCollection = require('../../../lib/blockExecution/ProposalBlockExecutionContextCollection');
 const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
+const BlockExecutionContextNotFoundError = require('../../../lib/abci/errors/BlockExecutionContextNotFoundError');
 
 describe('ProposalBlockExecutionContextCollection', () => {
   let proposalBlockExecutionContextCollection;
@@ -12,20 +13,52 @@ describe('ProposalBlockExecutionContextCollection', () => {
     round = 42;
   });
 
-  it('should add block execution context for the round', () => {
-    const result = proposalBlockExecutionContextCollection.add(round, blockExecutionContextMock);
+  describe('#add', () => {
+    it('should add block execution context for the round', () => {
+      const result = proposalBlockExecutionContextCollection.add(round, blockExecutionContextMock);
 
-    expect(result).to.be.instanceOf(ProposalBlockExecutionContextCollection);
-    expect(proposalBlockExecutionContextCollection.collection.get(round)).to.equal(
-      blockExecutionContextMock,
-    );
+      expect(result).to.be.instanceOf(ProposalBlockExecutionContextCollection);
+      expect(proposalBlockExecutionContextCollection.collection.get(round)).to.equal(
+        blockExecutionContextMock,
+      );
+    });
   });
 
-  it('should get block execution context for the round', () => {
-    proposalBlockExecutionContextCollection.collection.set(round, blockExecutionContextMock);
+  describe('#set', () => {
+    it('should get block execution context for the round', () => {
+      proposalBlockExecutionContextCollection.collection.set(round, blockExecutionContextMock);
 
-    const result = proposalBlockExecutionContextCollection.get(round);
+      const result = proposalBlockExecutionContextCollection.get(round);
 
-    expect(result).to.equal(blockExecutionContextMock);
+      expect(result).to.equal(blockExecutionContextMock);
+    });
+
+    it('should throw BlockExecutionContextNotFoundError', () => {
+      try {
+        proposalBlockExecutionContextCollection.get(-1);
+
+        expect.fail('should throw BlockExecutionContextNotFoundError');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(BlockExecutionContextNotFoundError);
+      }
+    });
+  });
+
+  describe('#isEmpty', () => {
+    it('should return true if collection is empty', () => {
+      proposalBlockExecutionContextCollection.collection.clear();
+
+      const result = proposalBlockExecutionContextCollection.isEmpty();
+
+      expect(result).to.be.true();
+    });
+
+    it('should return false if collection is not empty', () => {
+      proposalBlockExecutionContextCollection.collection.set(round, blockExecutionContextMock);
+
+      const result = proposalBlockExecutionContextCollection.isEmpty();
+
+      expect(result).to.be.false();
+    });
   });
 });
