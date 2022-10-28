@@ -82,6 +82,7 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
+const wrapInDeliverTxResultHandler = require('./abci/errors/wrapInDeliverTxResult');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
@@ -725,13 +726,13 @@ function createDIContainer(options) {
       beginBlockHandler,
     ) => enrichErrorWithConsensusError(beginBlockHandler)).singleton(),
     deliverTxHandler: asFunction(deliverTxFactory).singleton(),
-    deliverTx: asFunction((
+    wrappedDeliverTx: asFunction((
+      wrapInDeliverTxResult,
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
       deliverTxHandler,
-    ) => wrapInErrorHandler(
+    ) => wrapInDeliverTxResult(
       enrichErrorWithConsensusError(deliverTxHandler),
-      { respondWithInternalError: true },
     )).singleton(),
     endBlockHandler: asFunction(endBlockFactory).singleton(),
     endBlock: asFunction((
@@ -767,6 +768,7 @@ function createDIContainer(options) {
     verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
+    wrapInDeliverTxResult: asValue(wrapInDeliverTxResultHandler),
     enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
     errorHandler: asFunction(errorHandlerFactory).singleton(),
 

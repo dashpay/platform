@@ -14,7 +14,7 @@ const txAction = {
 };
 
 /**
- * @param {deliverTx} deliverTx
+ * @param {deliverTx} wrappedDeliverTx
  * @param {BaseLogger} logger
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {beginBlock} beginBlock
@@ -23,7 +23,7 @@ const txAction = {
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
-  deliverTx,
+  wrappedDeliverTx,
   logger,
   proposalBlockExecutionContextCollection,
   beginBlock,
@@ -100,7 +100,7 @@ function prepareProposalHandlerFactory(
         txResult,
         actualProcessingFee,
         actualStorageFee,
-      } = await deliverTx(tx, round, consensusLogger);
+      } = await wrappedDeliverTx(tx, round, consensusLogger);
 
       if (txResult.code === 0) {
         validTxCount += 1;
