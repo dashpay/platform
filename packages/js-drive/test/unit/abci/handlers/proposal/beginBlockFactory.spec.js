@@ -49,8 +49,13 @@ describe('beginBlockFactory', () => {
     round = 0;
     protocolVersion = Long.fromInt(1);
 
-    latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    time = new Timestamp({
+      seconds: Long.fromNumber(Math.ceil(new Date().getTime() / 1000)),
+    });
 
+    latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    latestBlockExecutionContextMock.isEmpty.returns(false);
+    latestBlockExecutionContextMock.getTime.returns({ seconds: Math.ceil(time / 1000) });
     loggerMock = new LoggerMock(this.sinon);
 
     dppMock = {
@@ -106,10 +111,6 @@ describe('beginBlockFactory', () => {
 
     version = Consensus.fromObject({
       app: protocolVersion,
-    });
-
-    time = new Timestamp({
-      seconds: Long.fromNumber(Math.ceil(new Date().getTime() / 1000)),
     });
 
     proposerProTxHash = Buffer.alloc(32, 1);

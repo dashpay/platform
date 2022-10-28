@@ -71,11 +71,9 @@ describe('prepareProposalHandlerFactory', () => {
 
     beginBlockMock = this.sinon.stub();
     deliverTxMock = this.sinon.stub().resolves({
-      txResult: {
-        code: 0,
-      },
-      actualProcessingFee: 1,
-      actualStorageFee: 2,
+      code: 0,
+      processingFees: 1,
+      storageFees: 2,
     });
     endBlockMock = this.sinon.stub().resolves(
       endBlockResult,
@@ -164,10 +162,12 @@ describe('prepareProposalHandlerFactory', () => {
     expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
 
     expect(endBlockMock).to.be.calledOnceWithExactly(
-      request.height,
-      round,
-      3,
-      6,
+      {
+        height: request.height,
+        round,
+        processingFee: 3,
+        storageFee: 6,
+      },
       loggerMock,
     );
   });

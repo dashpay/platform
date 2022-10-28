@@ -8,7 +8,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  * @param {RSAbci} rsAbci
- * @param {updateConsensusParams} updateConsensusParams
+ * @param {createConsensusParamUpdate} createConsensusParamUpdate
  * @param {rotateValidators} rotateValidators
  * @param {GroveDBStore} groveDBStore
  * @param {ExecutionTimer} executionTimer
@@ -20,7 +20,7 @@ function endBlockFactory(
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
-  updateConsensusParams,
+  createConsensusParamUpdate,
   rotateValidators,
   rsAbci,
   groveDBStore,
@@ -29,11 +29,12 @@ function endBlockFactory(
   /**
    * @typedef endBlock
    *
-   * @param {number} height
-   * @param {number} round
-   * @param {number} processingFees
-   * @param {number} storageFees
-   * @param {BaseLogger} logger
+   * @param {Object} request
+   * @param {number} [request.height]
+   * @param {number} [request.round]
+   * @param {number} [request.processingFees]
+   * @param {number} [request.storageFees]
+   * @param {BaseLogger} consensusLogger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
    *   validatorSetUpdate: ValidatorSetUpdate,
@@ -41,21 +42,18 @@ function endBlockFactory(
    * }>}
    */
   async function endBlock(
-    height,
-    round,
-    processingFees,
-    storageFees,
-    logger,
+    request,
+    consensusLogger,
   ) {
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      abciMethod: 'endBlock',
-    });
+    const {
+      height,
+      round,
+      processingFees,
+      storageFees,
+    } = request;
 
     consensusLogger.debug('EndBlock ABCI method requested');
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
     // Call RS ABCI
 
@@ -66,11 +64,11 @@ function endBlockFactory(
       },
     };
 
-    logger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
+    consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
 
     const rsResponse = await rsAbci.blockEnd(rsRequest, true);
 
-    logger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
+    consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
     const { currentEpochIndex, isEpochChange } = rsResponse;
 
@@ -105,7 +103,7 @@ function endBlockFactory(
       }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
 
-    const consensusParamUpdates = await updateConsensusParams(height, round, consensusLogger);
+    const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);
     const validatorSetUpdate = await rotateValidators(height, round, consensusLogger);
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });
 

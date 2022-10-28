@@ -9,23 +9,19 @@ const {
  *
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {LatestCoreChainLock} latestCoreChainLock
- * @return {updateCoreChainLock}
+ * @return {createCoreChainLockUpdate}
  */
-function updateCoreChainLockFactory(
+function createCoreChainLockUpdateFactory(
   proposalBlockExecutionContextCollection,
   latestCoreChainLock,
 ) {
   /**
-   * @typedef updateCoreChainLock
+   * @typedef createCoreChainLockUpdate
    * @param {number} round
    * @param {BaseLogger} logger
    * @return {Promise<CoreChainLock>}
    */
-  async function updateCoreChainLock(round, logger) {
-    const consensusLogger = logger.child({
-      abciMethod: 'updateCoreChainLock',
-    });
-
+  async function createCoreChainLockUpdate(round, consensusLogger) {
     // Update Core Chain Locks
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const contextCoreChainLockedHeight = proposalBlockExecutionContext.getCoreChainLockedHeight();
@@ -50,7 +46,7 @@ function updateCoreChainLockFactory(
     return coreChainLockUpdate;
   }
 
-  return updateCoreChainLock;
+  return createCoreChainLockUpdate;
 }
 
-module.exports = updateCoreChainLockFactory;
+module.exports = createCoreChainLockUpdateFactory;

@@ -6,12 +6,12 @@ const {
   },
 } = require('@dashevo/abci/types');
 const Long = require('long');
-const updateConsensusParamsFactory = require('../../../../../lib/abci/handlers/proposal/updateConsensusParamsFactory');
+const createConsensusParamUpdateFactory = require('../../../../../lib/abci/handlers/proposal/createConsensusParamUpdateFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
-describe('updateConsensusParamsFactory', () => {
-  let updateConsensusParams;
+describe('createConsensusParamUpdateFactory', () => {
+  let createConsensusParamUpdate;
   let getFeatureFlagForHeightMock;
   let blockExecutionContextMock;
   let loggerMock;
@@ -39,7 +39,7 @@ describe('updateConsensusParamsFactory', () => {
       get: this.sinon.stub().returns(blockExecutionContextMock),
     };
 
-    updateConsensusParams = updateConsensusParamsFactory(
+    createConsensusParamUpdate = createConsensusParamUpdateFactory(
       proposalBlockExecutionContextCollectionMock,
       getFeatureFlagForHeightMock,
     );
@@ -63,7 +63,7 @@ describe('updateConsensusParamsFactory', () => {
       get: getLatestFeatureFlagGetMock,
     });
 
-    const response = await updateConsensusParams(height, round, loggerMock);
+    const response = await createConsensusParamUpdate(height, round, loggerMock);
 
     expect(response).to.deep.equal(new ConsensusParams({
       block: {
@@ -89,7 +89,7 @@ describe('updateConsensusParamsFactory', () => {
   it('should return undefined', async () => {
     getFeatureFlagForHeightMock.resolves(null);
 
-    const response = await updateConsensusParams(height, round, loggerMock);
+    const response = await createConsensusParamUpdate(height, round, loggerMock);
 
     expect(response).to.be.undefined();
 

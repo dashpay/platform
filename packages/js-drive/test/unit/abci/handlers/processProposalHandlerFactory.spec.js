@@ -63,11 +63,9 @@ describe('processProposalHandlerFactory', () => {
       validatorSetUpdate,
     });
     deliverTxMock = this.sinon.stub().resolves({
-      txResult: {
-        code: 0,
-      },
-      actualProcessingFee: 1,
-      actualStorageFee: 2,
+      code: 0,
+      processingFees: 1,
+      storageFees: 2,
     });
     beginBlockMock = this.sinon.stub();
     verifyChainLockMock = this.sinon.stub();
@@ -152,12 +150,12 @@ describe('processProposalHandlerFactory', () => {
 
     expect(verifyChainLockMock).to.be.calledOnceWithExactly(coreChainLock);
 
-    expect(endBlockMock).to.be.calledOnceWithExactly(
-      request.height,
+    expect(endBlockMock).to.be.calledOnceWithExactly({
+      height: request.height,
       round,
-      3,
-      6,
-      loggerMock,
-    );
+      processingFee: 3,
+      storageFee: 6,
+    },
+    loggerMock);
   });
 });

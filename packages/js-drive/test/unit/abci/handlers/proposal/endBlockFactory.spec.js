@@ -18,7 +18,7 @@ describe('endBlockFactory', () => {
   let rsAbciMock;
   let blockEndMock;
   let time;
-  let updateConsensusParamsMock;
+  let createConsensusParamUpdateMock;
   let rotateValidatorsMock;
   let groveDBStoreMock;
   let appHashFixture;
@@ -79,7 +79,7 @@ describe('endBlockFactory', () => {
     validatorSetUpdateFixture = Buffer.alloc(2);
     appHashFixture = Buffer.alloc(0);
 
-    updateConsensusParamsMock = this.sinon.stub().resolves(consensusParamUpdatesFixture);
+    createConsensusParamUpdateMock = this.sinon.stub().resolves(consensusParamUpdatesFixture);
     rotateValidatorsMock = this.sinon.stub().resolves(validatorSetUpdateFixture);
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
@@ -94,7 +94,7 @@ describe('endBlockFactory', () => {
       validatorSetMock,
       createValidatorSetUpdateMock,
       getFeatureFlagForHeightMock,
-      updateConsensusParamsMock,
+      createConsensusParamUpdateMock,
       rotateValidatorsMock,
       rsAbciMock,
       groveDBStoreMock,
@@ -105,7 +105,9 @@ describe('endBlockFactory', () => {
   });
 
   it('should finalize a block', async () => {
-    const response = await endBlock(height, round, processingFees, storageFees, loggerMock);
+    const response = await endBlock({
+      height, round, processingFees, storageFees,
+    }, loggerMock);
 
     expect(response).to.deep.equal({
       consensusParamUpdates: consensusParamUpdatesFixture,
@@ -117,7 +119,7 @@ describe('endBlockFactory', () => {
       round,
     );
     expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
-    expect(updateConsensusParamsMock).to.be.calledOnceWithExactly(height, round, loggerMock);
+    expect(createConsensusParamUpdateMock).to.be.calledOnceWithExactly(height, round, loggerMock);
     expect(rotateValidatorsMock).to.be.calledOnceWithExactly(height, round, loggerMock);
     expect(groveDBStoreMock.getRootHash).to.be.calledOnceWithExactly({ useTransaction: true });
     expect(rsAbciMock.blockEnd).to.be.calledOnceWithExactly({

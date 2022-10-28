@@ -41,10 +41,10 @@ function deliverTxFactory(
    *
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
-   * @param {BaseLogger} logger
+   * @param {BaseLogger} consensusLogger
    * @return {Promise<{ code: number }>}
    */
-  async function deliverTx(stateTransitionByteArray, round, logger) {
+  async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const blockHeight = proposalBlockExecutionContext.getHeight();
 
@@ -65,12 +65,6 @@ function deliverTxFactory(
       .digest()
       .toString('hex')
       .toUpperCase();
-
-    const consensusLogger = logger.child({
-      height: blockHeight.toString(),
-      txId: stHash,
-      abciMethod: 'deliverTx',
-    });
 
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
@@ -221,8 +215,8 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageFee: actualStorageFee,
-      processingFee: actualProcessingFee,
+      storageFee: storageFees,
+      processingFee: processingFees,
     } = calculateOperationFees(actualStateTransitionOperations);
 
     const {
@@ -248,8 +242,8 @@ function deliverTxFactory(
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
-            storage: actualStorageFee,
-            processing: actualProcessingFee,
+            storage: storageFees,
+            processing: processingFees,
             final: actualStateTransitionFee,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
@@ -260,11 +254,9 @@ function deliverTxFactory(
     );
 
     return {
-      txResult: {
-        code: 0,
-      },
-      actualProcessingFee,
-      actualStorageFee,
+      code: 0,
+      processingFees,
+      storageFees,
     };
   }
 

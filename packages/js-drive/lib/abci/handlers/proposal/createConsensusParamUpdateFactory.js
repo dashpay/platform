@@ -11,25 +11,20 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
 /**
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
- * @return {updateConsensusParams}
+ * @return {createConsensusParamUpdate}
  */
-function updateConsensusParamsFactory(
+function createConsensusParamUpdateFactory(
   proposalBlockExecutionContextCollection,
   getFeatureFlagForHeight,
 ) {
   /**
-   * @typedef updateConsensusParams
+   * @typedef createConsensusParamUpdate
    * @param {number} height
    * @param {number} round
    * @param {BaseLogger} logger
    * @return {Promise<ConsensusParams>}
    */
-  async function updateConsensusParams(height, round, logger) {
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      abciMethod: 'updateConsensusParams',
-    });
-
+  async function createConsensusParamUpdate(height, round, consensusLogger) {
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     const contextVersion = proposalBlockExecutionContext.getVersion();
@@ -70,7 +65,7 @@ function updateConsensusParamsFactory(
     return consensusParamUpdates;
   }
 
-  return updateConsensusParams;
+  return createConsensusParamUpdate;
 }
 
-module.exports = updateConsensusParamsFactory;
+module.exports = createConsensusParamUpdateFactory;

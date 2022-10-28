@@ -5,12 +5,12 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const updateCoreChainLockFactory = require('../../../../../lib/abci/handlers/proposal/updateCoreChainLockFactory');
+const createCoreChainLockUpdateFactory = require('../../../../../lib/abci/handlers/proposal/createCoreChainLockUpdateFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
-describe('updateCoreChainLockFactory', () => {
-  let updateCoreChainLock;
+describe('createCoreChainLockUpdateFactory', () => {
+  let createCoreChainLockUpdate;
   let blockExecutionContextMock;
   let latestCoreChainLockMock;
   let chainLockMock;
@@ -44,7 +44,7 @@ describe('updateCoreChainLockFactory', () => {
       get: this.sinon.stub().returns(blockExecutionContextMock),
     };
 
-    updateCoreChainLock = updateCoreChainLockFactory(
+    createCoreChainLockUpdate = createCoreChainLockUpdateFactory(
       proposalBlockExecutionContextCollectionMock,
       latestCoreChainLockMock,
     );
@@ -53,7 +53,7 @@ describe('updateCoreChainLockFactory', () => {
   it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
     chainLockMock.height = 3;
 
-    const response = await updateCoreChainLock(round, loggerMock);
+    const response = await createCoreChainLockUpdate(round, loggerMock);
 
     expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
       round,
@@ -72,7 +72,7 @@ describe('updateCoreChainLockFactory', () => {
   it('should return undefined', async () => {
     chainLockMock.height = 1;
 
-    const response = await updateCoreChainLock(round, loggerMock);
+    const response = await createCoreChainLockUpdate(round, loggerMock);
 
     expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
       round,

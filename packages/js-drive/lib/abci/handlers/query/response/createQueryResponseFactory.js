@@ -20,7 +20,7 @@ function createQueryResponseFactory(
    * @param {boolean} [prove=false]
    */
   function createQueryResponse(ResponseClass, prove = false) {
-    if (!latestBlockExecutionContext) {
+    if (latestBlockExecutionContext.isEmpty()) {
       throw new UnavailableAbciError('data is not available');
     }
 

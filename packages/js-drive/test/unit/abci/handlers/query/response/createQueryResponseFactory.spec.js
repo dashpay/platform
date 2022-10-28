@@ -23,6 +23,7 @@ describe('createQueryResponseFactory', () => {
 
     blockExecutionContextMock.getHeight.returns(metadata.height);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
+    blockExecutionContextMock.isEmpty.returns(false);
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),

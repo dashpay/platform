@@ -45,11 +45,11 @@ function beginBlockFactory(
    * @param {IConsensus} [request.version]
    * @param {ITimestamp} [request.time]
    * @param {Buffer} [request.proposerProTxHash]
-   * @param {BaseLogger} logger
+   * @param {BaseLogger} consensusLogger
    *
    * @return {Promise<void>}
    */
-  async function beginBlock(request, logger) {
+  async function beginBlock(request, consensusLogger) {
     const {
       lastCommitInfo,
       height,
@@ -60,13 +60,7 @@ function beginBlockFactory(
       round,
     } = request;
 
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      abciMethod: 'beginBlock',
-    });
-
-    // TODO remove undefined when round is ready
-    if (round === 0 || round === undefined) {
+    if (proposalBlockExecutionContextCollection.isEmpty()) {
       executionTimer.clearTimer('blockExecution');
       executionTimer.startTimer('blockExecution');
     }
@@ -125,10 +119,11 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: timeToMillis(time.seconds, time.nanos),
       proposerProTxHash,
+      // TODO replace with real value
       validatorSetQuorumHash: Buffer.alloc(32),
     };
 
-    if (latestBlockExecutionContext.getTime()) {
+    if (!latestBlockExecutionContext.isEmpty()) {
       const previousTime = latestBlockExecutionContext.getTime();
 
       rsRequest.previousBlockTimeMs = timeToMillis(
@@ -136,7 +131,7 @@ function beginBlockFactory(
       );
     }
 
-    logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
+    consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
     const { unsignedWithdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
 
