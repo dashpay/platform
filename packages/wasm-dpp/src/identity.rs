@@ -29,11 +29,6 @@ impl From<AssetLockProof> for AssetLockProofWasm {
 
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
-    #[wasm_bindgen(js_name=doStuff)]
-    pub fn do_stuff(raw_identity: JsValue) -> Result<js_sys::JsString, JsValue> {
-        js_sys::JSON::stringify(&raw_identity)
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
         let identity_json = utils::stringify(&raw_identity)?;

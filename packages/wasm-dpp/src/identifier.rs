@@ -5,7 +5,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::errors::from_dpp_err;
-use crate::Buffer;
 use dpp::identifier;
 use js_sys::Uint8Array;
 

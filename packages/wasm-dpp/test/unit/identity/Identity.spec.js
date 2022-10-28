@@ -1,10 +1,9 @@
 const { default: loadWasmDpp } = require('../../../dist');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
-const lodashCloneDeep = require('lodash.clonedeep');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const JSIdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const OldIdentity = require('@dashevo/dpp/lib/identity/Identity');
+const JSIdentity = require('@dashevo/dpp/lib/identity/Identity');
 
 const serializer = require('@dashevo/dpp/lib/util/serializer');
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
@@ -19,10 +18,10 @@ describe('Identity', () => {
   let metadataFixture;
   let Identity;
   let Metadata;
-  let IdentityPublicKeyWasm;
+  let IdentityPublicKey;
 
   before(async () => {
-    ({ Identifier, Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
+    ({ Identifier, Identity, Metadata, IdentityPublicKey: IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel } = await loadWasmDpp());
   });
 
 
@@ -33,10 +32,10 @@ describe('Identity', () => {
       publicKeys: [
         {
           id: 0,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          type: KeyType.ECDSA_SECP256K1,
           data: Buffer.alloc(36).fill('a'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          purpose: KeyPurpose.AUTHENTICATION,
+          securityLevel: KeySecurityLevel.MASTER,
           readOnly: false,
           signature: Buffer.alloc(36).fill('a'),
         },
@@ -53,13 +52,9 @@ describe('Identity', () => {
 
     metadataFixture = new Metadata(42, 0);
 
-    // encodeMock = this.sinonSandbox.stub(serializer, 'encode');
-    // hashMock = this.sinonSandbox.stub(hash, 'hash');
   });
 
   afterEach(() => {
-    // encodeMock.restore();
-    // hashMock.restore();
   });
 
   describe('#constructor', () => {
@@ -68,7 +63,7 @@ describe('Identity', () => {
 
       expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
       expect(instance.getPublicKeys().map((pk) => pk.toObject())).to.deep.equal(
-        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKeyWasm(rawPublicKey).toObject()),
+        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
       );
     });
   });
@@ -83,7 +78,7 @@ describe('Identity', () => {
   describe('#getPublicKeys', () => {
     it('should return set public keys', () => {
       expect(identity.getPublicKeys().map(pk => pk.toObject())).to.deep.equal(
-        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKeyWasm(rawPublicKey).toObject()),
+        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
       );
     });
   });
@@ -96,12 +91,12 @@ describe('Identity', () => {
     });
 
     it('should set public keys', () => {
-      const ipk = new IdentityPublicKey({
+      const ipk = new JSIdentityPublicKey({
         id: 2,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        purpose: KeyPurpose.AUTHENTICATION,
+        securityLevel: KeySecurityLevel.MASTER,
         signature: Buffer.alloc(36).fill('a'),
         readOnly: false,
       });
@@ -116,7 +111,7 @@ describe('Identity', () => {
     it('should return a public key for a given id', () => {
       const key = identity.getPublicKeyById(0);
 
-      expect(key.toObject()).to.be.deep.equal(new IdentityPublicKeyWasm(rawIdentity.publicKeys[0]).toObject());
+      expect(key.toObject()).to.be.deep.equal(new IdentityPublicKey(rawIdentity.publicKeys[0]).toObject());
     });
 
     it("should return undefined if there's no key with such id", () => {
@@ -126,8 +121,8 @@ describe('Identity', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return serialized identity', () => {
-      const oldIdentity = new OldIdentity(rawIdentity);
+    it('should return the same buffer as JS Identity', () => {
+      const oldIdentity = new JSIdentity(rawIdentity);
       const result = Buffer.from(identity.toBuffer());
 
       expect(result).to.deep.eq(oldIdentity.toBuffer());
@@ -135,7 +130,7 @@ describe('Identity', () => {
   });
 
   describe('#hash', () => {
-    it('should return hex string of a buffer return by serialize', () => {
+    it('should return the same has as JS Identity', () => {
       const expected_hash = hashFunction(identity.toBuffer());
       const result = identity.hash();
 
@@ -151,6 +146,7 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
+      console.log(`purpose is: ${KeyPurpose.AUTHENTICATION}`);
       let identityObject = identity.toObject();
 
       //! TODO The structures exported from WASM cannot be deeply inspected and hence: compared.
@@ -173,10 +169,10 @@ describe('Identity', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: KeyType.ECDSA_SECP256K1,
             data: rawIdentity.publicKeys[0].data.toString('base64'),
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            purpose: KeyPurpose.AUTHENTICATION,
+            securityLevel: KeySecurityLevel.MASTER,
             signature: rawIdentity.publicKeys[0].signature.toString('base64'),
             readOnly: false,
           },
@@ -242,21 +238,21 @@ describe('Identity', () => {
     it('should get the biggest public key ID', () => {
 
       identity.addPublicKeys(
-        new IdentityPublicKeyWasm({
+        new IdentityPublicKey({
           id: 99,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          type: KeyType.ECDSA_SECP256K1,
           data: Buffer.alloc(36).fill('a'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          purpose: KeyPurpose.AUTHENTICATION,
+          securityLevel: KeySecurityLevel.MASTER,
           signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
         }),
-        new IdentityPublicKeyWasm({
+        new IdentityPublicKey({
           id: 50,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          type: KeyType.ECDSA_SECP256K1,
           data: Buffer.alloc(36).fill('a'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          purpose: KeyPurpose.AUTHENTICATION,
+          securityLevel: KeySecurityLevel.MASTER,
           signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
         })

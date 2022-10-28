@@ -4,8 +4,17 @@ use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
-use crate::{utils, Buffer};
+use crate::{buffer::Buffer, utils};
 use dpp::identity::IdentityPublicKey;
+
+mod purpose;
+pub use purpose::*;
+
+mod security_level;
+pub use security_level::*;
+
+mod key_type;
+pub use key_type::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -152,14 +161,6 @@ impl IdentityPublicKeyWasm {
 
         Ok(js_object)
     }
-
-    pub fn from_json(json_object: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
-        let str = String::from(js_sys::JSON::stringify(&json_object)?);
-        let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
-        Ok(Self(
-            IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?,
-        ))
-    }
 }
 
 impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
@@ -172,7 +173,11 @@ impl TryFrom<JsValue> for IdentityPublicKeyWasm {
     type Error = JsValue;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        Self::from_json(value)
+        let str = String::from(js_sys::JSON::stringify(&value)?);
+        let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
+        Ok(Self(
+            IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?,
+        ))
     }
 }
 

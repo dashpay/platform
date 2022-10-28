@@ -135,9 +135,6 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-      console.log(`the raw identity is ${rawIdentity.id}`);
-      console.log(`the first ipk data is ${rawIdentity.publicKeys[0].data}`)
-
 
       expect(identity.toObject()).to.deep.equal(rawIdentity);
     });
