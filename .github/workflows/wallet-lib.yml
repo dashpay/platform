@@ -23,7 +23,7 @@ on:
 jobs:
   js-wallet-lib-tests:
     name: Run Wallet lib tests
-    uses: dashevo/platform/.github/workflows/test.yml@feature-rs-dpp-integration
+    uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/wallet-lib'
       start-local-network: true

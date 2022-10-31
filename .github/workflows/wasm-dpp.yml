@@ -19,6 +19,6 @@ on:
 jobs:
   js-dpp-tests:
     name: Run WASM DPP tests
-    uses: dashevo/platform/.github/workflows/test.yml@feature-rs-dpp-integration
+    uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/wasm-dpp'
