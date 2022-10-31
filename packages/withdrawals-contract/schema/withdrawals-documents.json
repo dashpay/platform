@@ -25,13 +25,22 @@
         "name": "transaction",
         "properties": [
           {
-            "transactionId": "asc"
+            "status": "asc"
           },
           {
-            "status": "asc"
+            "transactionId": "asc"
           }
         ],
         "unique": true
+      },
+      {
+        "name": "ownerId",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          }
+        ],
+        "unique": false
       }
     ],
     "properties": {
