@@ -3,22 +3,22 @@
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {LatestCoreChainLock} latestCoreChainLock
- * @return {rotateValidators}
+ * @return {rotateValidatorSetUpdate}
  */
-function rotateValidatorsFactory(
+function rotateValidatorSetUpdateFactory(
   proposalBlockExecutionContextCollection,
   validatorSet,
   createValidatorSetUpdate,
   latestCoreChainLock,
 ) {
   /**
-   * @typedef rotateValidators
+   * @typedef rotateValidatorSetUpdate
    * @param {number} height
    * @param {number} round
    * @param {BaseLogger} consensusLogger
    * @return {Promise<ValidatorSetUpdate>}
    */
-  async function rotateValidators(height, round, consensusLogger) {
+  async function rotateValidatorSetUpdate(height, round, consensusLogger) {
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const lastCommitInfo = proposalBlockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
@@ -43,7 +43,7 @@ function rotateValidatorsFactory(
     return validatorSetUpdate;
   }
 
-  return rotateValidators;
+  return rotateValidatorSetUpdate;
 }
 
-module.exports = rotateValidatorsFactory;
+module.exports = rotateValidatorSetUpdateFactory;
