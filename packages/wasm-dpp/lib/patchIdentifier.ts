@@ -6,7 +6,6 @@ export default function (dppModule: typeof dpp_module) {
 
     //@ts-ignore
     Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
-    // Object.defineProperty(Identifier.prototype, 'length', { get() { return this.len(); } });
 
     Identifier.prototype.valueOf = function() {
         return Buffer.from(this.inner())
