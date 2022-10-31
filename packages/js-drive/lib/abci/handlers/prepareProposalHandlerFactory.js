@@ -82,8 +82,8 @@ function prepareProposalHandlerFactory(
     const txResults = [];
     let validTxCount = 0;
     let invalidTxCount = 0;
-    let storageFee = 0;
-    let processingFee = 0;
+    let storageFeesTotal = 0;
+    let processingFeesTotal = 0;
 
     for (const tx of txs) {
       totalSizeBytes += tx.length;
@@ -107,8 +107,8 @@ function prepareProposalHandlerFactory(
       if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        storageFee += storageFees;
-        processingFee += processingFees;
+        storageFeesTotal += storageFees;
+        processingFeesTotal += processingFees;
       } else {
         invalidTxCount += 1;
       }
@@ -131,7 +131,7 @@ function prepareProposalHandlerFactory(
       validatorSetUpdate,
       appHash,
     } = await endBlock({
-      height, round, processingFee, storageFee,
+      height, round, processingFees: processingFeesTotal, storageFees: storageFeesTotal,
     }, consensusLogger);
 
     consensusLogger.info(

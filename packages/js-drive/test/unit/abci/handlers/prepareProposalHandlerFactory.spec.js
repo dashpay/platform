@@ -166,8 +166,8 @@ describe('prepareProposalHandlerFactory', () => {
       {
         height: request.height,
         round,
-        processingFee: 3,
-        storageFee: 6,
+        processingFees: 3,
+        storageFees: 6,
       },
       loggerMock,
     );

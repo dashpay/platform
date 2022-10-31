@@ -505,7 +505,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
     it('should fetch latest platform core chainlocked height', async () => {
-      blockExecutionContextMock.getCoreChainLockedHeight.resolves(10);
+      blockExecutionContextMock.getCoreChainLockedHeight.returns(10);
 
       const result = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
 

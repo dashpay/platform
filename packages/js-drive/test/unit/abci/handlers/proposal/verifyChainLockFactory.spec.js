@@ -3,14 +3,18 @@ const verifyChainLockFactory = require('../../../../../lib/abci/handlers/proposa
 
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const ChainlockVerificationFailedError = require('../../../../../lib/abci/errors/ChainlockVerificationFailedError');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('verifyChainLockFactory', () => {
   let verifyChainLock;
   let chainLockMock;
   let loggerMock;
   let coreRpcClientMock;
+  let latestBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
+    latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    latestBlockExecutionContextMock.getCoreChainLockedHeight.returns(41);
     chainLockMock = {
       toJSON: this.sinon.stub(),
     };
@@ -27,6 +31,7 @@ describe('verifyChainLockFactory', () => {
 
     verifyChainLock = verifyChainLockFactory(
       coreRpcClientMock,
+      latestBlockExecutionContextMock,
       loggerMock,
     );
   });
@@ -39,6 +44,8 @@ describe('verifyChainLockFactory', () => {
       chainLockMock.signature.toString('hex'),
       chainLockMock.coreBlockHeight,
     );
+
+    expect(latestBlockExecutionContextMock.getCoreChainLockedHeight).to.be.calledOnce();
   });
 
   it('should throw ChainlockVerificationFailedError if chainLock is not valid', async () => {
@@ -119,5 +126,21 @@ describe('verifyChainLockFactory', () => {
       chainLockMock.signature.toString('hex'),
       chainLockMock.coreBlockHeight,
     );
+  });
+
+  it('should throw ChainlockVerificationFailedError if coreBlockHeight >= lastCoreChainLockedHeight', async () => {
+    latestBlockExecutionContextMock.getCoreChainLockedHeight.returns(42);
+
+    try {
+      await verifyChainLock(chainLockMock);
+
+      expect.fail('error was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceof(ChainlockVerificationFailedError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.INTERNAL);
+      expect(e.message).to.equal('ChainLock verification failed: coreBlockHeight is bigger than lastCoreChainLockedHeight');
+
+      expect(coreRpcClientMock.verifyChainLock).to.not.be.called();
+    }
   });
 });
