@@ -3,11 +3,13 @@ const ChainlockVerificationFailedError = require('../../errors/ChainlockVerifica
 /**
  *
  * @param {RpcClient} coreRpcClient
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {BaseLogger} logger
  * @return {verifyChainLock}
  */
 function verifyChainLockFactory(
   coreRpcClient,
+  latestBlockExecutionContext,
   logger,
 ) {
   /**
@@ -16,6 +18,11 @@ function verifyChainLockFactory(
    * @return {Promise<void>}
    */
   async function verifyChainLock(coreChainLock) {
+    const lastCoreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
+    if (coreChainLock.coreBlockHeight <= lastCoreChainLockedHeight) {
+      throw new ChainlockVerificationFailedError('coreBlockHeight is bigger than lastCoreChainLockedHeight', { chainlock: coreChainLock.toJSON(), lastCoreChainLockedHeight });
+    }
+
     let isVerified;
     try {
       ({ result: isVerified } = await coreRpcClient.verifyChainLock(
@@ -35,7 +42,9 @@ function verifyChainLockFactory(
           `Chainlock verification failed using verifyChainLock method: ${e.message} ${e.code}`,
         );
 
-        throw new ChainlockVerificationFailedError(e.message, coreChainLock.toJSON());
+        throw new ChainlockVerificationFailedError(e.message, {
+          chainlock: coreChainLock.toJSON(),
+        });
       }
 
       throw e;
@@ -45,7 +54,7 @@ function verifyChainLockFactory(
       logger.debug(`Invalid chainLock for height ${coreChainLock.coreBlockHeight}`);
 
       throw new ChainlockVerificationFailedError(
-        'ChainLock is not valid', coreChainLock.toJSON(),
+        'ChainLock is not valid', { chainlock: coreChainLock.toJSON() },
       );
     }
 

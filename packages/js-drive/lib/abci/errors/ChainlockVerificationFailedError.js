@@ -6,10 +6,10 @@ class ChainlockVerificationFailedError extends AbstractAbciError {
   /**
    *
    * @param {string} message
-   * @param {Object} chainlock
+   * @param {Object} data
    */
-  constructor(message, chainlock) {
-    super(grpcErrorCodes.INTERNAL, `ChainLock verification failed: ${message}`, { chainlock });
+  constructor(message, data) {
+    super(grpcErrorCodes.INTERNAL, `ChainLock verification failed: ${message}`, data);
   }
 }
 
