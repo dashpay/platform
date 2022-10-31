@@ -152,6 +152,7 @@ describe('prepareProposalHandlerFactory', () => {
         version: request.version,
         time: request.time,
         proposerProTxHash: Buffer.from(request.proposerProTxHash),
+        round,
       },
       loggerMock,
     );
