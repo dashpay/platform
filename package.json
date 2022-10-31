@@ -69,7 +69,8 @@
     "packages/platform-test-suite",
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
-    "packages/wasm-dpp"
+    "packages/wasm-dpp",
+    "packages/withdrawals-contract"
   ],
   "resolutions": {
     "elliptic": "^6.5.4",
