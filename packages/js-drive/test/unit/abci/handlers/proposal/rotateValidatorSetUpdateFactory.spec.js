@@ -6,12 +6,12 @@ const {
   },
 } = require('@dashevo/abci/types');
 const Long = require('long');
-const rotateValidatorsFactory = require('../../../../../lib/abci/handlers/proposal/rotateValidatorsFactory');
+const rotateValidatorSetUpdateFactory = require('../../../../../lib/abci/handlers/proposal/rotateValidatorSetUpdateFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
-describe('rotateValidatorsFactory', () => {
-  let rotateValidators;
+describe('rotateValidatorSetUpdateFactory.spec', () => {
+  let rotateValidatorSetUpdate;
   let blockExecutionContextMock;
   let validatorSetMock;
   let createValidatorSetUpdateMock;
@@ -54,7 +54,7 @@ describe('rotateValidatorsFactory', () => {
       get: this.sinon.stub().returns(blockExecutionContextMock),
     };
 
-    rotateValidators = rotateValidatorsFactory(
+    rotateValidatorSetUpdate = rotateValidatorSetUpdateFactory(
       proposalBlockExecutionContextCollectionMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
@@ -74,7 +74,7 @@ describe('rotateValidatorsFactory', () => {
 
     createValidatorSetUpdateMock.returns(validatorSetUpdate);
 
-    const response = await rotateValidators(height, round, loggerMock);
+    const response = await rotateValidatorSetUpdate(height, round, loggerMock);
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
@@ -94,7 +94,7 @@ describe('rotateValidatorsFactory', () => {
 
     validatorSetMock.rotate.resolves(false);
 
-    const response = await rotateValidators(height, round, loggerMock);
+    const response = await rotateValidatorSetUpdate(height, round, loggerMock);
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,

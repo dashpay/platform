@@ -1,15 +1,22 @@
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const DriveError = require('../../errors/DriveError');
 
-const AbstractAbciError = require('./AbstractAbciError');
-
-class BlockExecutionContextNotFoundError extends AbstractAbciError {
+class BlockExecutionContextNotFoundError extends DriveError {
   /**
    *
-   * @param {string} message
-   * @param {Object} chainlock
+   * @param {number} round
    */
   constructor(round) {
-    super(grpcErrorCodes.INTERNAL, 'BlockExecutionContext not found', { round });
+    super('BlockExecutionContext not found');
+
+    this.round = round;
+  }
+
+  /**
+   *
+   * @return {number}
+   */
+  getRound() {
+    return this.round;
   }
 }
 
