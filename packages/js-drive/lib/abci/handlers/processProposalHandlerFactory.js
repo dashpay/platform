@@ -71,6 +71,7 @@ function processProposalHandlerFactory(
         version,
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
+        round,
       },
       consensusLogger,
     );
