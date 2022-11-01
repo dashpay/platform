@@ -2,6 +2,10 @@ import * as dpp_module from "../wasm/wasm_dpp";
 // import { inspect } from 'util';
 
 export default function (dppModule: typeof dpp_module) {
+    // As Identifier is now exported from WASM, it can no longer
+    // patched the same way as JS implementation did. This module
+    // adds everything that's currently missing from Identifier that can't
+    // be implemented in Rust directly.
     const { Identifier } = dppModule;
 
     //@ts-ignore
