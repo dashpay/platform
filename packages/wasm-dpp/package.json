@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.23.0-dev.15",
+  "version": "0.24.0-dev.6",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,8 +11,15 @@
     "lint": "cargo clippy && cargo fmt --check",
     "clean": "scripts/clean.sh"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Dash Core Team",
+  "contributors": [
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@gmail.com",
+      "url": "https://github.com/antouhou"
+    }
+  ],
+  "license": "MIT",
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/dashcore-lib": "~0.19.43",
