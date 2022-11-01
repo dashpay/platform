@@ -28,11 +28,10 @@ export default function (dppModule: typeof dpp_module) {
         return this.valueOf().inspect(...args);
     }
 
-    // THIS MAKES BUFFERS PRINTABLE IN NODE.JS, BUT FOR THIS TO WORK
-    // target: node has to be specified and utils have to be included __without__ using
-    // polyfills.
-
-    // console.log("custom:", inspect.custom);
-    // //@ts-ignore
-    // Identifier.prototype[inspect.custom] = Identifier.prototype.inspect;
+    // TODO: THIS MAKES BUFFERS PRINTABLE IN NODE.JS, BUT FOR THIS TO WORK
+    //  target: node has to be specified and utils have to be included __without__ using
+    //  polyfills. This in turn will make web version not work. The code is as follows:
+    //  console.log("custom:", inspect.custom);
+    //  //@ts-ignore
+    //  Identifier.prototype[inspect.custom] = Identifier.prototype.inspect;
 }
