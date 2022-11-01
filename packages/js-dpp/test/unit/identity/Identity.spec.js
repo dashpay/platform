@@ -135,7 +135,6 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-
       expect(identity.toObject()).to.deep.equal(rawIdentity);
     });
   });

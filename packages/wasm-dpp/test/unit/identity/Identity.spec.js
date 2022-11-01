@@ -1,6 +1,3 @@
-const { default: loadWasmDpp } = require('../../../dist');
-const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-
 const JSIdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JSIdentity = require('@dashevo/dpp/lib/identity/Identity');
@@ -9,6 +6,8 @@ const serializer = require('@dashevo/dpp/lib/util/serializer');
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const hash = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('Identity', () => {
   let rawIdentity;
@@ -21,11 +20,12 @@ describe('Identity', () => {
   let IdentityPublicKey;
 
   before(async () => {
-    ({ Identifier, Identity, Metadata, IdentityPublicKey: IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel } = await loadWasmDpp());
+    ({
+      Identifier, Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+    } = await loadWasmDpp());
   });
 
-
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
       id: await generateRandomIdentifierAsync(),
@@ -51,7 +51,6 @@ describe('Identity', () => {
     identity.setMetadata(metadataFixture);
 
     metadataFixture = new Metadata(42, 0);
-
   });
 
   afterEach(() => {
@@ -77,7 +76,7 @@ describe('Identity', () => {
 
   describe('#getPublicKeys', () => {
     it('should return set public keys', () => {
-      expect(identity.getPublicKeys().map(pk => pk.toObject())).to.deep.equal(
+      expect(identity.getPublicKeys().map((pk) => pk.toObject())).to.deep.equal(
         rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
       );
     });
@@ -85,9 +84,9 @@ describe('Identity', () => {
 
   describe('#setPublicKeys', () => {
     it('should reject input which is not array of public keys', () => {
-      expect(() => { identity.setPublicKeys(42) })
+      expect(() => { identity.setPublicKeys(42); })
         .throws("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys");
-      expect(identity.getPublicKeys()).length(1)
+      expect(identity.getPublicKeys()).length(1);
     });
 
     it('should set public keys', () => {
@@ -147,7 +146,7 @@ describe('Identity', () => {
   describe('#toObject', () => {
     it('should return plain object representation', () => {
       console.log(`purpose is: ${KeyPurpose.AUTHENTICATION}`);
-      let identityObject = identity.toObject();
+      const identityObject = identity.toObject();
 
       //! TODO The structures exported from WASM cannot be deeply inspected and hence: compared.
       //! TODO The WASM structure contains `ptr` field with a pointer to memory in WASM space, and
@@ -236,7 +235,6 @@ describe('Identity', () => {
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
-
       identity.addPublicKeys(
         new IdentityPublicKey({
           id: 99,
@@ -255,7 +253,7 @@ describe('Identity', () => {
           securityLevel: KeySecurityLevel.MASTER,
           signature: Buffer.alloc(36).fill('a'),
           readOnly: false,
-        })
+        }),
       );
 
       const maxId = identity.getPublicKeyMaxId();

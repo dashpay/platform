@@ -3001,6 +3001,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai-exclude", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.1.0"],\
             ["chai-string", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:1.5.0"],\
             ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+            ["eslint", "npm:7.32.0"],\
+            ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
+            ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["fast-json-patch", "npm:3.1.0"],\
             ["json-schema-diff-validator", "npm:0.4.1"],\
             ["lodash.clonedeep", "npm:4.5.0"],\

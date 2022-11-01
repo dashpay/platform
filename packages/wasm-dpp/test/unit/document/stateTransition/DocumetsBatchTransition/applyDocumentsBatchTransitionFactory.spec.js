@@ -73,8 +73,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     ]);
 
     applyDocumentsBatchTransition = applyDocumentsBatchTransitionFactory(
-        stateRepositoryMock,
-        fetchDocumentsMock,
+      stateRepositoryMock,
+      fetchDocumentsMock,
     );
   });
 
@@ -84,8 +84,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     const replaceDocumentTransition = documentTransitions[1];
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        [replaceDocumentTransition],
-        executionContext,
+      [replaceDocumentTransition],
+      executionContext,
     );
 
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
@@ -104,10 +104,10 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     ]);
 
     expect(stateRepositoryMock.removeDocument).to.have.been.calledOnceWithExactly(
-        documentTransitions[2].getDataContract(),
-        documentTransitions[2].getType(),
-        documentTransitions[2].getId(),
-        executionContext,
+      documentTransitions[2].getDataContract(),
+      documentTransitions[2].getType(),
+      documentTransitions[2].getId(),
+      executionContext,
     );
   });
 
@@ -162,8 +162,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
 
     expect(stateRepositoryMock.updateDocument).to.have.been.calledOnceWithExactly(
-        newDocument,
-        executionContext,
+      newDocument,
+      executionContext,
     );
   });
 });

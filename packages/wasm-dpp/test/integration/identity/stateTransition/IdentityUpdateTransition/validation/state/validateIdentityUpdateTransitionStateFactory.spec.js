@@ -27,9 +27,9 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   beforeEach(async function beforeEach() {
     identity = getIdentityFixture();
     validatePublicKeysMock = this.sinonSandbox.stub()
-        .returns(new ValidationResult());
+      .returns(new ValidationResult());
     validateRequiredPurposeAndSecurityLevelMock = this.sinonSandbox.stub()
-        .returns(new ValidationResult());
+      .returns(new ValidationResult());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
@@ -41,9 +41,9 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     });
 
     validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
-        stateRepositoryMock,
-        validatePublicKeysMock,
-        validateRequiredPurposeAndSecurityLevelMock,
+      stateRepositoryMock,
+      validatePublicKeysMock,
+      validateRequiredPurposeAndSecurityLevelMock,
     );
 
     stateTransition = getIdentityUpdateTransitionFixture();
@@ -108,16 +108,16 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     const timeWindowStart = new Date(blockTime * 1000);
     timeWindowStart.setMinutes(
-        timeWindowStart.getMinutes() - 5,
+      timeWindowStart.getMinutes() - 5,
     );
 
     const timeWindowEnd = new Date(blockTime * 1000);
     timeWindowEnd.setMinutes(
-        timeWindowEnd.getMinutes() + 5,
+      timeWindowEnd.getMinutes() + 5,
     );
 
     stateTransition.publicKeysDisabledAt.setMinutes(
-        stateTransition.publicKeysDisabledAt.getMinutes() - 6,
+      stateTransition.publicKeysDisabledAt.getMinutes() - 6,
     );
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -152,13 +152,13 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchIdentity)
-        .to.be.calledOnceWithExactly(
+      .to.be.calledOnceWithExactly(
         stateTransition.getIdentityId(),
         executionContext,
-    );
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-        .to.be.calledOnce();
+      .to.be.calledOnce();
   });
 
   it('should pass when adding public key', async () => {
@@ -170,18 +170,18 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchIdentity)
-        .to.be.calledOnceWithExactly(
+      .to.be.calledOnceWithExactly(
         stateTransition.getIdentityId(),
         executionContext,
-    );
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-        .to.not.be.called();
+      .to.not.be.called();
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-        [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()].map(
-            (pk) => pk.toObject(),
-        ),
+      [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()].map(
+        (pk) => pk.toObject(),
+      ),
     );
   });
 
@@ -194,16 +194,16 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchIdentity)
-        .to.be.calledOnceWithExactly(
+      .to.be.calledOnceWithExactly(
         stateTransition.getIdentityId(),
         executionContext,
-    );
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-        .to.be.calledOnce();
+      .to.be.calledOnce();
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-        .to.be.calledOnce();
+      .to.be.calledOnce();
   });
 
   it('should validate purpose and security level', async () => {
@@ -215,7 +215,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     const publicKeysError = new SomeConsensusError('test');
 
     validateRequiredPurposeAndSecurityLevelMock.onCall(0)
-        .returns(new ValidationResult([publicKeysError]));
+      .returns(new ValidationResult([publicKeysError]));
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
@@ -238,8 +238,8 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expectValidationError(result, SomeConsensusError);
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-        [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
-            .map((pk) => pk.toObject()),
+      [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
+        .map((pk) => pk.toObject()),
     );
   });
 
@@ -257,7 +257,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     const publicKeys = [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()];
 
     expect(validatePublicKeysMock).to.be.calledWithExactly(
-        publicKeys.map((pk) => pk.toObject()),
+      publicKeys.map((pk) => pk.toObject()),
     );
   });
 
@@ -268,7 +268,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     const publicKeysError = new SomeConsensusError('test');
 
     validateRequiredPurposeAndSecurityLevelMock.onCall(0)
-        .returns(new ValidationResult([publicKeysError]));
+      .returns(new ValidationResult([publicKeysError]));
 
     stateTransition.getExecutionContext().enableDryRun();
 
@@ -281,12 +281,12 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(validatePublicKeysMock).to.not.be.called();
     expect(validateRequiredPurposeAndSecurityLevelMock).to.not.be.called();
     expect(stateRepositoryMock.fetchIdentity)
-        .to.be.calledOnceWithExactly(
+      .to.be.calledOnceWithExactly(
         stateTransition.getIdentityId(),
         executionContext,
-    );
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-        .to.not.be.called();
+      .to.not.be.called();
   });
 });

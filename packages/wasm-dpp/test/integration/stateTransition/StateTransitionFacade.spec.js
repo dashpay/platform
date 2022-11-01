@@ -36,18 +36,18 @@ describe('StateTransitionFacade', () => {
     const publicKeyId = 1;
 
     identityPublicKey = new IdentityPublicKey()
-        .setId(publicKeyId)
-        .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-        .setData(publicKey)
-        .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION)
-        .setSecurityLevel(IdentityPublicKey.PURPOSES.MASTER);
+      .setId(publicKeyId)
+      .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
+      .setData(publicKey)
+      .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION)
+      .setSecurityLevel(IdentityPublicKey.PURPOSES.MASTER);
 
     dataContract = getDataContractFixture();
 
     const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
     dataContractCreateTransition = dataContractFactory.createDataContractCreateTransition(
-        dataContract,
+      dataContract,
     );
     await dataContractCreateTransition.sign(identityPublicKey, privateKey);
 
@@ -89,7 +89,7 @@ describe('StateTransitionFacade', () => {
 
       try {
         await dpp.stateTransition.createFromObject(
-            dataContractCreateTransition.toObject(),
+          dataContractCreateTransition.toObject(),
         );
 
         expect.fail('MissingOption should be thrown');
@@ -104,14 +104,14 @@ describe('StateTransitionFacade', () => {
       await dpp.initialize();
 
       await dpp.stateTransition.createFromObject(
-          dataContractCreateTransition.toObject(),
-          { skipValidation: true },
+        dataContractCreateTransition.toObject(),
+        { skipValidation: true },
       );
     });
 
     it('should create State Transition from plain object', async () => {
       const result = await dpp.stateTransition.createFromObject(
-          dataContractCreateTransition.toObject(),
+        dataContractCreateTransition.toObject(),
       );
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
@@ -127,7 +127,7 @@ describe('StateTransitionFacade', () => {
 
       try {
         await dpp.stateTransition.createFromBuffer(
-            dataContractCreateTransition.toBuffer(),
+          dataContractCreateTransition.toBuffer(),
         );
 
         expect.fail('MissingOption should be thrown');
@@ -142,14 +142,14 @@ describe('StateTransitionFacade', () => {
       await dpp.initialize();
 
       await dpp.stateTransition.createFromBuffer(
-          dataContractCreateTransition.toBuffer(),
-          { skipValidation: true },
+        dataContractCreateTransition.toBuffer(),
+        { skipValidation: true },
       );
     });
 
     it('should create State Transition from string', async () => {
       const result = await dpp.stateTransition.createFromBuffer(
-          dataContractCreateTransition.toBuffer(),
+        dataContractCreateTransition.toBuffer(),
       );
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
@@ -166,23 +166,23 @@ describe('StateTransitionFacade', () => {
 
     beforeEach(function beforeEach() {
       validateBasicSpy = this.sinonSandbox.spy(
-          dpp.stateTransition,
-          'validateBasic',
+        dpp.stateTransition,
+        'validateBasic',
       );
 
       validateSignatureSpy = this.sinonSandbox.spy(
-          dpp.stateTransition,
-          'validateSignature',
+        dpp.stateTransition,
+        'validateSignature',
       );
 
       validateFeeSpy = this.sinonSandbox.spy(
-          dpp.stateTransition,
-          'validateFee',
+        dpp.stateTransition,
+        'validateFee',
       );
 
       validateStateSpy = this.sinonSandbox.spy(
-          dpp.stateTransition,
-          'validateState',
+        dpp.stateTransition,
+        'validateState',
       );
     });
 
@@ -235,7 +235,7 @@ describe('StateTransitionFacade', () => {
       const consensusError = new SomeConsensusError('error');
 
       dpp.stateTransition.validateStateTransitionState = () => (
-          new ValidationResult([consensusError])
+        new ValidationResult([consensusError])
       );
 
       const result = await dpp.stateTransition.validate(dataContractCreateTransition);
@@ -251,7 +251,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate DataContractCreateTransition', async () => {
       const result = await dpp.stateTransition.validate(
-          dataContractCreateTransition,
+        dataContractCreateTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -273,7 +273,7 @@ describe('StateTransitionFacade', () => {
       });
 
       const result = await dpp.stateTransition.validate(
-          documentsBatchTransition,
+        documentsBatchTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -293,7 +293,7 @@ describe('StateTransitionFacade', () => {
 
       try {
         await dpp.stateTransition.validateBasic(
-            dataContractCreateTransition.toObject(),
+          dataContractCreateTransition.toObject(),
         );
 
         expect.fail('MissingOption should be thrown');
@@ -305,7 +305,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateBasic(
-          dataContractCreateTransition.toObject(),
+        dataContractCreateTransition.toObject(),
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -320,7 +320,7 @@ describe('StateTransitionFacade', () => {
 
       try {
         await dpp.stateTransition.validateSignature(
-            dataContractCreateTransition,
+          dataContractCreateTransition,
         );
 
         expect.fail('MissingOption should be thrown');
@@ -332,7 +332,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate identity signed State Transition', async () => {
       const result = await dpp.stateTransition.validateSignature(
-          dataContractCreateTransition,
+        dataContractCreateTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -341,18 +341,18 @@ describe('StateTransitionFacade', () => {
 
     it('should validate key signed State Transition', async () => {
       const oneTimePrivateKey = new PrivateKey(
-          'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837',
+        'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837',
       );
 
       const identityCreateTransition = getIdentityCreateTransitionFixture(oneTimePrivateKey);
 
       await identityCreateTransition.signByPrivateKey(
-          oneTimePrivateKey,
-          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        oneTimePrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
       const result = await dpp.stateTransition.validateSignature(
-          identityCreateTransition,
+        identityCreateTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -367,7 +367,7 @@ describe('StateTransitionFacade', () => {
 
       try {
         await dpp.stateTransition.validateFee(
-            dataContractCreateTransition,
+          dataContractCreateTransition,
         );
 
         expect.fail('MissingOption should be thrown');
@@ -379,7 +379,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateFee(
-          dataContractCreateTransition,
+        dataContractCreateTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -394,7 +394,7 @@ describe('StateTransitionFacade', () => {
 
       try {
         await dpp.stateTransition.validateState(
-            dataContractCreateTransition,
+          dataContractCreateTransition,
         );
 
         expect.fail('MissingOption should be thrown');
@@ -406,7 +406,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateState(
-          dataContractCreateTransition,
+        dataContractCreateTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);

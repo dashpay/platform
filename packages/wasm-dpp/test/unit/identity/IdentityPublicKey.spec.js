@@ -16,7 +16,7 @@ describe('IdentityPublicKey', () => {
       readOnly: false,
     };
 
-    ({ IdentityPublicKey: IdentityPublicKey } = await loadWasmDpp());
+    ({ IdentityPublicKey } = await loadWasmDpp());
     publicKey = new IdentityPublicKey(rawPublicKey);
   });
 

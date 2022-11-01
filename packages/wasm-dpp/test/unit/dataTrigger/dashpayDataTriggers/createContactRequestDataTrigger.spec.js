@@ -31,10 +31,10 @@ describe('createContactRequestDataTrigger', () => {
     stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
 
     context = new DataTriggerExecutionContext(
-        stateRepositoryMock,
-        contactRequestDocument.getOwnerId(),
-        dataContract,
-        new StateTransitionExecutionContext(),
+      stateRepositoryMock,
+      contactRequestDocument.getOwnerId(),
+      dataContract,
+      new StateTransitionExecutionContext(),
     );
 
     dashPayIdentity = context.getOwnerId();
@@ -48,7 +48,7 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     const result = await createContactRequestDataTrigger(
-        documentTransition, context, dashPayIdentity,
+      documentTransition, context, dashPayIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -58,7 +58,7 @@ describe('createContactRequestDataTrigger', () => {
 
   it('should successfully execute if document has no `coreHeightCreatedAt` field', async () => {
     const result = await createContactRequestDataTrigger(
-        documentTransition, context, dashPayIdentity,
+      documentTransition, context, dashPayIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -74,7 +74,7 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     const result = await createContactRequestDataTrigger(
-        documentTransition, context, dashPayIdentity,
+      documentTransition, context, dashPayIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -95,7 +95,7 @@ describe('createContactRequestDataTrigger', () => {
     context.getStateTransitionExecutionContext().enableDryRun();
 
     const result = await createContactRequestDataTrigger(
-        documentTransition, context, dashPayIdentity,
+      documentTransition, context, dashPayIdentity,
     );
 
     context.getStateTransitionExecutionContext().disableDryRun();

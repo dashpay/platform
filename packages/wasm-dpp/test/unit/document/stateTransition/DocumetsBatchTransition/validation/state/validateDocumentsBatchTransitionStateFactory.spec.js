@@ -80,10 +80,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     validateDocumentsUniquenessByIndicesMock.resolves(new ValidationResult());
 
     validateDocumentsBatchTransitionState = validateDocumentsBatchTransitionStateFactory(
-        stateRepositoryMock,
-        fetchDocumentsMock,
-        validateDocumentsUniquenessByIndicesMock,
-        executeDataTriggersMock,
+      stateRepositoryMock,
+      fetchDocumentsMock,
+      validateDocumentsUniquenessByIndicesMock,
+      executeDataTriggersMock,
     );
 
     fakeTime = this.sinonSandbox.useFakeTimers(new Date());
@@ -106,8 +106,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       expect(e.getDataContractId()).to.deep.equal(dataContract.getId());
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-          dataContract.getId(),
-          new StateTransitionExecutionContext(),
+        dataContract.getId(),
+        new StateTransitionExecutionContext(),
       );
 
       expect(fetchDocumentsMock).to.have.not.been.called();
@@ -130,12 +130,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getDocumentId()).to.deep.equal(documentTransitions[0].getId().toBuffer());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock.getCall(0).args[0].map((t) => t.toObject())).to.have.deep.members(
-        documentTransitions.map((t) => t.toObject()),
+      documentTransitions.map((t) => t.toObject()),
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -167,13 +167,13 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getDocumentId()).to.deep.equal(documentTransitions[0].getId().toBuffer());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        documentTransitions,
-        executionContext,
+      documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -205,13 +205,13 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getDocumentId()).to.deep.equal(documentTransitions[0].getId().toBuffer());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        documentTransitions,
-        executionContext,
+      documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -250,13 +250,13 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getCurrentRevision()).to.deep.equal(documents[0].getRevision());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        documentTransitions,
-        executionContext,
+      documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -297,22 +297,22 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(Buffer.isBuffer(error.getDocumentOwnerId())).to.be.true();
     expect(error.getDocumentOwnerId()).to.deep.equal(
-        replaceDocument.getOwnerId().toBuffer(),
+      replaceDocument.getOwnerId().toBuffer(),
     );
 
     expect(Buffer.isBuffer(error.getExistingDocumentOwnerId())).to.be.true();
     expect(error.getExistingDocumentOwnerId()).to.deep.equal(
-        fetchedDocument.getOwnerId().toBuffer(),
+      fetchedDocument.getOwnerId().toBuffer(),
     );
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        documentTransitions,
-        executionContext,
+      documentTransitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -339,17 +339,17 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidDocumentActionError);
       expect(e.getDocumentTransition().toObject()).to.deep.equal(
-          stateTransition.transitions[0].toObject(),
+        stateTransition.transitions[0].toObject(),
       );
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-          dataContract.getId(),
-          new StateTransitionExecutionContext(),
+        dataContract.getId(),
+        new StateTransitionExecutionContext(),
       );
 
       expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-          stateTransition.transitions,
-          executionContext,
+        stateTransition.transitions,
+        executionContext,
       );
 
       expect(validateDocumentsUniquenessByIndicesMock).to.have.not.been.called();
@@ -361,7 +361,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const duplicateDocumentsError = new SomeConsensusError('error');
 
     validateDocumentsUniquenessByIndicesMock.resolves(
-        new ValidationResult([duplicateDocumentsError]),
+      new ValidationResult([duplicateDocumentsError]),
     );
 
     const result = await validateDocumentsBatchTransitionState(stateTransition);
@@ -373,17 +373,17 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error).to.equal(duplicateDocumentsError);
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        stateTransition.transitions,
-        executionContext,
+      stateTransition.transitions,
+      executionContext,
     );
 
     const [callOwnerId, callDocumentTransitions, callDataContract] = (
-        validateDocumentsUniquenessByIndicesMock.getCall(0).args
+      validateDocumentsUniquenessByIndicesMock.getCall(0).args
     );
 
     const callArgs = [
@@ -402,17 +402,17 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
   it('should return invalid result if data triggers execution failed', async () => {
     const dataTriggersExecutionContext = new DataTriggerExecutionContext(
-        stateRepositoryMock,
-        ownerId,
-        dataContract,
-        executionContext,
+      stateRepositoryMock,
+      ownerId,
+      dataContract,
+      executionContext,
     );
 
     const dataTriggerExecutionError = new DataTriggerExecutionError(
-        documentTransitions[0],
-        dataTriggersExecutionContext.getDataContract(),
-        dataTriggersExecutionContext.getOwnerId(),
-        new Error('error'),
+      documentTransitions[0],
+      dataTriggersExecutionContext.getDataContract(),
+      dataTriggersExecutionContext.getOwnerId(),
+      new Error('error'),
     );
 
     executeDataTriggersMock.resolves([
@@ -429,17 +429,17 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error).to.equal(dataTriggerExecutionError);
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        stateTransition.transitions,
-        executionContext,
+      stateTransition.transitions,
+      executionContext,
     );
 
     const [callOwnerId, callDocumentTransitions, callDataContract, callExecutionContext] = (
-        validateDocumentsUniquenessByIndicesMock.getCall(0).args
+      validateDocumentsUniquenessByIndicesMock.getCall(0).args
     );
 
     const callArgs = [
@@ -457,7 +457,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     ]);
 
     const [triggerCallDocumentTransitions, triggerCallDataTriggersExecutionContext] = (
-        executeDataTriggersMock.getCall(0).args
+      executeDataTriggersMock.getCall(0).args
     );
 
     const triggerCallArgs = [
@@ -478,12 +478,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     beforeEach(() => {
       timeWindowStart = new Date(blockTime * 1000);
       timeWindowStart.setMinutes(
-          timeWindowStart.getMinutes() - 5,
+        timeWindowStart.getMinutes() - 5,
       );
 
       timeWindowEnd = new Date(blockTime * 1000);
       timeWindowEnd.setMinutes(
-          timeWindowEnd.getMinutes() + 5,
+        timeWindowEnd.getMinutes() + 5,
       );
     });
 
@@ -545,7 +545,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getCode()).to.equal(4008);
 
         documentTransitions[0].createdAt.setMinutes(
-            documentTransitions[0].createdAt.getMinutes() - 6,
+          documentTransitions[0].createdAt.getMinutes() - 6,
         );
         documentTransitions[0].updatedAt = undefined;
 
@@ -584,7 +584,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getCode()).to.equal(4008);
 
         documentTransitions[0].updatedAt.setMinutes(
-            documentTransitions[0].updatedAt.getMinutes() - 6,
+          documentTransitions[0].updatedAt.getMinutes() - 6,
         );
         documentTransitions[0].createdAt = undefined;
 
@@ -671,7 +671,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         }, [dataContract]);
 
         documents[1].updatedAt.setMinutes(
-            documents[1].updatedAt.getMinutes() - 6,
+          documents[1].updatedAt.getMinutes() - 6,
         );
 
         fetchDocumentsMock.resolves([documents[1]]);
@@ -690,7 +690,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getCode()).to.equal(4008);
 
         documentTransitions[0].updatedAt.setMinutes(
-            documentTransitions[0].updatedAt.getMinutes() - 6,
+          documentTransitions[0].updatedAt.getMinutes() - 6,
         );
 
         expect(Buffer.isBuffer(error.getDocumentId())).to.be.true();
@@ -718,7 +718,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         }, [dataContract]);
 
         documents[1].updatedAt.setMinutes(
-            documents[1].updatedAt.getMinutes() - 6,
+          documents[1].updatedAt.getMinutes() - 6,
         );
 
         fetchDocumentsMock.resolves([documents[1]]);
@@ -766,10 +766,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateTransition.setExecutionContext(executionContext);
 
     const dataTriggersExecutionContext = new DataTriggerExecutionContext(
-        stateRepositoryMock,
-        ownerId,
-        dataContract,
-        executionContext,
+      stateRepositoryMock,
+      ownerId,
+      dataContract,
+      executionContext,
     );
 
     executeDataTriggersMock.resolves([
@@ -782,25 +782,25 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContract.getId(),
-        new StateTransitionExecutionContext(),
+      dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-        stateTransition.transitions,
-        executionContext,
+      stateTransition.transitions,
+      executionContext,
     );
 
     expect(validateDocumentsUniquenessByIndicesMock).to.have.been.calledOnceWithExactly(
-        ownerId,
-        [documentTransitions[0]],
-        dataContract,
-        executionContext,
+      ownerId,
+      [documentTransitions[0]],
+      dataContract,
+      executionContext,
     );
 
     expect(executeDataTriggersMock).to.have.been.calledOnceWithExactly(
-        documentTransitions,
-        dataTriggersExecutionContext,
+      documentTransitions,
+      dataTriggersExecutionContext,
     );
   });
 });
