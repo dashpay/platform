@@ -50,7 +50,7 @@ describe('Withdrawals contract', () => {
         };
       });
 
-      it('should have at least six properties', () => {
+      it('should have at least five properties', () => {
         rawWithdrawalDocument = {
           $createdAt: (new Date()).getTime(),
           $updatedAt: (new Date()).getTime(),
@@ -68,7 +68,7 @@ describe('Withdrawals contract', () => {
 
           expect(error.name).to.equal('JsonSchemaError');
           expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('transactionId');
+          expect(error.params.missingProperty).to.equal('amount');
         }
       });
 
@@ -92,25 +92,6 @@ describe('Withdrawals contract', () => {
       });
 
       describe('transactionId', () => {
-        it('should be present', async () => {
-          delete rawWithdrawalDocument.transactionId;
-
-          try {
-            dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('transactionId');
-          }
-        });
-
         it('should be byte array', () => {
           rawWithdrawalDocument.transactionId = 1;
 

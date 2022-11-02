@@ -31,7 +31,7 @@
             "transactionId": "asc"
           }
         ],
-        "unique": true
+        "unique": false
       },
       {
         "name": "ownerId",
@@ -90,7 +90,6 @@
     "required": [
       "$createdAt",
       "$updatedAt",
-      "transactionId",
       "amount",
       "coreFeePerByte",
       "pooling",
