@@ -91,8 +91,8 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
         },
         otherProperty: {
           type: 'string',
-          maxLength: 42
-        }
+          maxLength: 42,
+        },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
       additionalProperties: false,
