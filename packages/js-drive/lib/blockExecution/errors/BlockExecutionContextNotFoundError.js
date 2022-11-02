@@ -6,7 +6,7 @@ class BlockExecutionContextNotFoundError extends DriveError {
    * @param {number} round
    */
   constructor(round) {
-    super('BlockExecutionContext not found');
+    super(`BlockExecutionContext for round ${round} not found`);
 
     this.round = round;
   }
