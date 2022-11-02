@@ -89,7 +89,12 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
 
     validatorSetMock.rotate.resolves(false);
 
-    const response = await rotateAndCreateValidatorSetUpdate(height, coreChainLockedHeight, round, loggerMock);
+    const response = await rotateAndCreateValidatorSetUpdate(
+      height,
+      coreChainLockedHeight,
+      round,
+      loggerMock,
+    );
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
