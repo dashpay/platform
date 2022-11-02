@@ -145,7 +145,6 @@ describe('Identity', () => {
 
   describe('#toObject', () => {
     it('should return plain object representation', () => {
-      console.log(`purpose is: ${KeyPurpose.AUTHENTICATION}`);
       const identityObject = identity.toObject();
 
       //! TODO The structures exported from WASM cannot be deeply inspected and hence: compared.
