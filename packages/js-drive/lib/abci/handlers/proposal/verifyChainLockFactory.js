@@ -29,7 +29,7 @@ function verifyChainLockFactory(
           chainLock: serializedCoreChainLock,
           lastCoreChainLockedHeight,
         },
-        'Chainlock verification failed: coreBlockHeight is bigger than lastCoreChainLockedHeigh',
+        'Chainlock verification failed: coreBlockHeight must be bigger than the latest core chain locked height',
       );
 
       return false;
