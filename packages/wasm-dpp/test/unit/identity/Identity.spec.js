@@ -2,9 +2,7 @@ const JSIdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JSIdentity = require('@dashevo/dpp/lib/identity/Identity');
 
-const serializer = require('@dashevo/dpp/lib/util/serializer');
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
-const hash = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../../dist');
@@ -12,16 +10,17 @@ const { default: loadWasmDpp } = require('../../../dist');
 describe('Identity', () => {
   let rawIdentity;
   let identity;
-  let hashMock;
-  let encodeMock;
   let metadataFixture;
   let Identity;
   let Metadata;
   let IdentityPublicKey;
+  let KeyPurpose;
+  let KeyType;
+  let KeySecurityLevel;
 
   before(async () => {
     ({
-      Identifier, Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+      Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
     } = await loadWasmDpp());
   });
 
@@ -61,8 +60,10 @@ describe('Identity', () => {
       const instance = new Identity(rawIdentity);
 
       expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
-      expect(instance.getPublicKeys().map((pk) => pk.toObject())).to.deep.equal(
-        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
+      expect(
+        instance.getPublicKeys().map((pk) => pk.toObject()),
+      ).to.deep.equal(
+        rawIdentity.publicKeys,
       );
     });
   });
@@ -77,7 +78,7 @@ describe('Identity', () => {
   describe('#getPublicKeys', () => {
     it('should return set public keys', () => {
       expect(identity.getPublicKeys().map((pk) => pk.toObject())).to.deep.equal(
-        rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
+        rawIdentity.publicKeys,
       );
     });
   });
@@ -110,7 +111,11 @@ describe('Identity', () => {
     it('should return a public key for a given id', () => {
       const key = identity.getPublicKeyById(0);
 
-      expect(key.toObject()).to.be.deep.equal(new IdentityPublicKey(rawIdentity.publicKeys[0]).toObject());
+      expect(
+        key.toObject(),
+      ).to.be.deep.equal(
+        rawIdentity.publicKeys[0],
+      );
     });
 
     it("should return undefined if there's no key with such id", () => {
@@ -130,7 +135,7 @@ describe('Identity', () => {
 
   describe('#hash', () => {
     it('should return the same has as JS Identity', () => {
-      const expected_hash = hashFunction(identity.toBuffer());
+      const expectedHash = hashFunction(identity.toBuffer());
       const result = identity.hash();
 
       const identityDataToEncode = identity.toObject();
@@ -139,7 +144,7 @@ describe('Identity', () => {
       const protocolVersionUInt32 = Buffer.alloc(4);
       protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
 
-      expect(result).to.deep.equal(expected_hash);
+      expect(result).to.deep.equal(expectedHash);
     });
   });
 
