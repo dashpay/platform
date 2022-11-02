@@ -6,30 +6,25 @@ const {
   },
 } = require('@dashevo/abci/types');
 const Long = require('long');
-const rotateValidatorSetUpdateFactory = require('../../../../../lib/abci/handlers/proposal/rotateValidatorSetUpdateFactory');
+const rotateAndCreateValidatorSetUpdateFactory = require('../../../../../lib/abci/handlers/proposal/rotateAndCreateValidatorSetUpdateFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
-describe('rotateValidatorSetUpdateFactory.spec', () => {
-  let rotateValidatorSetUpdate;
+describe('rotateAndCreateValidatorSetUpdateFactory', () => {
+  let rotateAndCreateValidatorSetUpdate;
   let blockExecutionContextMock;
   let validatorSetMock;
   let createValidatorSetUpdateMock;
-  let latestCoreChainLockMock;
-  let chainLockMock;
   let height;
   let loggerMock;
   let lastCommitInfoMock;
   let round;
   let proposalBlockExecutionContextCollectionMock;
+  let coreChainLockedHeight;
 
   beforeEach(function beforeEach() {
     round = 0;
-    chainLockMock = {
-      height: 1,
-      blockHash: Buffer.alloc(0),
-      signature: Buffer.alloc(0),
-    };
+    coreChainLockedHeight = 1;
 
     lastCommitInfoMock = {
       stateSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
@@ -45,20 +40,15 @@ describe('rotateValidatorSetUpdateFactory.spec', () => {
 
     createValidatorSetUpdateMock = this.sinon.stub();
 
-    latestCoreChainLockMock = {
-      getChainLock: this.sinon.stub().returns(chainLockMock),
-    };
-
     loggerMock = new LoggerMock(this.sinon);
     proposalBlockExecutionContextCollectionMock = {
       get: this.sinon.stub().returns(blockExecutionContextMock),
     };
 
-    rotateValidatorSetUpdate = rotateValidatorSetUpdateFactory(
+    rotateAndCreateValidatorSetUpdate = rotateAndCreateValidatorSetUpdateFactory(
       proposalBlockExecutionContextCollectionMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
-      latestCoreChainLockMock,
     );
   });
 
@@ -74,11 +64,16 @@ describe('rotateValidatorSetUpdateFactory.spec', () => {
 
     createValidatorSetUpdateMock.returns(validatorSetUpdate);
 
-    const response = await rotateValidatorSetUpdate(height, round, loggerMock);
+    const response = await rotateAndCreateValidatorSetUpdate(
+      height,
+      coreChainLockedHeight,
+      round,
+      loggerMock,
+    );
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
-      chainLockMock.height,
+      coreChainLockedHeight,
       Buffer.from(lastCommitInfoMock.stateSignature),
     );
 
@@ -94,11 +89,11 @@ describe('rotateValidatorSetUpdateFactory.spec', () => {
 
     validatorSetMock.rotate.resolves(false);
 
-    const response = await rotateValidatorSetUpdate(height, round, loggerMock);
+    const response = await rotateAndCreateValidatorSetUpdate(height, coreChainLockedHeight, round, loggerMock);
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
-      chainLockMock.height,
+      coreChainLockedHeight,
       Buffer.from(lastCommitInfoMock.stateSignature),
     );
 

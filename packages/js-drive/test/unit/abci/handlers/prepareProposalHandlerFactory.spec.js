@@ -168,6 +168,7 @@ describe('prepareProposalHandlerFactory', () => {
         round,
         processingFees: 3,
         storageFees: 6,
+        coreChainLockedHeight: request.coreChainLockedHeight,
       },
       loggerMock,
     );

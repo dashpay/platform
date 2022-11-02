@@ -1,4 +1,4 @@
-const BlockExecutionContextNotFoundError = require('../abci/errors/BlockExecutionContextNotFoundError');
+const BlockExecutionContextNotFoundError = require('./errors/BlockExecutionContextNotFoundError');
 
 class ProposalBlockExecutionContextCollection {
   constructor() {

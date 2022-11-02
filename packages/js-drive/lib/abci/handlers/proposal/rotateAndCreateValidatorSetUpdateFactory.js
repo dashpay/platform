@@ -2,32 +2,35 @@
  * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
- * @param {LatestCoreChainLock} latestCoreChainLock
- * @return {rotateValidatorSetUpdate}
+ * @return {rotateAndCreateValidatorSetUpdate}
  */
-function rotateValidatorSetUpdateFactory(
+function rotateAndCreateValidatorSetUpdateFactory(
   proposalBlockExecutionContextCollection,
   validatorSet,
   createValidatorSetUpdate,
-  latestCoreChainLock,
 ) {
   /**
-   * @typedef rotateValidatorSetUpdate
+   * @typedef rotateAndCreateValidatorSetUpdate
    * @param {number} height
+   * @param {number} coreChainLockedHeight
    * @param {number} round
    * @param {BaseLogger} consensusLogger
    * @return {Promise<ValidatorSetUpdate>}
    */
-  async function rotateValidatorSetUpdate(height, round, consensusLogger) {
+  async function rotateAndCreateValidatorSetUpdate(
+    height,
+    coreChainLockedHeight,
+    round,
+    consensusLogger,
+  ) {
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const lastCommitInfo = proposalBlockExecutionContext.getLastCommitInfo();
-    const coreChainLock = latestCoreChainLock.getChainLock();
 
     // Rotate validators
 
     let validatorSetUpdate;
     const rotationEntropy = Buffer.from(lastCommitInfo.stateSignature);
-    if (await validatorSet.rotate(height, coreChainLock.height, rotationEntropy)) {
+    if (await validatorSet.rotate(height, coreChainLockedHeight, rotationEntropy)) {
       validatorSetUpdate = createValidatorSetUpdate(validatorSet);
 
       const { quorumHash } = validatorSet.getQuorum();
@@ -43,7 +46,7 @@ function rotateValidatorSetUpdateFactory(
     return validatorSetUpdate;
   }
 
-  return rotateValidatorSetUpdate;
+  return rotateAndCreateValidatorSetUpdate;
 }
 
-module.exports = rotateValidatorSetUpdateFactory;
+module.exports = rotateAndCreateValidatorSetUpdateFactory;

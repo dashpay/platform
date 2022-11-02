@@ -19,7 +19,7 @@ describe('endBlockFactory', () => {
   let blockEndMock;
   let time;
   let createConsensusParamUpdateMock;
-  let rotateValidatorsMock;
+  let rotateAndCreateValidatorSetUpdateMock;
   let groveDBStoreMock;
   let appHashFixture;
   let validatorSetUpdateFixture;
@@ -29,9 +29,11 @@ describe('endBlockFactory', () => {
   let executionTimerMock;
   let proposalBlockExecutionContextCollectionMock;
   let round;
+  let coreChainLockedHeight;
 
   beforeEach(function beforeEach() {
     round = 42;
+    coreChainLockedHeight = 41;
     time = {
       seconds: Math.ceil(new Date().getTime() / 1000),
       nanos: 0,
@@ -80,7 +82,7 @@ describe('endBlockFactory', () => {
     appHashFixture = Buffer.alloc(0);
 
     createConsensusParamUpdateMock = this.sinon.stub().resolves(consensusParamUpdatesFixture);
-    rotateValidatorsMock = this.sinon.stub().resolves(validatorSetUpdateFixture);
+    rotateAndCreateValidatorSetUpdateMock = this.sinon.stub().resolves(validatorSetUpdateFixture);
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHashFixture);
@@ -95,7 +97,7 @@ describe('endBlockFactory', () => {
       createValidatorSetUpdateMock,
       getFeatureFlagForHeightMock,
       createConsensusParamUpdateMock,
-      rotateValidatorsMock,
+      rotateAndCreateValidatorSetUpdateMock,
       rsAbciMock,
       groveDBStoreMock,
       executionTimerMock,
@@ -106,7 +108,7 @@ describe('endBlockFactory', () => {
 
   it('should finalize a block', async () => {
     const response = await endBlock({
-      height, round, processingFees, storageFees,
+      height, round, processingFees, storageFees, coreChainLockedHeight,
     }, loggerMock);
 
     expect(response).to.deep.equal({
@@ -120,7 +122,12 @@ describe('endBlockFactory', () => {
     );
     expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
     expect(createConsensusParamUpdateMock).to.be.calledOnceWithExactly(height, round, loggerMock);
-    expect(rotateValidatorsMock).to.be.calledOnceWithExactly(height, round, loggerMock);
+    expect(rotateAndCreateValidatorSetUpdateMock).to.be.calledOnceWithExactly(
+      height,
+      coreChainLockedHeight,
+      round,
+      loggerMock,
+    );
     expect(groveDBStoreMock.getRootHash).to.be.calledOnceWithExactly({ useTransaction: true });
     expect(rsAbciMock.blockEnd).to.be.calledOnceWithExactly({
       fees: {

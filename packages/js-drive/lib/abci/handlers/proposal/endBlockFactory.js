@@ -9,7 +9,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  * @param {RSAbci} rsAbci
  * @param {createConsensusParamUpdate} createConsensusParamUpdate
- * @param {rotateValidatorSetUpdate} rotateValidatorSetUpdate
+ * @param {rotateAndCreateValidatorSetUpdate} rotateAndCreateValidatorSetUpdate
  * @param {GroveDBStore} groveDBStore
  * @param {ExecutionTimer} executionTimer
  *
@@ -21,7 +21,7 @@ function endBlockFactory(
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
   createConsensusParamUpdate,
-  rotateValidatorSetUpdate,
+  rotateAndCreateValidatorSetUpdate,
   rsAbci,
   groveDBStore,
   executionTimer,
@@ -34,6 +34,7 @@ function endBlockFactory(
    * @param {number} [request.round]
    * @param {number} [request.processingFees]
    * @param {number} [request.storageFees]
+   * @param {number} [request.coreChainLockedHeight]
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
@@ -50,6 +51,7 @@ function endBlockFactory(
       round,
       processingFees,
       storageFees,
+      coreChainLockedHeight,
     } = request;
 
     consensusLogger.debug('EndBlock ABCI method requested');
@@ -104,7 +106,12 @@ function endBlockFactory(
     }
 
     const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);
-    const validatorSetUpdate = await rotateValidatorSetUpdate(height, round, consensusLogger);
+    const validatorSetUpdate = await rotateAndCreateValidatorSetUpdate(
+      height,
+      coreChainLockedHeight,
+      round,
+      consensusLogger,
+    );
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });
 
     const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
