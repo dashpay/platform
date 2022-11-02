@@ -1,8 +1,8 @@
 use dpp::dashcore::anyhow::Context;
-use js_sys::{Function, JsString};
+use js_sys::{Function};
 use serde_json::Value;
 use std::convert::{TryFrom, TryInto};
-use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen::{prelude::*};
 
 pub trait ToSerdeJSONExt {
     fn to_serde_json_value(&self) -> Result<Value, JsValue>;
