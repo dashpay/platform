@@ -90,7 +90,7 @@ describe('Identity', () => {
     });
 
     it('should set public keys', () => {
-      const ipk = new JSIdentityPublicKey({
+      const rawKey = {
         id: 2,
         type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
@@ -98,11 +98,13 @@ describe('Identity', () => {
         securityLevel: KeySecurityLevel.MASTER,
         signature: Buffer.alloc(36).fill('a'),
         readOnly: false,
-      });
+      };
+
+      const ipk = new JSIdentityPublicKey(rawKey);
 
       identity.setPublicKeys([ipk]);
       expect(identity.getPublicKeys()).length(1);
-      expect(identity.getPublicKeys()[0].getId()).eq(2);
+      expect(identity.getPublicKeys()[0].toObject()).to.be.deep.equal(rawKey);
     });
   });
 
