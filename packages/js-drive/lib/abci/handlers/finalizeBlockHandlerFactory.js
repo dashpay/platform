@@ -5,26 +5,30 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
  *
  * @return {finalizeBlockHandler}
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {beginBlock} beginBlock
- * @param {deliverTx} deliverTx
- * @param {endBlock} endBlock
- * @param {commit} commit
+ * @param {GroveDBStore} groveDBStore
+ * @param {BlockExecutionContextRepository} blockExecutionContextRepository
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {LRUCache} dataContractCache
+ * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  */
 function finalizeBlockHandlerFactory(
-  blockExecutionContext,
-  beginBlock,
-  deliverTx,
-  endBlock,
-  commit,
+  groveDBStore,
+  blockExecutionContextRepository,
+  proposalBlockExecutionContextCollection,
+  dataContractCache,
+  coreRpcClient,
   logger,
   executionTimer,
+  latestBlockExecutionContext,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -33,19 +37,10 @@ function finalizeBlockHandlerFactory(
    * @return {Promise<abci.ResponseFinalizeBlock>}
    */
   async function finalizeBlockHandler(request) {
-    // Start block execution timer
-    executionTimer.clearTimer('blockExecution');
-
-    executionTimer.startTimer('blockExecution');
-
     const {
-      txs,
       decidedLastCommit: lastCommitInfo,
       height,
-      time,
-      coreChainLockedHeight,
-      version,
-      proposerProTxHash,
+      round,
     } = request;
 
     const consensusLogger = logger.child({
@@ -56,42 +51,69 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    await beginBlock(
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+
+    // Store block execution context
+    await blockExecutionContextRepository.store(
+      proposalBlockExecutionContext,
       {
-        lastCommitInfo,
-        height,
-        coreChainLockedHeight,
-        version,
-        time,
-        proposerProTxHash: Buffer.from(proposerProTxHash),
+        useTransaction: true,
       },
-      consensusLogger,
     );
 
-    const txResults = [];
+    // Commit the current block db transactions
+    await groveDBStore.commitTransaction();
 
-    for (const tx of txs) {
-      txResults.push(await deliverTx(tx, consensusLogger));
+    latestBlockExecutionContext.populate(proposalBlockExecutionContext);
+
+    // Update data contract cache with new version of
+    // committed data contract
+    for (const dataContract of proposalBlockExecutionContext.getDataContracts()) {
+      const operations = [new ReadOperation(dataContract.toBuffer().length)];
+
+      const cacheItem = new DataContractCacheItem(dataContract, operations);
+
+      if (dataContractCache.has(cacheItem.getKey())) {
+        dataContractCache.set(cacheItem.getKey(), cacheItem);
+      }
     }
 
-    const endBlockResult = await endBlock(height, consensusLogger);
-    const commitResult = await commit(lastCommitInfo, consensusLogger);
+    // Send withdrawal transactions to Core
+    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
+      .getWithdrawalTransactionsMap();
+
+    const { thresholdVoteExtensions } = lastCommitInfo;
+
+    for (const { extension, signature } of (thresholdVoteExtensions || [])) {
+      const withdrawalTransactionHash = extension.toString('hex');
+
+      const unsignedWithdrawalTransactionBytes = unsignedWithdrawalTransactionsMap[
+        withdrawalTransactionHash
+      ];
+
+      if (unsignedWithdrawalTransactionBytes) {
+        const transactionBytes = Buffer.concat([
+          unsignedWithdrawalTransactionBytes,
+          signature,
+        ]);
+
+        // TODO: think about Core error handling
+        await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
+      }
+    }
+
+    proposalBlockExecutionContextCollection.clear();
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
-    const blockHeight = blockExecutionContext.getHeight();
 
     consensusLogger.trace(
       {
         timings: blockExecutionTimings,
       },
-      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
+      `Block #${height} execution took ${blockExecutionTimings} seconds`,
     );
 
-    return new ResponseFinalizeBlock({
-      txResults,
-      ...commitResult,
-      ...endBlockResult,
-    });
+    return new ResponseFinalizeBlock();
   }
 
   return finalizeBlockHandler;

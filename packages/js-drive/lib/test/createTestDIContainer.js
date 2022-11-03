@@ -15,7 +15,6 @@ async function createTestDIContainer(dashCore = undefined) {
     ...process.env,
     GROVEDB_LATEST_FILE: './db/latest_state_test',
     EXTERNAL_STORE_LEVEL_DB_FILE: './db/external_leveldb_test',
-    SIGNED_EXTERNAL_STORE_LEVEL_DB_FILE: './db/external_leveldb_signed',
     ...coreOptions,
   });
 

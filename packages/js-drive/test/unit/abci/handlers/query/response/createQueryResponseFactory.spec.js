@@ -6,10 +6,8 @@ const {
 
 const BlockExecutionContextMock = require('../../../../../../lib/test/mock/BlockExecutionContextMock');
 const createQueryResponseFactory = require('../../../../../../lib/abci/handlers/query/response/createQueryResponseFactory');
-const BlockExecutionContextStackMock = require('../../../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('createQueryResponseFactory', () => {
-  let blockExecutionContextStackMock;
   let createQueryResponse;
   let metadata;
   let lastCommitInfo;
@@ -25,10 +23,7 @@ describe('createQueryResponseFactory', () => {
 
     blockExecutionContextMock.getHeight.returns(metadata.height);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
-
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-
-    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
+    blockExecutionContextMock.isEmpty.returns(false);
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
@@ -38,7 +33,7 @@ describe('createQueryResponseFactory', () => {
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
 
     createQueryResponse = createQueryResponseFactory(
-      blockExecutionContextStackMock,
+      blockExecutionContextMock,
     );
   });
 

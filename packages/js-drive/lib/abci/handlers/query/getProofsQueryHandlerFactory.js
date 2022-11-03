@@ -11,17 +11,17 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 /**
  *
- * @param {BlockExecutionContextStack} blockExecutionContextStack
- * @param {IdentityStoreRepository} signedIdentityRepository
- * @param {DataContractStoreRepository} signedDataContractRepository
- * @param {DocumentRepository} signedDocumentRepository
+ * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {IdentityStoreRepository} identityRepository
+ * @param {DataContractStoreRepository} dataContractRepository
+ * @param {DocumentRepository} documentRepository
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
-  blockExecutionContextStack,
-  signedIdentityRepository,
-  signedDataContractRepository,
-  signedDocumentRepository,
+  latestBlockExecutionContext,
+  identityRepository,
+  dataContractRepository,
+  documentRepository,
 ) {
   /**
    * @typedef getProofsQueryHandler
@@ -37,28 +37,26 @@ function getProofsQueryHandlerFactory(
     dataContractIds,
     documents,
   }) {
-    const blockExecutionContext = blockExecutionContextStack.getFirst();
-
-    const signedBlockHeight = blockExecutionContext.getHeight();
-    const signedCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
+    const blockHeight = latestBlockExecutionContext.getHeight();
+    const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
 
     const {
       quorumHash: signatureLlmqHash,
       stateSignature: signature,
-    } = blockExecutionContext.getLastCommitInfo();
+    } = latestBlockExecutionContext.getLastCommitInfo();
 
     const response = {
       documentsProof: null,
       identitiesProof: null,
       dataContractsProof: null,
       metadata: {
-        height: signedBlockHeight.toNumber(),
-        coreChainLockedHeight: signedCoreChainLockedHeight,
+        height: blockHeight.toNumber(),
+        coreChainLockedHeight,
       },
     };
 
     if (documents && documents.length) {
-      const documentsProof = await signedDocumentRepository
+      const documentsProof = await documentRepository
         .proveManyDocumentsFromDifferentContracts(documents);
 
       response.documentsProof = {
@@ -69,7 +67,7 @@ function getProofsQueryHandlerFactory(
     }
 
     if (identityIds && identityIds.length) {
-      const identitiesProof = await signedIdentityRepository.proveMany(
+      const identitiesProof = await identityRepository.proveMany(
         identityIds.map((identityId) => Identifier.from(identityId)),
       );
 
@@ -81,7 +79,7 @@ function getProofsQueryHandlerFactory(
     }
 
     if (dataContractIds && dataContractIds.length) {
-      const dataContractsProof = await signedDataContractRepository.proveMany(
+      const dataContractsProof = await dataContractRepository.proveMany(
         dataContractIds.map((dataContractId) => Identifier.from(dataContractId)),
       );
 

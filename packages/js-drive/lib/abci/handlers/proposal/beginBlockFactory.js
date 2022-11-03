@@ -4,13 +4,14 @@ const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedN
 const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
 const timeToMillis = require('../../../util/timeToMillis');
+const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
 
 /**
  * Begin Block
  *
  * @param {GroveDBStore} groveDBStore
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
  * @param {DashPlatformProtocol} transactionalDpp
@@ -18,13 +19,14 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {RSAbci} rsAbci
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {beginBlock}
  */
 function beginBlockFactory(
   groveDBStore,
-  blockExecutionContext,
-  blockExecutionContextStack,
+  latestBlockExecutionContext,
+  proposalBlockExecutionContextCollection,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -32,6 +34,7 @@ function beginBlockFactory(
   waitForChainLockedHeight,
   synchronizeMasternodeIdentities,
   rsAbci,
+  executionTimer,
 ) {
   /**
    * @typedef beginBlock
@@ -42,11 +45,11 @@ function beginBlockFactory(
    * @param {IConsensus} [request.version]
    * @param {ITimestamp} [request.time]
    * @param {Buffer} [request.proposerProTxHash]
-   * @param {BaseLogger} logger
+   * @param {BaseLogger} consensusLogger
    *
    * @return {Promise<void>}
    */
-  async function beginBlock(request, logger) {
+  async function beginBlock(request, consensusLogger) {
     const {
       lastCommitInfo,
       height,
@@ -54,12 +57,16 @@ function beginBlockFactory(
       version,
       time,
       proposerProTxHash,
+      round,
     } = request;
 
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      abciMethod: 'finalizeBlock#beginBlock',
-    });
+    if (proposalBlockExecutionContextCollection.isEmpty()) {
+      executionTimer.clearTimer('blockExecution');
+      executionTimer.startTimer('blockExecution');
+    }
+
+    executionTimer.clearTimer('roundExecution');
+    executionTimer.startTimer('roundExecution');
 
     // Validate protocol version
 
@@ -80,28 +87,17 @@ function beginBlockFactory(
 
     // Set block execution context
 
-    // in case previous block execution failed in process
-    // and not committed. We need to make sure
-    // previous context properly reset.
-    const previousContext = blockExecutionContextStack.getFirst();
-    if (
-      previousContext
-      && previousContext.getHeight()
-      && previousContext.getHeight().equals(height)
-    ) {
-      // Remove failed block context from the stack
-      blockExecutionContextStack.removeFirst();
-    }
+    const proposalBlockExecutionContext = new BlockExecutionContext();
 
-    blockExecutionContext.reset();
+    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
 
     // Set block execution context params
-    blockExecutionContext.setConsensusLogger(consensusLogger);
-    blockExecutionContext.setHeight(height);
-    blockExecutionContext.setVersion(version);
-    blockExecutionContext.setTime(time);
-    blockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
-    blockExecutionContext.setLastCommitInfo(lastCommitInfo);
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setHeight(height);
+    proposalBlockExecutionContext.setVersion(version);
+    proposalBlockExecutionContext.setTime(time);
+    proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
+    proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
@@ -123,18 +119,19 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: timeToMillis(time.seconds, time.nanos),
       proposerProTxHash,
+      // TODO replace with real value
       validatorSetQuorumHash: Buffer.alloc(32),
     };
 
-    if (previousContext) {
-      const previousTime = previousContext.getTime();
+    if (!latestBlockExecutionContext.isEmpty()) {
+      const previousTime = latestBlockExecutionContext.getTime();
 
       rsRequest.previousBlockTimeMs = timeToMillis(
         previousTime.seconds, previousTime.nanos,
       );
     }
 
-    logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
+    consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
     const { unsignedWithdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
 
@@ -146,10 +143,9 @@ function beginBlockFactory(
       {},
     );
 
-    blockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
+    proposalBlockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
 
     // Update SML
-
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
       coreChainLockedHeight,
       {

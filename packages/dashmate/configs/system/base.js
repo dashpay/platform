@@ -131,7 +131,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.9.0-dev.1',
+          image: 'dashpay/tenderdash:abci-round',
         },
         p2p: {
           port: 26656,
