@@ -57,7 +57,7 @@ describe('Identity', () => {
 
   describe('#constructor', () => {
     it('should set variables from raw model', () => {
-      const instance = new Identity(rawIdentity);
+      const instance = identity;
 
       expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
       expect(
@@ -70,7 +70,6 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
-      identity = new Identity(rawIdentity);
       expect(identity.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
     });
   });
