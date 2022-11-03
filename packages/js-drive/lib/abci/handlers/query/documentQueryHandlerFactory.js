@@ -17,14 +17,14 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 
 /**
  *
- * @param {fetchDocuments} fetchSignedDocuments
- * @param {proveDocuments} proveSignedDocuments
+ * @param {fetchDocuments} fetchDocuments
+ * @param {proveDocuments} proveDocuments
  * @param {createQueryResponse} createQueryResponse
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
-  fetchSignedDocuments,
-  proveSignedDocuments,
+  fetchDocuments,
+  proveDocuments,
   createQueryResponse,
 ) {
   /**
@@ -66,11 +66,11 @@ function documentQueryHandlerFactory(
 
     try {
       if (request.prove) {
-        const proof = await proveSignedDocuments(contractId, type, options);
+        const proof = await proveDocuments(contractId, type, options);
 
         response.getProof().setMerkleProof(proof.getValue());
       } else {
-        const documentsResult = await fetchSignedDocuments(contractId, type, options);
+        const documentsResult = await fetchDocuments(contractId, type, options);
 
         const documents = documentsResult.getValue();
 

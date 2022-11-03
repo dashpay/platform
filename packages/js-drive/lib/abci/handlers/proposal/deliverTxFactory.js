@@ -25,7 +25,7 @@ const TIMERS = require('../timers');
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTx}
@@ -33,18 +33,20 @@ const TIMERS = require('../timers');
 function deliverTxFactory(
   transactionalUnserializeStateTransition,
   transactionalDpp,
-  blockExecutionContext,
+  proposalBlockExecutionContextCollection,
   executionTimer,
 ) {
   /**
    * @typedef deliverTx
    *
    * @param {Buffer} stateTransitionByteArray
-   * @param {BaseLogger} logger
+   * @param {number} round
+   * @param {BaseLogger} consensusLogger
    * @return {Promise<{ code: number }>}
    */
-  async function deliverTx(stateTransitionByteArray, logger) {
-    const blockHeight = blockExecutionContext.getHeight();
+  async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const blockHeight = proposalBlockExecutionContext.getHeight();
 
     // Start execution timer
 
@@ -64,30 +66,17 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    const consensusLogger = logger.child({
-      height: blockHeight.toString(),
-      txId: stHash,
-      abciMethod: 'finalizeBlock#deliverTx',
-    });
-
-    blockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
     consensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
-    let stateTransition;
-    try {
-      stateTransition = await transactionalUnserializeStateTransition(
-        stateTransitionByteArray,
-        {
-          logger: consensusLogger,
-          executionTimer,
-        },
-      );
-    } catch (e) {
-      blockExecutionContext.incrementInvalidTxCount();
-
-      throw e;
-    }
+    const stateTransition = await transactionalUnserializeStateTransition(
+      stateTransitionByteArray,
+      {
+        logger: consensusLogger,
+        executionTimer,
+      },
+    );
 
     // Keep only actual operations
     const stateTransitionExecutionContext = stateTransition.getExecutionContext();
@@ -110,8 +99,6 @@ function deliverTxFactory(
         consensusError,
       });
 
-      blockExecutionContext.incrementInvalidTxCount();
-
       throw new DPPValidationAbciError(message, result.getFirstError());
     }
 
@@ -123,8 +110,6 @@ function deliverTxFactory(
     await transactionalDpp.stateTransition.apply(stateTransition);
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
-
-    blockExecutionContext.incrementValidTxCount();
 
     // Reduce an identity balance and accumulate fees for all STs in the block
     // in order to store them in credits distribution pool
@@ -159,7 +144,7 @@ function deliverTxFactory(
         const dataContract = stateTransition.getDataContract();
 
         // Save data contracts in order to create databases for documents on block commit
-        blockExecutionContext.addDataContract(dataContract);
+        proposalBlockExecutionContext.addDataContract(dataContract);
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
@@ -230,12 +215,9 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageFee: actualStorageFee,
-      processingFee: actualProcessingFee,
+      storageFee: storageFees,
+      processingFee: processingFees,
     } = calculateOperationFees(actualStateTransitionOperations);
-
-    blockExecutionContext.incrementCumulativeProcessingFee(actualProcessingFee);
-    blockExecutionContext.incrementCumulativeStorageFee(actualStorageFee);
 
     const {
       storageFee: predictedStorageFee,
@@ -260,8 +242,8 @@ function deliverTxFactory(
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
-            storage: actualStorageFee,
-            processing: actualProcessingFee,
+            storage: storageFees,
+            processing: processingFees,
             final: actualStateTransitionFee,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
@@ -273,6 +255,8 @@ function deliverTxFactory(
 
     return {
       code: 0,
+      processingFees,
+      storageFees,
     };
   }
 

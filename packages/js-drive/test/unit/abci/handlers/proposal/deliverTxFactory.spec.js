@@ -12,7 +12,7 @@ const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
-const deliverTxFactory = require('../../../../../lib/abci/handlers/finalizeBlock/deliverTxFactory');
+const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
 
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
@@ -22,7 +22,7 @@ const PredictedFeeLowerThanActualError = require('../../../../../lib/abci/handle
 const NegativeBalanceError = require('../../../../../lib/abci/handlers/errors/NegativeBalanceError');
 
 describe('deliverTxFactory', () => {
-  let deliverTxHandler;
+  let deliverTx;
   let documentTx;
   let dataContractTx;
   let identity;
@@ -36,8 +36,11 @@ describe('deliverTxFactory', () => {
   let validationResult;
   let executionTimerMock;
   let loggerMock;
+  let round;
+  let proposalBlockExecutionContextCollectionMock;
 
   beforeEach(async function beforeEach() {
+    round = 42;
     const dataContractFixture = getDataContractFixture();
     const documentFixture = getDocumentFixture();
 
@@ -79,6 +82,10 @@ describe('deliverTxFactory', () => {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     blockExecutionContextMock.getHeight.returns(42);
 
+    proposalBlockExecutionContextCollectionMock = {
+      get: this.sinon.stub().returns(blockExecutionContextMock),
+    };
+
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
       getTimer: this.sinon.stub(),
@@ -87,10 +94,10 @@ describe('deliverTxFactory', () => {
       isStarted: this.sinon.stub(),
     };
 
-    deliverTxHandler = deliverTxFactory(
+    deliverTx = deliverTxFactory(
       unserializeStateTransitionMock,
       dppMock,
-      blockExecutionContextMock,
+      proposalBlockExecutionContextCollectionMock,
       executionTimerMock,
     );
   });
@@ -98,9 +105,13 @@ describe('deliverTxFactory', () => {
   it('should apply a DocumentsBatchTransition and return ResponseDeliverTx', async () => {
     unserializeStateTransitionMock.resolves(documentsBatchTransitionFixture);
 
-    const response = await deliverTxHandler(documentTx, loggerMock);
+    const response = await deliverTx(documentTx, round, loggerMock);
 
-    expect(response).to.deep.equal({ code: 0 });
+    expect(response).to.deep.equal({
+      code: 0,
+      processingFees: 0,
+      storageFees: 0,
+    });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
       documentsBatchTransitionFixture.toBuffer(),
@@ -112,7 +123,9 @@ describe('deliverTxFactory', () => {
       documentsBatchTransitionFixture,
     );
     expect(blockExecutionContextMock.addDataContract).to.not.be.called();
-
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
     const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
 
     // TODO: enable once fee calculation is done
@@ -124,18 +137,18 @@ describe('deliverTxFactory', () => {
 
     // TODO: enable once fee calculation is done
     // expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
-
-    expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.be.calledOnceWith(
-      stateTransitionFee,
-    );
   });
 
   it('should apply a DataContractCreateTransition, add it to block execution state and return ResponseDeliverTx', async () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
-    const response = await deliverTxHandler(dataContractTx, loggerMock);
+    const response = await deliverTx(dataContractTx, round, loggerMock);
 
-    expect(response).to.deep.equal({ code: 0 });
+    expect(response).to.deep.equal({
+      code: 0,
+      processingFees: 0,
+      storageFees: 0,
+    });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.toBuffer(),
@@ -146,12 +159,11 @@ describe('deliverTxFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       dataContractCreateTransitionFixture,
     );
+    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
+      round,
+    );
     expect(blockExecutionContextMock.addDataContract).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.getDataContract(),
-    );
-
-    expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.be.calledOnceWith(
-      dataContractCreateTransitionFixture.calculateFee(),
     );
 
     expect(
@@ -167,7 +179,7 @@ describe('deliverTxFactory', () => {
     validationResult.addError(error);
 
     try {
-      await deliverTxHandler(documentTx, loggerMock);
+      await deliverTx(documentTx, round, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
@@ -176,7 +188,6 @@ describe('deliverTxFactory', () => {
       expect(e.getData()).to.deep.equal({
         arguments: ['Consensus error'],
       });
-      expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.not.be.called();
     }
   });
 
@@ -187,14 +198,13 @@ describe('deliverTxFactory', () => {
     unserializeStateTransitionMock.throws(error);
 
     try {
-      await deliverTxHandler(documentTx, loggerMock);
+      await deliverTx(documentTx, round, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentAbciError);
       expect(e.getMessage()).to.equal(errorMessage);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
-      expect(blockExecutionContextMock.incrementCumulativeProcessingFee).to.not.be.called();
       expect(dppMock.stateTransition.validate).to.not.be.called();
     }
   });
@@ -208,7 +218,7 @@ describe('deliverTxFactory', () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
     try {
-      await deliverTxHandler(documentTx, loggerMock);
+      await deliverTx(documentTx, round, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
@@ -227,7 +237,7 @@ describe('deliverTxFactory', () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
     try {
-      await deliverTxHandler(documentTx, loggerMock);
+      await deliverTx(documentTx, round, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {

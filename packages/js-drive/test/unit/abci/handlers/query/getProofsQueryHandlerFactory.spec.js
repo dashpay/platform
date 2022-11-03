@@ -15,7 +15,6 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('getProofsQueryHandlerFactory', () => {
@@ -26,8 +25,6 @@ describe('getProofsQueryHandlerFactory', () => {
   let dataContractData;
   let documentsData;
   let identityData;
-  let blockExecutionContextStackMock;
-  let signedBlockExecutionContextMock;
   let blockExecutionContextMock;
   let signedIdentityRepositoryMock;
   let signedDataContractRepositoryMock;
@@ -48,10 +45,6 @@ describe('getProofsQueryHandlerFactory', () => {
       stateSignature: Buffer.alloc(32, 1),
     });
 
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-    blockExecutionContextStackMock.getLast.returns(signedBlockExecutionContextMock);
-    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
-
     signedIdentityRepositoryMock = {
       proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
     };
@@ -66,7 +59,7 @@ describe('getProofsQueryHandlerFactory', () => {
     };
 
     getProofsQueryHandler = getProofsQueryHandlerFactory(
-      blockExecutionContextStackMock,
+      blockExecutionContextMock,
       signedIdentityRepositoryMock,
       signedDataContractRepositoryMock,
       signedDocumentRepository,
