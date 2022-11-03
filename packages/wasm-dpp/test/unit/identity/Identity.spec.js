@@ -152,11 +152,8 @@ describe('Identity', () => {
     it('should return plain object representation', () => {
       const identityObject = identity.toObject();
 
-      //! TODO The structures exported from WASM cannot be deeply inspected and hence: compared.
-      //! TODO The WASM structure contains `ptr` field with a pointer to memory in WASM space, and
-      //! TODO the address is always different
-      identityObject.id = identityObject.id.toJSON();
-      rawIdentity.id = rawIdentity.id.toJSON();
+      // We can't compare Identifier directly - it needs to be converted into a Buffer
+      rawIdentity.id = rawIdentity.id.toBuffer();
 
       expect(identityObject).to.deep.equal(rawIdentity);
     });

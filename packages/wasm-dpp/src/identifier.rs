@@ -7,6 +7,7 @@ use wasm_bindgen::JsCast;
 use crate::errors::from_dpp_err;
 use dpp::identifier;
 use js_sys::Uint8Array;
+use crate::buffer::Buffer;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {
@@ -76,6 +77,11 @@ impl IdentifierWrapper {
     #[wasm_bindgen(js_name = toBuffer)]
     pub fn to_buffer(&self) -> Uint8Array {
         js_sys::Uint8Array::from(self.wrapped.buffer.as_slice())
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> Buffer {
+        Buffer::from_bytes(self.wrapped.buffer.as_slice())
     }
 
     #[wasm_bindgen(js_name = toJSON)]
