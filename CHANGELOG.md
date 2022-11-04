@@ -1,3 +1,48 @@
+## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.24.0-dev.3...v0.24.0-dev.7) (2022-11-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** same block execution (#593)
+
+### Features
+
+* **drive:** same block execution ([#593](https://github.com/dashpay/platform/issues/593))
+
+
+### Bug Fixes
+
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+* **dapi:** `getConsensusParamsHandler` was handling wrong Tendermint error ([#601](https://github.com/dashpay/platform/issues/601))
+* **dashmate:** invalid testnet TenderDash genesis ([#608](https://github.com/dashpay/platform/issues/608))
+* **dashmate:** SSL verification server cannot be started ([#606](https://github.com/dashpay/platform/issues/606))
+* release.yml contained wrong indentation ([#597](https://github.com/dashpay/platform/issues/597))
+* typo `dash-amte` to `dashmate` ([#599](https://github.com/dashpay/platform/issues/599))
+
+
+### Continuous Integration
+
+* update deps ([#591](https://github.com/dashpay/platform/issues/591))
+
+
+### Documentation
+
+* GitHub org change updates ([#590](https://github.com/dashpay/platform/issues/590))
+
+
+### Build System
+
+* publish envoy and dashmate-helper docker images after release ([#595](https://github.com/dashpay/platform/issues/595))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.23.0-alpha.8 ([#609](https://github.com/dashpay/platform/issues/609))
+* **release:** update changelog and version to 0.24.0-dev.4 ([#596](https://github.com/dashpay/platform/issues/596))
+* **release:** update changelog and version to 0.24.0-dev.5 ([#598](https://github.com/dashpay/platform/issues/598))
+* **release:** update changelog and version to 0.24.0-dev.6 ([#600](https://github.com/dashpay/platform/issues/600))
+
 ## [0.23.0-alpha.8](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.23.0-alpha.8) (2022-11-04)
 
 
