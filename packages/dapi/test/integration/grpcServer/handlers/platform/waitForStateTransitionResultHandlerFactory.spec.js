@@ -181,7 +181,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
             nanos: 0,
           },
           signature: Buffer.alloc(12).fill(2),
-          protocolVersion: 1, // Long
+          protocolVersion: 1,
         },
       }),
     };

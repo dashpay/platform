@@ -39,11 +39,16 @@ function getProofsQueryHandlerFactory(
   }) {
     const blockHeight = latestBlockExecutionContext.getHeight();
     const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
-
+    const time = latestBlockExecutionContext.getTime();
+    const version = latestBlockExecutionContext.getVersion();
     const {
       quorumHash: signatureLlmqHash,
       stateSignature: signature,
+      blockSignature,
     } = latestBlockExecutionContext.getLastCommitInfo();
+
+    const timeObject = time.toJSON();
+    timeObject.seconds = Number(timeObject.seconds);
 
     const response = {
       documentsProof: null,
@@ -52,6 +57,9 @@ function getProofsQueryHandlerFactory(
       metadata: {
         height: blockHeight.toNumber(),
         coreChainLockedHeight,
+        signature: blockSignature,
+        blockTime: timeObject,
+        protocolVersion: version.app.toNumber(),
       },
     };
 
