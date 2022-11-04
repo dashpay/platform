@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -44,6 +45,8 @@ pub struct DocumentsBatchTransition {
     pub transitions: Vec<DocumentTransition>,
     pub signature_public_key_id: KeyID,
     pub signature: Vec<u8>,
+    #[serde(skip)]
+    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DocumentsBatchTransition {
@@ -55,6 +58,7 @@ impl std::default::Default for DocumentsBatchTransition {
             transitions: vec![],
             signature_public_key_id: 0,
             signature: vec![],
+            execution_context: Default::default(),
         }
     }
 }
@@ -232,6 +236,13 @@ impl StateTransitionLike for DocumentsBatchTransition {
 
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature;
+    }
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        &self.execution_context
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        self.execution_context = execution_context
     }
 }
 

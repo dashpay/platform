@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    identity::KeyType,
+    identity::{state_transition::asset_lock_proof::ExecutionContext, KeyType},
     prelude::ProtocolError,
     util::{
         hash,
@@ -20,7 +20,10 @@ use crate::{
     },
 };
 
-use super::{StateTransition, StateTransitionType};
+use super::{
+    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+    StateTransitionType,
+};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -166,6 +169,9 @@ pub trait StateTransitionLike:
     fn is_identity_state_transition(&self) -> bool {
         IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
     }
+
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext;
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats

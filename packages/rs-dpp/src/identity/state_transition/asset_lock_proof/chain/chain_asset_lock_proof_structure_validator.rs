@@ -17,6 +17,7 @@ use crate::identity::state_transition::asset_lock_proof::{
     AssetLockTransactionValidator, PublicKeyHash,
 };
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
@@ -70,6 +71,7 @@ where
     pub async fn validate(
         &self,
         raw_asset_lock_proof: &Value,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
@@ -112,7 +114,7 @@ where
 
         let maybe_transaction_fetch_result: Option<FetchTransactionResult> = self
             .state_repository
-            .fetch_transaction(&transaction_hash_string)
+            .fetch_transaction(&transaction_hash_string, execution_context)
             .await
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
@@ -137,7 +139,11 @@ where
 
             let validate_asset_lock_transaction_result = self
                 .asset_lock_transaction_validator
-                .validate(&transaction_result.data, output_index as usize)
+                .validate(
+                    &transaction_result.data,
+                    output_index as usize,
+                    execution_context,
+                )
                 .await?;
 
             let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {

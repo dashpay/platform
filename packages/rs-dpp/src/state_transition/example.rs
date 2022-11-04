@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::ProtocolError;
 
-use super::{StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType};
+use super::{
+    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+    StateTransitionConvert, StateTransitionLike, StateTransitionType,
+};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -14,6 +17,8 @@ struct ExampleStateTransition {
     pub protocol_version: u32,
     pub signature: Vec<u8>,
     pub transition_type: StateTransitionType,
+    #[serde(skip)]
+    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl From<ExampleStateTransition> for StateTransition {
@@ -41,6 +46,13 @@ impl StateTransitionLike for ExampleStateTransition {
 
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature
+    }
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        &self.execution_context
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        self.execution_context = execution_context
     }
 }
 

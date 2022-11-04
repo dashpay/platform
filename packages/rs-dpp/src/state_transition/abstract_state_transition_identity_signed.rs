@@ -184,6 +184,7 @@ mod test {
     use serde_json::json;
 
     use crate::document::DocumentsBatchTransition;
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::util::string_encoding::Encoding;
     use crate::{
         assert_error_contains,
@@ -205,6 +206,8 @@ mod test {
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
+        #[serde(skip)]
+        pub execution_context: StateTransitionExecutionContext,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -242,6 +245,13 @@ mod test {
         fn set_signature(&mut self, signature: Vec<u8>) {
             self.signature = signature
         }
+        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+            &self.execution_context
+        }
+
+        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+            self.execution_context = execution_context
+        }
     }
 
     impl StateTransitionIdentitySigned for ExampleStateTransition {
@@ -273,6 +283,7 @@ mod test {
             signature: Default::default(),
             signature_public_key_id: 1,
             owner_id,
+            execution_context: Default::default(),
         }
     }
 

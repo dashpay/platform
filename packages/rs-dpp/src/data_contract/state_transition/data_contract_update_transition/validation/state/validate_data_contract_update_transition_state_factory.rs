@@ -4,6 +4,7 @@ use crate::{
     data_contract::{state_transition::DataContractUpdateTransition, DataContract},
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
     validation::ValidationResult,
 };
 
@@ -31,7 +32,10 @@ where
         // Data contract should exist
         let maybe_existing_data_contract: Result<Option<DataContract>> = self
             .state_repository
-            .fetch_data_contract(&state_transition.data_contract.id)
+            .fetch_data_contract(
+                &state_transition.data_contract.id,
+                state_transition.get_execution_context(),
+            )
             .await;
 
         let existing_data_contract: DataContract = match maybe_existing_data_contract {
