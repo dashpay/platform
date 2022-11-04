@@ -49,7 +49,7 @@ describe('createQueryResponseFactory', () => {
 
     blockExecutionContextMock.getHeight.returns(metadata.height);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
-    blockExecutionContextMock.getTime.returns(metadata.time);
+    blockExecutionContextMock.getTime.returns(metadata.blockTime);
     blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
     blockExecutionContextMock.isEmpty.returns(false);
