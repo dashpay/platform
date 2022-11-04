@@ -1,19 +1,19 @@
-const createDomainDataTrigger = require('../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
+const createDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 
-const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTriggerExecutionContext');
-const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
 
-const { getParentDocumentFixture, getChildDocumentFixture, getTopDocumentFixture } = require('../../../../lib/test/fixtures/getDpnsDocumentFixture');
-const getPreorderDocumentFixture = require('../../../../lib/test/fixtures/getPreorderDocumentFixture');
-const getDpnsContractFixture = require('../../../../lib/test/fixtures/getDpnsContractFixture');
-const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
+const { getParentDocumentFixture, getChildDocumentFixture, getTopDocumentFixture } = require('@dashevo/dpp/lib/test/fixtures/getDpnsDocumentFixture');
+const getPreorderDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getPreorderDocumentFixture');
+const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
+const getDocumentTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const { hash } = require('../../../../lib/util/hash');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
 
-const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
-const Identifier = require('../../../../lib/identifier/Identifier');
-const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const DataTriggerConditionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createDomainDataTrigger', () => {
   let parentDocumentTransition;

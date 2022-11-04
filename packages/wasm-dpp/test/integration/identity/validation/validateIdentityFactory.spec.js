@@ -1,27 +1,27 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const JsonSchemaValidator = require(
-  '../../../../lib/validation/JsonSchemaValidator',
+  '@dashevo/dpp/lib/validation/JsonSchemaValidator',
 );
 
 const { expectValidationError, expectJsonSchemaError } = require(
-  '../../../../lib/test/expect/expectError',
+  '@dashevo/dpp/lib/test/expect/expectError',
 );
 
 const validateIdentityFactory = require(
-  '../../../../lib/identity/validation/validateIdentityFactory',
+  '@dashevo/dpp/lib/identity/validation/validateIdentityFactory',
 );
 
 const JsonSchemaError = require(
-  '../../../../lib/errors/consensus/basic/JsonSchemaError',
+  '@dashevo/dpp/lib/errors/consensus/basic/JsonSchemaError',
 );
 
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
-const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('validateIdentityFactory', () => {
   let rawIdentity;

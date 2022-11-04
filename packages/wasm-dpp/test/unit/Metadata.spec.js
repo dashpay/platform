@@ -1,4 +1,4 @@
-const Metadata = require('../../lib/Metadata');
+const Metadata = require('@dashevo/dpp/lib/Metadata');
 
 describe('Metadata', () => {
   describe('#constructor', () => {

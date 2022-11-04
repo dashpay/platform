@@ -1,18 +1,18 @@
-const Identity = require('../../../../../lib/identity/Identity');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
 const applyIdentityCreateTransitionFactory = require(
-  '../../../../../lib/identity/stateTransition/IdentityCreateTransition/applyIdentityCreateTransitionFactory',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/applyIdentityCreateTransitionFactory',
 );
 
-const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
-const { convertSatoshiToCredits } = require('../../../../../lib/identity/creditsConverter');
+const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsConverter');
 
-const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
-const ReadOperation = require('../../../../../lib/stateTransition/fee/operations/ReadOperation');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;

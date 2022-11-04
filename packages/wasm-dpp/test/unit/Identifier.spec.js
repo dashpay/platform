@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const bs58 = require('bs58');
-const Identifier = require('../../lib/identifier/Identifier');
-const IdentifierError = require('../../lib/identifier/errors/IdentifierError');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 
 describe('Identifier', () => {
   let buffer;

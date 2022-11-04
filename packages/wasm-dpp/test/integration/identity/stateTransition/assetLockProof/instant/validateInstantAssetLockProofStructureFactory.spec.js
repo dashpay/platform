@@ -2,22 +2,22 @@ const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const DashCoreLib = require('@dashevo/dashcore-lib');
 
-const createAjv = require('../../../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const getInstantAssetLockFixture = require('../../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const JsonSchemaValidator = require('../../../../../../lib/validation/JsonSchemaValidator');
-const createStateRepositoryMock = require('../../../../../../lib/test/mocks/createStateRepositoryMock');
-const InvalidIdentityAssetLockProofError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
-const IdentityAssetLockProofLockedTransactionMismatchError = require('../../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
+const getInstantAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const InvalidIdentityAssetLockProofError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
+const IdentityAssetLockProofLockedTransactionMismatchError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
+const InvalidIdentityAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
 const { expectValidationError, expectJsonSchemaError } = require(
-  '../../../../../../lib/test/expect/expectError',
+  '@dashevo/dpp/lib/test/expect/expectError',
 );
 
-const ValidationResult = require('../../../../../../lib/validation/ValidationResult');
-const InvalidIdentityAssetLockTransactionError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
-const validateInstantAssetLockProofStructureFactory = require('../../../../../../lib/identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const InvalidIdentityAssetLockTransactionError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
+const validateInstantAssetLockProofStructureFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
 
 describe('validateInstantAssetLockProofStructureFactory', () => {
   let rawProof;

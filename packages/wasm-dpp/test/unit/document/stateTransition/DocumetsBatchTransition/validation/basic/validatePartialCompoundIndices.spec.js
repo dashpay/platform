@@ -1,12 +1,12 @@
-const validatePartialCompoundIndices = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
-const InconsistentCompoundIndexDataError = require('../../../../../../../lib/errors/consensus/basic/document/InconsistentCompoundIndexDataError');
+const validatePartialCompoundIndices = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
+const InconsistentCompoundIndexDataError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InconsistentCompoundIndexDataError');
 
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
 describe('validatePartialCompoundIndices', () => {
   let documents;

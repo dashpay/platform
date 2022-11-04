@@ -1,15 +1,15 @@
-const createContactRequestDataTrigger = require('../../../../lib/dataTrigger/dashpayDataTriggers/createContactRequestDataTrigger');
+const createContactRequestDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dashpayDataTriggers/createContactRequestDataTrigger');
 
-const DataTriggerExecutionContext = require('../../../../lib/dataTrigger/DataTriggerExecutionContext');
-const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
-const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
+const DataTriggerConditionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 
-const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
-const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getDocumentTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const getDashPayContractFixture = require('../../../../lib/test/fixtures/getDashPayContractFixture');
-const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtures/getDashPayDocumentFixture');
-const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const getDashPayContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDashPayContractFixture');
+const { getContactRequestDocumentFixture } = require('@dashevo/dpp/lib/test/fixtures/getDashPayDocumentFixture');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createContactRequestDataTrigger', () => {
   let context;
@@ -28,9 +28,7 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      coreChainLockedHeight: 42,
-    });
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -54,7 +52,7 @@ describe('createContactRequestDataTrigger', () => {
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     expect(result.isOk()).to.be.true();
   });
 
@@ -64,7 +62,7 @@ describe('createContactRequestDataTrigger', () => {
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 
@@ -103,7 +101,7 @@ describe('createContactRequestDataTrigger', () => {
     context.getStateTransitionExecutionContext().disableDryRun();
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 });

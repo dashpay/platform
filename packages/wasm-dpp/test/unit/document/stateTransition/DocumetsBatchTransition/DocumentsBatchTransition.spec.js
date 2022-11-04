@@ -1,11 +1,11 @@
-const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
-const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
-const createDPPMock = require('../../../../../lib/test/mocks/createDPPMock');
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const DocumentFactory = require('../../../../../lib/document/DocumentFactory');
-const serializer = require('../../../../../lib/util/serializer');
-const hash = require('../../../../../lib/util/hash');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
+const serializer = require('@dashevo/dpp/lib/util/serializer');
+const hash = require('@dashevo/dpp/lib/util/hash');
 
 describe('DocumentsBatchTransition', () => {
   let stateTransition;

@@ -1,15 +1,15 @@
-const IdentityPublicKey = require('../../../../../lib/identity/IdentityPublicKey');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const stateTransitionTypes = require(
-  '../../../../../lib/stateTransition/stateTransitionTypes',
+  '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
 );
 
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const IdentityCreateTransition = require('../../../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
-const Identifier = require('../../../../../lib/identifier/Identifier');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
-const InstantAssetLockProof = require('../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;

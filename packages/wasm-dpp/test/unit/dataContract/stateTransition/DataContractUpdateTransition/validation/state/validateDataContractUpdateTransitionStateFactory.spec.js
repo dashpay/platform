@@ -1,16 +1,16 @@
-const validateDataContractUpdateTransitionStateFactory = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
-const DataContractUpdateTransition = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
+const validateDataContractUpdateTransitionStateFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
+const DataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DataContractNotPresentError = require('../../../../../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
-const InvalidDataContractVersionError = require('../../../../../../../lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const DataContractNotPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DataContractNotPresentError');
+const InvalidDataContractVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDataContractUpdateTransitionStateFactory', () => {
   let validateDataContractUpdateTransitionState;

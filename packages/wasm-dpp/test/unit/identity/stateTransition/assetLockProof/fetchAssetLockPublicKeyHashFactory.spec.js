@@ -1,6 +1,6 @@
-const fetchAssetLockPublicKeyHashFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/fetchAssetLockPublicKeyHashFactory');
-const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const AssetLockOutputNotFoundError = require('../../../../../lib/identity/errors/AssetLockOutputNotFoundError');
+const fetchAssetLockPublicKeyHashFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/fetchAssetLockPublicKeyHashFactory');
+const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const AssetLockOutputNotFoundError = require('@dashevo/dpp/lib/identity/errors/AssetLockOutputNotFoundError');
 
 describe('fetchAssetLockPublicKeyHashFactory', () => {
   let fetchAssetLockPublicKeyHash;
