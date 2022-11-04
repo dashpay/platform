@@ -2,6 +2,7 @@ use dpp::identity::KeyType;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=KeyType)]
+#[allow(non_camel_case_types)]
 pub enum KeyTypeWasm {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,

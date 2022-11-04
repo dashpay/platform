@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "scripts/build.sh && webpack",
-    "test": "yarn run test:node && yarn run test:browser",
+    "test": "yarn run test:node && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
     "webpack": "webpack",
