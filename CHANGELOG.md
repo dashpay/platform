@@ -1,3 +1,21 @@
+## [0.23.0-alpha.8](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.23.0-alpha.8) (2022-11-04)
+
+
+### Bug Fixes
+
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+
+
+### Continuous Integration
+
+* update deps ([#591](https://github.com/dashpay/platform/issues/591))
+
+
+### Documentation
+
+* GitHub org change updates ([#590](https://github.com/dashpay/platform/issues/590))
+
+
 ## [0.24.0-dev.6](https://github.com/dashpay/platform/compare/v0.24.0-dev.5...v0.24.0-dev.6) (2022-10-26)
 
 
