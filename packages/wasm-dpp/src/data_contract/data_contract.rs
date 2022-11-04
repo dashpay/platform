@@ -230,6 +230,7 @@ impl DataContractWasm {
             .map_err(from_dpp_err)?
             .into())
     }
+}
 
 impl Default for DataContractWasm {
     fn default() -> Self {
