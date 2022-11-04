@@ -2,13 +2,13 @@ const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
 
-const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
-const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
-const BlsSignatures = require('../../../../lib/bls/bls');
-const validatePublicKeySignaturesFactory = require('../../../../lib/identity/stateTransition/validatePublicKeySignaturesFactory');
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
-const InvalidIdentityKeySignatureError = require('../../../../lib/errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+const validatePublicKeySignaturesFactory = require('@dashevo/dpp/lib/identity/stateTransition/validatePublicKeySignaturesFactory');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const InvalidIdentityKeySignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
 
 describe('validatePublicKeySignaturesFactory', () => {
   let identityCreateTransition;

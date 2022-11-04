@@ -1,15 +1,15 @@
-const validateDataContractCreateTransitionStateFactory = require('../../../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/validation/state/validateDataContractCreateTransitionStateFactory');
-const DataContractCreateTransition = require('../../../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const validateDataContractCreateTransitionStateFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/validation/state/validateDataContractCreateTransitionStateFactory');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DataContractAlreadyPresentError = require('../../../../../../../lib/errors/consensus/state/dataContract/DataContractAlreadyPresentError');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const DataContractAlreadyPresentError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/DataContractAlreadyPresentError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDataContractCreateTransitionStateFactory', () => {
   let validateDataContractCreateTransitionState;

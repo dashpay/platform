@@ -1,16 +1,16 @@
-const verifyDocumentsUniquenessByIndicesFactory = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsUniquenessByIndicesFactory');
+const verifyDocumentsUniquenessByIndicesFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsUniquenessByIndicesFactory');
 
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DuplicateUniqueIndexError = require('../../../../../../../lib/errors/consensus/state/document/DuplicateUniqueIndexError');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const DuplicateUniqueIndexError = require('@dashevo/dpp/lib/errors/consensus/state/document/DuplicateUniqueIndexError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMock;

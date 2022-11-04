@@ -1,12 +1,12 @@
-const validateStateTransitionKeySignatureFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionKeySignatureFactory');
+const validateStateTransitionKeySignatureFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionKeySignatureFactory');
 
-const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
-const InvalidStateTransitionSignatureError = require('../../../../lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const InvalidStateTransitionSignatureError = require('@dashevo/dpp/lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
 
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
-const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateStateTransitionKeySignatureFactory', () => {
   let publicKeyHash;

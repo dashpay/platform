@@ -1,16 +1,16 @@
-const fetchAndValidateDataContractFactory = require('../../../lib/document/fetchAndValidateDataContractFactory');
+const fetchAndValidateDataContractFactory = require('@dashevo/dpp/lib/document/fetchAndValidateDataContractFactory');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const MissingDataContractIdError = require('../../../lib/errors/consensus/basic/document/MissingDataContractIdError');
-const DataContractNotPresentError = require('../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
+const MissingDataContractIdError = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDataContractIdError');
+const DataContractNotPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DataContractNotPresentError');
 
-const { expectValidationError } = require('../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
 describe('fetchAndValidateDataContractFactory', () => {
   let stateRepositoryMock;

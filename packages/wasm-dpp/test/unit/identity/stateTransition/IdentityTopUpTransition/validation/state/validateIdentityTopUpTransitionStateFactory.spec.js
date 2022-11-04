@@ -1,7 +1,7 @@
-const getIdentityTopUpTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
 const validateIdentityTopUpTransitionStateFactory = require(
-  '../../../../../../../lib/identity/stateTransition/IdentityTopUpTransition/validation/state/validateIdentityTopUpTransitionStateFactory',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/validation/state/validateIdentityTopUpTransitionStateFactory',
 );
 
 describe('validateIdentityTopUpTransitionStateFactory', () => {

@@ -1,14 +1,14 @@
-const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 
-const DataContract = require('../../../lib/dataContract/DataContract');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
+const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
 
 describe('DataContractFacade', () => {
   let dpp;

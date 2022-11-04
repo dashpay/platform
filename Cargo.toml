@@ -1,0 +1,9 @@
+[workspace]
+
+members = [
+    "packages/wasm-dpp",
+]
+
+[profile.release]
+lto = true
+opt-level = 's'

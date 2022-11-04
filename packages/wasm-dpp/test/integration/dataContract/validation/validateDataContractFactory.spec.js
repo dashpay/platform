@@ -3,33 +3,33 @@ const lodashCloneDeep = require('lodash.clonedeep');
 
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
-const createAjv = require('../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const JsonSchemaValidator = require('../../../../lib/validation/JsonSchemaValidator');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const validateDataContractFactory = require('../../../../lib/dataContract/validation/validateDataContractFactory');
-const validateDataContractMaxDepthFactory = require('../../../../lib/dataContract/validation/validateDataContractMaxDepthFactory');
-const enrichDataContractWithBaseSchema = require('../../../../lib/dataContract/enrichDataContractWithBaseSchema');
-const validateDataContractPatternsFactory = require('../../../../lib/dataContract/validation/validateDataContractPatternsFactory');
+const validateDataContractFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractFactory');
+const validateDataContractMaxDepthFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractMaxDepthFactory');
+const enrichDataContractWithBaseSchema = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
+const validateDataContractPatternsFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractPatternsFactory');
 
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const DuplicateIndexError = require('../../../../lib/errors/consensus/basic/dataContract/DuplicateIndexError');
-const UndefinedIndexPropertyError = require('../../../../lib/errors/consensus/basic/dataContract/UndefinedIndexPropertyError');
-const InvalidIndexPropertyTypeError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidIndexPropertyTypeError');
-const SystemPropertyIndexAlreadyPresentError = require('../../../../lib/errors/consensus/basic/dataContract/SystemPropertyIndexAlreadyPresentError');
-const UniqueIndicesLimitReachedError = require('../../../../lib/errors/consensus/basic/dataContract/UniqueIndicesLimitReachedError');
-const InvalidIndexedPropertyConstraintError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
-const InvalidCompoundIndexError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidCompoundIndexError');
-const IncompatibleRe2PatternError = require('../../../../lib/errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
-const InvalidJsonSchemaRefError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
-const JsonSchemaCompilationError = require('../../../../lib/errors/consensus/basic/JsonSchemaCompilationError');
-const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
-const getPropertyDefinitionByPath = require('../../../../lib/dataContract/getPropertyDefinitionByPath');
+const DuplicateIndexError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DuplicateIndexError');
+const UndefinedIndexPropertyError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/UndefinedIndexPropertyError');
+const InvalidIndexPropertyTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidIndexPropertyTypeError');
+const SystemPropertyIndexAlreadyPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/SystemPropertyIndexAlreadyPresentError');
+const UniqueIndicesLimitReachedError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/UniqueIndicesLimitReachedError');
+const InvalidIndexedPropertyConstraintError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
+const InvalidCompoundIndexError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidCompoundIndexError');
+const IncompatibleRe2PatternError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
+const InvalidJsonSchemaRefError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
+const JsonSchemaCompilationError = require('@dashevo/dpp/lib/errors/consensus/basic/JsonSchemaCompilationError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
 
 describe('validateDataContractFactory', function main() {
   this.timeout(15000);

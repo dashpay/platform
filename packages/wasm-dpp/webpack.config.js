@@ -1,16 +1,31 @@
 const path = require('path');
 const webpack = require('webpack');
 
-const commonJSConfig = {
-  entry: ['core-js/stable', './lib/DashPlatformProtocol.js'],
-  mode: 'production',
+module.exports = {
+  entry: './index.ts',
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'DashPlatformProtocol.min.js',
-    library: 'DashPlatformProtocol',
-    libraryTarget: 'umd',
+    filename: 'index.js',
+    library: {
+      type: 'umd',
+    },
+    publicPath: '',
+    // This is needed to prevent ReferenceError: self is not defined,
+    // as webpack names global object "self" for some reason
+    globalObject: 'this',
+  },
+  mode: 'production',
+  module: {
+    rules: [
+      {
+        test: /\.tsx?$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
   },
   resolve: {
+    extensions: ['.tsx', '.ts', '.js'],
     fallback: {
       fs: false,
       ws: false,
@@ -33,17 +48,5 @@ const commonJSConfig = {
       process: require.resolve('process/browser'),
     }),
   ],
-  module: {
-    rules: [
-      {
-        test: /\.js$/,
-        exclude: /(node_modules)/,
-        use: {
-          loader: 'babel-loader',
-        },
-      },
-    ],
-  },
+  // target: 'node'
 };
-
-module.exports = [commonJSConfig];

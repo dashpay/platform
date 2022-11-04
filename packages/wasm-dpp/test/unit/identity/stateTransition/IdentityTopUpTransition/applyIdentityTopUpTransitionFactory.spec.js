@@ -1,15 +1,15 @@
 const applyIdentityTopUpTransitionFactory = require(
-  '../../../../../lib/identity/stateTransition/IdentityTopUpTransition/applyIdentityTopUpTransitionFactory',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/applyIdentityTopUpTransitionFactory',
 );
 
-const getIdentityFixture = require('../../../../../lib/test/fixtures/getIdentityFixture');
-const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const { convertSatoshiToCredits } = require('../../../../../lib/identity/creditsConverter');
+const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsConverter');
 
-const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
-const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
-const getBiggestPossibleIdentity = require('../../../../../lib/identity/getBiggestPossibleIdentity');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
 
 describe('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;

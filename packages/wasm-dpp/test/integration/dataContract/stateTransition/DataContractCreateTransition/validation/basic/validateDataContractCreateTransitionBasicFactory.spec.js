@@ -2,27 +2,27 @@ const crypto = require('crypto');
 
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('../../../../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
-const protocolVersion = require('../../../../../../../lib/version/protocolVersion');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const validateDataContractCreateTransitionBasicFactory = require('../../../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/validation/basic/validateDataContractCreateTransitionBasicFactory');
+const validateDataContractCreateTransitionBasicFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/validation/basic/validateDataContractCreateTransitionBasicFactory');
 
-const DataContractCreateTransition = require('../../../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const {
   expectValidationError,
   expectJsonSchemaError,
-} = require('../../../../../../../lib/test/expect/expectError');
+} = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const InvalidDataContractIdError = require('../../../../../../../lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
-const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const InvalidDataContractIdError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('validateDataContractCreateTransitionBasicFactory', () => {
   let validateDataContractMock;

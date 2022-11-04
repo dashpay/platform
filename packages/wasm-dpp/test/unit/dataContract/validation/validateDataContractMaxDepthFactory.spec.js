@@ -1,9 +1,9 @@
-const validateDataContractMaxDepthFactory = require('../../../../lib/dataContract/validation/validateDataContractMaxDepthFactory');
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
-const DataContractMaxDepthExceedError = require('../../../../lib/errors/consensus/basic/dataContract/DataContractMaxDepthExceedError');
-const generateDeepJson = require('../../../../lib/test/utils/generateDeepJson');
-const InvalidJsonSchemaRefError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
+const validateDataContractMaxDepthFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractMaxDepthFactory');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const DataContractMaxDepthExceedError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractMaxDepthExceedError');
+const generateDeepJson = require('@dashevo/dpp/lib/test/utils/generateDeepJson');
+const InvalidJsonSchemaRefError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
 
 describe('validateDataContractMaxDepthFactory', () => {
   let refParserMock;
