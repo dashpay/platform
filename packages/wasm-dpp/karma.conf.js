@@ -32,7 +32,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['FirefoxHeadless'],
+    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [

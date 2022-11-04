@@ -127,6 +127,9 @@ describe('Identity', () => {
 
   describe('#toBuffer', () => {
     it('should return the same buffer as JS Identity', () => {
+      // Due to polyfill used by webpack, Buffer produced by toBuffer is not the same buffer as
+      // Buffer.from()
+      rawIdentity.id = Buffer.from(rawIdentity.id.toBuffer());
       const oldIdentity = new JSIdentity(rawIdentity);
       const result = Buffer.from(identity.toBuffer());
 
