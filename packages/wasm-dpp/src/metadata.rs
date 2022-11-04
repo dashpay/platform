@@ -34,11 +34,6 @@ impl MetadataWasm {
         inner.into()
     }
 
-    #[wasm_bindgen(js_name=default)]
-    pub fn default() -> Self {
-        MetadataWasm(Metadata::default())
-    }
-
     #[wasm_bindgen(js_name=from)]
     pub fn from(object: JsValue) -> Self {
         let i: Metadata = serde_json::from_str(&object.as_string().unwrap()).unwrap();

@@ -38,15 +38,6 @@ where
         .collect()
 }
 
-// pub fn into_vec<T: TryFrom<JsValue>>(
-//     values: Vec<JsValue>,
-// ) -> Result<Vec<T>, <JsValue as TryInto<T>>::Error> {
-//     values
-//         .into_iter()
-//         .map(JsValue::try_into)
-//         .collect::<Result<Vec<T>, <JsValue as TryInto<T>>::Error>>()
-// }
-
 pub fn to_serde_json_value(data: &JsValue) -> Result<Value, JsValue> {
     let data = stringify(data)?;
     let value: Value = serde_json::from_str(&data)
