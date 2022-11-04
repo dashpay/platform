@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dashevo/platform/actions/workflows/all-packages.yml"><img alt="GitHub CI Status" src="https://github.com/dashevo/platform/actions/workflows/all-packages.yml/badge.svg"></a>
+  <a href="https://github.com/dashpay/platform/actions/workflows/all-packages.yml"><img alt="GitHub CI Status" src="https://github.com/dashpay/platform/actions/workflows/all-packages.yml/badge.svg"></a>
   <a href="https://chat.dashdevs.org/"><img alt="Devs Chat" src="https://img.shields.io/badge/discord-Dev_chat-738adb"></a>
   <a href="https://discordapp.com/invite/PXbUxJB"><img alt="General Chat" src="https://img.shields.io/badge/discord-General_chat-738adb"></a>
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
