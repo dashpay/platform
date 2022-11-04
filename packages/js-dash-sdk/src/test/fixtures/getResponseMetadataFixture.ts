@@ -5,7 +5,7 @@ function getResponseMetadataFixture() {
     height: 10,
     coreChainLockedHeight: 42,
     signature: Buffer.alloc(12).fill(2),
-    time: {
+    getBlockTime: {
       seconds: Math.ceil(new Date().getTime() / 1000),
       nanos: 0,
     },

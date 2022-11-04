@@ -44,7 +44,7 @@ function createQueryResponseFactory(
     metadata.setHeight(blockHeight);
     metadata.setCoreChainLockedHeight(coreChainLockedHeight);
     metadata.setSignature(blockSignature);
-    metadata.setTime(protobufTime);
+    metadata.setBlockTime(protobufTime);
     metadata.setProtocolVersion(version.app);
 
     response.setMetadata(metadata);

@@ -48,7 +48,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
             blockHeight: responseMetadata.getHeight(),
             coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
             signature: responseMetadata.getSignature(),
-            time: responseMetadata.getTime(),
+            blockTime: responseMetadata.getBlockTime(),
             protocolVersion: responseMetadata.getProtocolVersion(),
         });
     }

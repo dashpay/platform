@@ -154,7 +154,7 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
                     blockHeight: responseMetadata.getHeight(),
                     coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
                     signature: responseMetadata.getSignature(),
-                    time: responseMetadata.getTime(),
+                    blockTime: responseMetadata.getBlockTime(),
                     protocolVersion: responseMetadata.getProtocolVersion(),
                 });
             }

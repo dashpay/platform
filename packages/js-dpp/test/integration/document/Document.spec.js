@@ -17,7 +17,7 @@ describe('Document', () => {
     metadataFixture = new Metadata({
       blockHeight: 42,
       coreChainLockedHeight: 0,
-      time: {
+      blockTime: {
         seconds: Math.ceil(new Date().getTime() / 1000),
         nanos: 0,
       },

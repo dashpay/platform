@@ -2380,6 +2380,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["eslint-plugin-jsdoc", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:27.1.2"],\
             ["events", "npm:3.3.0"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\

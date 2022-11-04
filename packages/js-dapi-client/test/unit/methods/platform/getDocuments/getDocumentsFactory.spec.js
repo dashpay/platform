@@ -1,3 +1,4 @@
+const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const cbor = require('cbor');
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
@@ -55,9 +56,16 @@ describe('getDocumentsFactory', () => {
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 
+    const protobufTime = new Timestamp();
+    protobufTime.setSeconds(metadataFixture.blockTime.seconds);
+    protobufTime.setNanos(metadataFixture.blockTime.nanos);
+
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setSignature(Buffer.from(metadataFixture.signature, 'base64'));
+    metadata.setBlockTime(protobufTime);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new GetDocumentsResponse();
     response.setDocumentsList(serializedDocuments);

@@ -112,15 +112,15 @@ function waitForStateTransitionResultHandlerFactory(
       const { proof: proofObject, metadata } = await fetchProofForStateTransition(stateTransition);
 
       const protobufTime = new Timestamp();
-      protobufTime.setSeconds(metadata.time.seconds);
-      protobufTime.setNanos(metadata.time.nanos);
+      protobufTime.setSeconds(metadata.blockTime.seconds);
+      protobufTime.setNanos(metadata.blockTime.nanos);
 
       const responseMetadata = new ResponseMetadata();
 
       responseMetadata.setHeight(metadata.height);
       responseMetadata.setCoreChainLockedHeight(metadata.coreChainLockedHeight);
       responseMetadata.setSignature(metadata.signature);
-      responseMetadata.setTime(protobufTime);
+      responseMetadata.setBlockTime(protobufTime);
       responseMetadata.setProtocolVersion(metadata.protocolVersion);
 
       response.setMetadata(responseMetadata);

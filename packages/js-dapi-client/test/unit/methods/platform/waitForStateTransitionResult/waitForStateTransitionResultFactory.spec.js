@@ -1,3 +1,4 @@
+const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const {
   v0: {
     PlatformPromiseClient,
@@ -25,9 +26,16 @@ describe('waitForStateTransitionResultFactory', () => {
     hash = Buffer.from('hash');
     metadataFixture = getMetadataFixture();
 
+    const protobufTime = new Timestamp();
+    protobufTime.setSeconds(metadataFixture.blockTime.seconds);
+    protobufTime.setNanos(metadataFixture.blockTime.nanos);
+
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setSignature(Buffer.from(metadataFixture.signature, 'base64'));
+    metadata.setBlockTime(protobufTime);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new WaitForStateTransitionResultResponse();
     response.setMetadata(metadata);

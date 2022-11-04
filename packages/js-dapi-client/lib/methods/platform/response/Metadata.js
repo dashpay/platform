@@ -4,14 +4,14 @@ class Metadata {
    * @param {number} properties.height - block height
    * @param {number} properties.coreChainLockedHeight - core chain locked height
    * @param {Buffer} properties.signature - signature
-   * @param {ITimestamp} properties.time - block time
+   * @param {ITimestamp} properties.blockTime - block time
    * @param {Long} properties.protocolVersion - protocol version
    */
   constructor(properties) {
     this.height = properties.height;
     this.coreChainLockedHeight = properties.coreChainLockedHeight;
     this.signature = properties.signature;
-    this.time = properties.time;
+    this.blockTime = properties.blockTime;
     this.protocolVersion = properties.protocolVersion;
   }
 
@@ -37,8 +37,8 @@ class Metadata {
    * Get block time
    * @return {ITimestamp}
    */
-  getTime() {
-    return this.time;
+  getBlockTime() {
+    return this.blockTime;
   }
 
   /**

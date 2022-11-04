@@ -129,14 +129,14 @@ typedef struct Proof__storage_ {
 @dynamic height;
 @dynamic coreChainLockedHeight;
 @dynamic signature;
-@dynamic hasTime, time;
+@dynamic hasBlockTime, blockTime;
 @dynamic protocolVersion;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
   NSData *signature;
-  GPBTimestamp *time;
+  GPBTimestamp *blockTime;
   int64_t height;
   uint64_t protocolVersion;
 } ResponseMetadata__storage_;
@@ -175,11 +175,11 @@ typedef struct ResponseMetadata__storage_ {
         .dataType = GPBDataTypeBytes,
       },
       {
-        .name = "time",
+        .name = "blockTime",
         .dataTypeSpecific.clazz = GPBObjCClass(GPBTimestamp),
-        .number = ResponseMetadata_FieldNumber_Time,
+        .number = ResponseMetadata_FieldNumber_BlockTime,
         .hasIndex = 3,
-        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, time),
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, blockTime),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

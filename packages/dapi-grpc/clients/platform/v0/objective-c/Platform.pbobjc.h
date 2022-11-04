@@ -75,7 +75,7 @@ typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
   ResponseMetadata_FieldNumber_Height = 1,
   ResponseMetadata_FieldNumber_CoreChainLockedHeight = 2,
   ResponseMetadata_FieldNumber_Signature = 3,
-  ResponseMetadata_FieldNumber_Time = 4,
+  ResponseMetadata_FieldNumber_BlockTime = 4,
   ResponseMetadata_FieldNumber_ProtocolVersion = 5,
 };
 
@@ -87,9 +87,9 @@ GPB_FINAL @interface ResponseMetadata : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *signature;
 
-@property(nonatomic, readwrite, strong, null_resettable) GPBTimestamp *time;
-/** Test to see if @c time has been set. */
-@property(nonatomic, readwrite) BOOL hasTime;
+@property(nonatomic, readwrite, strong, null_resettable) GPBTimestamp *blockTime;
+/** Test to see if @c blockTime has been set. */
+@property(nonatomic, readwrite) BOOL hasBlockTime;
 
 @property(nonatomic, readwrite) uint64_t protocolVersion;
 

@@ -40,7 +40,7 @@ describe('createQueryResponseFactory', () => {
     metadata = {
       height: 1,
       coreChainLockedHeight: 1,
-      time: time.toJSON(),
+      blockTime: time.toJSON(),
       protocolVersion: version.app,
       signature: lastCommitInfo.blockSignature.toString('base64'),
     };

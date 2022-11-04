@@ -734,7 +734,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInst
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
     signature: msg.getSignature_asB64(),
-    time: (f = msg.getTime()) && google_protobuf_timestamp_pb.Timestamp.toObject(includeInstance, f),
+    blockTime: (f = msg.getBlockTime()) && google_protobuf_timestamp_pb.Timestamp.toObject(includeInstance, f),
     protocolVersion: jspb.Message.getFieldWithDefault(msg, 5, 0)
   };
 
@@ -787,7 +787,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
     case 4:
       var value = new google_protobuf_timestamp_pb.Timestamp;
       reader.readMessage(value,google_protobuf_timestamp_pb.Timestamp.deserializeBinaryFromReader);
-      msg.setTime(value);
+      msg.setBlockTime(value);
       break;
     case 5:
       var value = /** @type {number} */ (reader.readUint64());
@@ -843,7 +843,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
       f
     );
   }
-  f = message.getTime();
+  f = message.getBlockTime();
   if (f != null) {
     writer.writeMessage(
       4,
@@ -940,10 +940,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setSignature = functi
 
 
 /**
- * optional google.protobuf.Timestamp time = 4;
+ * optional google.protobuf.Timestamp block_time = 4;
  * @return {?proto.google.protobuf.Timestamp}
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTime = function() {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getBlockTime = function() {
   return /** @type{?proto.google.protobuf.Timestamp} */ (
     jspb.Message.getWrapperField(this, google_protobuf_timestamp_pb.Timestamp, 4));
 };
@@ -953,7 +953,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTime = function() 
  * @param {?proto.google.protobuf.Timestamp|undefined} value
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
 */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTime = function(value) {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setBlockTime = function(value) {
   return jspb.Message.setWrapperField(this, 4, value);
 };
 
@@ -962,8 +962,8 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTime = function(va
  * Clears the message field making it undefined.
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.clearTime = function() {
-  return this.setTime(undefined);
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.clearBlockTime = function() {
+  return this.setBlockTime(undefined);
 };
 
 
@@ -971,7 +971,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.clearTime = function(
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.hasTime = function() {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.hasBlockTime = function() {
   return jspb.Message.getField(this, 4) != null;
 };
 
