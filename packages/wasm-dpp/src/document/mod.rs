@@ -139,11 +139,6 @@ impl DocumentWasm {
         self.to_object()
     }
 
-    #[wasm_bindgen(js_name=toString)]
-    pub fn to_string(&self) -> Result<String, JsValue> {
-        with_js_error!(serde_json::to_string(&self.0))
-    }
-
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Vec<u8>, JsValue> {
         let buffer = self.0.to_buffer().map_err(from_dpp_err)?;

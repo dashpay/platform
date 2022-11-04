@@ -211,12 +211,6 @@ impl IdentityWasm {
         Ok(js_object)
     }
 
-    #[wasm_bindgen(js_name=toString)]
-    #[allow(clippy::inherent_to_string)]
-    pub fn to_string(&self) -> String {
-        serde_json::to_string(&self.0).unwrap()
-    }
-
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Vec<u8> {
         self.0.to_buffer().unwrap()

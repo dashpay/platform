@@ -54,10 +54,4 @@ impl MetadataWasm {
     pub fn to_object(&self) -> JsValue {
         serde_wasm_bindgen::to_value(&self.0).unwrap()
     }
-
-    #[wasm_bindgen(js_name=toString)]
-    #[allow(clippy::inherent_to_string)]
-    pub fn to_string(&self) -> String {
-        serde_json::to_string(&self.0).unwrap()
-    }
 }
