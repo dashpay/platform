@@ -6,6 +6,7 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{
+        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -29,6 +30,8 @@ pub struct DataContractUpdateTransition {
     pub data_contract: DataContract,
     pub signature_public_key_id: KeyID,
     pub signature: Vec<u8>,
+    #[serde(skip)]
+    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DataContractUpdateTransition {
@@ -38,7 +41,8 @@ impl std::default::Default for DataContractUpdateTransition {
             transition_type: StateTransitionType::DataContractUpdate,
             signature_public_key_id: 0,
             signature: vec![],
-            data_contract: DataContract::default(),
+            data_contract: Default::default(),
+            execution_context: Default::default(),
         }
     }
 }
@@ -109,6 +113,13 @@ impl StateTransitionLike for DataContractUpdateTransition {
     }
     fn calculate_fee(&self) -> Result<u64, ProtocolError> {
         todo!("fee calculation")
+    }
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        &self.execution_context
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        self.execution_context = execution_context
     }
 }
 

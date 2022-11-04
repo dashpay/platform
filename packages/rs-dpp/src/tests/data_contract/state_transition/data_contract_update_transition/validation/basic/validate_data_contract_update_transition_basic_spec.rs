@@ -37,6 +37,7 @@ fn setup_test() -> TestData {
         signature: vec![0; 65],
         signature_public_key_id: 0,
         transition_type: StateTransitionType::DataContractUpdate,
+        execution_context: Default::default(),
     };
 
     let raw_state_transition = state_transition.to_object(false).unwrap();
@@ -45,7 +46,7 @@ fn setup_test() -> TestData {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract()
-        .returning(move |_| Ok(data_contract.clone()));
+        .returning(move |_, _| Ok(data_contract.clone()));
 
     TestData {
         version_validator,
@@ -74,7 +75,7 @@ async fn should_be_present(property: &str) {
     raw_state_transition.remove(property).unwrap();
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -107,7 +108,7 @@ async fn should_be_integer(property: &str) {
     raw_state_transition[property] = json!("1");
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -136,7 +137,7 @@ async fn protocol_version_should_be_valid() {
     raw_state_transition[property_names::PROTOCOL_VERSION] = json!(-1);
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect_err("err should be returned");
     assert_eq!("invalid protocol version", result.to_string())
@@ -159,7 +160,7 @@ async fn type_should_be_equal_4() {
     raw_state_transition[property_names::TRANSITION_TYPE] = json!(666);
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -190,7 +191,7 @@ async fn property_should_be_byte_array(property_name: &str) {
     raw_state_transition[property_name] = json!(array);
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -226,7 +227,7 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
     raw_state_transition[property_name] = json!(array);
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -257,7 +258,7 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
     raw_state_transition[property_name] = json!(array);
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -286,7 +287,7 @@ async fn signature_public_key_id_should_be_valid() {
     raw_state_transition[property_names::SIGNATURE_PUBLIC_KEY_ID] = json!(-1);
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -319,7 +320,7 @@ async fn should_allow_making_backward_compatible_changes() {
     });
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -345,7 +346,7 @@ async fn should_have_existing_documents_schema_backward_compatible() {
         .unwrap();
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -378,7 +379,7 @@ async fn should_allow_defining_new_document() {
     raw_state_transition[property_names::DATA_CONTRACT]["documents"]["new_doc"] = new_document;
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 
@@ -400,7 +401,7 @@ async fn should_return_valid_result() {
     .expect("validator should be created");
 
     let result = validator
-        .validate(&raw_state_transition)
+        .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
 

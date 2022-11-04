@@ -16,8 +16,12 @@ pub async fn validate_state_transition_identity_signature(
     let mut validation_result = ValidationResult::<()>::default();
 
     // Owner must exist
-    let result =
-        validate_identity_existence(state_repository, state_transition.get_owner_id()).await?;
+    let result = validate_identity_existence(
+        state_repository,
+        state_transition.get_owner_id(),
+        state_transition.get_execution_context(),
+    )
+    .await?;
     if !result.is_valid() {
         return Ok(result.into_result_without_data());
     }
@@ -102,7 +106,8 @@ mod test {
         prelude::{Identifier, Identity, IdentityPublicKey},
         state_repository::MockStateRepositoryLike,
         state_transition::{
-            StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
+            state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+            StateTransitionConvert, StateTransitionLike, StateTransitionType,
         },
         tests::{
             fixtures::identity_fixture_raw_object,
@@ -120,6 +125,8 @@ mod test {
         pub owner_id: Identifier,
 
         pub return_error: Option<usize>,
+        #[serde(skip)]
+        pub execution_context: StateTransitionExecutionContext,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -156,6 +163,13 @@ mod test {
         }
         fn set_signature(&mut self, signature: Vec<u8>) {
             self.signature = signature
+        }
+        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+            &self.execution_context
+        }
+
+        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+            self.execution_context = execution_context
         }
     }
 
@@ -223,6 +237,7 @@ mod test {
             signature_public_key_id: 1,
             owner_id: generate_random_identifier_struct(),
             return_error: None,
+            execution_context: Default::default(),
         }
     }
 
@@ -237,7 +252,7 @@ mod test {
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
             .expect_fetch_identity()
-            .returning(move |_| Ok(Some(identity.clone())));
+            .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result =
             validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
@@ -258,7 +273,7 @@ mod test {
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
             .expect_fetch_identity::<Identity>()
-            .returning(move |_| Ok(None));
+            .returning(move |_, _| Ok(None));
 
         let result =
             validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
@@ -286,7 +301,7 @@ mod test {
         state_transition.signature_public_key_id = 12332;
         state_repository_mock
             .expect_fetch_identity()
-            .returning(move |_| Ok(Some(identity.clone())));
+            .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result =
             validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
@@ -312,7 +327,7 @@ mod test {
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
             .expect_fetch_identity()
-            .returning(move |_| Ok(Some(identity.clone())));
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(0);
 
         let result =
@@ -341,7 +356,7 @@ mod test {
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
             .expect_fetch_identity()
-            .returning(move |_| Ok(Some(identity.clone())));
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(1);
 
         let result =
@@ -368,7 +383,7 @@ mod test {
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
             .expect_fetch_identity()
-            .returning(move |_| Ok(Some(identity.clone())));
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(2);
 
         let result =
@@ -395,7 +410,7 @@ mod test {
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
             .expect_fetch_identity()
-            .returning(move |_| Ok(Some(identity.clone())));
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(3);
 
         let result =

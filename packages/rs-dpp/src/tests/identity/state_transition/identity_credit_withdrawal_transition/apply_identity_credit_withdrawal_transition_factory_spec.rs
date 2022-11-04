@@ -27,8 +27,8 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_fetch_identity::<Identity>()
             .times(1)
-            .withf(|id| *id == Identifier::default())
-            .returning(|_| {
+            .withf(|id, _| *id == Identifier::default())
+            .returning(|_, _| {
                 let mut identity = Identity::default();
 
                 identity = identity.set_balance(42);
@@ -39,13 +39,13 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_update_identity()
             .times(1)
-            .withf(|identity| {
+            .withf(|identity, _| {
                 let id_match = *identity.get_id() == Identifier::default();
                 let balance_match = identity.get_balance() == (42 - 10);
 
                 id_match && balance_match
             })
-            .returning(|_| anyhow::Ok(()));
+            .returning(|_, _| anyhow::Ok(()));
 
         let applier = ApplyIdentityCreditWithdrawalTransition::new(state_repository);
 

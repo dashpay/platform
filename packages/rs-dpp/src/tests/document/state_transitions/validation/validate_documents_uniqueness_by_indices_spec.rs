@@ -56,7 +56,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
     let mut state_repository_mock = MockStateRepositoryLike::default();
     state_repository_mock
         .expect_fetch_documents::<Document>()
-        .returning(|_, _, _| Ok(vec![]));
+        .returning(|_, _, _, _| Ok(vec![]));
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
@@ -65,6 +65,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
         &owner_id,
         &document_transitions,
         &data_contract,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -97,8 +98,9 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
@@ -112,14 +114,16 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
         &document_transitions,
         &data_contract,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -155,8 +159,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
@@ -170,8 +175,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
@@ -185,8 +191,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
                 ["firstName", "==", leon_doc.get("firstName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
@@ -200,14 +207,16 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
                 ["lastName", "==", leon_doc.get("lastName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
         &document_transitions,
         &data_contract,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -254,8 +263,9 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
                 ["firstName", "==", indexed_document.get("firstName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let expect_document = indexed_document.to_owned();
     state_repository_mock
@@ -269,14 +279,16 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
                 ["lastName", "==", indexed_document.get("lastName").unwrap()],
                ],
             })),
+            predicate::always(),
         )
-        .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
         &document_transitions,
         &data_contract,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -309,14 +321,16 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
                     ["$updatedAt", "==", unique_dates_doc.created_at.expect("createdAt should be present") ],
                    ],
                 })),
+               predicate::always(),
             )
-            .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
+            .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
         &document_transitions,
         &data_contract,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");

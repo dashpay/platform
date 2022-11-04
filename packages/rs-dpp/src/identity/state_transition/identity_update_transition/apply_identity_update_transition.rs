@@ -2,6 +2,7 @@ use crate::{
     consensus::{basic::BasicError, ConsensusError},
     prelude::{Identifier, Identity},
     state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
     ProtocolError,
 };
 
@@ -13,7 +14,10 @@ pub async fn apply_identity_update_transition(
     state_transition: IdentityUpdateTransition,
 ) -> Result<(), ProtocolError> {
     let maybe_identity: Option<Identity> = state_repository
-        .fetch_identity(state_transition.get_identity_id())
+        .fetch_identity(
+            state_transition.get_identity_id(),
+            state_transition.get_execution_context(),
+        )
         .await?;
     let mut identity = match maybe_identity {
         None => {
@@ -52,11 +56,17 @@ pub async fn apply_identity_update_transition(
             .collect::<Result<_, _>>()?;
 
         state_repository
-            .store_identity_public_key_hashes(identity.get_id(), public_key_hashes)
+            .store_identity_public_key_hashes(
+                identity.get_id(),
+                public_key_hashes,
+                state_transition.get_execution_context(),
+            )
             .await?;
     }
 
-    state_repository.update_identity(&identity).await?;
+    state_repository
+        .update_identity(&identity, state_transition.get_execution_context())
+        .await?;
 
     Ok(())
 }

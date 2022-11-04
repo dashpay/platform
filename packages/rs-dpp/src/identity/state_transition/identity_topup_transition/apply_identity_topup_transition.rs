@@ -6,6 +6,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOut
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::{convert_satoshi_to_credits, Identity};
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::StateTransitionLike;
 
 pub struct ApplyIdentityTopUpTransition<SR>
 where
@@ -25,7 +26,10 @@ where
     ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(state_transition.get_asset_lock_proof())
+            .fetch(
+                state_transition.get_asset_lock_proof(),
+                state_transition.get_execution_context(),
+            )
             .await?;
 
         let credits_amount = convert_satoshi_to_credits(output.value);
@@ -38,13 +42,15 @@ where
 
         let maybe_identity = self
             .state_repository
-            .fetch_identity::<Identity>(identity_id)
+            .fetch_identity::<Identity>(identity_id, state_transition.get_execution_context())
             .await?;
 
         if let Some(identity) = maybe_identity {
             let identity = identity.increase_balance(credits_amount);
 
-            self.state_repository.update_identity(&identity).await?;
+            self.state_repository
+                .update_identity(&identity, state_transition.get_execution_context())
+                .await?;
 
             self.state_repository
                 .mark_asset_lock_transaction_out_point_as_used(&out_point)
