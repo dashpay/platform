@@ -71,7 +71,7 @@ impl IdentityFacadeWasm {
     }
 }
 
-#[wasm_bindgen(js_name=Keks)]
+#[wasm_bindgen(js_name=NonConsensusErrorWasm)]
 pub struct NonConsensusErrorWasm(NonConsensusError);
 
 impl From<NonConsensusError> for NonConsensusErrorWasm {
