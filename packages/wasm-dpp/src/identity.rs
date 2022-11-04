@@ -197,7 +197,11 @@ impl IdentityWasm {
 
         let id: IdentifierWrapper = self.0.id.clone().into();
 
-        js_sys::Reflect::set(&js_object, &"id".to_owned().into(), &JsValue::from(id.to_object()))?;
+        js_sys::Reflect::set(
+            &js_object,
+            &"id".to_owned().into(),
+            &JsValue::from(id.to_object()),
+        )?;
         js_sys::Reflect::set(
             &js_object,
             &"publicKeys".to_owned().into(),

@@ -1,13 +1,11 @@
-
-
 pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
+use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
 use dpp::identifier;
 use js_sys::Uint8Array;
-use crate::buffer::Buffer;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {
