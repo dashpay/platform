@@ -1,11 +1,15 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
 use super::{OperationLike, OperationType};
 
 pub const BASE_PROCESSING_COST: i64 = 8400;
 pub const CREDIT_PER_BYTE: i64 = 12;
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadOperation {
-    value_size: usize,
+    pub value_size: usize,
 }
 
 impl ReadOperation {
