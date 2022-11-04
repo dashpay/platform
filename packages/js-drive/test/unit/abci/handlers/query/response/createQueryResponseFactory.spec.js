@@ -1,8 +1,16 @@
+const Long = require('long');
 const {
   v0: {
     GetDataContractResponse,
   },
 } = require('@dashevo/dapi-grpc');
+const {
+  google: {
+    protobuf: {
+      Timestamp,
+    },
+  },
+} = require('@dashevo/abci/types');
 
 const BlockExecutionContextMock = require('../../../../../../lib/test/mock/BlockExecutionContextMock');
 const createQueryResponseFactory = require('../../../../../../lib/abci/handlers/query/response/createQueryResponseFactory');
@@ -14,23 +22,37 @@ describe('createQueryResponseFactory', () => {
   let blockExecutionContextMock;
 
   beforeEach(function beforeEach() {
+    const version = {
+      app: Long.fromInt(1),
+    };
+
+    const time = new Timestamp({
+      seconds: Math.ceil(new Date().getTime() / 1000),
+      nanos: 0,
+    });
+
+    lastCommitInfo = {
+      quorumHash: Buffer.alloc(12).fill(1),
+      stateSignature: Buffer.alloc(12).fill(2),
+      blockSignature: Buffer.alloc(12).fill(2),
+    };
+
     metadata = {
       height: 1,
       coreChainLockedHeight: 1,
+      time: time.toJSON(),
+      protocolVersion: version.app,
+      signature: lastCommitInfo.blockSignature.toString('base64'),
     };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getHeight.returns(metadata.height);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
-    blockExecutionContextMock.isEmpty.returns(false);
-
-    lastCommitInfo = {
-      quorumHash: Buffer.alloc(12).fill(1),
-      stateSignature: Buffer.alloc(12).fill(2),
-    };
-
+    blockExecutionContextMock.getTime.returns(metadata.time);
+    blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
+    blockExecutionContextMock.isEmpty.returns(false);
 
     createQueryResponse = createQueryResponseFactory(
       blockExecutionContextMock,
@@ -43,7 +65,6 @@ describe('createQueryResponseFactory', () => {
     response.serializeBinary();
 
     expect(response).to.be.instanceOf(GetDataContractResponse);
-
     expect(response.getMetadata().toObject()).to.deep.equal(metadata);
     expect(response.getProof()).to.undefined();
   });

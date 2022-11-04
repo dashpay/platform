@@ -1,3 +1,4 @@
+const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const {
   server: {
     error: {
@@ -110,10 +111,17 @@ function waitForStateTransitionResultHandlerFactory(
 
       const { proof: proofObject, metadata } = await fetchProofForStateTransition(stateTransition);
 
+      const protobufTime = new Timestamp();
+      protobufTime.setSeconds(metadata.time.seconds);
+      protobufTime.setNanos(metadata.time.nanos);
+
       const responseMetadata = new ResponseMetadata();
 
       responseMetadata.setHeight(metadata.height);
       responseMetadata.setCoreChainLockedHeight(metadata.coreChainLockedHeight);
+      responseMetadata.setSignature(metadata.signature);
+      responseMetadata.setTime(protobufTime);
+      responseMetadata.setProtocolVersion(metadata.protocolVersion);
 
       response.setMetadata(responseMetadata);
 

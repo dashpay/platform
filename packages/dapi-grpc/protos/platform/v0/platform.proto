@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package org.dash.platform.dapi.v0;
 
+import "google/protobuf/timestamp.proto";
+
 service Platform {
   rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
@@ -21,6 +23,9 @@ message Proof {
 message ResponseMetadata {
   int64 height = 1;
   uint32 core_chain_locked_height = 2;
+  bytes signature = 3;
+  google.protobuf.Timestamp time = 4;
+  uint64 protocol_version = 5;
 }
 
 message StateTransitionBroadcastError {

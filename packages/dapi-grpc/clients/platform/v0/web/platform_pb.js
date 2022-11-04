@@ -15,6 +15,8 @@ var jspb = require('google-protobuf');
 var goog = jspb;
 var global = Function('return this')();
 
+var google_protobuf_timestamp_pb = require('google-protobuf/google/protobuf/timestamp_pb.js');
+goog.object.extend(proto, google_protobuf_timestamp_pb);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest', null, global);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse', null, global);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.ConsensusParamsBlock', null, global);
@@ -730,7 +732,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.toObject = function(o
 proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInstance, msg) {
   var f, obj = {
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    signature: msg.getSignature_asB64(),
+    time: (f = msg.getTime()) && google_protobuf_timestamp_pb.Timestamp.toObject(includeInstance, f),
+    protocolVersion: jspb.Message.getFieldWithDefault(msg, 5, 0)
   };
 
   if (includeInstance) {
@@ -775,6 +780,19 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       var value = /** @type {number} */ (reader.readUint32());
       msg.setCoreChainLockedHeight(value);
       break;
+    case 3:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setSignature(value);
+      break;
+    case 4:
+      var value = new google_protobuf_timestamp_pb.Timestamp;
+      reader.readMessage(value,google_protobuf_timestamp_pb.Timestamp.deserializeBinaryFromReader);
+      msg.setTime(value);
+      break;
+    case 5:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setProtocolVersion(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -818,6 +836,28 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
       f
     );
   }
+  f = message.getSignature_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      3,
+      f
+    );
+  }
+  f = message.getTime();
+  if (f != null) {
+    writer.writeMessage(
+      4,
+      f,
+      google_protobuf_timestamp_pb.Timestamp.serializeBinaryToWriter
+    );
+  }
+  f = message.getProtocolVersion();
+  if (f !== 0) {
+    writer.writeUint64(
+      5,
+      f
+    );
+  }
 };
 
 
@@ -854,6 +894,103 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getCoreChainLockedHei
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setCoreChainLockedHeight = function(value) {
   return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional bytes signature = 3;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getSignature = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+};
+
+
+/**
+ * optional bytes signature = 3;
+ * This is a type-conversion wrapper around `getSignature()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getSignature_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getSignature()));
+};
+
+
+/**
+ * optional bytes signature = 3;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getSignature()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getSignature_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getSignature()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setSignature = function(value) {
+  return jspb.Message.setProto3BytesField(this, 3, value);
+};
+
+
+/**
+ * optional google.protobuf.Timestamp time = 4;
+ * @return {?proto.google.protobuf.Timestamp}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTime = function() {
+  return /** @type{?proto.google.protobuf.Timestamp} */ (
+    jspb.Message.getWrapperField(this, google_protobuf_timestamp_pb.Timestamp, 4));
+};
+
+
+/**
+ * @param {?proto.google.protobuf.Timestamp|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+*/
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTime = function(value) {
+  return jspb.Message.setWrapperField(this, 4, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.clearTime = function() {
+  return this.setTime(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.hasTime = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional uint64 protocol_version = 5;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setProtocolVersion = function(value) {
+  return jspb.Message.setProto3IntField(this, 5, value);
 };
 
 

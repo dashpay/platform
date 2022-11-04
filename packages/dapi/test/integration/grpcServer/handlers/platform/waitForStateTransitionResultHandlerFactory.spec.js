@@ -176,6 +176,12 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
         metadata: {
           height: 42,
           coreChainLockedHeight: 41,
+          time: {
+            seconds: Math.ceil(new Date().getTime() / 1000),
+            nanos: 0,
+          },
+          signature: Buffer.alloc(12).fill(2),
+          protocolVersion: 1, // Long
         },
       }),
     };

@@ -27,6 +27,7 @@
 // We don't use [Foo class] because it is not a static value.
 GPBObjCClassDeclaration(ConsensusParamsBlock);
 GPBObjCClassDeclaration(ConsensusParamsEvidence);
+GPBObjCClassDeclaration(GPBTimestamp);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
 GPBObjCClassDeclaration(StateTransitionBroadcastError);
@@ -35,8 +36,8 @@ GPBObjCClassDeclaration(StateTransitionBroadcastError);
 
 @implementation PlatformRoot
 
-// No extensions in the file and no imports, so no need to generate
-// +extensionRegistry.
+// No extensions in the file and none of the imports (direct or indirect)
+// defined extensions, so no need to generate +extensionRegistry.
 
 @end
 
@@ -127,11 +128,17 @@ typedef struct Proof__storage_ {
 
 @dynamic height;
 @dynamic coreChainLockedHeight;
+@dynamic signature;
+@dynamic hasTime, time;
+@dynamic protocolVersion;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
+  NSData *signature;
+  GPBTimestamp *time;
   int64_t height;
+  uint64_t protocolVersion;
 } ResponseMetadata__storage_;
 
 // This method is threadsafe because it is initially called
@@ -157,6 +164,33 @@ typedef struct ResponseMetadata__storage_ {
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, coreChainLockedHeight),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "signature",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_Signature,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, signature),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "time",
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBTimestamp),
+        .number = ResponseMetadata_FieldNumber_Time,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, time),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "protocolVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_ProtocolVersion,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, protocolVersion),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
       },
     };
     GPBDescriptor *localDescriptor =

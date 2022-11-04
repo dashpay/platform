@@ -1413,6 +1413,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
+    google-protobuf: ^3.12.2
     jayson: ^3.3.4
     lodash: ^4.17.19
     lru-cache: ^5.1.1
@@ -1690,6 +1691,7 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     find-my-way: ^2.2.2
+    google-protobuf: ^3.12.2
     js-merkle: ^0.1.5
     levelup: ^4.4.0
     lodash.clonedeep: ^4.5.0

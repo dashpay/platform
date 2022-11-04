@@ -1,3 +1,4 @@
+const Long = require('long');
 const Identifier = require('../../../lib/identifier/Identifier');
 const Metadata = require('../../../lib/Metadata');
 
@@ -13,7 +14,16 @@ describe('Document', () => {
     dataContract = getDataContractFixture();
     [document] = getDocumentsFixture(dataContract).slice(8);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      time: {
+        seconds: Math.ceil(new Date().getTime() / 1000),
+        nanos: 0,
+      },
+      signature: Buffer.alloc(12).fill(2),
+      protocolVersion: Long.fromInt(1),
+    });
 
     document.setMetadata(metadataFixture);
   });
