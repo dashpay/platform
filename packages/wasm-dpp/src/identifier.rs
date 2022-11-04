@@ -97,11 +97,6 @@ impl IdentifierWrapper {
             .to_string_with_encoding_string(encoding.as_deref())
     }
 
-    // #[wasm_bindgen(js_name = encodeCBOR)]
-    // pub fn encode_cbor(&self) {
-    //     self.wrapped.buffer
-    // }
-
     #[wasm_bindgen(getter)]
     pub fn length(&self) -> usize {
         self.wrapped.buffer.len()
@@ -110,10 +105,4 @@ impl IdentifierWrapper {
     pub fn inner(&self) -> Vec<u8> {
         self.wrapped.buffer.to_vec()
     }
-
-    // #[wasm_bindgen(js_name = valueOf)]
-    // pub fn value_of(&self) -> js_sys::Uint8Array {
-    //     // let js_arr: js_sys::Array = self.inner().into_iter().map(JsValue::from).collect();
-    //     js_sys::Uint8Array::from(self.wrapped.buffer.as_slice())
-    // }
 }

@@ -230,17 +230,6 @@ impl DataContractWasm {
             .into())
     }
 
-    #[wasm_bindgen(js_name=from_buffer)]
-    pub fn from_buffer(b: Vec<u8>) -> Result<DataContractWasm, JsValue> {
-        Ok(DataContract::from_buffer(b).map_err(from_dpp_err)?.into())
-    }
-
-    #[wasm_bindgen(js_name=from_string)]
-    pub fn from_string(v: &str) -> Result<DataContractWasm, JsValue> {
-        Ok(DataContract::try_from(v).map_err(from_dpp_err)?.into())
-    }
-}
-
 impl Default for DataContractWasm {
     fn default() -> Self {
         Self::new()
