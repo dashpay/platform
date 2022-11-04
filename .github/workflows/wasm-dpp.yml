@@ -22,3 +22,4 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       package: '@dashevo/wasm-dpp'
+      install-browsers: true
