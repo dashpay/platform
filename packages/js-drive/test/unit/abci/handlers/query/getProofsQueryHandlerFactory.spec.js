@@ -4,6 +4,11 @@ const {
       ResponseQuery,
     },
   },
+  google: {
+    protobuf: {
+      Timestamp,
+    },
+  },
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
@@ -35,14 +40,25 @@ describe('getProofsQueryHandlerFactory', () => {
     identity = getIdentityFixture();
     documents = getDocumentsFixture();
 
+    const version = {
+      app: Long.fromInt(1),
+    };
+
+    const time = new Timestamp({
+      seconds: 86400,
+      nanos: 0,
+    });
+
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getHeight.returns(new Long(42));
     blockExecutionContextMock.getCoreChainLockedHeight.returns(41);
-
+    blockExecutionContextMock.getTime.returns(time);
+    blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns({
       quorumHash: Buffer.alloc(32, 1),
       stateSignature: Buffer.alloc(32, 1),
+      blockSignature: Buffer.alloc(32).fill(2),
     });
 
     signedIdentityRepositoryMock = {
@@ -104,6 +120,12 @@ describe('getProofsQueryHandlerFactory', () => {
           metadata: {
             height: 42,
             coreChainLockedHeight: 41,
+            signature: Buffer.alloc(32).fill(2),
+            blockTime: {
+              seconds: 86400,
+              nanos: 0,
+            },
+            protocolVersion: 1,
           },
         },
       ),
