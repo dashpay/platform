@@ -9,6 +9,10 @@ describe('IdentityPublicKey', () => {
   let KeySecurityLevel;
 
   beforeEach(async () => {
+    ({
+      IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+    } = await loadWasmDpp());
+
     rawPublicKey = {
       id: 0,
       type: KeyType.ECDSA_SECP256K1,
@@ -18,9 +22,6 @@ describe('IdentityPublicKey', () => {
       readOnly: false,
     };
 
-    ({
-      IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
-    } = await loadWasmDpp());
     publicKey = new IdentityPublicKey(rawPublicKey);
   });
 
