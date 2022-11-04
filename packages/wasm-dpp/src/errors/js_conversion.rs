@@ -1,4 +1,5 @@
 use serde_json;
+use serde_wasm_bindgen::Error;
 use thiserror::Error;
 use wasm_bindgen::JsValue;
 
@@ -27,6 +28,12 @@ impl From<String> for RustConversionError {
 
 impl From<RustConversionError> for JsValue {
     fn from(err: RustConversionError) -> Self {
+        Self::from(err.to_string())
+    }
+}
+
+impl From<serde_wasm_bindgen::Error> for RustConversionError {
+    fn from(err: Error) -> Self {
         Self::from(err.to_string())
     }
 }

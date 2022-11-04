@@ -47,12 +47,12 @@ impl MetadataWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> JsValue {
-        JsValue::from_serde(&self.0).unwrap()
+        serde_wasm_bindgen::to_value(&self.0).unwrap()
     }
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> JsValue {
-        JsValue::from_serde(&self.0).unwrap()
+        serde_wasm_bindgen::to_value(&self.0).unwrap()
     }
 
     #[wasm_bindgen(js_name=toString)]

@@ -84,7 +84,7 @@ impl DataContractWasm {
     }
     #[wasm_bindgen(js_name=setDocuments)]
     pub fn set_documents(&self, documents: JsValue) -> Result<(), JsValue> {
-        let json_value: Value = with_js_error!(JsValue::into_serde(&documents))?;
+        let json_value: Value = with_js_error!(serde_wasm_bindgen::from_value(documents))?;
 
         let mut docs: BTreeMap<String, Value> = BTreeMap::new();
         if let Value::Object(o) = json_value {
@@ -102,7 +102,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getDocuments)]
     pub fn get_documents(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(&self.0.documents))
+        with_js_error!(serde_wasm_bindgen::to_value(&self.0.documents))
     }
 
     #[wasm_bindgen(js_name=isDocumentDefined)]
@@ -116,7 +116,7 @@ impl DataContractWasm {
         doc_type: String,
         schema: JsValue,
     ) -> Result<(), JsValue> {
-        let json_schema: Value = with_js_error!(JsValue::into_serde(&schema))?;
+        let json_schema: Value = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
         self.0.documents.insert(doc_type, json_schema);
         Ok(())
     }
@@ -124,12 +124,12 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn get_document_schema(&mut self, doc_type: &str) -> Result<JsValue, JsValue> {
         let doc_schema = self.0.get_document_schema(doc_type).map_err(from_dpp_err)?;
-        with_js_error!(JsValue::from_serde(doc_schema))
+        with_js_error!(serde_wasm_bindgen::to_value(doc_schema))
     }
 
     #[wasm_bindgen(js_name=getDocumentSchemaRef)]
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(
+        with_js_error!(serde_wasm_bindgen::to_value(
             &self
                 .0
                 .get_document_schema_ref(doc_type)
@@ -139,7 +139,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=setDefinitions)]
     pub fn set_definitions(&self, definitions: JsValue) -> Result<(), JsValue> {
-        let json_value: Value = with_js_error!(JsValue::into_serde(&definitions))?;
+        let json_value: Value = with_js_error!(serde_wasm_bindgen::from_value(definitions))?;
         let mut docs: BTreeMap<String, Value> = BTreeMap::new();
         if let Value::Object(o) = json_value {
             for (k, v) in o.into_iter() {
@@ -157,7 +157,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getDefinitions)]
     pub fn get_definitions(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(&self.0.defs))
+        with_js_error!(serde_wasm_bindgen::to_value(&self.0.defs))
     }
 
     #[wasm_bindgen(js_name=setEntropy)]
@@ -179,7 +179,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getBinaryProperties)]
     pub fn get_binary_properties(&self, doc_type: &str) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(
+        with_js_error!(serde_wasm_bindgen::to_value(
             self.0
                 .get_binary_properties(doc_type)
                 .map_err(from_dpp_err)?
@@ -199,7 +199,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(&self.0))
+        with_js_error!(serde_wasm_bindgen::to_value(&self.0))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -224,7 +224,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=from)]
     pub fn from(v: JsValue) -> Result<DataContractWasm, JsValue> {
-        let json_contract: Value = with_js_error!(v.into_serde())?;
+        let json_contract: Value = with_js_error!(serde_wasm_bindgen::from_value(v))?;
         Ok(DataContract::try_from(json_contract)
             .map_err(from_dpp_err)?
             .into())

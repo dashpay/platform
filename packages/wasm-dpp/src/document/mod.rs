@@ -77,13 +77,13 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        self.0.data = with_js_error!(d.into_serde())?;
+        self.0.data = with_js_error!(serde_wasm_bindgen::from_value(d))?;
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(&self.0.data))
+        with_js_error!(serde_wasm_bindgen::to_value(&self.0.data))
     }
 
     #[wasm_bindgen(js_name=set)]
@@ -131,7 +131,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(JsValue::from_serde(&self.0))
+        with_js_error!(serde_wasm_bindgen::to_value(&self.0))
     }
 
     #[wasm_bindgen(js_name=toJSON)]

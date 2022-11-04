@@ -1,7 +1,6 @@
 use dpp::dashcore::anyhow::Context;
 use js_sys::Function;
 use serde_json::Value;
-use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 pub trait ToSerdeJSONExt {
@@ -35,18 +34,18 @@ where
     T: for<'de> serde::de::Deserialize<'de>,
 {
     iter.iter()
-        .map(|v| v.into_serde().expect("data malformed"))
+        .map(|v| serde_wasm_bindgen::from_value(v.clone()).expect("data malformed"))
         .collect()
 }
 
-pub fn into_vec<T: TryFrom<JsValue>>(
-    values: Vec<JsValue>,
-) -> Result<Vec<T>, <JsValue as TryInto<T>>::Error> {
-    values
-        .into_iter()
-        .map(JsValue::try_into)
-        .collect::<Result<Vec<T>, <JsValue as TryInto<T>>::Error>>()
-}
+// pub fn into_vec<T: TryFrom<JsValue>>(
+//     values: Vec<JsValue>,
+// ) -> Result<Vec<T>, <JsValue as TryInto<T>>::Error> {
+//     values
+//         .into_iter()
+//         .map(JsValue::try_into)
+//         .collect::<Result<Vec<T>, <JsValue as TryInto<T>>::Error>>()
+// }
 
 pub fn to_serde_json_value(data: &JsValue) -> Result<Value, JsValue> {
     let data = stringify(data)?;

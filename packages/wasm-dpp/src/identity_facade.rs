@@ -62,7 +62,7 @@ impl IdentityFacadeWasm {
         raw_identity_object: JsValue,
     ) -> Result<ValidationResultWasm, NonConsensusErrorWasm> {
         let identity_json =
-            JsValue::into_serde(&raw_identity_object).expect("unable to serialize identity");
+            serde_wasm_bindgen::from_value(raw_identity_object).expect("unable to serialize identity");
         // TODO: handle the case when
         self.0
             .validate(&identity_json)
