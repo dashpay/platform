@@ -15,6 +15,7 @@ on:
       - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
+      - packages/wasm-dpp/**
 
 jobs:
   js-dpp-tests:
