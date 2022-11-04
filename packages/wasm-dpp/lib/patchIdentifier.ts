@@ -12,7 +12,7 @@ export default function (dppModule: typeof dpp_module) {
     Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
 
     Identifier.prototype.valueOf = function() {
-        return Buffer.from(this.inner())
+        return Buffer.from(this.inner());
     }
 
     // @ts-ignore

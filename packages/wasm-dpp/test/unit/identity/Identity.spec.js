@@ -127,11 +127,11 @@ describe('Identity', () => {
 
   describe('#toBuffer', () => {
     it('should return the same buffer as JS Identity', () => {
-      // Due to polyfill used by webpack, Buffer produced by toBuffer is not the same buffer as
-      // Buffer.from()
+      // Due to browser polyfill, we got two different versions of buffers, and makes
+      // the compatibility test to fail in karma, so hence this hack here.
       rawIdentity.id = Buffer.from(rawIdentity.id.toBuffer());
       const oldIdentity = new JSIdentity(rawIdentity);
-      const result = Buffer.from(identity.toBuffer());
+      const result = identity.toBuffer();
 
       expect(result).to.deep.eq(oldIdentity.toBuffer());
     });
