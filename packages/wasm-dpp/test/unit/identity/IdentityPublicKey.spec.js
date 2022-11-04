@@ -18,7 +18,7 @@ describe('IdentityPublicKey', () => {
       type: KeyType.ECDSA_SECP256K1,
       data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
       purpose: KeyPurpose.AUTHENTICATION,
-      securityLevel: KeySecurityLevel.SECURITY_LEVELS.MASTER,
+      securityLevel: KeySecurityLevel.MASTER,
       readOnly: false,
     };
 
