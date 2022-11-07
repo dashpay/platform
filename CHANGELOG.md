@@ -1,4 +1,4 @@
-## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.24.0-dev.3...v0.24.0-dev.7) (2022-11-04)
+## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.24.0-dev.6...v0.24.0-dev.7) (2022-11-04)
 
 
 ### ⚠ BREAKING CHANGES
@@ -34,14 +34,6 @@
 ### Build System
 
 * publish envoy and dashmate-helper docker images after release ([#595](https://github.com/dashpay/platform/issues/595))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and version to 0.23.0-alpha.8 ([#609](https://github.com/dashpay/platform/issues/609))
-* **release:** update changelog and version to 0.24.0-dev.4 ([#596](https://github.com/dashpay/platform/issues/596))
-* **release:** update changelog and version to 0.24.0-dev.5 ([#598](https://github.com/dashpay/platform/issues/598))
-* **release:** update changelog and version to 0.24.0-dev.6 ([#600](https://github.com/dashpay/platform/issues/600))
 
 ## [0.23.0-alpha.8](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.23.0-alpha.8) (2022-11-04)
 
