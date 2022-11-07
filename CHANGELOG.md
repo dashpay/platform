@@ -1,3 +1,23 @@
+## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.23.0-dev.6...v0.24.0-dev.7) (2022-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** same block execution (#593)
+
+### Features
+
+* **dpp:** initial RS DPP integration ([#483](https://github.com/dashpay/platform/issues/483))
+* **drive:** same block execution ([#593](https://github.com/dashpay/platform/issues/593))
+
+
+### Bug Fixes
+
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+* **dapi:** `getConsensusParamsHandler` was handling wrong Tendermint error ([#601](https://github.com/dashpay/platform/issues/601))
+* **dashmate:** invalid testnet TenderDash genesis ([#608](https://github.com/dashpay/platform/issues/608))
+* **dashmate:** SSL verification server cannot be started ([#606](https://github.com/dashpay/platform/issues/606))
+
 ## [0.23.0-alpha.8](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.23.0-alpha.8) (2022-11-04)
 
 
