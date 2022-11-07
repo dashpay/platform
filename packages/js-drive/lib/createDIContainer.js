@@ -327,6 +327,7 @@ function createDIContainer(options) {
     ),
     dashpayDocuments: asValue(dashpayDocuments),
     tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
+    withdrawalsDataContractId: asValue(options.WITHDRAWALS_DATA_CONTRACT_ID),
   });
 
   /**
@@ -401,19 +402,19 @@ function createDIContainer(options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-      {
-        level: logStdoutLevel,
-        stream: logStdoutStream,
-      },
-      {
-        level: logPrettyFileLevel,
-        stream: logPrettyFileStream,
-      },
-      {
-        level: logJsonFileLevel,
-        stream: logJsonFileStream,
-      },
-    ]),
+        {
+          level: logStdoutLevel,
+          stream: logStdoutStream,
+        },
+        {
+          level: logPrettyFileLevel,
+          stream: logPrettyFileStream,
+        },
+        {
+          level: logJsonFileLevel,
+          stream: logJsonFileStream,
+        },
+      ]),
 
     logger: asFunction(
       (loggerStreams) => pino({

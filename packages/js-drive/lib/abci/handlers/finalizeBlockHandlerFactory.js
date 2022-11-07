@@ -7,6 +7,7 @@ const {
 } = require('@dashevo/abci/types');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
+const { hash } = require('@dashevo/dpp/util/hash');
 
 /**
  *
@@ -29,6 +30,9 @@ function finalizeBlockHandlerFactory(
   logger,
   executionTimer,
   latestBlockExecutionContext,
+  fetchDataContract,
+  documentRepository,
+  withdrawalsDataContractId,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -84,6 +88,19 @@ function finalizeBlockHandlerFactory(
 
     const { thresholdVoteExtensions } = lastCommitInfo;
 
+    const withdrawalsDataContract = await fetchDataContract(withdrawalsDataContractId);
+
+    const pulledWithdrawalDocuments = await documentRepository.find(withdrawalsDataContract, 'withdrawal', {
+      where: [['status', '==', '1']],
+    });
+
+    const pulledWithdrawalDocumentsMap = pulledWithdrawalDocuments.reduce((result, document) => {
+      return {
+        ...result,
+        [document.get('transactionId')]: document,
+      };
+    }, {});
+
     for (const { extension, signature } of (thresholdVoteExtensions || [])) {
       const withdrawalTransactionHash = extension.toString('hex');
 
@@ -92,6 +109,10 @@ function finalizeBlockHandlerFactory(
       ];
 
       if (unsignedWithdrawalTransactionBytes) {
+        const transactionId = hash(unsignedWithdrawalTransactionBytes);
+
+        const document = pulledWithdrawalDocumentsMap[transactionId];
+
         const transactionBytes = Buffer.concat([
           unsignedWithdrawalTransactionBytes,
           signature,
@@ -99,6 +120,10 @@ function finalizeBlockHandlerFactory(
 
         // TODO: think about Core error handling
         await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
+
+        document.set('status', 3);
+
+        await documentRepository.update(document);
       }
     }
 
