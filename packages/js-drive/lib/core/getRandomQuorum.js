@@ -2,6 +2,8 @@ const BufferWriter = require('@dashevo/dashcore-lib/lib/encoding/bufferwriter');
 const Hash = require('@dashevo/dashcore-lib/lib/crypto/hash');
 const QuorumsNotFoundError = require('./errors/QuorumsNotFoundError');
 
+const MIN_QUORUM_MEMBERS = 90;
+
 /**
  * Calculates scores for validator quorum selection
  * it calculates sha256(hash, modifier) per quorumHash
@@ -23,6 +25,17 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
 }
 
 /**
+ * Filter quorum by the number of active members
+ * @param {QuorumEntry[]} validatorQuorums
+ * @return {QuorumEntry[]}
+ */
+function filterValidatorQuorumsByMembersAmount(validatorQuorums) {
+  return validatorQuorums.filter(
+    (validatorQuorum) => validatorQuorum.getAllQuorumMembers().length >= MIN_QUORUM_MEMBERS,
+  );
+}
+
+/**
  * Gets the current validator set quorum hash for a particular core height
  *
  * @typedef {getRandomQuorum}
@@ -38,7 +51,7 @@ function getRandomQuorum(sml, quorumType, entropy) {
     throw new QuorumsNotFoundError(sml, quorumType);
   }
 
-  const validatorQuorumHashes = validatorQuorums
+  const validatorQuorumHashes = filterValidatorQuorumsByMembersAmount(validatorQuorums)
     .map((quorum) => Buffer.from(quorum.quorumHash, 'hex'));
 
   const scoredHashes = calculateQuorumHashScores(validatorQuorumHashes, entropy);
