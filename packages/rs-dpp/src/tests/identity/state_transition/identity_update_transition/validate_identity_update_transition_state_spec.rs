@@ -6,7 +6,6 @@ use dashcore::BlockHeader;
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
     consensus::{basic::TestConsensusError, ConsensusError},
-    document::validation::state::validate_documents_batch_transition_state::HeaderTime,
     identity::{
         state_transition::identity_update_transition::{
             identity_update_transition::IdentityUpdateTransition,
@@ -137,6 +136,42 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
     assert!(matches!(
         state_error,
         StateError::IdentityPublicKeyIsReadOnlyError {
+            public_key_index
+        } if   public_key_index == &0
+    ));
+}
+
+#[tokio::test]
+async fn should_return_error_if_disabling_public_key_is_already_disabled() {
+    let TestData {
+        mut identity,
+        validate_public_keys_mock,
+        mut state_transition,
+        ..
+    } = setup_test();
+    identity.public_keys.get_mut(0).unwrap().disabled_at =
+        Some(Utc::now().timestamp_millis() as u64);
+    state_transition.set_public_key_ids_to_disable(vec![0]);
+
+    let identity_to_return = identity.clone();
+    let mut state_repository_mock = MockStateRepositoryLike::new();
+    state_repository_mock
+        .expect_fetch_identity()
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
+
+    let validator = IdentityUpdateTransitionStateValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(validate_public_keys_mock),
+    );
+    let result = validator
+        .validate(&state_transition)
+        .await
+        .expect("the validation result should be returned");
+    let state_error = get_state_error_from_result(&result, 0);
+
+    assert!(matches!(
+        state_error,
+        StateError::IdentityPublicKeyDisabledError {
             public_key_index
         } if   public_key_index == &0
     ));
