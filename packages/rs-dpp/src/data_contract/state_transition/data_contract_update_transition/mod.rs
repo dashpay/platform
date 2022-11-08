@@ -116,6 +116,10 @@ impl StateTransitionLike for DataContractUpdateTransition {
         &self.execution_context
     }
 
+    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
+        &mut self.execution_context
+    }
+
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         self.execution_context = execution_context
     }

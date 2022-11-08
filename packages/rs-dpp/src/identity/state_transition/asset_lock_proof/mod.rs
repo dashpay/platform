@@ -6,6 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Error, Value as JsonValue};
 
 pub use asset_lock_proof_validator::*;
+pub use asset_lock_public_key_hash_fetcher::*;
 pub use asset_lock_transaction_output_fetcher::*;
 pub use asset_lock_transaction_validator::*;
 pub use chain::*;

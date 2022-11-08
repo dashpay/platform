@@ -148,6 +148,10 @@ impl StateTransitionLike for StateTransition {
         call_method!(self, get_execution_context)
     }
 
+    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
+        call_method!(self, get_execution_context_mut)
+    }
+
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         call_method!(self, set_execution_context, execution_context)
     }

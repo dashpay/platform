@@ -30,6 +30,12 @@ pub enum KeyType {
     BIP13_SCRIPT_HASH = 3,
 }
 
+impl std::default::Default for KeyType {
+    fn default() -> Self {
+        KeyType::ECDSA_SECP256K1
+    }
+}
+
 impl std::fmt::Display for KeyType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
