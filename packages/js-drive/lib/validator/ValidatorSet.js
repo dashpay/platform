@@ -10,6 +10,7 @@ class ValidatorSet {
    * @param {number} validatorSetLLMQType
    * @param {RpcClient} coreRpcClient
    * @param {number} tenderdashP2pPort
+   * @param {quorumTtlIsEnough} quorumTtlIsEnough
    */
   constructor(
     simplifiedMasternodeList,
@@ -18,6 +19,7 @@ class ValidatorSet {
     validatorSetLLMQType,
     coreRpcClient,
     tenderdashP2pPort,
+    quorumTtlIsEnough,
   ) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.getRandomQuorum = getRandomQuorum;
@@ -25,6 +27,7 @@ class ValidatorSet {
     this.validatorSetLLMQType = validatorSetLLMQType;
     this.coreRpcClient = coreRpcClient;
     this.tenderdashP2pPort = tenderdashP2pPort;
+    this.quorumTtlIsEnough = quorumTtlIsEnough;
 
     this.quorum = null;
     this.validators = [];
@@ -111,6 +114,19 @@ class ValidatorSet {
       this.validatorSetLLMQType,
       rotationEntropy,
     );
+
+    const quorumTtlIsEnough = await this.quorumTtlIsEnough(
+      sml,
+      this.validatorSetLLMQType,
+      this.quorum,
+      coreHeight,
+      ValidatorSet.ROTATION_BLOCK_INTERVAL,
+    );
+
+    if (!quorumTtlIsEnough) {
+      // do not rotate. keep previous
+      return;
+    }
 
     const quorumMembers = await this.fetchQuorumMembers(
       this.validatorSetLLMQType,

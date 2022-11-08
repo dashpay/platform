@@ -116,6 +116,7 @@ const ValidatorSet = require('./validator/ValidatorSet');
 const createValidatorSetUpdate = require('./abci/handlers/validator/createValidatorSetUpdate');
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
+const validateQuorumTtlFactory = require('./core/validateQuorumTtlFactory');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 
@@ -343,6 +344,7 @@ function createDIContainer(options) {
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
+    validateQuorumTtl: asFunction(validateQuorumTtlFactory),
     getRandomQuorum: asValue(getRandomQuorum),
     coreZMQClient: asFunction((
       coreZMQHost,
