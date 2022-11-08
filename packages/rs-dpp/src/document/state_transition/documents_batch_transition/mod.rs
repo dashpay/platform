@@ -218,10 +218,6 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {
-    fn calculate_fee(&self) -> Result<u64, crate::ProtocolError> {
-        todo!()
-    }
-
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

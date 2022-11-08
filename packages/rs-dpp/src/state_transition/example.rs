@@ -40,10 +40,6 @@ impl StateTransitionLike for ExampleStateTransition {
         self.transition_type
     }
 
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        unimplemented!()
-    }
-
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature
     }

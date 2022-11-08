@@ -18,7 +18,6 @@ use crate::identity::state_transition::identity_update_transition::identity_upda
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
-mod calculate_state_transition_fee;
 mod state_transition_factory;
 pub use state_transition_factory::*;
 
@@ -27,7 +26,7 @@ use self::state_transition_execution_context::StateTransitionExecutionContext;
 mod state_transition_types;
 pub mod validation;
 
-pub mod fees;
+pub mod fee;
 pub mod state_transition_execution_context;
 
 mod example;
@@ -145,9 +144,6 @@ impl StateTransitionLike for StateTransition {
         call_method!(self, set_signature, signature)
     }
 
-    fn calculate_fee(&self) -> Result<u64, crate::ProtocolError> {
-        call_method!(self, calculate_fee)
-    }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         call_method!(self, get_execution_context)
     }
