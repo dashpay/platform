@@ -19,7 +19,7 @@ use crate::{
         utils::generate_random_identifier_struct,
     },
     util::string_encoding::Encoding,
-    validation::ValidationResult,
+    validation::ValidationResult, state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 
 struct TestData {
@@ -235,6 +235,103 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         state_error_3 ,
         StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[1].base().id
     ));
+}
+
+#[tokio::test]
+async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_and_there_are_duplicate(
+) {
+    let TestData {
+        owner_id,
+        data_contract,
+        documents,
+        ..
+    } = setup_test();
+    let william_doc = documents[3].clone();
+    let leon_doc = documents[4].clone();
+    let owner_id_base58 = owner_id.to_string(Encoding::Base58);
+    let mut state_repository_mock = MockStateRepositoryLike::default();
+    let document_transitions = get_document_transitions_fixture([(
+        Action::Create,
+        vec![william_doc.clone(), leon_doc.clone()],
+    )]);
+
+    let expect_document = leon_doc.to_owned();
+    state_repository_mock
+        .expect_fetch_documents::<Document>()
+        .with(
+            predicate::eq(data_contract.id.clone()),
+            predicate::eq("indexedDocument"),
+            predicate::eq(json!({
+               "where" : [
+                ["$ownerId", "==", owner_id_base58 ],
+                ["firstName", "==", william_doc.get("firstName").unwrap()],
+               ],
+            })),
+            predicate::always(),
+        )
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
+
+    let expect_document = leon_doc.to_owned();
+    state_repository_mock
+        .expect_fetch_documents::<Document>()
+        .with(
+            predicate::eq(data_contract.id.clone()),
+            predicate::eq("indexedDocument"),
+            predicate::eq(json!({
+               "where" : [
+                ["$ownerId", "==", owner_id_base58 ],
+                ["lastName", "==", william_doc.get("lastName").unwrap()],
+               ],
+            })),
+            predicate::always(),
+        )
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
+
+    let expect_document = william_doc.to_owned();
+    state_repository_mock
+        .expect_fetch_documents::<Document>()
+        .with(
+            predicate::eq(data_contract.id.clone()),
+            predicate::eq("indexedDocument"),
+            predicate::eq(json!({
+               "where" : [
+                ["$ownerId", "==", owner_id_base58 ],
+                ["firstName", "==", leon_doc.get("firstName").unwrap()],
+               ],
+            })),
+            predicate::always(),
+        )
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
+
+    let expect_document = william_doc.to_owned();
+    state_repository_mock
+        .expect_fetch_documents::<Document>()
+        .with(
+            predicate::eq(data_contract.id.clone()),
+            predicate::eq("indexedDocument"),
+            predicate::eq(json!({
+               "where" : [
+                ["$ownerId", "==", owner_id_base58 ],
+                ["lastName", "==", leon_doc.get("lastName").unwrap()],
+               ],
+            })),
+            predicate::always(),
+        )
+        .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
+
+    let execution_context = StateTransitionExecutionContext::default();
+    execution_context.enable_dry_run();
+
+    let result = validate_documents_uniqueness_by_indices(
+        &state_repository_mock,
+        &owner_id,
+        &document_transitions,
+        &data_contract,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
+    assert!(result.is_valid());
 }
 
 #[tokio::test]

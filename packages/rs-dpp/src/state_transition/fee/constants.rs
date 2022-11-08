@@ -1,5 +1,3 @@
-use dashcore::psbt::raw::Key;
-
 use crate::identity::KeyType;
 
 pub const BASE_ST_PROCESSING_FEE: i64 = 10000; // 84000

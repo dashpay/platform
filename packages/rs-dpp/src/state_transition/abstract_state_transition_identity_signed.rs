@@ -69,9 +69,9 @@ where
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
-            }
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
+                public_key_type: identity_public_key.get_type(),
+            }),
         }
     }
 

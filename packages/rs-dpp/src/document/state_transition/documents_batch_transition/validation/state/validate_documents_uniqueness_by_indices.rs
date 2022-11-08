@@ -7,7 +7,6 @@ use crate::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         Document,
     },
-    identity::state_transition::asset_lock_proof::ExecutionContext,
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -66,6 +65,10 @@ where
             });
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
+
+        if execution_context.is_dry_run() {
+            return Ok(validation_result);
+        }
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;

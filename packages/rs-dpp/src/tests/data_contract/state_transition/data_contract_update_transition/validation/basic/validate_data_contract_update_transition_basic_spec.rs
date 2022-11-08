@@ -1,14 +1,21 @@
+use anyhow::anyhow;
 use std::sync::Arc;
 use test_case::test_case;
 
 use crate::{
     consensus::basic::BasicError,
-    data_contract::state_transition::{
-        data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
-        property_names, DataContractUpdateTransition,
+    data_contract::{
+        state_transition::{
+            data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
+            property_names, DataContractUpdateTransition,
+        },
+        DataContract,
     },
-    state_repository::MockStateRepositoryLike,
-    state_transition::{StateTransitionConvert, StateTransitionType},
+    state_repository::{self, MockStateRepositoryLike},
+    state_transition::{
+        state_transition_execution_context::StateTransitionExecutionContext,
+        StateTransitionConvert, StateTransitionType,
+    },
     tests::{
         fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture},
         utils::{get_basic_error_from_result, get_schema_error},
@@ -239,7 +246,7 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
     assert_eq!(Some("minItems"), schema_error.keyword(),);
 }
 
-#[test_case(property_names::SIGNATURE, 65)]
+#[test_case(property_names::SIGNATURE, 96)]
 #[tokio::test]
 async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) {
     let TestData {
@@ -399,6 +406,36 @@ async fn should_return_valid_result() {
         Arc::new(version_validator),
     )
     .expect("validator should be created");
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+
+    assert!(result.is_valid());
+}
+
+#[tokio::test]
+async fn should_not_check_data_contract_on_dry_run() {
+    let TestData {
+        version_validator,
+        state_repository_mock,
+        raw_state_transition,
+    } = setup_test();
+
+    let validator = DataContractUpdateTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(version_validator),
+    )
+    .expect("validator should be created");
+
+    let mut state_repository_mock = MockStateRepositoryLike::new();
+    state_repository_mock
+        .expect_fetch_data_contract::<DataContract>()
+        .returning(|_, _| Err(anyhow!("some error")));
+
+    let execution_context = StateTransitionExecutionContext::default();
+    execution_context.enable_dry_run();
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())

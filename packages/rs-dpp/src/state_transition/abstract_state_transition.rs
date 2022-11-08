@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    identity::{state_transition::asset_lock_proof::ExecutionContext, KeyType},
+    identity::KeyType,
     prelude::ProtocolError,
     util::{
         hash,
@@ -86,7 +86,9 @@ pub trait StateTransitionLike:
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
+                    public_key_type: key_type,
+                })
             }
         };
         Ok(())
@@ -104,7 +106,7 @@ pub trait StateTransitionLike:
             }
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key),
             KeyType::BIP13_SCRIPT_HASH => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type })
             }
         }
     }

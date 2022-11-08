@@ -6,7 +6,7 @@ use crate::{
         DocumentsBatchTransition,
     },
     state_repository::{MockStateRepositoryLike},
-    state_transition::StateTransitionConvert,
+    state_transition::{StateTransitionConvert, state_transition_execution_context::StateTransitionExecutionContext},
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
@@ -857,7 +857,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
 }
 
 #[tokio::test]
-async fn signature_should_be_not_longer_than_65_bytes() {
+async fn signature_should_be_not_longer_than_96_bytes() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -865,7 +865,7 @@ async fn signature_should_be_not_longer_than_65_bytes() {
         ..
     } = setup_test(Action::Create);
 
-    let array = [0u8; 66].to_vec();
+    let array = [0u8; 97].to_vec();
     raw_state_transition["signature"] = json!(array);
 
     let result = validate_documents_batch_transition_basic(
@@ -924,6 +924,34 @@ async fn validation_should_be_successful() {
         &raw_state_transition,
         &state_repository_mock,
         &Default::default(),
+    )
+    .await
+    .expect("validation result should be returned");
+
+    assert!(result.is_valid());
+}
+
+#[tokio::test]
+async fn should_not_validate_document_transitions_on_dry_run() {
+    let TestData {
+        raw_state_transition,
+        protocol_version_validator,
+        ..
+    } = setup_test(Action::Create);
+
+    let execution_context = StateTransitionExecutionContext::default();
+    execution_context.enable_dry_run();
+
+    let mut state_repository_mock = MockStateRepositoryLike::new();
+    state_repository_mock
+        .expect_fetch_data_contract::<DataContract>()
+        .return_once(|_, _| Err(anyhow!("some error")));
+
+    let result = validate_documents_batch_transition_basic(
+        &protocol_version_validator,
+        &raw_state_transition,
+        &state_repository_mock,
+        &execution_context,
     )
     .await
     .expect("validation result should be returned");

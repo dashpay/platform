@@ -10,7 +10,7 @@ pub enum SignatureError {
     #[error("Public key {public_key_id} doesn't exist")]
     MissingPublicKeyError { public_key_id: u64 },
 
-    #[error("Unsupported signature type {public_key_type}. Please use ECDSA (0) or BLS (1) keys to sign the state transition")]
+    #[error("Unsupported signature type {public_key_type}. Please use ECDSA (0), BLS (1) or ECDSA_HASH160 (2) keys to sign the state transition")]
     InvalidIdentityPublicKeyTypeError { public_key_type: KeyType },
 
     #[error("Invalid State Transition signature")]

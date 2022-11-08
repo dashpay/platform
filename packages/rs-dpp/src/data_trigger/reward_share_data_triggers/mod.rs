@@ -27,6 +27,7 @@ where
     SR: StateRepositoryLike,
 {
     let mut result = DataTriggerExecutionResult::default();
+    let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
     let dt_create = match document_transition {
@@ -46,23 +47,25 @@ where
     let pay_to_id = data.get_string(PROPERTY_PAY_TO_ID)?;
     let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
 
-    // Do not allow creating document if ownerId is not in SML
-    let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+    if !is_dry_run {
+        // Do not allow creating document if ownerId is not in SML
+        let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
 
-    let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+        let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
 
-    let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
-        hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
-            == context.owner_id.to_buffer()
-    });
+        let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
+            hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
+                == context.owner_id.to_buffer()
+        });
 
-    if !owner_id_in_sml {
-        let err = create_error(
-            context,
-            dt_create,
-            "Only masternode identities can share rewards".to_string(),
-        );
-        result.add_error(err.into());
+        if !owner_id_in_sml {
+            let err = create_error(
+                context,
+                dt_create,
+                "Only masternode identities can share rewards".to_string(),
+            );
+            result.add_error(err.into());
+        }
     }
 
     // payToId identity exists
@@ -75,7 +78,7 @@ where
         )
         .await?;
 
-    if maybe_identifier.is_none() {
+    if !is_dry_run && maybe_identifier.is_none() {
         let err = create_error(
             context,
             dt_create,
@@ -95,6 +98,10 @@ where
             context.state_transition_execution_context,
         )
         .await?;
+
+    if is_dry_run {
+        return Ok(result);
+    }
 
     if documents.len() >= MAX_DOCUMENTS {
         let err = create_error(
@@ -133,10 +140,7 @@ mod test {
 
     use crate::{
         data_contract::DataContract,
-        data_trigger::{
-            dashpay_data_triggers::create_contract_request_data_trigger,
-            DataTriggerExecutionContext,
-        },
+        data_trigger::DataTriggerExecutionContext,
         document::{
             document_transition::{Action, DocumentTransition, DocumentTransitionExt},
             Document,
@@ -429,5 +433,38 @@ mod test {
             "Reward shares cannot contain more than 16 identities",
             error.to_string()
         );
+    }
+
+    #[tokio::test]
+    async fn should_pass_on_dry_run() {
+        let TestData {
+            document_transition,
+            data_contract,
+            top_level_identity,
+            ..
+        } = setup_test();
+
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        state_repository_mock
+            .expect_fetch_identity::<Vec<u8>>()
+            .returning(move |_, _| Ok(None));
+        state_repository_mock
+            .expect_fetch_documents::<Document>()
+            .returning(move |_, _, _, _| Ok(vec![]));
+
+        let execution_context = StateTransitionExecutionContext::default();
+        execution_context.enable_dry_run();
+
+        let context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &top_level_identity,
+            state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
+        };
+        let result =
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+                .await
+                .expect("the execution result should be returned");
+        assert!(result.is_ok());
     }
 }

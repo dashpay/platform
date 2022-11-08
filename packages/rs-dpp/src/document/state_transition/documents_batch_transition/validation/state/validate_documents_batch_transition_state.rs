@@ -1,3 +1,4 @@
+use dashcore::BlockHeader;
 use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -25,11 +26,6 @@ use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BlockHeader {
-    pub time: HeaderTime,
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HeaderTime {
@@ -75,31 +71,43 @@ pub async fn validate_document_transitions(
     let mut result = ValidationResult::default();
     let transitions: Vec<_> = document_transitions.into_iter().collect();
 
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // data contract to proceed with following logic
+    let tmp_execution_context = StateTransitionExecutionContext::default();
+
+    // Data Contract must exist
     let data_contract = state_repository
-        .fetch_data_contract::<DataContract>(data_contract_id, execution_context)
+        .fetch_data_contract::<DataContract>(data_contract_id, &tmp_execution_context)
         .await
         .map_err(|_| ProtocolError::DataContractNotPresentError {
             data_contract_id: data_contract_id.clone(),
         })?;
 
+    execution_context.add_operations(tmp_execution_context.get_operations());
+
     let fetched_documents =
         fetch_documents(state_repository, &transitions, execution_context).await?;
-    let header: BlockHeader = state_repository
+
+    // Calculate time window for timestamp
+    let block_header: BlockHeader = state_repository
         .fetch_latest_platform_block_header()
         .await?;
-    let last_header_time_millis = (header.time.seconds * 1000) as u64;
+    let last_header_time_millis = block_header.time as u64 * 1000;
 
-    for transition in transitions.iter() {
-        let validation_result = validate_transition(
-            transition.as_ref(),
-            &fetched_documents,
-            last_header_time_millis,
-            owner_id,
-        );
-        result.merge(validation_result);
-    }
-    if !result.is_valid() {
-        return Ok(result);
+    if !execution_context.is_dry_run() {
+        for transition in transitions.iter() {
+            let validation_result = validate_transition(
+                transition.as_ref(),
+                &fetched_documents,
+                last_header_time_millis,
+                owner_id,
+            );
+            result.merge(validation_result);
+        }
+        if !result.is_valid() {
+            return Ok(result);
+        }
     }
 
     let validation_result = validate_documents_uniqueness_by_indices(
