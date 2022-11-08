@@ -20,11 +20,11 @@ describe('getRandomQuorum', () => {
     smlMock.getQuorumsOfType.returns([
       {
         quorumHash: Buffer.alloc(1, 32).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(90)),
+        getAllQuorumMembers: this.sinon.stub().returns(new Array(90).fill({ isValid: true })),
       },
       {
         quorumHash: Buffer.alloc(1, 64).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(90)),
+        getAllQuorumMembers: this.sinon.stub().returns(new Array(90).fill({ isValid: true })),
       },
     ]);
 
@@ -61,14 +61,17 @@ describe('getRandomQuorum', () => {
   });
 
   it('should filter quorums by minQuorumMembers', function it() {
+    const quorumMembersToFilter = new Array(90).fill({ isValid: true });
+    quorumMembersToFilter[0].isValid = false;
+
     smlMock.getQuorumsOfType.returns([
       {
         quorumHash: Buffer.alloc(1, 64).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(90)),
+        getAllQuorumMembers: this.sinon.stub().returns(new Array(90).fill({ isValid: true })),
       },
       {
         quorumHash: Buffer.alloc(1, 32).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(89)),
+        getAllQuorumMembers: this.sinon.stub().returns(quorumMembersToFilter),
       },
     ]);
 
