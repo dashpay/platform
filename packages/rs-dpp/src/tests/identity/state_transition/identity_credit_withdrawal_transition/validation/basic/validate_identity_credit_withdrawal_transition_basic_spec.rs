@@ -339,6 +339,25 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             assert_eq!(error.instance_path().to_string(), "/coreFee");
             assert_eq!(error.keyword().unwrap(), "minimum");
         }
+
+        #[tokio::test]
+        pub async fn should_be_in_a_fibonacci_sequence() {
+            let (mut raw_state_transition, validator) = setup_test();
+
+            raw_state_transition.set_key_value("coreFee", 6);
+
+            let result = validator.validate(&raw_state_transition).await.unwrap();
+
+            let errors = assert_consensus_errors!(
+                result,
+                ConsensusError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+                1
+            );
+
+            let error = errors.first().unwrap();
+
+            assert_eq!(error.core_fee(), 6);
+        }
     }
 
     mod pooling {
@@ -400,13 +419,15 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         }
     }
 
-    mod output {
+    mod output_script {
+        use crate::identity::core_script::CoreScript;
+
         use super::*;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("output");
+            raw_state_transition.remove_key("outputScript");
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -419,7 +440,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             match error.kind() {
                 ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"output\"");
+                    assert_eq!(property.to_string(), "\"outputScript\"");
                 }
                 _ => panic!("Expected to be missing property"),
             }
@@ -429,23 +450,23 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("output", vec!["string"; 65]);
+            raw_state_transition.set_key_value("outputScript", vec!["string"; 23]);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 65);
+            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 23);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/output/0");
+            assert_eq!(error.instance_path().to_string(), "/outputScript/0");
             assert_eq!(error.keyword().unwrap(), "type");
         }
 
         #[tokio::test]
-        pub async fn should_be_not_shorter_than_10_bytes() {
+        pub async fn should_be_not_shorter_than_23_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("output", vec![0; 9]);
+            raw_state_transition.set_key_value("outputScript", vec![0; 9]);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -453,15 +474,15 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/output");
+            assert_eq!(error.instance_path().to_string(), "/outputScript");
             assert_eq!(error.keyword().unwrap(), "minItems");
         }
 
         #[tokio::test]
-        pub async fn should_be_not_longer_than_10017_bytes() {
+        pub async fn should_be_not_longer_than_25_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("output", vec![0; 10018]);
+            raw_state_transition.set_key_value("outputScript", vec![0; 10018]);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -469,8 +490,27 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/output");
+            assert_eq!(error.instance_path().to_string(), "/outputScript");
             assert_eq!(error.keyword().unwrap(), "maxItems");
+        }
+
+        #[tokio::test]
+        pub async fn should_be_of_a_proper_type() {
+            let (mut raw_state_transition, validator) = setup_test();
+
+            raw_state_transition.set_key_value("outputScript", vec![6; 23]);
+
+            let result = validator.validate(&raw_state_transition).await.unwrap();
+
+            let errors = assert_consensus_errors!(
+                result,
+                ConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+                1
+            );
+
+            let error = errors.first().unwrap();
+
+            assert_eq!(error.output_script(), CoreScript::from_bytes(vec![6; 23]));
         }
     }
 

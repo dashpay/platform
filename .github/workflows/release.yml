@@ -75,7 +75,7 @@ jobs:
         if: ${{ matrix.os == 'macos-11' }}
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           default: true
           target: ${{ steps.set-target.outputs.result }}
 

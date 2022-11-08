@@ -125,6 +125,12 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
             "properties": {
                 "name": {
                     "type": "string"
+                },
+                "array": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
                 }
             },
             "additionalProperties": false

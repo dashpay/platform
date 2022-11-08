@@ -1,3 +1,4 @@
+use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
 use serde_json::{json, Value};
 
 use crate::{
@@ -15,7 +16,7 @@ pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
         "amount": 1042,
         "coreFee": 2,
         "pooling": Pooling::Never,
-        "output": vec![0_u8; 20],
+        "outputScript": Script::new_p2pkh(&PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap()).to_bytes(),
         "signature": vec![0_u8; 65],
         "signaturePublicKeyId": 0,
     })
@@ -29,7 +30,7 @@ pub fn identity_credit_withdrawal_transition_fixture_json() -> Value {
         "amount": 1042,
         "coreFee": 2,
         "pooling": Pooling::Never,
-        "output": encode(&vec![0_u8; 20], Encoding::Base64),
+        "outputScript": encode(&Script::new_p2pkh(&PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap()).to_bytes(), Encoding::Base64),
         "signature": encode(&vec![0_u8; 65], Encoding::Base64),
         "signaturePublicKeyId": 0,
     })

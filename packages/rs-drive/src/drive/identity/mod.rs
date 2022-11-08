@@ -45,6 +45,8 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
+pub mod withdrawal_queue;
+
 const IDENTITY_KEY: [u8; 1] = [0];
 
 impl Drive {

@@ -1,21 +1,25 @@
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
-    identity::KeyID,
+    identity::{core_script::CoreScript, KeyID},
     prelude::Identifier,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
+    util::{
+        json_value::{JsonValueExt, ReplaceWith},
+        string_encoding::{self, Encoding},
+    },
     ProtocolError,
 };
 
 use super::properties::{
-    PROPERTY_IDENTITY_ID, PROPERTY_OUTPUT, PROPERTY_OWNER_ID, PROPERTY_SIGNATURE,
+    PROPERTY_IDENTITY_ID, PROPERTY_OUTPUT_SCRIPT, PROPERTY_SIGNATURE,
     PROPERTY_SIGNATURE_PUBLIC_KEY_ID,
 };
 
@@ -44,9 +48,9 @@ pub struct IdentityCreditWithdrawalTransition {
     pub transition_type: StateTransitionType,
     pub identity_id: Identifier,
     pub amount: u64,
-    pub core_fee: u64,
+    pub core_fee: u32,
     pub pooling: Pooling,
-    pub output: Vec<u8>,
+    pub output_script: CoreScript,
     pub signature_public_key_id: KeyID,
     pub signature: Vec<u8>,
     #[serde(skip)]
@@ -62,7 +66,7 @@ impl std::default::Default for IdentityCreditWithdrawalTransition {
             amount: Default::default(),
             core_fee: Default::default(),
             pooling: Default::default(),
-            output: Default::default(),
+            output_script: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
             execution_context: Default::default(),
@@ -86,6 +90,18 @@ impl IdentityCreditWithdrawalTransition {
     pub fn from_raw_object(
         mut raw_object: JsonValue,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
+        let output_script_option = raw_object.get(PROPERTY_OUTPUT_SCRIPT);
+
+        let output_script_string = output_script_option
+            .ok_or_else(|| anyhow!("uanble to get outputScript"))
+            .and_then(|value| serde_json::from_value(value.clone()).map_err(|e| anyhow!(e)))
+            .map(|bytes: Vec<u8>| string_encoding::encode(&bytes, Encoding::Base64))?;
+
+        raw_object.insert(
+            PROPERTY_OUTPUT_SCRIPT.to_owned(),
+            JsonValue::String(output_script_string),
+        )?;
+
         raw_object
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
 
@@ -152,11 +168,30 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
     }
 
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE, PROPERTY_OUTPUT]
+        vec![PROPERTY_SIGNATURE]
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        let output_script_option = json_value.get(PROPERTY_OUTPUT_SCRIPT);
+
+        let output_script_bytes = output_script_option
+            .ok_or_else(|| anyhow!("uanble to get outputScript"))
+            .and_then(|value| serde_json::from_value(value.clone()).map_err(|e| anyhow!(e)))
+            .and_then(|string: String| {
+                string_encoding::decode(&string, Encoding::Base64).map_err(|e| anyhow!(e))
+            })?;
+
+        json_value.insert(
+            PROPERTY_OUTPUT_SCRIPT.to_owned(),
+            JsonValue::Array(
+                output_script_bytes
+                    .into_iter()
+                    .map(JsonValue::from)
+                    .collect(),
+            ),
+        )?;
 
         json_value
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Bytes)?;

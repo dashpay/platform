@@ -31,11 +31,11 @@
         0
       ]
     },
-    "output": {
+    "outputScript": {
       "type": "array",
       "byteArray": true,
-      "minItems": 10,
-      "maxItems": 10017
+      "minItems": 23,
+      "maxItems": 25
     },
     "signature": {
       "type": "array",
@@ -56,7 +56,7 @@
     "amount",
     "coreFee",
     "pooling",
-    "output",
+    "outputScript",
     "signature",
     "signaturePublicKeyId"
   ]

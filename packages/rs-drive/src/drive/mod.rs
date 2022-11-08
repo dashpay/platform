@@ -108,6 +108,10 @@ pub enum RootTree {
     SpentAssetLockTransactions = 3,
     /// Pools
     Pools = 4,
+    /// Misc
+    Misc = 5,
+    /// Asset Unlock Transactions
+    WithdrawalTransactions = 6,
 }
 
 /// Storage cost
@@ -133,6 +137,8 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::PublicKeyHashesToIdentities => &[2],
             RootTree::SpentAssetLockTransactions => &[3],
             RootTree::Pools => &[4],
+            RootTree::Misc => &[5],
+            RootTree::WithdrawalTransactions => &[6],
         }
     }
 }
