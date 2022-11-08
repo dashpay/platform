@@ -21,6 +21,10 @@ where
     SR: StateRepositoryLike,
 {
     let mut result = DataTriggerExecutionResult::default();
+    if context.state_transition_execution_context.is_dry_run() {
+        return Ok(result);
+    }
+
     let top_level_identity = top_level_identity.context("Top Level Identity must be defined")?;
 
     let dt_create = match document_transition {
@@ -65,4 +69,41 @@ where
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod test {
+    use super::create_feature_flag_data_trigger;
+    use crate::{
+        data_trigger::DataTriggerExecutionContext,
+        document::document_transition::DocumentTransition,
+        state_repository::MockStateRepositoryLike,
+        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+        tests::fixtures::get_data_contract_fixture,
+    };
+
+    #[tokio::test]
+    async fn should_successfully_execute_on_dry_run() {
+        let transition_execution_context = StateTransitionExecutionContext::default();
+        let state_repository = MockStateRepositoryLike::new();
+        let data_contract = get_data_contract_fixture(None);
+        let owner_id = data_contract.owner_id().to_owned();
+
+        let document_transition = DocumentTransition::Create(Default::default());
+        let data_trigger_context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &owner_id,
+            state_repository: &state_repository,
+            state_transition_execution_context: &transition_execution_context,
+        };
+
+        transition_execution_context.enable_dry_run();
+
+        let result =
+            create_feature_flag_data_trigger(&document_transition, &data_trigger_context, None)
+                .await
+                .expect("the execution result should be returned");
+
+        assert!(result.is_ok());
+    }
 }

@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
+    identity::get_biggest_possible_identity,
     prelude::{Identifier, Identity},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -8,17 +11,39 @@ use crate::{
 
 use super::identity_update_transition::IdentityUpdateTransition;
 
+struct ApplyIdentityUpdateTransition<SR> {
+    state_repository: Arc<SR>,
+}
+
+impl<SR> ApplyIdentityUpdateTransition<SR>
+where
+    SR: StateRepositoryLike,
+{
+    pub fn new(state_repository: Arc<SR>) -> Self {
+        Self { state_repository }
+    }
+
+    async fn apply(&self, state_transition: IdentityUpdateTransition) -> Result<(), ProtocolError> {
+        apply_identity_update_transition(self.state_repository.as_ref(), state_transition).await
+    }
+}
+
 /// Apply Identity Update state transition
 pub async fn apply_identity_update_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: IdentityUpdateTransition,
 ) -> Result<(), ProtocolError> {
-    let maybe_identity: Option<Identity> = state_repository
+    let mut maybe_identity: Option<Identity> = state_repository
         .fetch_identity(
             state_transition.get_identity_id(),
             state_transition.get_execution_context(),
         )
         .await?;
+
+    if state_transition.get_execution_context().is_dry_run() {
+        maybe_identity = Some(get_biggest_possible_identity())
+    }
+
     let mut identity = match maybe_identity {
         None => {
             return Err(identity_not_found_error(

@@ -1,16 +1,30 @@
-use anyhow::anyhow;
+use std::collections::HashSet;
+
+use lazy_static::lazy_static;
 
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
-    identity::{validation::validate_identity_existence, KeyType},
+    identity::KeyType,
+    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
+        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionIdentitySigned,
     },
     validation::ValidationResult,
     ProtocolError,
 };
+
+lazy_static! {
+    static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
+        let mut keys = HashSet::new();
+        keys.insert(KeyType::ECDSA_SECP256K1);
+        keys.insert(KeyType::BLS12_381);
+        keys.insert(KeyType::ECDSA_HASH160);
+        keys
+    };
+}
 
 pub async fn validate_state_transition_identity_signature(
     state_repository: &impl StateRepositoryLike,
@@ -18,20 +32,31 @@ pub async fn validate_state_transition_identity_signature(
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut validation_result = ValidationResult::<()>::default();
 
-    // Owner must exist
-    let result = validate_identity_existence(
-        state_repository,
-        state_transition.get_owner_id(),
-        state_transition.get_execution_context(),
-    )
-    .await?;
-    if !result.is_valid() {
-        return Ok(result.into_result_without_data());
-    }
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // identity to proceed with following logic
+    let tmp_execution_context = StateTransitionExecutionContext::default();
 
-    let identity = result
-        .data()
-        .ok_or_else(|| anyhow!("the result doesn't contain any Identity"))?;
+    // Owner must exist
+    let maybe_identity = state_repository
+        .fetch_identity::<Identity>(state_transition.get_owner_id(), &tmp_execution_context)
+        .await?;
+
+    // Collect operations back from temporary context
+    state_transition
+        .get_execution_context()
+        .add_operations(tmp_execution_context.get_operations());
+
+    let identity = match maybe_identity {
+        Some(identity) => identity,
+        None => {
+            validation_result.add_error(SignatureError::IdentityNotFoundError {
+                identity_id: state_transition.get_owner_id().to_owned(),
+            });
+            return Ok(validation_result);
+        }
+    };
+
     let signature_public_key_id = state_transition.get_signature_public_key_id();
     let maybe_public_key = identity.get_public_key_by_id(signature_public_key_id);
 
@@ -45,9 +70,7 @@ pub async fn validate_state_transition_identity_signature(
         Some(pk) => pk,
     };
 
-    if public_key.get_type() != KeyType::ECDSA_SECP256K1
-        && public_key.get_type() != KeyType::ECDSA_HASH160
-    {
+    if !SUPPORTED_KEY_TYPES.contains(&public_key.get_type()) {
         validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError {
             public_key_type: public_key.get_type(),
         });
@@ -56,8 +79,12 @@ pub async fn validate_state_transition_identity_signature(
 
     let operation = SignatureVerificationOperation::new(public_key.key_type);
     state_transition
-        .get_execution_context_mut()
+        .get_execution_context()
         .add_operation(Operation::SignatureVerification(operation));
+
+    if state_transition.get_execution_context().is_dry_run() {
+        return Ok(validation_result);
+    }
 
     let signature_is_valid = state_transition.verify_signature(public_key);
 
@@ -97,6 +124,11 @@ fn convert_to_consensus_signature_error(
                 public_key_id: public_key.get_id(),
             }),
         ),
+        ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type } => {
+            Ok(ConsensusError::SignatureError(
+                SignatureError::InvalidIdentityPublicKeyTypeError { public_key_type },
+            ))
+        }
         ProtocolError::Error(_) => Err(error),
         _ => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError,
@@ -387,6 +419,31 @@ mod test {
             signature_error,
             SignatureError::InvalidSignaturePublicKeySecurityLevelError { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn should_not_verify_signature_on_dry_run() {
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        let raw_identity = identity_fixture_raw_object();
+        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let owner_id = identity.get_id();
+        let mut state_transition = get_mock_state_transition();
+
+        state_transition.owner_id = owner_id.clone();
+        state_repository_mock
+            .expect_fetch_identity()
+            .returning(move |_, _| Ok(Some(identity.clone())));
+        state_transition.return_error = Some(1);
+        state_transition.get_execution_context().enable_dry_run();
+
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
+
+        assert!(result.is_valid())
     }
 
     #[tokio::test]

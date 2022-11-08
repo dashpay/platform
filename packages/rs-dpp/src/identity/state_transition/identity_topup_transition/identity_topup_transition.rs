@@ -14,7 +14,7 @@ use crate::state_transition::{
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;
-use crate::{InvalidVectorSizeError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";

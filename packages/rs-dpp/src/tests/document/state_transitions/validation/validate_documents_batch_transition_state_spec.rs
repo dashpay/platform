@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use chrono::Utc;
+use dashcore::BlockHeader;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -21,9 +22,9 @@ use crate::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
         },
-        utils::generate_random_identifier_struct,
+        utils::{generate_random_identifier_struct, new_block_header},
     },
-    validation::ValidationResult,
+    validation::ValidationResult, state_transition::StateTransitionLike,
 };
 
 struct TestData {
@@ -68,15 +69,10 @@ fn setup_test() -> TestData {
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
         .returning(move |_, _| Ok(data_contract_to_return.clone()));
+
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
-        .returning(|| {
-            Ok(BlockHeader {
-                time: HeaderTime {
-                    seconds: Utc::now().timestamp() as usize,
-                },
-            })
-        });
+        .returning(|| Ok(new_block_header(Some(Utc::now().timestamp() as u32))));
 
     TestData {
         owner_id,
@@ -424,7 +420,6 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
             .await
             .expect("validation result should be returned");
 
-    println!("the validation result is {:#?}", validation_result);
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4008, state_error.get_code());
     assert!(matches!(
@@ -434,6 +429,51 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
             timestamp_name == "createdAt"
         }
     ));
+}
+
+#[tokio::test]
+async fn should_not_validate_time_in_block_window_on_dry_run() {
+    let TestData {
+        data_contract,
+        owner_id,
+        documents,
+        mut state_repository_mock,
+        ..
+    } = setup_test();
+
+    let document_transitions =
+        get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+    let raw_document_transitions: Vec<JsonValue> = document_transitions
+        .into_iter()
+        .map(|dt| dt.to_object().unwrap())
+        .collect();
+    let mut state_transition = DocumentsBatchTransition::from_raw_object(
+        json!({
+            "ownerId" : owner_id.to_buffer(),
+            "contractId" : data_contract.id.to_buffer(),
+            "transitions": raw_document_transitions}),
+        vec![data_contract.clone()],
+    )
+    .expect("documents batch state transition should be created");
+
+    state_transition.get_execution_context().enable_dry_run();
+    let now_ts_minus_6_mins =
+        Utc::now().timestamp_millis() - Duration::from_secs(60 * 6).as_millis() as i64;
+    state_transition
+        .transitions
+        .iter_mut()
+        .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
+
+    state_repository_mock
+        .expect_fetch_documents::<Document>()
+        .returning(move |_, _, _, _| Ok(vec![]));
+
+    let result =
+        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
+            .await
+            .expect("validation result should be returned");
+
+    assert!(result.is_valid());
 }
 
 #[tokio::test]
@@ -478,7 +518,6 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
             .await
             .expect("validation result should be returned");
 
-    println!("the validation result is {:#?}", validation_result);
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4008, state_error.get_code());
     assert!(matches!(

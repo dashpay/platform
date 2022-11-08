@@ -21,6 +21,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
 
+pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
 

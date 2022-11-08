@@ -1,22 +1,15 @@
 use crate::state_transition::StateTransitionLike;
 
-use super::{
-    calculate_operations_costs,
-    constants::{DEFAULT_USER_TIP, FEE_MULTIPLIER},
-    operations::PreCalculatedOperation,
-};
+use super::{calculate_operations_fees, constants::DEFAULT_USER_TIP};
 
 pub fn calculate_state_transition_fee(state_transition: &impl StateTransitionLike) -> i64 {
     let execution_context = state_transition.get_execution_context();
-    let PreCalculatedOperation {
-        storage_cost,
-        processing_cost,
-    } = calculate_operations_costs(execution_context.get_operations());
+    let fee = calculate_operations_fees(execution_context.get_operations());
 
     // Is not implemented yet
     let storage_refund = 0;
 
-    (storage_cost + processing_cost) * FEE_MULTIPLIER + DEFAULT_USER_TIP - storage_refund
+    (fee.storage + fee.processing) + DEFAULT_USER_TIP - storage_refund
 }
 
 #[cfg(test)]
@@ -49,7 +42,7 @@ mod test {
             .sign_by_private_key(&private_key, KeyType::ECDSA_SECP256K1)
             .expect("signing should be successful");
 
-        let mut execution_context = StateTransitionExecutionContext::default();
+        let execution_context = StateTransitionExecutionContext::default();
         execution_context.add_operation(Operation::Read(ReadOperation::new(10)));
         execution_context.add_operation(Operation::Write(WriteOperation::new(5, 5)));
         execution_context.add_operation(Operation::Delete(DeleteOperation::new(6, 6)));

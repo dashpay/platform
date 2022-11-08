@@ -89,6 +89,10 @@ where
         let raw_data_contract_id = raw_data_contract.get_bytes(contract_property_names::ID)?;
         let data_contract_id = Identifier::from_bytes(&raw_data_contract_id)?;
 
+        if execution_context.is_dry_run() {
+            return Ok(result);
+        }
+
         // Data Contract should exists
         let existing_data_contract = match self
             .state_repository

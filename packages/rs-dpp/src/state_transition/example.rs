@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::ProtocolError;
-
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionConvert, StateTransitionLike, StateTransitionType,

@@ -19,7 +19,7 @@ pub use signature_verification_operation::*;
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
 pub const STORAGE_PROCESSING_CREDIT_PER_BYTE: i64 = 5000;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Operation {
     Read(ReadOperation),

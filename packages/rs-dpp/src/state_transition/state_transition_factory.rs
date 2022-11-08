@@ -127,7 +127,7 @@ mod test {
             document_transition::{Action, DocumentTransitionObjectLike},
             DocumentsBatchTransition,
         },
-        state_repository::{self, MockStateRepositoryLike},
+        state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionConvert},
         tests::fixtures::get_documents_fixture_with_owner_id_from_contract,
         tests::fixtures::{get_data_contract_fixture, get_document_transitions_fixture},

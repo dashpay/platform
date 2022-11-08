@@ -1,7 +1,6 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-use futures::executor;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
@@ -43,8 +42,15 @@ pub trait StateRepositoryLike: Send + Sync {
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 
-    /// Store Document
-    async fn store_document(
+    /// Create Document
+    async fn create_document(
+        &self,
+        document: &Document,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    /// Update Document
+    async fn update_document(
         &self,
         document: &Document,
         execution_context: &StateTransitionExecutionContext,

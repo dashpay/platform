@@ -1,19 +1,33 @@
-use self::operations::{Operation, OperationLike, PreCalculatedOperation};
+use std::borrow::Borrow;
+
+use self::{
+    constants::FEE_MULTIPLIER,
+    operations::{Operation, OperationLike},
+};
 
 pub mod calculate_state_transition_fee;
 pub mod constants;
 pub mod operations;
 
-pub fn calculate_operations_costs<'a>(
-    operations: impl IntoIterator<Item = &'a Operation>,
-) -> PreCalculatedOperation {
-    let mut storage_cost: i64 = 0;
-    let mut processing_cost: i64 = 0;
+#[derive(Default)]
+pub struct Fees {
+    storage: i64,
+    processing: i64,
+}
+
+pub fn calculate_operations_fees(
+    operations: impl IntoIterator<Item = impl Borrow<Operation>>,
+) -> Fees {
+    let mut fees = Fees::default();
 
     for operation in operations.into_iter() {
-        processing_cost += operation.get_processing_cost();
-        storage_cost += operation.get_storage_cost();
+        let operation = operation.borrow();
+        fees.processing += operation.get_processing_cost();
+        fees.storage += operation.get_storage_cost();
     }
 
-    PreCalculatedOperation::new(storage_cost, processing_cost)
+    fees.storage *= FEE_MULTIPLIER;
+    fees.processing *= FEE_MULTIPLIER;
+
+    fees
 }
