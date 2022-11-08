@@ -15,15 +15,15 @@ apt update
 apt install -y gcc-multilib
 if [[ $target = "aarch64-unknown-linux-gnu" ]]
 then
-    apt install -y gcc-aarch64-linux-gnu libstdc++-9-dev-arm64-cross
+    apt install -y gcc-aarch64-linux-gnu libstdc++-11-dev-arm64-cross
 fi
 
 ## Install Node.JS
 curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
 apt install -y nodejs
 
-## Update nightly
-rustup update nightly
+## Update toolchain
+rustup update stable
 
 ## Install build target
 rustup target install $target

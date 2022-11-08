@@ -23,6 +23,10 @@ use crate::errors::consensus::basic::{
 use crate::errors::StateError;
 
 use super::basic::identity::IdentityInsufficientBalanceError;
+use super::basic::identity::{
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+};
 use super::fee::FeeError;
 use super::signature::SignatureError;
 
@@ -73,6 +77,16 @@ pub enum ConsensusError {
     InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
     #[error(transparent)]
     InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
+
+    #[error("{0}")]
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
+        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    ),
+
+    #[error("{0}")]
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
+        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    ),
 
     #[error(transparent)]
     StateError(Box<StateError>),
@@ -147,7 +161,9 @@ impl ConsensusError {
             ConsensusError::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             ConsensusError::MissingMasterPublicKeyError(_) => 1046,
             ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
-            ConsensusError::IdentityInsufficientBalanceError(_) => 4023,
+            ConsensusError::IdentityInsufficientBalanceError(_) => 4024,
+            ConsensusError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
+            ConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
 
             ConsensusError::StateError(e) => e.get_code(),
             ConsensusError::BasicError(e) => e.get_code(),

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::data_contract::extra::ArrayFieldType;
 use ciborium::value::Value;
 use serde::{Deserialize, Serialize};
 
@@ -224,10 +225,11 @@ impl DocumentType {
                                 ));
                             }
                         }
-                        None => {
-                            return Err(ContractError::Unsupported("arrays not yet supported"));
-                            //DocumentFieldType::Array()
-                        }
+                        // TODO: Contract indices and new encoding format don't support arrays
+                        //   but we still can use them as document fields with current cbor encoding
+                        //   This is a temporary workaround to bring back v0.22 behavior and should be
+                        //   replaced with a proper array support in future versions
+                        None => DocumentFieldType::Array(ArrayFieldType::Boolean),
                     };
 
                     document_properties.insert(

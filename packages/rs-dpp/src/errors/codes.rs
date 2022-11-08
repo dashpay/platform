@@ -41,7 +41,9 @@ impl ErrorWithCode for ConsensusError {
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
-            Self::IdentityInsufficientBalanceError(_) => 4023,
+            Self::IdentityInsufficientBalanceError(_) => 4024,
+            Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
+            Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
 
             Self::StateError(e) => e.get_code(),
             Self::BasicError(e) => e.get_code(),
