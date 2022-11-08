@@ -7,8 +7,8 @@ function validateQuorumTtlFactory(coreRpcClient) {
   /**
    * @typedef validateQuorumTtl
    * @param {SimplifiedMNList} sml
-   * @param {QuorumEntry} quorum
    * @param {number} quorumType
+   * @param {QuorumEntry} quorum
    * @param {number} coreHeight
    * @param {number} blockRotationInterval
    * @return {Promise<boolean>}
