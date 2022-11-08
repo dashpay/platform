@@ -7,10 +7,7 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::util::vec::vec_to_array;
 use crate::DPPError;
 
-pub struct AssetLockPublicKeyHashFetcher<SR>
-where
-    SR: StateRepositoryLike,
-{
+pub struct AssetLockPublicKeyHashFetcher<SR> {
     state_repository: Arc<SR>,
     asset_lock_transaction_output_fetcher: AssetLockTransactionOutputFetcher<SR>,
 }
