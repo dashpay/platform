@@ -1,7 +1,7 @@
 /**
  *
  * @param {RpcClient} coreRpcClient
- * @return {quorumTtlIsEnough}
+ * @return {validateQuorumTtl}
  */
 function validateQuorumTtlFactory(coreRpcClient) {
   /**
