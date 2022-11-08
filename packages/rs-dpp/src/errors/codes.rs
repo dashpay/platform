@@ -81,6 +81,7 @@ impl ErrorWithCode for StateError {
             Self::MaxIdentityPublicKeyLimitReached { .. } => 4020,
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
+            Self::IdentityPublicKeyDisabledError { .. } => 4023,
         }
     }
 }

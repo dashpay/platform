@@ -79,9 +79,14 @@ where
                     validation_result
                         .add_error(StateError::InvalidIdentityPublicKeyIdError { id: *key_id });
                 }
-                Some(public_key) => {
-                    if public_key.read_only {
+                Some(public_key_to_disable) => {
+                    if public_key_to_disable.read_only {
                         validation_result.add_error(StateError::IdentityPublicKeyIsReadOnlyError {
+                            public_key_index: *key_id,
+                        })
+                    }
+                    if public_key_to_disable.is_disabled() {
+                        validation_result.add_error(StateError::IdentityPublicKeyDisabledError {
                             public_key_index: *key_id,
                         })
                     }

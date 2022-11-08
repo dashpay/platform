@@ -295,6 +295,11 @@ impl IdentityPublicKey {
         self
     }
 
+    /// Is public key disabled
+    pub fn is_disabled(&self) -> bool {
+        self.disabled_at.is_some()
+    }
+
     /// Checks if public key security level is MASTER
     pub fn is_master(&self) -> bool {
         self.security_level == SecurityLevel::MASTER
