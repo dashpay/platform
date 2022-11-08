@@ -99,7 +99,7 @@ pub async fn apply_documents_batch_transition(
             DocumentTransition::Delete(dt) => {
                 state_repository
                     .remove_document(
-                        &dt.base.data_contract_id,
+                        &dt.base.data_contract,
                         &dt.base.document_type,
                         &dt.base.id,
                         state_transition.get_execution_context(),
