@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use super::{OperationLike, OperationType};
+use super::OperationLike;
 
-pub const BASE_PROCESSING_COST: i64 = 8400;
-pub const CREDIT_PER_BYTE: i64 = 12;
+use crate::state_transition::fee::constants::{
+    PROCESSING_CREDIT_PER_BYTE, READ_BASE_PROCESSING_COST,
+};
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -20,14 +20,10 @@ impl ReadOperation {
 
 impl OperationLike for ReadOperation {
     fn get_processing_cost(&self) -> i64 {
-        BASE_PROCESSING_COST + (self.value_size as i64 * CREDIT_PER_BYTE)
+        READ_BASE_PROCESSING_COST + (self.value_size as i64 * PROCESSING_CREDIT_PER_BYTE)
     }
 
     fn get_storage_cost(&self) -> i64 {
         0
-    }
-
-    fn get_type(&self) -> OperationType {
-        OperationType::Read
     }
 }

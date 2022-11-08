@@ -21,6 +21,7 @@ use crate::{
 };
 
 use super::{
+    fee::calculate_state_transition_fee::calculate_state_transition_fee,
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionType,
 };
@@ -55,7 +56,9 @@ pub trait StateTransitionLike:
     /// set a new signature
     fn set_signature(&mut self, signature: Vec<u8>);
     /// Calculates the ST fee in credits
-    fn calculate_fee(&self) -> Result<u64, ProtocolError>;
+    fn calculate_fee(&self) -> i64 {
+        calculate_state_transition_fee(self)
+    }
 
     /// Signs data with the private key
     fn sign_by_private_key(
