@@ -4,14 +4,17 @@ use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::{validation::validate_identity_existence, KeyType},
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionIdentitySigned,
+    state_transition::{
+        fee::operations::{Operation, SignatureVerificationOperation},
+        StateTransitionIdentitySigned,
+    },
     validation::ValidationResult,
     ProtocolError,
 };
 
 pub async fn validate_state_transition_identity_signature(
     state_repository: &impl StateRepositoryLike,
-    state_transition: &impl StateTransitionIdentitySigned,
+    state_transition: &mut impl StateTransitionIdentitySigned,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut validation_result = ValidationResult::<()>::default();
 
@@ -51,8 +54,12 @@ pub async fn validate_state_transition_identity_signature(
         return Ok(validation_result);
     }
 
+    let operation = SignatureVerificationOperation::new(public_key.key_type);
+    state_transition
+        .get_execution_context_mut()
+        .add_operation(Operation::SignatureVerification(operation));
+
     let signature_is_valid = state_transition.verify_signature(public_key);
-    // so we need to do is match the whole bunch of errors
 
     if let Err(err) = signature_is_valid {
         let consensus_error = convert_to_consensus_signature_error(err)?;
@@ -165,6 +172,10 @@ mod test {
             &self.execution_context
         }
 
+        fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
+            &mut self.execution_context
+        }
+
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
         }
@@ -251,10 +262,12 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
 
         assert!(result.is_valid());
     }
@@ -272,10 +285,12 @@ mod test {
             .expect_fetch_identity::<Identity>()
             .returning(move |_, _| Ok(None));
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(
@@ -300,10 +315,12 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(
@@ -327,10 +344,12 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(0);
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(matches!(
@@ -356,10 +375,12 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(1);
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(matches!(
@@ -383,10 +404,12 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(2);
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(matches!(
@@ -410,10 +433,12 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(3);
 
-        let result =
-            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
-                .await
-                .expect("the validation result should be returned");
+        let result = validate_state_transition_identity_signature(
+            &state_repository_mock,
+            &mut state_transition,
+        )
+        .await
+        .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(matches!(
