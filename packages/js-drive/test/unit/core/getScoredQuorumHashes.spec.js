@@ -1,8 +1,8 @@
 const { QuorumEntry } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
-const getRandomQuorum = require('../../../lib/core/getRandomQuorum');
+const getScoredQuorumHashes = require('../../../lib/core/getScoredQuorumHashes');
 
-describe('getRandomQuorum', () => {
+describe('getScoredQuorumHashes', () => {
   let smlMock;
   let quorumType;
   let randomQuorum;
