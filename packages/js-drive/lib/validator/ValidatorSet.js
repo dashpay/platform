@@ -109,29 +109,38 @@ class ValidatorSet {
    * @return {Promise<void>}
    */
   async switchToRandomQuorum(sml, coreHeight, rotationEntropy) {
-    const scoredQuorumHashes = await this.getScoredQuorumHashes(
+    const scoredQuorumHashes = this.getScoredQuorumHashes(
       sml,
       this.validatorSetLLMQType,
       rotationEntropy,
     );
 
+    let quorum;
     for (const scoredQuorumHash of scoredQuorumHashes) {
       const quorumHash = scoredQuorumHash.hash.toString('hex');
-      const quorum = sml.getQuorum(this.validatorSetLLMQType, quorumHash);
+      const quorumToValidate = sml.getQuorum(this.validatorSetLLMQType, quorumHash);
 
       const quorumTtlIsEnough = await this.validateQuorumTtl(
         sml,
         this.validatorSetLLMQType,
-        quorum,
+        quorumToValidate,
         coreHeight,
         ValidatorSet.ROTATION_BLOCK_INTERVAL,
       );
 
       if (quorumTtlIsEnough) {
-        this.quorum = quorum;
+        quorum = quorumToValidate;
         break;
       }
     }
+
+    if (!quorum) {
+      // choose as usual
+      const quorumHash = scoredQuorumHashes[0].hash.toString('hex');
+      quorum = sml.getQuorum(this.validatorSetLLMQType, quorumHash);
+    }
+
+    this.quorum = quorum;
 
     const quorumMembers = await this.fetchQuorumMembers(
       this.validatorSetLLMQType,
