@@ -29,7 +29,7 @@ describe('getRandomQuorum', () => {
   });
 
   it('should return random quorum based on entropy', () => {
-    const result = getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+    const result = getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
 
     expect(smlMock.getQuorumsOfType).to.have.been.calledOnceWithExactly(quorumType);
     expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(
@@ -42,7 +42,7 @@ describe('getRandomQuorum', () => {
     smlMock.getQuorumsOfType.returns([]);
 
     expect(() => {
-      getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+      getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
     }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of any type`);
   });
 
@@ -51,7 +51,7 @@ describe('getRandomQuorum', () => {
     smlMock.quorumList = [{ llmqType: 999 }];
 
     expect(() => {
-      getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+      getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
     }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of type 1, but contains entries for types 999. Please check the Drive configuration`);
   });
 });

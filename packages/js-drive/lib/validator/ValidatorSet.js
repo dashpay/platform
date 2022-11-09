@@ -5,7 +5,7 @@ const ValidatorNetworkInfo = require('./ValidatorNetworkInfo');
 class ValidatorSet {
   /**
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {getRandomQuorum} getRandomQuorum
+   * @param {getScoredQuorumHashes} getScoredQuorumHashes
    * @param {fetchQuorumMembers} fetchQuorumMembers
    * @param {number} validatorSetLLMQType
    * @param {RpcClient} coreRpcClient
@@ -14,7 +14,7 @@ class ValidatorSet {
    */
   constructor(
     simplifiedMasternodeList,
-    getRandomQuorum,
+    getScoredQuorumHashes,
     fetchQuorumMembers,
     validatorSetLLMQType,
     coreRpcClient,
@@ -22,7 +22,7 @@ class ValidatorSet {
     validateQuorumTtl,
   ) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
-    this.getRandomQuorum = getRandomQuorum;
+    this.getScoredQuorumHashes = getScoredQuorumHashes;
     this.fetchQuorumMembers = fetchQuorumMembers;
     this.validatorSetLLMQType = validatorSetLLMQType;
     this.coreRpcClient = coreRpcClient;
@@ -109,23 +109,28 @@ class ValidatorSet {
    * @return {Promise<void>}
    */
   async switchToRandomQuorum(sml, coreHeight, rotationEntropy) {
-    this.quorum = await this.getRandomQuorum(
+    const scoredQuorumHashes = await this.getScoredQuorumHashes(
       sml,
       this.validatorSetLLMQType,
       rotationEntropy,
     );
 
-    const quorumTtlIsEnough = await this.validateQuorumTtl(
-      sml,
-      this.validatorSetLLMQType,
-      this.quorum,
-      coreHeight,
-      ValidatorSet.ROTATION_BLOCK_INTERVAL,
-    );
+    for (const scoredQuorumHash of scoredQuorumHashes) {
+      const quorumHash = scoredQuorumHash.hash.toString('hex');
+      const quorum = sml.getQuorum(this.validatorSetLLMQType, quorumHash);
 
-    if (!quorumTtlIsEnough) {
-      // do not rotate. keep previous
-      return;
+      const quorumTtlIsEnough = await this.validateQuorumTtl(
+        sml,
+        this.validatorSetLLMQType,
+        quorum,
+        coreHeight,
+        ValidatorSet.ROTATION_BLOCK_INTERVAL,
+      );
+
+      if (quorumTtlIsEnough) {
+        this.quorum = quorum;
+        break;
+      }
     }
 
     const quorumMembers = await this.fetchQuorumMembers(

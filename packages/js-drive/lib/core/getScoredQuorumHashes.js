@@ -25,13 +25,13 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
 /**
  * Gets the current validator set quorum hash for a particular core height
  *
- * @typedef {getRandomQuorum}
+ * @typedef {getScoredQuorumHashes}
  * @param {SimplifiedMNList} sml
  * @param {number} quorumType
  * @param {Buffer} entropy - the entropy to select the quorum
- * @return {QuorumEntry} - the current validator set's quorumHash
+ * @return {Object[]} - sorted scored quorumHashes
  */
-function getRandomQuorum(sml, quorumType, entropy) {
+function getScoredQuorumHashes(sml, quorumType, entropy) {
   const validatorQuorums = sml.getQuorumsOfType(quorumType);
 
   if (validatorQuorums.length === 0) {
@@ -45,9 +45,7 @@ function getRandomQuorum(sml, quorumType, entropy) {
 
   scoredHashes.sort((a, b) => Buffer.compare(a.score, b.score));
 
-  const quorumHash = scoredHashes[0].hash.toString('hex');
-
-  return sml.getQuorum(quorumType, quorumHash);
+  return scoredHashes;
 }
 
-module.exports = getRandomQuorum;
+module.exports = getScoredQuorumHashes;
