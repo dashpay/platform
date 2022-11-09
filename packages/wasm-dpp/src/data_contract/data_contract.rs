@@ -7,13 +7,16 @@ pub use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, SCHEMA_URI};
 use dpp::util::string_encoding::Encoding;
 
-use crate::errors::{from_dpp_err, RustConversionError};
-use crate::identifier::IdentifierWrapper;
 use crate::metadata::MetadataWasm;
 use crate::{bail_js, with_js_error};
+use crate::{buffer::Buffer, identifier::IdentifierWrapper};
+use crate::{
+    errors::{from_dpp_err, RustConversionError},
+    utils,
+};
 
 #[wasm_bindgen(js_name=DataContract)]
 #[derive(Debug, Clone)]
@@ -31,14 +34,35 @@ impl std::convert::Into<DataContract> for DataContractWasm {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataContractParameters {
+    #[serde(rename = "$schema")]
+    schema: String,
+    #[serde(rename = "$id")]
+    id: Vec<u8>,
+    owner_id: Vec<u8>,
+    documents: serde_json::Value,
+    #[serde(rename = "$defs")]
+    defs: serde_json::Value,
+    protocol_version: u32,
+    version: u32,
+}
+
 #[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        DataContract::default().into()
+    pub fn new(raw_parameters: JsValue) -> Result<DataContractWasm, JsValue> {
+        let parameters: DataContractParameters =
+            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+
+        DataContract::from_raw_object(
+            serde_json::to_value(parameters).expect("Implements Serialize"),
+        )
+        .map_err(from_dpp_err)
+        .map(Into::into)
     }
 
-    // TODO: think about public fields vs always use getters
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
         self.0.protocol_version
@@ -103,7 +127,8 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getDocuments)]
     pub fn get_documents(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(serde_wasm_bindgen::to_value(&self.0.documents))
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(self.0.documents.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=isDocumentDefined)]
@@ -158,7 +183,8 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getDefinitions)]
     pub fn get_definitions(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(serde_wasm_bindgen::to_value(&self.0.defs))
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(self.0.defs.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=setEntropy)]
@@ -227,8 +253,13 @@ impl DataContractWasm {
     }
 }
 
-impl Default for DataContractWasm {
-    fn default() -> Self {
-        Self::new()
+#[wasm_bindgen(js_name=DataContractDefaults)]
+pub struct DataContractDefaults;
+
+#[wasm_bindgen(js_class=DataContractDefaults)]
+impl DataContractDefaults {
+    #[wasm_bindgen(getter = SCHEMA)]
+    pub fn get_default_schema() -> String {
+        SCHEMA_URI.to_string()
     }
 }

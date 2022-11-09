@@ -200,7 +200,7 @@ impl IdentityWasm {
         js_sys::Reflect::set(
             &js_object,
             &"id".to_owned().into(),
-            &JsValue::from(id.to_object()),
+            &JsValue::from(id.to_buffer()),
         )?;
         js_sys::Reflect::set(
             &js_object,

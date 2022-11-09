@@ -6,11 +6,12 @@ const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/InvalidDocumen
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const Metadata = require('@dashevo/dpp/lib/Metadata');
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const JsDataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
 const hash = require('@dashevo/dpp/lib/util/hash');
 const serializer = require('@dashevo/dpp/lib/util/serializer');
 const getBinaryPropertiesFromSchema = require('@dashevo/dpp/lib/dataContract/getBinaryPropertiesFromSchema');
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('DataContract', () => {
   let hashMock;
@@ -24,6 +25,12 @@ describe('DataContract', () => {
   let contractId;
   let getBinaryPropertiesFromSchemaMock;
   let metadataFixture;
+
+  before(async () => {
+    ({
+      DataContract, DataContractDefaults
+    } = await loadWasmDpp());
+  });
 
   beforeEach(function beforeEach() {
     encodeMock = this.sinonSandbox.stub(serializer, 'encode');
@@ -56,8 +63,8 @@ describe('DataContract', () => {
     entropy = Buffer.alloc(32);
     contractId = generateRandomIdentifier();
 
-    dataContract = new DataContract({
-      $schema: DataContract.DEFAULTS.SCHEMA,
+    dataContract = new JsDataContract({
+      $schema: JsDataContract.DEFAULTS.SCHEMA,
       $id: contractId,
       version: 1,
       ownerId,
@@ -81,23 +88,25 @@ describe('DataContract', () => {
       const id = generateRandomIdentifier();
 
       dataContract = new DataContract({
-        $schema: DataContract.DEFAULTS.SCHEMA,
+        $schema: DataContractDefaults.SCHEMA,
         $id: id,
         ownerId,
+	protocolVersion: 1,
+	version: 1,
         documents,
         $defs: {},
       });
 
-      expect(dataContract.id).to.deep.equal(id);
-      expect(dataContract.ownerId).to.deep.equal(ownerId);
-      expect(dataContract.schema).to.equal(DataContract.DEFAULTS.SCHEMA);
-      expect(dataContract.documents).to.equal(documents);
-      expect(dataContract.$defs).to.deep.equal({});
+      expect(dataContract.getId().toBuffer()).to.deep.equal(id.toBuffer());
+      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId.toBuffer());
+      expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
+      expect(dataContract.getDocuments()).to.deep.equal(documents);
+      expect(dataContract.getDefinitions()).to.deep.equal({});
     });
   });
 
   describe('#getId', () => {
-    it('should return DataContract Identifier', () => {
+    it('should return JsDataContract Identifier', () => {
       const result = dataContract.getId();
 
       expect(result).to.deep.equal(contractId);
@@ -252,13 +261,13 @@ describe('DataContract', () => {
   });
 
   describe('#toJSON', () => {
-    it('should return DataContract as plain object', () => {
+    it('should return JsDataContract as plain object', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
         protocolVersion: dataContract.getProtocolVersion(),
         $id: bs58.encode(contractId),
-        $schema: DataContract.DEFAULTS.SCHEMA,
+        $schema: JsDataContract.DEFAULTS.SCHEMA,
         version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
@@ -276,7 +285,7 @@ describe('DataContract', () => {
 
       expect(result).to.deep.equal({
         protocolVersion: dataContract.getProtocolVersion(),
-        $schema: DataContract.DEFAULTS.SCHEMA,
+        $schema: JsDataContract.DEFAULTS.SCHEMA,
         $id: bs58.encode(contractId),
         version: 1,
         ownerId: bs58.encode(ownerId),
@@ -287,10 +296,10 @@ describe('DataContract', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return DataContract as a Buffer', () => {
-      const serializedDataContract = Buffer.from('123');
+    it('should return JsDataContract as a Buffer', () => {
+      const serializedJsDataContract = Buffer.from('123');
 
-      encodeMock.returns(serializedDataContract);
+      encodeMock.returns(serializedJsDataContract);
 
       const result = dataContract.toBuffer();
 
@@ -301,7 +310,7 @@ describe('DataContract', () => {
       protocolVersionUInt32.writeUInt32LE(dataContract.getProtocolVersion(), 0);
 
       expect(encodeMock).to.have.been.calledOnceWith(dataContractToEncode);
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDataContract]));
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedJsDataContract]));
     });
   });
 
@@ -309,18 +318,18 @@ describe('DataContract', () => {
     let toBufferMock;
 
     beforeEach(function beforeEach() {
-      toBufferMock = this.sinonSandbox.stub(DataContract.prototype, 'toBuffer');
+      toBufferMock = this.sinonSandbox.stub(JsDataContract.prototype, 'toBuffer');
     });
 
     afterEach(() => {
       toBufferMock.restore();
     });
 
-    it('should return DataContract hash', () => {
-      const serializedDataContract = '123';
+    it('should return JsDataContract hash', () => {
+      const serializedJsDataContract = '123';
       const hashedDocument = '456';
 
-      toBufferMock.returns(serializedDataContract);
+      toBufferMock.returns(serializedJsDataContract);
 
       hashMock.returns(hashedDocument);
 
@@ -330,7 +339,7 @@ describe('DataContract', () => {
 
       expect(toBufferMock).to.have.been.calledOnce();
 
-      expect(hashMock).to.have.been.calledOnceWith(serializedDataContract);
+      expect(hashMock).to.have.been.calledOnceWith(serializedJsDataContract);
     });
   });
 
