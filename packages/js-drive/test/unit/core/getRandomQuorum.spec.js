@@ -83,4 +83,25 @@ describe('getRandomQuorum', () => {
     );
     expect(result).to.equals(randomQuorum);
   });
+
+  it('should choose from all quorums if filtered list is empty', function it() {
+    smlMock.getQuorumsOfType.returns([
+      {
+        quorumHash: Buffer.alloc(1, 64).toString('hex'),
+        getAllQuorumMembers: this.sinon.stub().returns(new Array(10).fill({ isValid: true })),
+      },
+      {
+        quorumHash: Buffer.alloc(1, 32).toString('hex'),
+        getAllQuorumMembers: this.sinon.stub().returns(new Array(10).fill({ isValid: true })),
+      },
+    ]);
+
+    const result = getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+
+    expect(smlMock.getQuorumsOfType).to.have.been.calledOnceWithExactly(quorumType);
+    expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(
+      quorumType, '20',
+    );
+    expect(result).to.equals(randomQuorum);
+  });
 });

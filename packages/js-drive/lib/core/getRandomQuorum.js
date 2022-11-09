@@ -55,7 +55,14 @@ function getRandomQuorum(sml, quorumType, entropy) {
     throw new QuorumsNotFoundError(sml, quorumType);
   }
 
-  const validatorQuorumHashes = filterValidatorQuorumsByMembersAmount(validatorQuorums)
+  let filteredValidatorQuorums = filterValidatorQuorumsByMembersAmount(validatorQuorums);
+
+  if (filteredValidatorQuorums.length === 0) {
+    // use all validatorQuorums in this case
+    filteredValidatorQuorums = validatorQuorums;
+  }
+
+  const validatorQuorumHashes = filteredValidatorQuorums
     .map((quorum) => Buffer.from(quorum.quorumHash, 'hex'));
 
   const scoredHashes = calculateQuorumHashScores(validatorQuorumHashes, entropy);
