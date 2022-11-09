@@ -108,7 +108,7 @@ impl DataContractWasm {
         self.0.schema.clone()
     }
     #[wasm_bindgen(js_name=setDocuments)]
-    pub fn set_documents(&self, documents: JsValue) -> Result<(), JsValue> {
+    pub fn set_documents(&mut self, documents: JsValue) -> Result<(), JsValue> {
         let json_value: Value = with_js_error!(serde_wasm_bindgen::from_value(documents))?;
 
         let mut docs: BTreeMap<String, Value> = BTreeMap::new();
@@ -119,6 +119,7 @@ impl DataContractWasm {
                 }
                 docs.insert(k, v);
             }
+	    self.0.documents = docs;
         } else {
             bail_js!("the parameter 'documents' is not an JS object")
         }
@@ -150,7 +151,8 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn get_document_schema(&mut self, doc_type: &str) -> Result<JsValue, JsValue> {
         let doc_schema = self.0.get_document_schema(doc_type).map_err(from_dpp_err)?;
-        with_js_error!(serde_wasm_bindgen::to_value(doc_schema))
+	let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(doc_schema.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=getDocumentSchemaRef)]
@@ -164,17 +166,18 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=setDefinitions)]
-    pub fn set_definitions(&self, definitions: JsValue) -> Result<(), JsValue> {
+    pub fn set_definitions(&mut self, definitions: JsValue) -> Result<(), JsValue> {
         let json_value: Value = with_js_error!(serde_wasm_bindgen::from_value(definitions))?;
-        let mut docs: BTreeMap<String, Value> = BTreeMap::new();
+        let mut definitions: BTreeMap<String, Value> = BTreeMap::new();
         if let Value::Object(o) = json_value {
             for (k, v) in o.into_iter() {
                 // v must be a Object
                 if !v.is_object() {
                     bail_js!("{:?} is not an object", v);
                 }
-                docs.insert(k, v);
+                definitions.insert(k, v);
             }
+	    self.0.defs = definitions;
         } else {
             bail_js!("the parameter 'definitions' is not an JS object");
         }
@@ -226,7 +229,8 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        with_js_error!(serde_wasm_bindgen::to_value(&self.0))
+	let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(self.0.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
