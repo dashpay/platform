@@ -10,13 +10,10 @@ use wasm_bindgen::prelude::*;
 use dpp::data_contract::{DataContract, SCHEMA_URI};
 use dpp::util::string_encoding::Encoding;
 
+use crate::errors::{from_dpp_err, RustConversionError};
 use crate::metadata::MetadataWasm;
 use crate::{bail_js, with_js_error};
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
-use crate::{
-    errors::{from_dpp_err, RustConversionError},
-    utils,
-};
 
 #[wasm_bindgen(js_name=DataContract)]
 #[derive(Debug, Clone)]
@@ -119,7 +116,7 @@ impl DataContractWasm {
                 }
                 docs.insert(k, v);
             }
-	    self.0.documents = docs;
+            self.0.documents = docs;
         } else {
             bail_js!("the parameter 'documents' is not an JS object")
         }
@@ -144,14 +141,14 @@ impl DataContractWasm {
         schema: JsValue,
     ) -> Result<(), JsValue> {
         let json_schema: Value = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
-        self.0.documents.insert(doc_type, json_schema);
+        self.0.set_document_schema(doc_type, json_schema);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn get_document_schema(&mut self, doc_type: &str) -> Result<JsValue, JsValue> {
         let doc_schema = self.0.get_document_schema(doc_type).map_err(from_dpp_err)?;
-	let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(doc_schema.serialize(&serializer))
     }
 
@@ -177,7 +174,7 @@ impl DataContractWasm {
                 }
                 definitions.insert(k, v);
             }
-	    self.0.defs = definitions;
+            self.0.defs = definitions;
         } else {
             bail_js!("the parameter 'definitions' is not an JS object");
         }
@@ -203,33 +200,33 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&mut self) -> Vec<u8> {
-        self.0.entropy.to_vec()
+    pub fn get_entropy(&mut self) -> Buffer {
+        Buffer::from_bytes(&self.0.entropy)
     }
 
     #[wasm_bindgen(js_name=getBinaryProperties)]
     pub fn get_binary_properties(&self, doc_type: &str) -> Result<JsValue, JsValue> {
-        with_js_error!(serde_wasm_bindgen::to_value(
-            self.0
-                .get_binary_properties(doc_type)
-                .map_err(from_dpp_err)?
-        ))
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(self
+            .0
+            .get_binary_properties(doc_type)
+            .map_err(from_dpp_err)?
+            .serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
-    pub fn get_metadata(&self) -> Option<MetadataWasm> {
-        self.0.metadata.clone().map(Into::into)
+    pub fn get_metadata(&self) -> MetadataWasm {
+        self.0.metadata.clone().map(Into::into).unwrap()
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(mut self, metadata: MetadataWasm) -> Self {
+    pub fn set_metadata(&mut self, metadata: MetadataWasm) {
         self.0.metadata = Some(metadata.into());
-        self
     }
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-	let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(self.0.serialize(&serializer))
     }
 
@@ -239,8 +236,9 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.to_buffer().map_err(from_dpp_err)
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes = self.0.to_buffer().map_err(from_dpp_err)?;
+        Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=hash)]

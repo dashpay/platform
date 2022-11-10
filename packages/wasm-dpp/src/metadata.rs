@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 use dpp::metadata::Metadata;
 
 #[wasm_bindgen(js_name=Metadata)]
+#[derive(Debug)]
 pub struct MetadataWasm(Metadata);
 
 impl std::convert::From<Metadata> for MetadataWasm {
@@ -47,6 +48,7 @@ impl MetadataWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(&self.0).unwrap()
+	let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+	self.0.serialize(&serializer).expect("implements Serialize")
     }
 }
