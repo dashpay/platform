@@ -15,6 +15,7 @@ describe('DataContractStoreRepository', () => {
   let repository;
   let decodeProtocolEntity;
   let dataContract;
+  let blockInfo;
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
@@ -25,6 +26,12 @@ describe('DataContractStoreRepository', () => {
     repository = new DataContractStoreRepository(store, decodeProtocolEntity, noopLogger);
 
     dataContract = getDataContractFixture();
+
+    blockInfo = {
+      height: 1,
+      epoch: 1,
+      timeMs: new Date().getTime(),
+    };
   });
 
   afterEach(async () => {
@@ -34,12 +41,14 @@ describe('DataContractStoreRepository', () => {
 
   describe('#store', () => {
     beforeEach(async () => {
-      await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
+      // await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
+      await rsDrive.createInitialStateStructure();
     });
 
     it('should store Data Contract', async () => {
       const result = await repository.store(
         dataContract,
+        blockInfo,
       );
 
       expect(result).to.be.instanceOf(StorageResult);
@@ -66,6 +75,7 @@ describe('DataContractStoreRepository', () => {
 
       const result = await repository.store(
         dataContract,
+        blockInfo,
         { useTransaction: true },
       );
 
@@ -116,6 +126,7 @@ describe('DataContractStoreRepository', () => {
     it('should not store Data Contract with dry run', async () => {
       const result = await repository.store(
         dataContract,
+        blockInfo,
         { dryRun: true },
       );
 
@@ -146,7 +157,7 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should fetch Data Contract', async () => {
-      await store.getDrive().applyContract(dataContract, new Date(), false);
+      await store.getDrive().applyContract(dataContract, blockInfo, false);
 
       const result = await repository.fetch(dataContract.getId());
 
@@ -162,7 +173,7 @@ describe('DataContractStoreRepository', () => {
     it('should fetch Data Contract using transaction', async () => {
       await store.startTransaction();
 
-      await store.getDrive().applyContract(dataContract, new Date(), true);
+      await store.getDrive().applyContract(dataContract, blockInfo, true);
 
       const notFoundDataContractResult = await repository.fetch(dataContract.getId(), {
         useTransaction: false,
@@ -190,7 +201,7 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should fetch null on dry run', async () => {
-      await store.getDrive().applyContract(dataContract, new Date(), false);
+      await store.getDrive().applyContract(dataContract, blockInfo, false);
 
       const result = await repository.fetch(dataContract.getId(), { dryRun: true });
 
@@ -238,7 +249,7 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should return proof', async () => {
-      await store.getDrive().applyContract(dataContract, new Date(), false);
+      await store.getDrive().applyContract(dataContract, blockInfo, false);
 
       const result = await repository.prove(dataContract.getId());
 
@@ -304,8 +315,8 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should return proof', async () => {
-      await store.getDrive().applyContract(dataContract, new Date(), false);
-      await store.getDrive().applyContract(dataContract2, new Date(), false);
+      await store.getDrive().applyContract(dataContract, blockInfo, false);
+      await store.getDrive().applyContract(dataContract2, blockInfo, false);
 
       const result = await repository.proveMany([dataContract.getId(), dataContract2.getId()]);
 
@@ -322,8 +333,8 @@ describe('DataContractStoreRepository', () => {
     it.skip('should return proof using transaction', async () => {
       await store.startTransaction();
 
-      await store.getDrive().applyContract(dataContract, new Date(), true);
-      await store.getDrive().applyContract(dataContract2, new Date(), true);
+      await store.getDrive().applyContract(dataContract, blockInfo, true);
+      await store.getDrive().applyContract(dataContract2, blockInfo, true);
 
       const notFoundDataContractResult = await repository.prove(
         [dataContract.getId(), dataContract2.getId()], {

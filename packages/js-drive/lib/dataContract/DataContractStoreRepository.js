@@ -21,17 +21,18 @@ class DataContractStoreRepository {
    * Store Data Contract into database
    *
    * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(dataContract, options = {}) {
+  async store(dataContract, blockInfo, options = {}) {
     try {
-      const [storageCost, processingCost] = await this.storage.getDrive().applyContract(
+      const { storageFee, processingFee } = await this.storage.getDrive().applyContract(
         dataContract,
-        new Date('2022-03-17T15:08:26.132Z'),
+        blockInfo,
         Boolean(options.useTransaction),
         Boolean(options.dryRun), // TODO rs-drive doesn't support this
       );
@@ -40,8 +41,8 @@ class DataContractStoreRepository {
         undefined,
         [
           new PreCalculatedOperation(
-            storageCost,
-            processingCost,
+            storageFee,
+            processingFee,
           ),
         ],
       );
