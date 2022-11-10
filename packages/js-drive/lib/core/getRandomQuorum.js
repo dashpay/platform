@@ -25,17 +25,6 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
 }
 
 /**
- * Filter quorum by the number of active members
- * @param {QuorumEntry[]} validatorQuorums
- * @return {QuorumEntry[]}
- */
-function filterValidatorQuorumsByMembersAmount(validatorQuorums) {
-  return validatorQuorums.filter(
-    (validatorQuorum) => validatorQuorum.validMembersCount >= MIN_QUORUM_MEMBERS,
-  );
-}
-
-/**
  * Gets the current validator set quorum hash for a particular core height
  *
  * @typedef {getRandomQuorum}
@@ -51,7 +40,10 @@ function getRandomQuorum(sml, quorumType, entropy) {
     throw new QuorumsNotFoundError(sml, quorumType);
   }
 
-  let filteredValidatorQuorums = filterValidatorQuorumsByMembersAmount(validatorQuorums);
+  // filter quorum by the number of active members
+  let filteredValidatorQuorums = validatorQuorums.filter(
+    (validatorQuorum) => validatorQuorum.validMembersCount >= MIN_QUORUM_MEMBERS,
+  );
 
   if (filteredValidatorQuorums.length === 0) {
     // use all validatorQuorums in this case
