@@ -52,6 +52,7 @@ function finalizeBlockHandlerFactory(
     consensusLogger.trace({ abciRequest: request });
 
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
     // Store block execution context
     await blockExecutionContextRepository.store(
