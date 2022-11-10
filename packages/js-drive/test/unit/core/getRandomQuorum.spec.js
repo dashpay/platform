@@ -20,11 +20,11 @@ describe('getRandomQuorum', () => {
     smlMock.getQuorumsOfType.returns([
       {
         quorumHash: Buffer.alloc(1, 32).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(90).fill({ isValid: true })),
+        validMembersCount: 90,
       },
       {
         quorumHash: Buffer.alloc(1, 64).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(90).fill({ isValid: true })),
+        getAllQuorumMembers: 90,
       },
     ]);
 
@@ -60,18 +60,15 @@ describe('getRandomQuorum', () => {
     }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of type 1, but contains entries for types 999. Please check the Drive configuration`);
   });
 
-  it('should filter quorums by minQuorumMembers', function it() {
-    const quorumMembersToFilter = new Array(90).fill({ isValid: true });
-    quorumMembersToFilter[0].isValid = false;
-
+  it('should filter quorums by minQuorumMembers', () => {
     smlMock.getQuorumsOfType.returns([
       {
         quorumHash: Buffer.alloc(1, 64).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(90).fill({ isValid: true })),
+        validMembersCount: 90,
       },
       {
         quorumHash: Buffer.alloc(1, 32).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(quorumMembersToFilter),
+        validMembersCount: 89,
       },
     ]);
 
@@ -84,15 +81,15 @@ describe('getRandomQuorum', () => {
     expect(result).to.equals(randomQuorum);
   });
 
-  it('should choose from all quorums if filtered list is empty', function it() {
+  it('should choose from all quorums if filtered list is empty', () => {
     smlMock.getQuorumsOfType.returns([
       {
         quorumHash: Buffer.alloc(1, 64).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(10).fill({ isValid: true })),
+        validMembersCount: 10,
       },
       {
         quorumHash: Buffer.alloc(1, 32).toString('hex'),
-        getAllQuorumMembers: this.sinon.stub().returns(new Array(10).fill({ isValid: true })),
+        validMembersCount: 10,
       },
     ]);
 
