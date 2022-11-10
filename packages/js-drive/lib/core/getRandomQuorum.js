@@ -31,11 +31,7 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
  */
 function filterValidatorQuorumsByMembersAmount(validatorQuorums) {
   return validatorQuorums.filter(
-    (validatorQuorum) => {
-      const validMembers = validatorQuorum.getAllQuorumMembers().filter((member) => member.isValid);
-
-      return validMembers.length >= MIN_QUORUM_MEMBERS;
-    },
+    (validatorQuorum) => validatorQuorum.validMembersCount >= MIN_QUORUM_MEMBERS,
   );
 }
 
