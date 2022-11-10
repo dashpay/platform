@@ -25,21 +25,22 @@ class DocumentRepository {
    * Create document
    *
    * @param {Document} document
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async create(document, options = {}) {
-    let processingCost;
-    let storageCost;
+  async create(document, blockInfo, options = {}) {
+    let processingFee;
+    let storageFee;
 
     try {
-      ([storageCost, processingCost] = await this.storage.getDrive()
+      ({ processingFee, storageFee } = await this.storage.getDrive()
         .createDocument(
           document,
-          new Date('2022-03-17T15:08:26.132Z'),
+          blockInfo,
           Boolean(options.useTransaction),
           Boolean(options.dryRun),
         ));
@@ -61,7 +62,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(storageCost, processingCost),
+        new PreCalculatedOperation(storageFee, processingFee),
       ],
     );
   }
@@ -70,21 +71,22 @@ class DocumentRepository {
    * Update document
    *
    * @param {Document} document
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async update(document, options = {}) {
-    let processingCost;
-    let storageCost;
+  async update(document, blockInfo, options = {}) {
+    let processingFee;
+    let storageFee;
 
     try {
-      ([storageCost, processingCost] = await this.storage.getDrive()
+      ({ storageFee, processingFee } = await this.storage.getDrive()
         .updateDocument(
           document,
-          new Date('2022-03-17T15:08:26.132Z'),
+          blockInfo,
           Boolean(options.useTransaction),
           Boolean(options.dryRun),
         ));
@@ -106,7 +108,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(storageCost, processingCost),
+        new PreCalculatedOperation(storageFee, processingFee),
       ],
     );
   }
@@ -116,6 +118,7 @@ class DocumentRepository {
    *
    * @param {DataContract} dataContract
    * @param {string} documentType
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {Array} [options.where]
    * @param {number} [options.limit]
@@ -129,7 +132,7 @@ class DocumentRepository {
    *
    * @returns {Promise<StorageResult<Document[]>>}
    */
-  async find(dataContract, documentType, options = {}) {
+  async find(dataContract, documentType, blockInfo, options = {}) {
     const query = lodashCloneDeep(options);
     let useTransaction = false;
 
@@ -153,6 +156,7 @@ class DocumentRepository {
         .queryDocuments(
           dataContract,
           documentType,
+          blockInfo,
           query,
           useTransaction,
         );
@@ -184,18 +188,20 @@ class DocumentRepository {
    * @param {DataContract} dataContract
    * @param {string} documentType
    * @param {Identifier} id
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
-  async delete(dataContract, documentType, id, options = { }) {
+  async delete(dataContract, documentType, id, blockInfo, options = { }) {
     try {
-      const [storageCost, processingCost] = await this.storage.getDrive()
+      const { storageFee, processingFee } = await this.storage.getDrive()
         .deleteDocument(
           dataContract,
           documentType,
           id,
+          blockInfo,
           Boolean(options.useTransaction),
           Boolean(options.dryRun),
         );
@@ -203,7 +209,7 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(storageCost, processingCost),
+          new PreCalculatedOperation(storageFee, processingFee),
         ],
       );
     } finally {
