@@ -161,7 +161,6 @@ class GroveDBStore {
           {
             type: 'tree',
             epoch: 0,
-            value: Buffer.alloc(32),
           },
           options.useTransaction || false,
         );
