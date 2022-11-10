@@ -38,7 +38,7 @@ function finalizeBlockHandlerFactory(
    */
   async function finalizeBlockHandler(request) {
     const {
-      decidedLastCommit: lastCommitInfo,
+      commit: commitInfo,
       height,
       round,
     } = request;
@@ -82,7 +82,7 @@ function finalizeBlockHandlerFactory(
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
 
-    const { thresholdVoteExtensions } = lastCommitInfo;
+    const { thresholdVoteExtensions } = commitInfo;
 
     for (const { extension, signature } of (thresholdVoteExtensions || [])) {
       const withdrawalTransactionHash = extension.toString('hex');
