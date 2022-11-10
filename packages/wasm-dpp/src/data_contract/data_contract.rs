@@ -215,8 +215,8 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
-    pub fn get_metadata(&self) -> MetadataWasm {
-        self.0.metadata.clone().map(Into::into).unwrap()
+    pub fn get_metadata(&self) -> Option<MetadataWasm> {
+        self.0.metadata.clone().map(Into::into)
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
