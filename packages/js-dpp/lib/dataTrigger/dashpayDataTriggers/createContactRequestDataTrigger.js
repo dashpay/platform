@@ -23,32 +23,12 @@ async function createContactRequestDataTrigger(documentTransition, context) {
   const stateRepository = context.getStateRepository();
   const ownerId = context.getOwnerId();
 
-  if (ownerId.equals(toUserId)) {
-    const error = new DataTriggerConditionError(
-      context.getDataContract().getId().toBuffer(),
-      documentTransition.getId().toBuffer(),
-      `Identity ${toUserId.toString()} must not be equal to the owner ${ownerId.toString()}`,
-    );
-
-    error.setOwnerId(ownerId);
-    error.setDocumentTransition(documentTransition);
-
-    result.addError(error);
-
-    return result;
-  }
-
-  if (!isDryRun && coreHeightCreatedAt !== undefined) {
-    const coreChainLockedHeight = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
-
-    const heightWindowStart = coreChainLockedHeight - BLOCKS_WINDOW_SIZE;
-    const heightWindowEnd = coreChainLockedHeight + BLOCKS_WINDOW_SIZE;
-
-    if (coreHeightCreatedAt < heightWindowStart || coreHeightCreatedAt > heightWindowEnd) {
+  if (!isDryRun) {
+    if (ownerId.equals(toUserId)) {
       const error = new DataTriggerConditionError(
         context.getDataContract().getId().toBuffer(),
         documentTransition.getId().toBuffer(),
-        `Core height ${coreHeightCreatedAt} is out of block height window from ${heightWindowStart} to ${heightWindowEnd}`,
+        `Identity ${toUserId.toString()} must not be equal to the owner ${ownerId.toString()}`,
       );
 
       error.setOwnerId(ownerId);
@@ -58,6 +38,28 @@ async function createContactRequestDataTrigger(documentTransition, context) {
 
       return result;
     }
+
+    if (coreHeightCreatedAt !== undefined) {
+      const coreChainLockedHeight = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
+
+      const heightWindowStart = coreChainLockedHeight - BLOCKS_WINDOW_SIZE;
+      const heightWindowEnd = coreChainLockedHeight + BLOCKS_WINDOW_SIZE;
+
+      if (coreHeightCreatedAt < heightWindowStart || coreHeightCreatedAt > heightWindowEnd) {
+        const error = new DataTriggerConditionError(
+          context.getDataContract().getId().toBuffer(),
+          documentTransition.getId().toBuffer(),
+          `Core height ${coreHeightCreatedAt} is out of block height window from ${heightWindowStart} to ${heightWindowEnd}`,
+        );
+
+        error.setOwnerId(ownerId);
+        error.setDocumentTransition(documentTransition);
+
+        result.addError(error);
+
+        return result;
+      }
+    }
   }
 
   // toUserId identity exists
@@ -66,22 +68,20 @@ async function createContactRequestDataTrigger(documentTransition, context) {
     context.getStateTransitionExecutionContext(),
   );
 
-  if (!isDryRun) {
-    if (identity === null) {
-      const error = new DataTriggerConditionError(
-        context.getDataContract()
-          .getId()
-          .toBuffer(),
-        documentTransition.getId()
-          .toBuffer(),
-        `Identity ${toUserId.toString()} doesn't exist`,
-      );
+  if (!isDryRun && identity === null) {
+    const error = new DataTriggerConditionError(
+      context.getDataContract()
+        .getId()
+        .toBuffer(),
+      documentTransition.getId()
+        .toBuffer(),
+      `Identity ${toUserId.toString()} doesn't exist`,
+    );
 
-      error.setOwnerId(ownerId);
-      error.setDocumentTransition(documentTransition);
+    error.setOwnerId(ownerId);
+    error.setDocumentTransition(documentTransition);
 
-      result.addError(error);
-    }
+    result.addError(error);
   }
 
   return result;
