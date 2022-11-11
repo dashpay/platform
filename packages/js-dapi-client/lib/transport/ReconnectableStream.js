@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const defaultOptions = {
+  // TODO: manage timeout according to the Nginx setting of the node
   reconnectTimeoutDelay: 50000,
 };
 

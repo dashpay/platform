@@ -82,8 +82,6 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     });
   }
 
-  blockHeadersProvider.setCoreMethods(coreMethods);
-
   return blockHeadersProvider;
 }
 

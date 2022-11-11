@@ -428,7 +428,7 @@ class TransactionsSyncWorker extends Worker {
       const metadata = {
         blockHash: headerHash,
         height: headerHeight,
-        time: new Date(headerTime * 1e3),
+        time: new Date(headerTime * 1000),
         instantLocked: false, // TBD
         chainLocked: false, // TBD
       };
@@ -548,7 +548,7 @@ class TransactionsSyncWorker extends Worker {
       return;
     }
 
-    const headerTime = new Date(headerMetadata.time * 1e3);
+    const headerTime = new Date(headerMetadata.time * 1000);
 
     logger.debug('[TransactionsSyncWorker#newMerkleBlockHandler] New merkle block received', {
       hash: merkleBlock.header.hash,

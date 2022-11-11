@@ -60,13 +60,6 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   /**
-   * @param {CoreMethodsFacade} coreMethods
-   */
-  setCoreMethods(coreMethods) {
-    this.coreMethods = coreMethods;
-  }
-
-  /**
    * @param {BlockHeadersReader} blockHeadersReader
    */
   setBlockHeadersReader(blockHeadersReader) {
@@ -135,7 +128,7 @@ class BlockHeadersProvider extends EventEmitter {
    * @param toBlockHeight
    * @returns {Promise<void>}
    */
-  async readHistorical(fromBlockHeight = 1, toBlockHeight) {
+  async readHistorical(fromBlockHeight, toBlockHeight) {
     if (this.state !== STATES.IDLE) {
       throw new Error(`BlockHeaderProvider can not read historical data while being in ${this.state} state.`);
     }
