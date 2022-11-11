@@ -12,11 +12,12 @@ const BlockHeadersSyncWorker = require('./BlockHeadersSyncWorker');
 const { waitOneTick } = require('../../../test/utils');
 
 const EVENTS = require('../../../EVENTS');
+const { mockHeadersChain } = require('../../../test/mocks/dashcore/block');
 
 describe('BlockHeadersSyncWorker', () => {
   let blockHeadersSyncWorker;
   const chainHeight = 1000;
-  const spvChainHeaders = ['0x00000001', '0x00000002', '0x00000003', '0x00000004', '0x00000005'];
+  const spvChainHeaders = mockHeadersChain('testnet', 5);
 
   const createBlockHeadersSyncWorker = (sinon) => {
     const worker = new BlockHeadersSyncWorker({
@@ -284,7 +285,7 @@ describe('BlockHeadersSyncWorker', () => {
         .have.been.calledWith(blockHeadersSyncWorker.syncCheckpoint);
     });
 
-    it('should forward an error from blockHeadersProvider', async function () {
+    it('should forward an error from blockHeadersProvider', async function test() {
       blockHeadersSyncWorker.syncCheckpoint = chainHeight;
       await blockHeadersSyncWorker.execute();
 
@@ -401,7 +402,7 @@ describe('BlockHeadersSyncWorker', () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
 
-      const headers = ['0x10000006'];
+      const headers = mockHeadersChain('testnet', 1, spvChainHeaders[spvChainHeaders.length - 1]);
       const longestChain = spvChain.getLongestChain();
       longestChain.push(headers[0]);
       const batchHeadHeight = 1010;
@@ -425,7 +426,7 @@ describe('BlockHeadersSyncWorker', () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
 
       const batchHeadHeight = 1010;
-      const headers = ['0x10000006', '0x10000007', '0x10000008'];
+      const headers = mockHeadersChain('testnet', 3, spvChainHeaders[spvChainHeaders.length - 1]);
       const {
         blockHeadersProvider: {
           spvChain,
@@ -452,7 +453,7 @@ describe('BlockHeadersSyncWorker', () => {
     it('should do nothing if height hasn\'t changed', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        ['0x10000001', '0x10000002'],
+        mockHeadersChain('testnet', 2),
         999,
       );
 
@@ -491,7 +492,7 @@ describe('BlockHeadersSyncWorker', () => {
       const batchHeadHeight = 900;
       blockHeadersSyncWorker.parentEvents.on('error', () => {});
       await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        ['0x10000001'],
+        mockHeadersChain('testnet', 1),
         batchHeadHeight,
       );
 
@@ -507,35 +508,27 @@ describe('BlockHeadersSyncWorker', () => {
         .to.have.not.been.called;
     });
 
-    it('should emit BLOCK and BLOCKHEIGHT_CHANGED events', async () => {
+    it('should emit BLOCKHEIGHT_CHANGED event', async () => {
       const batchHeadHeight = 1020;
       await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        ['0x10000001'],
+        mockHeadersChain('testnet', 1),
         batchHeadHeight,
       );
 
-      const { returnValue: block } = blockHeadersSyncWorker.transport
-        .getBlockByHeight.firstCall;
-
       expect(blockHeadersSyncWorker.parentEvents.emit)
         .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, batchHeadHeight);
-
-      const { secondCall } = blockHeadersSyncWorker.parentEvents.emit;
-      expect(secondCall.args[0]).to.equal(EVENTS.BLOCK);
-      expect(secondCall.args[1].toString()).to.equal(block.toString());
-      expect(secondCall.args[2]).to.equal(batchHeadHeight);
     });
 
-    it('should emit error in case something goes wrong', async function () {
-      const error = new Error('Block not found');
-      blockHeadersSyncWorker.transport.getBlockByHeight = () => {
+    it('should emit error in case something goes wrong', async function test() {
+      const error = new Error('Chain store was not found');
+      blockHeadersSyncWorker.storage.getDefaultChainStore = () => {
         throw error;
       };
 
       const errorHandler = this.sinon.spy();
       blockHeadersSyncWorker.parentEvents.on('error', errorHandler);
       await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        ['0x10000001'],
+        mockHeadersChain('testnet', 1),
         1020,
       );
       expect(errorHandler).to.have.been.calledWith(error);
@@ -548,7 +541,7 @@ describe('BlockHeadersSyncWorker', () => {
     });
 
     it('should update block headers', () => {
-      const headers = ['0x10000006', '0x10000007', '0x10000008'];
+      const headers = mockHeadersChain('testnet', 3, spvChainHeaders[spvChainHeaders.length - 1]);
       const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       chainStore.state.lastSyncedHeaderHeight = 3;
@@ -591,7 +584,7 @@ describe('BlockHeadersSyncWorker', () => {
         .to.have.been.called;
     });
 
-    it('should emit error in case syncedHeadersCount is bigger than total headers count', function () {
+    it('should emit error in case syncedHeadersCount is bigger than total headers count', function test() {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       chainStore.state.lastSyncedHeaderHeight = 5;
 
@@ -620,7 +613,6 @@ describe('BlockHeadersSyncWorker', () => {
     });
 
     it('should emit progress event when chain started from genesis', () => {
-      // const { blockHeadersProvider: { spvChain } } = block
       blockHeadersSyncWorker.updateProgress();
 
       const { firstCall } = blockHeadersSyncWorker.parentEvents.emit;

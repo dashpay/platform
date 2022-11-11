@@ -32,9 +32,10 @@ class BlockHeadersSyncWorker extends Worker {
       ...options,
     });
 
-    this.maxHeadersToKeep = typeof options.maxHeadersToKeep === 'number'
-      ? options.maxHeadersToKeep
-      : MAX_HEADERS_TO_KEEP;
+    if (options.maxHeadersToKeep && typeof options.maxHeadersToKeep !== 'number') {
+      throw new Error(`Invalid maxHeadersToKeep "${options.maxHeadersToKeep}"`);
+    }
+    this.maxHeadersToKeep = options.maxHeadersToKeep || MAX_HEADERS_TO_KEEP;
 
     if (this.maxHeadersToKeep < MIN_HEADERS_TO_KEEP) {
       throw new Error(`Max headers to keep must be greater than ${MIN_HEADERS_TO_KEEP}, got ${this.maxHeadersToKeep}`);
@@ -250,6 +251,7 @@ class BlockHeadersSyncWorker extends Worker {
       const { blockHeadersProvider } = this.transport.client;
       const { spvChain } = blockHeadersProvider;
 
+      // TODO(spv): return only new headers added instead of the whole chain
       const longestChain = spvChain.getLongestChain({ withPruned: true });
       const { startBlockHeight } = spvChain;
       const { lastSyncedHeaderHeight } = chainStore.state;
@@ -259,10 +261,7 @@ class BlockHeadersSyncWorker extends Worker {
       const syncedHeadersCount = lastSyncedHeaderHeight;
 
       if (syncedHeadersCount > totalHeadersCount) {
-        const error = new Error(`Synced headers count ${syncedHeadersCount} is greater than total headers count ${totalHeadersCount}.`);
-        this.emitError(error);
-        logger.debug('[BlockHeadersSyncWorker] Error handling historical chain update:', error);
-        return;
+        throw new Error(`Synced headers count ${syncedHeadersCount} is greater than total headers count ${totalHeadersCount}.`);
       }
 
       if (syncedHeadersCount < totalHeadersCount) {
@@ -291,17 +290,11 @@ class BlockHeadersSyncWorker extends Worker {
       const chainStore = this.storage.getDefaultChainStore();
 
       if (typeof batchHeadHeight !== 'number' || Number.isNaN(batchHeadHeight)) {
-        const error = new Error(`Invalid batch head height ${batchHeadHeight}`);
-        this.emitError(error);
-        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
-        return;
+        throw new Error(`Invalid batch head height ${batchHeadHeight}`);
       }
 
       if (!newHeaders || !newHeaders.length) {
-        const error = new Error(`No new headers received for batch at height ${batchHeadHeight}`);
-        this.emitError(error);
-        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
-        return;
+        throw new Error(`No new headers received for batch at height ${batchHeadHeight}`);
       }
 
       const newChainHeight = batchHeadHeight + newHeaders.length - 1;
@@ -312,29 +305,24 @@ class BlockHeadersSyncWorker extends Worker {
         logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${chainHeight}`);
         return;
       } if (newChainHeight < chainHeight) {
-        const error = new Error(`New chain height ${newChainHeight} is less than latest height ${chainHeight}`);
-        this.emitError(error);
-        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
-        return;
+        throw new Error(`New chain height ${newChainHeight} is less than latest height ${chainHeight}`);
       }
 
-      const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
-      const block = new Block(rawBlock);
-
       const { blockHeadersProvider: { spvChain } } = this.transport.client;
+      // TODO(spv): request only new headers instead of the whole chain
       const longestChain = spvChain.getLongestChain({ withPruned: true });
 
       chainStore.updateChainHeight(newChainHeight);
       chainStore.updateLastSyncedHeaderHeight(newChainHeight);
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
+      const header = newHeaders[newHeaders.length - 1];
 
       logger.debug(`[BlockHeadersSyncWorker] Chain height updated: ${newChainHeight}`);
       logger.debug(`[--------------------->] Validity chain length: ${spvChain.getLongestChain().length}`);
-      logger.debug(`[--------------------->] New block hash: ${block.hash}`);
+      logger.debug(`[--------------------->] New block hash: ${header.hash}`);
 
       this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
-      this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
 
       this.storage.scheduleStateSave();
     } catch (e) {
@@ -351,6 +339,8 @@ class BlockHeadersSyncWorker extends Worker {
 
     const chainStore = this.storage.getDefaultChainStore();
     const { blockHeadersProvider } = this.transport.client;
+    // TODO(spv): consider caching progress data in historicalChainUpdateHandler
+    // and use values from there instead of duplicated computation
     const longestChain = blockHeadersProvider.spvChain.getLongestChain({ withPruned: true });
     const { orphanChunks, startBlockHeight } = blockHeadersProvider.spvChain;
     const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
