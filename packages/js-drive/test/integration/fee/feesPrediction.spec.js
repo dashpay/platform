@@ -104,14 +104,26 @@ describe('feesPrediction', () => {
   let stateRepository;
   let identity;
   let groveDBStore;
+  let blockInfo;
 
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
+
+    const timeMs = new Date().getTime();
+
+    blockInfo = {
+      height: 1,
+      epoch: 0,
+      timeMs,
+    };
+
     blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: new Date().getTime() / 1000 } },
+      { time: { seconds: timeMs / 1000 } },
     );
+
+    blockExecutionContext.createBlockInfo = this.sinon.stub().returns(blockInfo);
 
     dpp = container.resolve('dpp');
 

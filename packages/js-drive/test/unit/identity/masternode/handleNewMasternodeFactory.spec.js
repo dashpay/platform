@@ -8,6 +8,7 @@ const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('handleNewMasternodeFactory', () => {
   let handleNewMasternode;
@@ -19,6 +20,8 @@ describe('handleNewMasternodeFactory', () => {
   let transactionFixture;
   let masternodeEntry;
   let dataContract;
+  let blockExecutionContextMock;
+  let blockInfo;
 
   beforeEach(function beforeEach() {
     const smlFixture = getSmlFixture();
@@ -32,6 +35,16 @@ describe('handleNewMasternodeFactory', () => {
 
     createMasternodeIdentityMock = this.sinon.stub();
     createRewardShareDocumentMock = this.sinon.stub();
+
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    blockInfo = {
+      height: 1,
+      epoch: 0,
+      timeMs: 100,
+    };
+
+    blockExecutionContextMock.createBlockInfo.returns(blockInfo);
 
     transactionFixture = {
       extraPayload: {
@@ -48,6 +61,7 @@ describe('handleNewMasternodeFactory', () => {
       createMasternodeIdentityMock,
       createRewardShareDocumentMock,
       fetchTransactionMock,
+      blockExecutionContextMock,
     );
   });
 
@@ -98,6 +112,7 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'),
       10,
+      blockInfo,
     );
   });
 });

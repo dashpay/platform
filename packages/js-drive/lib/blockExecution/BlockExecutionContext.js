@@ -13,6 +13,8 @@ const {
 
 const Long = require('long');
 
+const timeToMillis = require('../util/timeToMillis');
+
 class BlockExecutionContext {
   constructor() {
     this.reset();
@@ -188,6 +190,44 @@ class BlockExecutionContext {
   }
 
   /**
+   * @param {EpochInfo} epochInfo
+   */
+  setEpochInfo(epochInfo) {
+    this.epochInfo = epochInfo;
+  }
+
+  /**
+   * @returns {EpochInfo}
+   */
+  getEpochInfo() {
+    return this.epochInfo;
+  }
+
+  /**
+   *
+   * @returns {BlockInfo}
+   */
+  createBlockInfo() {
+    const header = this.getHeader();
+
+    if (!header) {
+      throw new Error('header is not present yet');
+    }
+
+    const epochInfo = this.getEpochInfo();
+
+    if (!epochInfo) {
+      throw new Error('epoch info is not present yet');
+    }
+
+    return {
+      height: header.height.toNumber(),
+      timeMs: timeToMillis(header.time.seconds, header.time.nanos),
+      epoch: epochInfo.currentEpochIndex,
+    };
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -199,6 +239,7 @@ class BlockExecutionContext {
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
+    this.epochInfo = null;
   }
 
   /**
@@ -224,6 +265,7 @@ class BlockExecutionContext {
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
+    this.epochInfo = blockExecutionContext.epochInfo;
   }
 
   /**
@@ -239,11 +281,12 @@ class BlockExecutionContext {
     this.cumulativeProcessingFee = object.cumulativeProcessingFee;
     this.cumulativeStorageFee = object.cumulativeStorageFee;
 
-    this.header = Header.fromObject(object.header);
     this.validTxs = object.validTxs;
     this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
+    this.epochInfo = object.epochInfo;
 
+    this.header = Header.fromObject(object.header);
     this.header.time.seconds = Long.fromNumber(this.header.time.seconds);
     this.header.height = Long.fromNumber(this.header.height);
   }
@@ -257,7 +300,8 @@ class BlockExecutionContext {
    *  header: null,
    *  validTxs: number,
    *  cumulativeProcessingFee: number,
-   *  cumulativeStorageFee: number
+   *  cumulativeStorageFee: number,
+   *  epochInfo: EpochInfo
    * }}
    */
   toObject(options = {}) {
@@ -274,6 +318,7 @@ class BlockExecutionContext {
       lastCommitInfo: LastCommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
+      epochInfo: this.epochInfo,
     };
 
     if (!options.skipConsensusLogger) {

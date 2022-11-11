@@ -15,6 +15,9 @@
  * @method incrementInvalidTxCount
  * @method setConsensusLogger
  * @method getConsensusLogger
+ * @method getEpochInfo
+ * @method setEpochInfo
+ * @method createBlockInfo
  */
 class BlockExecutionContextMock {
   /**
@@ -41,6 +44,9 @@ class BlockExecutionContextMock {
     this.getConsensusLogger = sinon.stub();
     this.populate = sinon.stub();
     this.isEmpty = sinon.stub();
+    this.setEpochInfo = sinon.stub();
+    this.getEpochInfo = sinon.stub();
+    this.createBlockInfo = sinon.stub();
   }
 }
 

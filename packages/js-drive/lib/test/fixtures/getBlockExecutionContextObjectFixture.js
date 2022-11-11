@@ -55,6 +55,11 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     validTxs: 2,
     invalidTxs: 1,
     consensusLogger: pino(),
+    epochInfo: {
+      height: 1,
+      timeMs: 100,
+      epoch: 0,
+    },
   };
 }
 

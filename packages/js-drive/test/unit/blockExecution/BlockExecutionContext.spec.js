@@ -24,6 +24,7 @@ describe('BlockExecutionContext', () => {
   let plainObject;
   let validTxs;
   let invalidTxs;
+  let epochInfo;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -41,6 +42,7 @@ describe('BlockExecutionContext', () => {
     cumulativeStorageFee = plainObject.cumulativeStorageFee;
     validTxs = plainObject.validTxs;
     invalidTxs = plainObject.invalidTxs;
+    epochInfo = plainObject.epochInfo;
   });
 
   describe('#addDataContract', () => {
@@ -190,6 +192,20 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setEpochInfo', () => {
+    it('should set epoch info');
+  });
+
+  describe('#getEpochInfo', () => {
+    it('should return epoch info');
+  });
+
+  describe('#createBlockInfo', () => {
+    it('should create block info');
+    it('should throw an error if header is not present');
+    it('should throw an error if epoch info in not present');
+  });
+
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -202,6 +218,7 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.validTxs = validTxs;
       anotherBlockExecutionContext.invalidTxs = invalidTxs;
       anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.epochInfo = epochInfo;
 
       blockExecutionContext.populate(anotherBlockExecutionContext);
 
@@ -229,6 +246,9 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.consensusLogger).to.equal(
         anotherBlockExecutionContext.consensusLogger,
       );
+      expect(blockExecutionContext.epochInfo).to.equal(
+        anotherBlockExecutionContext.epochInfo,
+      );
     });
   });
 
@@ -242,6 +262,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.epochInfo = epochInfo;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -255,6 +276,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.epochInfo = epochInfo;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 

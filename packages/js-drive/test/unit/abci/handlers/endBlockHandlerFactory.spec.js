@@ -91,10 +91,12 @@ describe('endBlockHandlerFactory', () => {
       blockEnd: blockEndMock,
     };
 
-    blockEndMock.resolves({
+    blockExecutionContextMock.getEpochInfo.returns({
       currentEpochIndex: 42,
       isEpochChange: true,
     });
+
+    blockEndMock.resolves({ });
 
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,

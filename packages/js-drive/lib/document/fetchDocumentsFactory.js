@@ -15,11 +15,12 @@ function fetchDocumentsFactory(
    * @typedef {Promise} fetchDocuments
    * @param {Buffer|Identifier} dataContractId
    * @param {string} type
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options] options
    * @param {boolean} [options.useTransaction=false]
    * @returns {Promise<Document[]>}
    */
-  async function fetchDocuments(dataContractId, type, options) {
+  async function fetchDocuments(dataContractId, type, blockInfo, options) {
     const dataContractResult = await fetchDataContract(dataContractId);
 
     const dataContract = dataContractResult.getValue();
@@ -32,6 +33,7 @@ function fetchDocumentsFactory(
     const result = await documentRepository.find(
       dataContract,
       type,
+      blockInfo,
       options,
     );
 

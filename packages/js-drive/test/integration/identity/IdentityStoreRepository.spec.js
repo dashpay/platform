@@ -307,7 +307,6 @@ describe('IdentityStoreRepository', () => {
 
       expect(data).to.deep.equal({
         type: 'tree',
-        value: Buffer.alloc(32),
       });
     });
   });

@@ -139,7 +139,28 @@ function beginBlockHandlerFactory(
 
     logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    await rsAbci.blockBegin(rsRequest, true);
+    const rsResponse = await rsAbci.blockBegin(rsRequest, true);
+
+    blockExecutionContext.setEpochInfo(rsResponse.epochInfo);
+
+    const { currentEpochIndex, isEpochChange } = rsResponse;
+
+    if (isEpochChange) {
+      const blockTime = timeToMillis(header.time.seconds, header.time.nanos);
+
+      const debugData = {
+        currentEpochIndex,
+        blockTime,
+      };
+
+      if (rsRequest.previousBlockTimeMs) {
+        debugData.previousBlockTimeMs = rsRequest.previousBlockTimeMs;
+      }
+
+      const blockTimeFormatted = new Date(blockTime).toUTCString();
+
+      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
+    }
 
     // Update SML
 

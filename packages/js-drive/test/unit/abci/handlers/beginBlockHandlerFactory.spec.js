@@ -36,6 +36,7 @@ describe('beginBlockHandlerFactory', () => {
   let blockExecutionContextStackMock;
   let executionTimerMock;
   let rsAbciMock;
+  let rsResponseMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -72,8 +73,15 @@ describe('beginBlockHandlerFactory', () => {
       stopTimer: this.sinon.stub(),
     };
 
+    rsResponseMock = {
+      epochInfo: {
+        currentEpochIndex: 1,
+        isEpochChange: false,
+      },
+    };
+
     rsAbciMock = {
-      blockBegin: this.sinon.stub(),
+      blockBegin: this.sinon.stub().resolves(rsResponseMock),
     };
 
     beginBlockHandler = beginBlockHandlerFactory(

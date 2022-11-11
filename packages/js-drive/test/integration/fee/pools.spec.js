@@ -16,14 +16,24 @@ describe('Fee Pools', () => {
   let rsDrive;
   let mnDatas;
   let identityRepository;
+  let blockInfo;
 
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
 
+    blockInfo = {
+      height: 1,
+      epoch: 0,
+      timeMs: 100,
+    };
+
     const blockExecutionContext = container.resolve('blockExecutionContext');
+
     blockExecutionContext.getHeader = this.sinon.stub().returns(
       { time: { seconds: new Date().getTime() / 1000 } },
     );
+
+    blockExecutionContext.createBlockInfo = this.sinon.stub().returns(blockInfo);
 
     const dataContractRepository = container.resolve('dataContractRepository');
     const documentRepository = container.resolve('documentRepository');
@@ -39,7 +49,7 @@ describe('Fee Pools', () => {
     const mnSharesContract = getMasternodeRewardSharesContractFixture();
     mnSharesContract.id = Identifier.from(masternodeRewardSharesSystemIds.contractId);
 
-    await dataContractRepository.store(mnSharesContract);
+    await dataContractRepository.store(mnSharesContract, blockInfo);
 
     mnDatas = [];
     const mnCount = 1;
@@ -57,7 +67,7 @@ describe('Fee Pools', () => {
 
       await identityRepository.create(mnIdentity);
       await identityRepository.create(payToIdentity);
-      await documentRepository.create(payToDocument);
+      await documentRepository.create(payToDocument, blockInfo);
 
       mnDatas.push({
         mnIdentity,

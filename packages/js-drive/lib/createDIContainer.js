@@ -132,6 +132,7 @@ const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
+const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 
 /**
  *
@@ -339,6 +340,7 @@ function createDIContainer(options) {
     decodeChainLock: asValue(decodeChainLock),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     getRandomQuorum: asValue(getRandomQuorum),
+    fetchSimplifiedMNList: asFunction(fetchSimplifiedMNListFactory),
     coreZMQClient: asFunction((
       coreZMQHost,
       coreZMQPort,

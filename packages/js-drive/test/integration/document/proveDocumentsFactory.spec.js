@@ -13,6 +13,7 @@ describe('proveDocumentsFactory', () => {
   let documentRepository;
   let dataContract;
   let container;
+  let blockInfo;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
@@ -36,13 +37,19 @@ describe('proveDocumentsFactory', () => {
       },
     ];
 
+    blockInfo = {
+      height: 1,
+      epoch: 0,
+      timeMs: 100,
+    };
+
     /**
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
-    await dataContractRepository.store(dataContract);
+    await dataContractRepository.store(dataContract, blockInfo);
 
     proveDocuments = container.resolve('proveDocuments');
   });
@@ -54,7 +61,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should return proof for specified contract ID and document type', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const result = await proveDocuments(contractId, documentType);
 
@@ -68,7 +75,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should return proof for specified contract id, document type and name', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const query = { where: [['name', '==', document.get('name')]] };
 
@@ -81,7 +88,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should return proof for specified contract ID, document type and name not exist', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const query = { where: [['name', '==', 'unknown']] };
 
@@ -99,7 +106,7 @@ describe('proveDocumentsFactory', () => {
   it('should return proof by an equal date', async () => {
     const indexedDocument = getDocumentsFixture(dataContract)[3];
 
-    await documentRepository.create(indexedDocument);
+    await documentRepository.create(indexedDocument, blockInfo);
 
     const query = {
       where: [
@@ -121,7 +128,7 @@ describe('proveDocumentsFactory', () => {
   it('should return proof by a date range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.create(indexedDocument);
+    await documentRepository.create(indexedDocument, blockInfo);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() - 10);
@@ -151,7 +158,7 @@ describe('proveDocumentsFactory', () => {
   it('should fetch empty array in case date is out of range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.create(indexedDocument);
+    await documentRepository.create(indexedDocument, blockInfo);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() + 10);
@@ -179,7 +186,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const query = { where: [['lastName', '==', 'unknown']] };
 

@@ -28,6 +28,7 @@ function registerSystemDataContractFactory(
    * @param {PublicKey} masterPublicKey
    * @param {PublicKey} secondPublicKey
    * @param {Object} documentDefinitions
+   * @param {BlockInfo} blockInfo
    *
    * @returns {Promise<DataContract>}
    */
@@ -37,6 +38,7 @@ function registerSystemDataContractFactory(
     masterPublicKey,
     secondPublicKey,
     documentDefinitions,
+    blockInfo,
   ) {
     const ownerIdentity = dpp.identity.create(
       {
@@ -68,7 +70,7 @@ function registerSystemDataContractFactory(
 
     dataContract.id = contractId;
 
-    await dataContractRepository.store(dataContract, {
+    await dataContractRepository.store(dataContract, blockInfo, {
       useTransaction: true,
     });
 

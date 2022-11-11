@@ -232,8 +232,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDataContract(dataContract, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
     const result = await this.dataContractRepository.store(
       dataContract,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -253,9 +256,12 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
     const result = await this.fetchDocumentsFunction(
       contractId,
       type,
+      blockInfo,
       {
         ...options,
         ...this.#createRepositoryOptions(executionContext),
@@ -278,8 +284,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDocument(document, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
     const result = await this.documentRepository.create(
       document,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -297,8 +306,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDocument(document, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
     const result = await this.documentRepository.update(
       document,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -318,10 +330,13 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(dataContract, type, id, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
     const result = await this.documentRepository.delete(
       dataContract,
       type,
       id,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -341,6 +356,7 @@ class DriveStateRepository {
   async fetchTransaction(id, executionContext = undefined) {
     if (executionContext && executionContext.isDryRun()) {
       executionContext.addOperation(
+        // TODO: Revisit this value
         new ReadOperation(512),
       );
 

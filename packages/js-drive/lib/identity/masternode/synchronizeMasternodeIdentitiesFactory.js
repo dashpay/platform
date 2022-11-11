@@ -1,5 +1,4 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
@@ -14,8 +13,8 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  * @param {handleRemovedMasternode} handleRemovedMasternode
  * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
  * @param {number} smlMaxListsLimit
- * @param {RpcClient} coreRpcClient
  * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
+ * @param {fetchSimplifiedMNList} fetchSimplifiedMNList
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
@@ -27,8 +26,8 @@ function synchronizeMasternodeIdentitiesFactory(
   handleRemovedMasternode,
   handleUpdatedScriptPayout,
   smlMaxListsLimit,
-  coreRpcClient,
   lastSyncedCoreHeightRepository,
+  fetchSimplifiedMNList,
 ) {
   let lastSyncedCoreHeight = 0;
 
@@ -78,9 +77,7 @@ function synchronizeMasternodeIdentitiesFactory(
       // simplifiedMasternodeList contains sml only for the last `smlMaxListsLimit` number of blocks
       if (coreHeight - lastSyncedCoreHeight >= smlMaxListsLimit) {
         // get diff directly from core
-        const { result: rawDiff } = await coreRpcClient.protx('diff', 1, lastSyncedCoreHeight, true);
-
-        previousMNList = new SimplifiedMNList(rawDiff).mnList;
+        ({ mnList: previousMNList } = await fetchSimplifiedMNList(1, lastSyncedCoreHeight));
       } else {
         previousMNList = simplifiedMasternodeList.getStore()
           .getSMLbyHeight(lastSyncedCoreHeight)

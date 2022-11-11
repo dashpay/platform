@@ -8,6 +8,7 @@ const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransitio
 
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
@@ -28,6 +29,7 @@ describe('DriveStateRepository', () => {
   let repositoryOptions;
   let executionContext;
   let operations;
+  let blockInfo;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -71,9 +73,15 @@ describe('DriveStateRepository', () => {
       delete: this.sinon.stub(),
     };
 
-    blockExecutionContextMock = {
-      getHeader: this.sinon.stub(),
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    blockInfo = {
+      height: 1,
+      timeMs: 100,
+      epoch: 0,
     };
+
+    blockExecutionContextMock.createBlockInfo.returns(blockInfo);
 
     simplifiedMasternodeListMock = {
       getStore: this.sinon.stub(),
@@ -294,6 +302,7 @@ describe('DriveStateRepository', () => {
 
       expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
         dataContract,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -324,6 +333,7 @@ describe('DriveStateRepository', () => {
       expect(fetchDocumentsMock).to.be.calledOnceWith(
         id,
         type,
+        blockInfo,
         {
           ...options,
           useTransaction: repositoryOptions.useTransaction,
@@ -347,6 +357,7 @@ describe('DriveStateRepository', () => {
 
       expect(documentsRepositoryMock.create).to.be.calledOnceWith(
         document,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -369,6 +380,7 @@ describe('DriveStateRepository', () => {
 
       expect(documentsRepositoryMock.update).to.be.calledOnceWith(
         document,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -393,6 +405,7 @@ describe('DriveStateRepository', () => {
         dataContract,
         type,
         id,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,

@@ -12,6 +12,7 @@ describe('fetchDataContractFactory', () => {
   let dataContractRepository;
   let dataContract;
   let container;
+  let blockInfo;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
@@ -22,13 +23,19 @@ describe('fetchDataContractFactory', () => {
 
     contractId = dataContract.getId();
 
+    blockInfo = {
+      height: 1,
+      epoch: 0,
+      timeMs: 100,
+    };
+
     /**
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
-    await dataContractRepository.store(dataContract);
+    await dataContractRepository.store(dataContract, blockInfo);
 
     fetchDataContract = container.resolve('fetchDataContract');
   });

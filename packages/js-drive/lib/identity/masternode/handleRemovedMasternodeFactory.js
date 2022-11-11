@@ -1,9 +1,12 @@
 /**
+ * @param {DocumentRepository} documentRepository
+ * @param {BlockExecutionContext} blockExecutionContext
  *
  * @returns {handleRemovedMasternode}
  */
 function handleRemovedMasternodeFactory(
   documentRepository,
+  blockExecutionContext,
 ) {
   /**
    * @typedef {handleRemovedMasternode}
@@ -13,9 +16,12 @@ function handleRemovedMasternodeFactory(
     // since max amount is 16, we can fetch all of them in one request
     const result = [];
 
+    const blockInfo = blockExecutionContext.createBlockInfo();
+
     const fetchedDocumentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
+      blockInfo,
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier],
@@ -31,6 +37,7 @@ function handleRemovedMasternodeFactory(
         dataContract,
         'rewardShare',
         document.getId(),
+        blockInfo,
         { useTransaction: true },
       );
 

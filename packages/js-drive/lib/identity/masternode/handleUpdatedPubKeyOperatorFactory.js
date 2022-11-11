@@ -13,6 +13,7 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  * @param {createRewardShareDocument} createRewardShareDocument
  * @param {DocumentRepository} documentRepository
  * @param {fetchTransaction} fetchTransaction
+ * @param {BlockExecutionContext} blockExecutionContext
  * @return {handleUpdatedPubKeyOperator}
  */
 function handleUpdatedPubKeyOperatorFactory(
@@ -23,6 +24,7 @@ function handleUpdatedPubKeyOperatorFactory(
   createRewardShareDocument,
   documentRepository,
   fetchTransaction,
+  blockExecutionContext,
 ) {
   /**
    * @typedef handleUpdatedPubKeyOperator
@@ -77,11 +79,14 @@ function handleUpdatedPubKeyOperatorFactory(
       proRegTxHash,
     );
 
+    const blockInfo = blockExecutionContext.createBlockInfo();
+
     const rewardShareDocument = await createRewardShareDocument(
       dataContract,
       masternodeIdentifier,
       operatorIdentifier,
       proRegTxPayload.operatorReward,
+      blockInfo,
     );
 
     if (rewardShareDocument) {
@@ -96,6 +101,7 @@ function handleUpdatedPubKeyOperatorFactory(
     const previousDocumentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
+      blockInfo,
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier],
@@ -112,6 +118,7 @@ function handleUpdatedPubKeyOperatorFactory(
         dataContract,
         'rewardShare',
         previousDocument.getId(),
+        blockInfo,
         { useTransaction: true },
       );
 
