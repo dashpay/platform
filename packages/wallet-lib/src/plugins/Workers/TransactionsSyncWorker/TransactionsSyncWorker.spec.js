@@ -407,7 +407,7 @@ describe('TransactionsSyncWorker', () => {
         .to.equal(TransactionsSyncWorker.STATES.CONTINUOUS_SYNC);
     });
 
-    it('should forward an error from blockHeadersProvider', async function () {
+    it('should forward an error from blockHeadersProvider', async function test() {
       transactionsSyncWorker.syncCheckpoint = 1200;
       await transactionsSyncWorker.execute();
 
@@ -516,7 +516,7 @@ describe('TransactionsSyncWorker', () => {
       expect(transactionsReader.stopHistoricalSync).to.have.not.been.called();
     });
 
-    it('should unsubscribe from blockHeightChanged handler', async function () {
+    it('should unsubscribe from blockHeightChanged handler', async function test() {
       const handler = this.sinon.spy();
       transactionsSyncWorker.blockHeightChangedHandler = handler;
       transactionsSyncWorker.parentEvents.on(
@@ -567,7 +567,7 @@ describe('TransactionsSyncWorker', () => {
     });
 
     context('Accept merkle block', () => {
-      it('should verify transactions in the pool and accept merkle block', function () {
+      it('should verify transactions in the pool and accept merkle block', function test() {
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -627,7 +627,7 @@ describe('TransactionsSyncWorker', () => {
     });
 
     context('Reject merkle block', () => {
-      it('should reject in case header metadata is missing', function () {
+      it('should reject in case header metadata is missing', function test() {
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -661,7 +661,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
 
-      it('should reject in case of invalid header time', function () {
+      it('should reject in case of invalid header time', function test() {
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -700,7 +700,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
 
-      it('should reject in case of invalid header height', function () {
+      it('should reject in case of invalid header height', function test() {
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -738,7 +738,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
 
-      it('should reject if tx hash from verification pool not present in the merkle block', function () {
+      it('should reject if tx hash from verification pool not present in the merkle block', function test() {
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -787,7 +787,7 @@ describe('TransactionsSyncWorker', () => {
       transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
     });
 
-    it('should handle new transactions', function () {
+    it('should handle new transactions', function test() {
       const transactions = ADDRESSES_KEYCHAIN_1.slice(0, 2)
         .map((address) => new Transaction().to(address, 1000));
 
@@ -825,9 +825,49 @@ describe('TransactionsSyncWorker', () => {
       expect(() => transactionsSyncWorker.newTransactionsHandler({ transactions: [] }))
         .to.throw('No new transactions to process');
     });
+
+    it('should not handle same transactions twice', function test() {
+      // Make importTransactions memorize transactions
+      const chainStore = transactionsSyncWorker.storage.getDefaultChainStore();
+      transactionsSyncWorker.importTransactions.callsFake((txs) => {
+        txs.forEach(([tx]) => {
+          chainStore.state.transactions.set(tx.hash, tx);
+        });
+        return [];
+      });
+
+      // Generate and handle first set of transactions
+      const transactions = ADDRESSES_KEYCHAIN_1.slice(0, 2)
+        .map((address) => new Transaction().to(address, 1000));
+
+      transactionsSyncWorker.newTransactionsHandler({
+        transactions,
+        appendAddresses: this.sinon.spy(),
+      });
+
+      // Generate and handle second set of transactions with duplicated ones
+      const transactionsWithDuplicates = ADDRESSES_KEYCHAIN_1
+        .map((address) => new Transaction().to(address, 1000));
+
+      transactionsSyncWorker.newTransactionsHandler({
+        transactions: transactionsWithDuplicates,
+        appendAddresses: this.sinon.spy(),
+      });
+
+      const { firstCall } = transactionsSyncWorker.importTransactions;
+      const { secondCall } = transactionsSyncWorker.importTransactions;
+
+      expect(firstCall.args)
+        .to.deep.equal([transactions.map((tx) => [tx])]);
+
+      expect(secondCall.args[0].length).to.be.greaterThan(0);
+      const addedTxs = transactionsWithDuplicates.slice(transactions.length);
+      expect(secondCall.args)
+        .to.deep.equal([addedTxs.map((tx) => [tx])]);
+    });
   });
 
-  describe('#newMerkleBlockHandler', () => {
+  describe.only('#newMerkleBlockHandler', () => {
     let storage;
     let chainStore;
     beforeEach(function beforeEach() {
@@ -836,8 +876,33 @@ describe('TransactionsSyncWorker', () => {
       chainStore = storage.getDefaultChainStore();
     });
 
+    it('should not process same merkle block two times', function () {
+      const merkleBlock = mockMerkleBlock([]);
+      const merkleBlockHeight = 500;
+
+      // Update chain store
+      const metadata = {
+        height: merkleBlockHeight,
+        time: merkleBlock.header.time,
+      };
+      chainStore.state.headersMetadata.set(merkleBlock.header.hash, metadata);
+
+      // Prepare event handler payload
+      const dataEventPayload = {
+        merkleBlock,
+        acceptMerkleBlock: this.sinon.spy(),
+        rejectMerkleBlock: this.sinon.spy(),
+      };
+
+      transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+      chainStore.state.lastSyncedBlockHeight = merkleBlockHeight;
+      transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+      expect(dataEventPayload.acceptMerkleBlock).to.have.been.calledOnce();
+    });
+
     context('Accept merkle block', () => {
-      it('should verify transactions in the pool and accept merkle block', function () {
+      it('should verify transactions in the pool and accept merkle block', function test() {
         // Create transactions
         const transactions = [
           new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000),
@@ -895,7 +960,7 @@ describe('TransactionsSyncWorker', () => {
           .to.deep.equal([EVENTS.CONFIRMED_TRANSACTION, transactions[1]]);
       });
 
-      it('should verify merkle block if no relevant transactions found', function () {
+      it('should verify merkle block if no relevant transactions found', function test() {
         // Create merkle block
         const merkleBlock = mockMerkleBlock([]);
         const merkleBlockHeight = 500;
@@ -926,7 +991,7 @@ describe('TransactionsSyncWorker', () => {
         expect(storage.scheduleStateSave).to.have.been.called();
       });
 
-      it('should retry after BLOCKHEIGHT_CHANGED event in case metadata was not found', function () {
+      it('should retry after BLOCKHEIGHT_CHANGED event in case metadata was not found', function test() {
         // Create merkle block
         const merkleBlock = mockMerkleBlock([]);
         const merkleBlockHeight = 500;
@@ -962,7 +1027,7 @@ describe('TransactionsSyncWorker', () => {
     });
 
     context('Reject merkle block', () => {
-      it('should reject in case of invalid header metadata', function () {
+      it('should reject in case of invalid header metadata', function test() {
         const merkleBlock = mockMerkleBlock([]);
         const merkleBlockHeight = 500;
 
@@ -990,7 +1055,7 @@ describe('TransactionsSyncWorker', () => {
         expect(storage.scheduleStateSave).to.have.not.been.called();
       });
 
-      it('should reject in case of invalid header height', function () {
+      it('should reject in case of invalid header height', function test() {
         const merkleBlock = mockMerkleBlock([]);
 
         // Update chain store

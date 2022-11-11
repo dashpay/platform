@@ -470,22 +470,27 @@ class TransactionsSyncWorker extends Worker {
    * Processing new TXs during the continuous sync
    */
   newTransactionsHandler(payload) {
-    // TODO(spv): make sure that we are not doing the same job for already processed transactions
     const { transactions, appendAddresses } = payload;
 
     if (!transactions.length) {
       throw new Error('No new transactions to process');
     }
 
-    transactions.forEach((tx) => {
-      this.historicalTransactionsToVerify.set(tx.hash, tx);
-    });
+    const chainStore = this.storage.getDefaultChainStore();
+    const newTransactions = transactions
+      .filter((tx) => !chainStore.state.transactions.has(tx.hash));
 
-    const { addressesGenerated } = this.importTransactions(
-      transactions.map((tx) => [tx]),
-    );
+    if (newTransactions.length) {
+      newTransactions.forEach((tx) => {
+        this.historicalTransactionsToVerify.set(tx.hash, tx);
+      });
 
-    appendAddresses(addressesGenerated);
+      const { addressesGenerated } = this.importTransactions(
+        newTransactions.map((tx) => [tx]),
+      );
+
+      appendAddresses(addressesGenerated);
+    }
   }
 
   /**
