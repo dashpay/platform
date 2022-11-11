@@ -62,9 +62,11 @@ static GPBFileDescriptor *PlatformRoot_FileDescriptor(void) {
 @dynamic merkleProof;
 @dynamic signatureLlmqHash;
 @dynamic signature;
+@dynamic round;
 
 typedef struct Proof__storage_ {
   uint32_t _has_storage_[1];
+  uint32_t round;
   NSData *merkleProof;
   NSData *signatureLlmqHash;
   NSData *signature;
@@ -103,6 +105,15 @@ typedef struct Proof__storage_ {
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
+      {
+        .name = "round",
+        .dataTypeSpecific.clazz = Nil,
+        .number = Proof_FieldNumber_Round,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(Proof__storage_, round),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[Proof class]
@@ -128,14 +139,12 @@ typedef struct Proof__storage_ {
 
 @dynamic height;
 @dynamic coreChainLockedHeight;
-@dynamic signature;
 @dynamic hasBlockTime, blockTime;
 @dynamic protocolVersion;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
-  NSData *signature;
   GPBTimestamp *blockTime;
   int64_t height;
   uint64_t protocolVersion;
@@ -166,19 +175,10 @@ typedef struct ResponseMetadata__storage_ {
         .dataType = GPBDataTypeUInt32,
       },
       {
-        .name = "signature",
-        .dataTypeSpecific.clazz = Nil,
-        .number = ResponseMetadata_FieldNumber_Signature,
-        .hasIndex = 2,
-        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, signature),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
-      },
-      {
         .name = "blockTime",
         .dataTypeSpecific.clazz = GPBObjCClass(GPBTimestamp),
         .number = ResponseMetadata_FieldNumber_BlockTime,
-        .hasIndex = 3,
+        .hasIndex = 2,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, blockTime),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -187,7 +187,7 @@ typedef struct ResponseMetadata__storage_ {
         .name = "protocolVersion",
         .dataTypeSpecific.clazz = Nil,
         .number = ResponseMetadata_FieldNumber_ProtocolVersion,
-        .hasIndex = 4,
+        .hasIndex = 3,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, protocolVersion),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,

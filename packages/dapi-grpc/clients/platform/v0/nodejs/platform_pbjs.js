@@ -329,6 +329,7 @@ $root.org = (function() {
                          * @property {Uint8Array|null} [merkleProof] Proof merkleProof
                          * @property {Uint8Array|null} [signatureLlmqHash] Proof signatureLlmqHash
                          * @property {Uint8Array|null} [signature] Proof signature
+                         * @property {number|null} [round] Proof round
                          */
 
                         /**
@@ -371,6 +372,14 @@ $root.org = (function() {
                         Proof.prototype.signature = $util.newBuffer([]);
 
                         /**
+                         * Proof round.
+                         * @member {number} round
+                         * @memberof org.dash.platform.dapi.v0.Proof
+                         * @instance
+                         */
+                        Proof.prototype.round = 0;
+
+                        /**
                          * Creates a new Proof instance using the specified properties.
                          * @function create
                          * @memberof org.dash.platform.dapi.v0.Proof
@@ -400,6 +409,8 @@ $root.org = (function() {
                                 writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.signatureLlmqHash);
                             if (message.signature != null && Object.hasOwnProperty.call(message, "signature"))
                                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signature);
+                            if (message.round != null && Object.hasOwnProperty.call(message, "round"))
+                                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.round);
                             return writer;
                         };
 
@@ -442,6 +453,9 @@ $root.org = (function() {
                                     break;
                                 case 3:
                                     message.signature = reader.bytes();
+                                    break;
+                                case 4:
+                                    message.round = reader.uint32();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -487,6 +501,9 @@ $root.org = (function() {
                             if (message.signature != null && message.hasOwnProperty("signature"))
                                 if (!(message.signature && typeof message.signature.length === "number" || $util.isString(message.signature)))
                                     return "signature: buffer expected";
+                            if (message.round != null && message.hasOwnProperty("round"))
+                                if (!$util.isInteger(message.round))
+                                    return "round: integer expected";
                             return null;
                         };
 
@@ -517,6 +534,8 @@ $root.org = (function() {
                                     $util.base64.decode(object.signature, message.signature = $util.newBuffer($util.base64.length(object.signature)), 0);
                                 else if (object.signature.length >= 0)
                                     message.signature = object.signature;
+                            if (object.round != null)
+                                message.round = object.round >>> 0;
                             return message;
                         };
 
@@ -555,6 +574,7 @@ $root.org = (function() {
                                     if (options.bytes !== Array)
                                         object.signature = $util.newBuffer(object.signature);
                                 }
+                                object.round = 0;
                             }
                             if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
                                 object.merkleProof = options.bytes === String ? $util.base64.encode(message.merkleProof, 0, message.merkleProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.merkleProof) : message.merkleProof;
@@ -562,6 +582,8 @@ $root.org = (function() {
                                 object.signatureLlmqHash = options.bytes === String ? $util.base64.encode(message.signatureLlmqHash, 0, message.signatureLlmqHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.signatureLlmqHash) : message.signatureLlmqHash;
                             if (message.signature != null && message.hasOwnProperty("signature"))
                                 object.signature = options.bytes === String ? $util.base64.encode(message.signature, 0, message.signature.length) : options.bytes === Array ? Array.prototype.slice.call(message.signature) : message.signature;
+                            if (message.round != null && message.hasOwnProperty("round"))
+                                object.round = message.round;
                             return object;
                         };
 
@@ -587,7 +609,6 @@ $root.org = (function() {
                          * @interface IResponseMetadata
                          * @property {number|Long|null} [height] ResponseMetadata height
                          * @property {number|null} [coreChainLockedHeight] ResponseMetadata coreChainLockedHeight
-                         * @property {Uint8Array|null} [signature] ResponseMetadata signature
                          * @property {google.protobuf.ITimestamp|null} [blockTime] ResponseMetadata blockTime
                          * @property {number|Long|null} [protocolVersion] ResponseMetadata protocolVersion
                          */
@@ -622,14 +643,6 @@ $root.org = (function() {
                          * @instance
                          */
                         ResponseMetadata.prototype.coreChainLockedHeight = 0;
-
-                        /**
-                         * ResponseMetadata signature.
-                         * @member {Uint8Array} signature
-                         * @memberof org.dash.platform.dapi.v0.ResponseMetadata
-                         * @instance
-                         */
-                        ResponseMetadata.prototype.signature = $util.newBuffer([]);
 
                         /**
                          * ResponseMetadata blockTime.
@@ -675,12 +688,10 @@ $root.org = (function() {
                                 writer.uint32(/* id 1, wireType 0 =*/8).int64(message.height);
                             if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
                                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.coreChainLockedHeight);
-                            if (message.signature != null && Object.hasOwnProperty.call(message, "signature"))
-                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signature);
                             if (message.blockTime != null && Object.hasOwnProperty.call(message, "blockTime"))
-                                $root.google.protobuf.Timestamp.encode(message.blockTime, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                $root.google.protobuf.Timestamp.encode(message.blockTime, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
-                                writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.protocolVersion);
+                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.protocolVersion);
                             return writer;
                         };
 
@@ -722,12 +733,9 @@ $root.org = (function() {
                                     message.coreChainLockedHeight = reader.uint32();
                                     break;
                                 case 3:
-                                    message.signature = reader.bytes();
-                                    break;
-                                case 4:
                                     message.blockTime = $root.google.protobuf.Timestamp.decode(reader, reader.uint32());
                                     break;
-                                case 5:
+                                case 4:
                                     message.protocolVersion = reader.uint64();
                                     break;
                                 default:
@@ -771,9 +779,6 @@ $root.org = (function() {
                             if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
                                 if (!$util.isInteger(message.coreChainLockedHeight))
                                     return "coreChainLockedHeight: integer expected";
-                            if (message.signature != null && message.hasOwnProperty("signature"))
-                                if (!(message.signature && typeof message.signature.length === "number" || $util.isString(message.signature)))
-                                    return "signature: buffer expected";
                             if (message.blockTime != null && message.hasOwnProperty("blockTime")) {
                                 var error = $root.google.protobuf.Timestamp.verify(message.blockTime);
                                 if (error)
@@ -808,11 +813,6 @@ $root.org = (function() {
                                     message.height = new $util.LongBits(object.height.low >>> 0, object.height.high >>> 0).toNumber();
                             if (object.coreChainLockedHeight != null)
                                 message.coreChainLockedHeight = object.coreChainLockedHeight >>> 0;
-                            if (object.signature != null)
-                                if (typeof object.signature === "string")
-                                    $util.base64.decode(object.signature, message.signature = $util.newBuffer($util.base64.length(object.signature)), 0);
-                                else if (object.signature.length >= 0)
-                                    message.signature = object.signature;
                             if (object.blockTime != null) {
                                 if (typeof object.blockTime !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.ResponseMetadata.blockTime: object expected");
@@ -850,13 +850,6 @@ $root.org = (function() {
                                 } else
                                     object.height = options.longs === String ? "0" : 0;
                                 object.coreChainLockedHeight = 0;
-                                if (options.bytes === String)
-                                    object.signature = "";
-                                else {
-                                    object.signature = [];
-                                    if (options.bytes !== Array)
-                                        object.signature = $util.newBuffer(object.signature);
-                                }
                                 object.blockTime = null;
                                 if ($util.Long) {
                                     var long = new $util.Long(0, 0, true);
@@ -871,8 +864,6 @@ $root.org = (function() {
                                     object.height = options.longs === String ? $util.Long.prototype.toString.call(message.height) : options.longs === Number ? new $util.LongBits(message.height.low >>> 0, message.height.high >>> 0).toNumber() : message.height;
                             if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
                                 object.coreChainLockedHeight = message.coreChainLockedHeight;
-                            if (message.signature != null && message.hasOwnProperty("signature"))
-                                object.signature = options.bytes === String ? $util.base64.encode(message.signature, 0, message.signature.length) : options.bytes === Array ? Array.prototype.slice.call(message.signature) : message.signature;
                             if (message.blockTime != null && message.hasOwnProperty("blockTime"))
                                 object.blockTime = $root.google.protobuf.Timestamp.toObject(message.blockTime, options);
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))

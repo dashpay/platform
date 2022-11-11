@@ -58,7 +58,6 @@ describe('getProofsQueryHandlerFactory', () => {
     blockExecutionContextMock.getLastCommitInfo.returns({
       quorumHash: Buffer.alloc(32, 1),
       stateSignature: Buffer.alloc(32, 1),
-      blockSignature: Buffer.alloc(32).fill(2),
     });
 
     signedIdentityRepositoryMock = {
@@ -120,7 +119,6 @@ describe('getProofsQueryHandlerFactory', () => {
           metadata: {
             height: 42,
             coreChainLockedHeight: 41,
-            signature: Buffer.alloc(32).fill(2),
             blockTime: {
               seconds: 86400,
               nanos: 0,

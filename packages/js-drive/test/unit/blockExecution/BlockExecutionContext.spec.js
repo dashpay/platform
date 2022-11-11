@@ -219,6 +219,30 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setRound', () => {
+    it('should set round', async () => {
+      const result = blockExecutionContext.setRound(
+        plainObject.round,
+      );
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.round).to.deep.equal(
+        plainObject.round,
+      );
+    });
+  });
+
+  describe('#getRound', () => {
+    it('should get round', async () => {
+      blockExecutionContext.round = plainObject.round;
+
+      expect(blockExecutionContext.getRound()).to.deep.equal(
+        plainObject.round,
+      );
+    });
+  });
+
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -272,6 +296,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.version = version;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.round = plainObject.round;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -286,6 +311,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.version = version;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.round = plainObject.round;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 

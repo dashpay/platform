@@ -42,7 +42,6 @@ describe('createQueryResponseFactory', () => {
       coreChainLockedHeight: 1,
       blockTime: time.toJSON(),
       protocolVersion: version.app,
-      signature: lastCommitInfo.blockSignature.toString('base64'),
     };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
@@ -53,6 +52,7 @@ describe('createQueryResponseFactory', () => {
     blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
     blockExecutionContextMock.isEmpty.returns(false);
+    blockExecutionContextMock.getRound.returns(42);
 
     createQueryResponse = createQueryResponseFactory(
       blockExecutionContextMock,
@@ -82,6 +82,7 @@ describe('createQueryResponseFactory', () => {
       signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
       signature: lastCommitInfo.stateSignature.toString('base64'),
       merkleProof: '',
+      round: 42,
     });
   });
 });

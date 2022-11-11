@@ -15,6 +15,7 @@
  * @method getInvalidTxCount
  * @method setConsensusLogger
  * @method getConsensusLogger
+ * @method getRound
  * @method fromObject
  * @method toObject
  */
@@ -41,6 +42,7 @@ class BlockExecutionContextMock {
     this.getConsensusLogger = sinon.stub();
     this.setWithdrawalTransactionsMap = sinon.stub();
     this.getWithdrawalTransactionsMap = sinon.stub();
+    this.getRound = sinon.stub();
     this.populate = sinon.stub();
     this.isEmpty = sinon.stub();
     this.fromObject = sinon.stub();

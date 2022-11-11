@@ -34,16 +34,11 @@ function createQueryResponseFactory(
     protobufTime.setSeconds(time.seconds);
     protobufTime.setNanos(time.nanos);
 
-    const {
-      blockSignature,
-    } = latestBlockExecutionContext.getLastCommitInfo();
-
     const response = new ResponseClass();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(blockHeight);
     metadata.setCoreChainLockedHeight(coreChainLockedHeight);
-    metadata.setSignature(blockSignature);
     metadata.setBlockTime(protobufTime);
     metadata.setProtocolVersion(version.app);
 
@@ -55,10 +50,13 @@ function createQueryResponseFactory(
         stateSignature: signature,
       } = latestBlockExecutionContext.getLastCommitInfo();
 
+      const round = latestBlockExecutionContext.getRound();
+
       const proof = new Proof();
 
       proof.setSignatureLlmqHash(signatureLlmqHash);
       proof.setSignature(signature);
+      proof.setRound(round);
 
       response.setProof(proof);
     }

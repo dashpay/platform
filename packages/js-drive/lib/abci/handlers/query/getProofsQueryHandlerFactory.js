@@ -44,7 +44,6 @@ function getProofsQueryHandlerFactory(
     const {
       quorumHash: signatureLlmqHash,
       stateSignature: signature,
-      blockSignature,
     } = latestBlockExecutionContext.getLastCommitInfo();
 
     const timeObject = time.toJSON();
@@ -57,7 +56,6 @@ function getProofsQueryHandlerFactory(
       metadata: {
         height: blockHeight.toNumber(),
         coreChainLockedHeight,
-        signature: blockSignature,
         blockTime: timeObject,
         protocolVersion: version.app.toNumber(),
       },

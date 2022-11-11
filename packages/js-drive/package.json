@@ -66,7 +66,7 @@
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashpay/js-abci#5d1dfdf18b85a06de187768bc68dc83f7bfd556f",
+    "@dashevo/abci": "github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.19.44",
     "@dashevo/dashd-rpc": "^2.4.2",

@@ -28,6 +28,7 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
  *   validTxs: number,
  *   consensusLogger: Logger,
  *   withdrawalTransactionsMap: Object,
+ *   round: number,
  * }}
  */
 function getBlockExecutionContextObjectFixture(dataContract = getDataContractFixture()) {
@@ -64,6 +65,7 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
       [hash(txOneBytes).toString('hex')]: txOneBytes,
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     },
+    round: 42,
   };
 }
 
