@@ -33,9 +33,6 @@ describe('BlockHeadersProvider - unit', () => {
     this.sinon.spy(blockHeadersReader, 'removeListener');
 
     blockHeadersProvider.setBlockHeadersReader(blockHeadersReader);
-    blockHeadersProvider.setCoreMethods({
-      subscribeToBlockHeadersWithChainLocks: this.sinon.spy(),
-    });
     headers = getHeadersFixture();
     this.sinon.spy(blockHeadersProvider, 'emit');
     this.sinon.spy(blockHeadersProvider, 'ensureChainRoot');
@@ -63,11 +60,6 @@ describe('BlockHeadersProvider - unit', () => {
 
     it('should not allow running historical sync if already running', async () => {
       await blockHeadersProvider.readHistorical(2, 5);
-      await expect(blockHeadersProvider.readHistorical(2, 5)).to.be.rejected();
-    });
-
-    it('should not allow running historical sync if core methods have not been provided', async () => {
-      blockHeadersProvider.setCoreMethods();
       await expect(blockHeadersProvider.readHistorical(2, 5)).to.be.rejected();
     });
 
@@ -104,11 +96,6 @@ describe('BlockHeadersProvider - unit', () => {
 
     it('should not allow running historical sync if already running', async () => {
       await blockHeadersProvider.startContinuousSync(100);
-      await expect(blockHeadersProvider.startContinuousSync(100)).to.be.rejected();
-    });
-
-    it('should not allow running historical sync if core methods have not been provided', async () => {
-      blockHeadersProvider.setCoreMethods(null);
       await expect(blockHeadersProvider.startContinuousSync(100)).to.be.rejected();
     });
   });
@@ -159,7 +146,7 @@ describe('BlockHeadersProvider - unit', () => {
     });
   });
 
-  describe('#handleError', () => {
+  describe('#errorHandler', () => {
     it('should emit error event and unsubscribe from reader events', async () => {
       await blockHeadersProvider.init();
       const { blockHeadersReader } = blockHeadersProvider;
@@ -177,9 +164,9 @@ describe('BlockHeadersProvider - unit', () => {
     });
   });
 
-  describe('#handleHeaders', () => {
+  describe('#headersHandler', () => {
     it('should add headers to the spv chain and emit CHAIN_UPDATED event', () => {
-      blockHeadersProvider.handleHeaders({ headers, headHeight: 1 }, () => {});
+      blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
       expect(blockHeadersProvider.spvChain.addHeaders).to.have.been.calledWith(headers, 1);
       expect(blockHeadersProvider.emit).to.have.been.calledWith('CHAIN_UPDATED', headers, 1);
     });
@@ -191,19 +178,19 @@ describe('BlockHeadersProvider - unit', () => {
           addedHeaders = newHeaders.slice(0, -1);
           return addedHeaders;
         });
-      blockHeadersProvider.handleHeaders({ headers, headHeight: 1 }, () => {});
+      blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
       expect(blockHeadersProvider.emit).to.have.been.calledWith('CHAIN_UPDATED', addedHeaders, 2);
     });
 
     it('should not emit CHAIN_UPDATED in case spv chain ignored new headers', () => {
       blockHeadersProvider.spvChain.addHeaders.returns([]);
-      blockHeadersProvider.handleHeaders({ headers, headHeight: 1 }, () => {});
+      blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
       expect(blockHeadersProvider.emit).to.not.have.been.calledWith('CHAIN_UPDATED');
     });
 
     it('should reject headers in case of SPVError', () => {
       blockHeadersProvider.spvChain.addHeaders.throws(new SPVError('test'));
-      blockHeadersProvider.handleHeaders({ headers, headHeight: 1 }, (err) => {
+      blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, (err) => {
         expect(err).to.be.an.instanceOf(SPVError);
       });
     });
@@ -213,7 +200,7 @@ describe('BlockHeadersProvider - unit', () => {
       blockHeadersProvider.spvChain.addHeaders.throws(err);
       blockHeadersProvider.on('error', () => {});
 
-      blockHeadersProvider.handleHeaders(headers, 1);
+      blockHeadersProvider.headersHandler(headers, 1);
       expect(blockHeadersProvider.emit).to.have.been.calledWith('error', err);
     });
   });

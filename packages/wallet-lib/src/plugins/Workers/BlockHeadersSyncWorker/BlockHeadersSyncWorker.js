@@ -1,5 +1,4 @@
 const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
-const { Block } = require('@dashevo/dashcore-lib');
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const EVENTS = require('../../../EVENTS');

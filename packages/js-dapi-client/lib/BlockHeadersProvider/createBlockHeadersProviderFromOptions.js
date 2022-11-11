@@ -1,5 +1,6 @@
 const DAPIClientError = require('../errors/DAPIClientError');
 const BlockHeadersProvider = require('./BlockHeadersProvider');
+const DAPIStream = require('../transport/DAPIStream');
 
 const validateNumber = (value, name, min = NaN, max = NaN) => {
   if (typeof value !== 'number') {
@@ -31,10 +32,27 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     blockHeadersProvider = options.blockHeadersProvider;
   }
 
+  const createContinuousSyncStream = (fromBlockHeight) => DAPIStream
+    .create(
+      coreMethods.subscribeToBlockHeadersWithChainLocks,
+    )({
+      fromBlockHeight,
+    });
+
+  const createHistoricalSyncStream = (fromBlockHeight, count) => {
+    const { subscribeToBlockHeadersWithChainLocks } = coreMethods;
+    return subscribeToBlockHeadersWithChainLocks({
+      fromBlockHeight,
+      count,
+    });
+  };
+
   if (options.blockHeadersProviderOptions) {
     const { network } = options;
 
     const blockHeadersProviderOptions = {
+      createContinuousSyncStream,
+      createHistoricalSyncStream,
       ...BlockHeadersProvider.defaultOptions,
       ...options.blockHeadersProviderOptions,
       network,
@@ -58,7 +76,10 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
   }
 
   if (!blockHeadersProvider) {
-    blockHeadersProvider = new BlockHeadersProvider();
+    blockHeadersProvider = new BlockHeadersProvider({
+      createContinuousSyncStream,
+      createHistoricalSyncStream,
+    });
   }
 
   blockHeadersProvider.setCoreMethods(coreMethods);

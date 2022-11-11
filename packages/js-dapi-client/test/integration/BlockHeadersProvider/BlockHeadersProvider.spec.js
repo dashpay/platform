@@ -27,7 +27,18 @@ describe('BlockHeadersProvider - integration', () => {
         return stream;
       });
 
-    blockHeadersProvider = new BlockHeadersProvider(opts);
+    blockHeadersProvider = new BlockHeadersProvider({
+      ...opts,
+      createHistoricalSyncStream:
+        (fromBlockHeight, count) => subscribeToBlockHeadersWithChainLocks({
+          fromBlockHeight,
+          count,
+        }),
+      createContinuousSyncStream:
+        () => subscribeToBlockHeadersWithChainLocks({
+          count: 0,
+        }),
+    });
 
     blockHeadersProvider.setCoreMethods({
       subscribeToBlockHeadersWithChainLocks,

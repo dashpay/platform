@@ -10,7 +10,6 @@ const EVENTS = {
 
 /**
  * @typedef BlockHeadersReaderOptions
- * @property {CoreMethodsFacade} [coreMethods]
  * @property {Function} [createHistoricalSyncStream]
  * @property {Function} [createContinuousSyncStream]
  * @property {number} [maxParallelStreams]

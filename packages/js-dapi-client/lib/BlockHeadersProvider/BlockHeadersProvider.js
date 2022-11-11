@@ -4,7 +4,6 @@ const X11 = require('wasm-x11-hash');
 const { SpvChain, SPVError } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
-const DAPIStream = require('../transport/DAPIStream');
 
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
@@ -12,6 +11,8 @@ const DAPIStream = require('../transport/DAPIStream');
  * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
  * @property {number} [targetBatchSize=100000] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
+ * @property {Function} [createHistoricalSyncStream]
+ * @property {Function} [createContinuousSyncStream]
  */
 const defaultOptions = {
   network: 'testnet',
@@ -53,9 +54,9 @@ class BlockHeadersProvider extends EventEmitter {
     this.state = STATES.IDLE;
     this.wasmX11Ready = false;
 
-    this.handleError = this.handleError.bind(this);
-    this.handleHeaders = this.handleHeaders.bind(this);
-    this.handleHistoricalDataObtained = this.handleHistoricalDataObtained.bind(this);
+    this.errorHandler = this.errorHandler.bind(this);
+    this.headersHandler = this.headersHandler.bind(this);
+    this.historicalDataObtainedHandler = this.historicalDataObtainedHandler.bind(this);
   }
 
   /**
@@ -93,35 +94,20 @@ class BlockHeadersProvider extends EventEmitter {
     }
 
     if (!this.blockHeadersReader) {
-      const createContinuousSyncStream = (fromBlockHeight) => DAPIStream
-        .create(
-          this.coreMethods.subscribeToBlockHeadersWithChainLocks,
-        )({
-          fromBlockHeight,
-        });
-
-      const createHistoricalSyncStream = (fromBlockHeight, count) => {
-        const { subscribeToBlockHeadersWithChainLocks } = this.coreMethods;
-        return subscribeToBlockHeadersWithChainLocks({
-          fromBlockHeight,
-          count,
-        });
-      };
-
       this.blockHeadersReader = new BlockHeadersReader(
         {
           coreMethods: this.coreMethods,
           maxParallelStreams: this.options.maxParallelStreams,
           targetBatchSize: this.options.targetBatchSize,
           maxRetries: this.options.maxRetries,
-          createContinuousSyncStream,
-          createHistoricalSyncStream,
+          createContinuousSyncStream: this.options.createContinuousSyncStream,
+          createHistoricalSyncStream: this.options.createHistoricalSyncStream,
         },
       );
     }
 
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.handleError);
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.headersHandler);
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.errorHandler);
   }
 
   destroyReader() {
@@ -150,10 +136,6 @@ class BlockHeadersProvider extends EventEmitter {
    * @returns {Promise<void>}
    */
   async readHistorical(fromBlockHeight = 1, toBlockHeight) {
-    if (!this.coreMethods) {
-      throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
-    }
-
     if (this.state !== STATES.IDLE) {
       throw new Error(`BlockHeaderProvider can not read historical data while being in ${this.state} state.`);
     }
@@ -163,7 +145,7 @@ class BlockHeadersProvider extends EventEmitter {
     this.ensureChainRoot(fromBlockHeight);
 
     this.blockHeadersReader
-      .once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, this.handleHistoricalDataObtained);
+      .once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, this.historicalDataObtainedHandler);
 
     await this.blockHeadersReader.readHistorical(
       fromBlockHeight,
@@ -175,10 +157,6 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   async startContinuousSync(fromBlockHeight) {
-    if (!this.coreMethods) {
-      throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
-    }
-
     if (this.state !== STATES.IDLE) {
       throw new Error(`BlockHeaderProvider can not sync continuous data while being in ${this.state} state.`);
     }
@@ -208,7 +186,7 @@ class BlockHeadersProvider extends EventEmitter {
     this.emit(EVENTS.STOPPED);
   }
 
-  handleError(e) {
+  errorHandler(e) {
     this.destroyReader();
     this.emit(EVENTS.ERROR, e);
   }
@@ -218,7 +196,7 @@ class BlockHeadersProvider extends EventEmitter {
    * @param headersData
    * @param reject
    */
-  handleHeaders(headersData, reject) {
+  headersHandler(headersData, reject) {
     const { headers, headHeight } = headersData;
 
     try {
@@ -234,31 +212,31 @@ class BlockHeadersProvider extends EventEmitter {
       if (e instanceof SPVError) {
         reject(e);
       } else {
-        this.handleError(e);
+        this.errorHandler(e);
       }
     }
   }
 
-  handleHistoricalDataObtained() {
+  historicalDataObtainedHandler() {
     try {
       this.spvChain.validate();
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
       this.removeReaderListeners();
     } catch (e) {
-      this.handleError(e);
+      this.errorHandler(e);
     } finally {
       this.state = STATES.IDLE;
     }
   }
 
   removeReaderListeners() {
-    this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.handleError);
+    this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.errorHandler);
     this.blockHeadersReader
-      .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
+      .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.headersHandler);
     this.blockHeadersReader
       .removeListener(
         BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED,
-        this.handleHistoricalDataObtained,
+        this.historicalDataObtainedHandler,
       );
   }
 }
