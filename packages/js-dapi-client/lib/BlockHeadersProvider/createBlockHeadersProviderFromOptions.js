@@ -1,6 +1,6 @@
 const DAPIClientError = require('../errors/DAPIClientError');
 const BlockHeadersProvider = require('./BlockHeadersProvider');
-const DAPIStream = require('../transport/DAPIStream');
+const ReconnectableStream = require('../transport/ReconnectableStream');
 
 const validateNumber = (value, name, min = NaN, max = NaN) => {
   if (typeof value !== 'number') {
@@ -32,7 +32,7 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     blockHeadersProvider = options.blockHeadersProvider;
   }
 
-  const createContinuousSyncStream = (fromBlockHeight) => DAPIStream
+  const createContinuousSyncStream = (fromBlockHeight) => ReconnectableStream
     .create(
       coreMethods.subscribeToBlockHeadersWithChainLocks,
     )({

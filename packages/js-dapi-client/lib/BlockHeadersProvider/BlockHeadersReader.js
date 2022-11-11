@@ -94,7 +94,7 @@ class BlockHeadersReader extends EventEmitter {
    * Subscribes to continuously arriving block headers
    *
    * @param {number} fromBlockHeight
-   * @returns {Promise<DAPIStream>}
+   * @returns {Promise<ReconnectableStream>}
    */
   async subscribeToNew(fromBlockHeight) {
     // TODO(spv): FIX!!!! Restart failure in browsers because of the cancel logic behaviour

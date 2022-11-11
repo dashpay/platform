@@ -15,12 +15,12 @@ const EVENTS = {
 /**
  * Stream that provides auto-reconnect functionality
  */
-class DAPIStream extends EventEmitter {
+class ReconnectableStream extends EventEmitter {
   static create(fn, options) {
     return async (...args) => {
-      const dapiStream = new DAPIStream(fn, options);
-      await dapiStream.connect(...args);
-      return dapiStream;
+      const reconnectableStream = new ReconnectableStream(fn, options);
+      await reconnectableStream.connect(...args);
+      return reconnectableStream;
     };
   }
 
@@ -137,6 +137,6 @@ class DAPIStream extends EventEmitter {
   }
 }
 
-DAPIStream.EVENTS = EVENTS;
+ReconnectableStream.EVENTS = EVENTS;
 
-module.exports = DAPIStream;
+module.exports = ReconnectableStream;

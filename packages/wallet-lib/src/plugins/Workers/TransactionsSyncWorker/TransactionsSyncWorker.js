@@ -1,5 +1,5 @@
 const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
-const DAPIStream = require('@dashevo/dapi-client/lib/transport/DAPIStream');
+const ReconnectableStream = require('@dashevo/dapi-client/lib/transport/ReconnectableStream');
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const TransactionsReader = require('./TransactionsReader');
@@ -76,7 +76,7 @@ class TransactionsSyncWorker extends Worker {
 
   async init() {
     if (!this.transactionsReader) {
-      const createContinuousSyncStream = (bloomFilter, rangeOptions) => DAPIStream
+      const createContinuousSyncStream = (bloomFilter, rangeOptions) => ReconnectableStream
         .create(
           this.transport.client.core.subscribeToTransactionsWithProofs,
         )(
