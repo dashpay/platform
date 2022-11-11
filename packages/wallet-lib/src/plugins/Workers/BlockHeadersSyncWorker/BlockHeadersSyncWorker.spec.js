@@ -560,10 +560,10 @@ describe('BlockHeadersSyncWorker', () => {
       const newHeight = longestChain.length - 1;
 
       expect(chainStore.setBlockHeaders)
-        .to.have.been.calledWith(longestChain.slice(-3));
+        .to.have.been.calledWith(longestChain.slice(-headers.length));
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(newHeight);
 
-      const newHeaders = longestChain.slice(-4);
+      const newHeaders = longestChain.slice(-(longestChain.length - headers.length));
       expect(chainStore.updateHeadersMetadata)
         .to.have.been.calledWith(newHeaders, newHeight);
 
@@ -602,7 +602,7 @@ describe('BlockHeadersSyncWorker', () => {
 
       const { firstCall } = errorCallback;
       expect(firstCall.args[0].message)
-        .to.equal('Synced headers count 6 is greater than total headers count 5.');
+        .to.equal('Synced headers count 5 is greater than total headers count 4.');
 
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
@@ -625,11 +625,11 @@ describe('BlockHeadersSyncWorker', () => {
 
       const { firstCall } = blockHeadersSyncWorker.parentEvents.emit;
       expect(firstCall).to.have.been.calledWith(EVENTS.HEADERS_SYNC_PROGRESS, {
-        confirmedProgress: 0.5,
-        totalProgress: 0.5,
-        confirmedSyncedCount: 5,
-        totalSyncedCount: 5,
-        totalCount: 1001,
+        confirmedProgress: 0.4,
+        totalProgress: 0.4,
+        confirmedSyncedCount: 4,
+        totalSyncedCount: 4,
+        totalCount: 1000,
       });
     });
 
