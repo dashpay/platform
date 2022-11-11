@@ -17,12 +17,8 @@ describe('LastSyncedSmlHeightRepository', () => {
 
     repository = new LastSyncedSmlHeightRepository(store);
 
-    // Create misc tree
-    await store.createTree(
-      [],
-      Buffer.from([5]),
-      { useTransaction: true },
-    );
+    // Create initial structure
+    await rsDrive.createInitialStateStructure(false);
   });
 
   afterEach(async () => {
@@ -37,7 +33,7 @@ describe('LastSyncedSmlHeightRepository', () => {
       });
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const placeholderResult = await store.get(
         LastSyncedSmlHeightRepository.TREE_PATH,
@@ -55,7 +51,7 @@ describe('LastSyncedSmlHeightRepository', () => {
       const result = await repository.fetch();
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.null();
     });
@@ -74,7 +70,7 @@ describe('LastSyncedSmlHeightRepository', () => {
       const result = await repository.fetch();
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.deep.equal(1);
     });

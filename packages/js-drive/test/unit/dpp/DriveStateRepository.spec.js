@@ -333,8 +333,8 @@ describe('DriveStateRepository', () => {
       expect(fetchDocumentsMock).to.be.calledOnceWith(
         id,
         type,
-        blockInfo,
         {
+          blockInfo,
           ...options,
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,

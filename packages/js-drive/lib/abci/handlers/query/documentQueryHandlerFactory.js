@@ -20,14 +20,12 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
  * @param {fetchDocuments} fetchSignedDocuments
  * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
   proveSignedDocuments,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef {documentQueryHandler}
@@ -72,11 +70,7 @@ function documentQueryHandlerFactory(
 
         response.getProof().setMerkleProof(proof.getValue());
       } else {
-        const blockExecutionContext = blockExecutionContextStack.getFirst();
-
-        const blockInfo = blockExecutionContext.createBlockInfo();
-
-        const documentsResult = await fetchSignedDocuments(contractId, type, blockInfo, options);
+        const documentsResult = await fetchSignedDocuments(contractId, type, options);
 
         const documents = documentsResult.getValue();
 

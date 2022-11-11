@@ -21,6 +21,8 @@ describe('DataContractStoreRepository', () => {
     rsDrive = new Drive('./db/grovedb_test');
     store = new GroveDBStore(rsDrive, noopLogger);
 
+    await rsDrive.createInitialStateStructure();
+
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
     repository = new DataContractStoreRepository(store, decodeProtocolEntity, noopLogger);
@@ -40,11 +42,6 @@ describe('DataContractStoreRepository', () => {
   });
 
   describe('#store', () => {
-    beforeEach(async () => {
-      // await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
-      await rsDrive.createInitialStateStructure();
-    });
-
     it('should store Data Contract', async () => {
       const result = await repository.store(
         dataContract,
@@ -143,10 +140,6 @@ describe('DataContractStoreRepository', () => {
   });
 
   describe('#fetch', () => {
-    beforeEach(async () => {
-      await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
-    });
-
     it('should should fetch null if Data Contract not found', async () => {
       const result = await repository.fetch(dataContract.getId());
 
@@ -212,29 +205,7 @@ describe('DataContractStoreRepository', () => {
     });
   });
 
-  describe('#createTree', () => {
-    it('should create a tree', async () => {
-      const result = await repository.createTree();
-
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
-
-      const data = await store.db.get(
-        [],
-        DataContractStoreRepository.TREE_PATH[0],
-      );
-
-      expect(data).to.deep.equal({
-        type: 'tree',
-      });
-    });
-  });
-
   describe('#prove', () => {
-    beforeEach(async () => {
-      await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
-    });
-
     it('should should return proof if Data Contract not found', async () => {
       const result = await repository.prove(dataContract.getId());
 
@@ -297,8 +268,6 @@ describe('DataContractStoreRepository', () => {
     beforeEach(async () => {
       dataContract2 = new DataContract(dataContract.toObject());
       dataContract2.id = generateRandomIdentifier();
-
-      await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
     });
 
     it('should should return proof if Data Contract not found', async () => {

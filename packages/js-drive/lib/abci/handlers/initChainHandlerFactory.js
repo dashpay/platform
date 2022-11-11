@@ -64,13 +64,6 @@ function initChainHandlerFactory(
 
     await rsAbci.initChain({ }, true);
 
-    // Create misc tree
-    await groveDBStore.createTree(
-      [],
-      Buffer.from([5]),
-      { useTransaction: true },
-    );
-
     await registerSystemDataContracts(consensusLogger, time);
 
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(

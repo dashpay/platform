@@ -44,7 +44,7 @@ describe('IdentityStoreRepository', () => {
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const encodedIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
@@ -131,7 +131,7 @@ describe('IdentityStoreRepository', () => {
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const encodedIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
@@ -226,7 +226,7 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.fetch(identity.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.null();
     });
@@ -243,7 +243,7 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.fetch(identity.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const storedIdentity = result.getValue();
 
@@ -293,24 +293,6 @@ describe('IdentityStoreRepository', () => {
     });
   });
 
-  describe('#createTree', () => {
-    it('should create a tree', async () => {
-      const result = await repository.createTree();
-
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
-
-      const data = await store.db.get(
-        [],
-        IdentityStoreRepository.TREE_PATH[0],
-      );
-
-      expect(data).to.deep.equal({
-        type: 'tree',
-      });
-    });
-  });
-
   describe('#prove', () => {
     beforeEach(async () => {
       await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
@@ -320,7 +302,7 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.prove(identity.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -340,7 +322,7 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.prove(identity.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -428,7 +410,7 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.proveMany([identity.getId(), identity2.getId()]);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -448,7 +430,7 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.proveMany([identity.getId(), identity2.getId()]);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 

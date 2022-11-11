@@ -101,7 +101,6 @@ function handleUpdatedPubKeyOperatorFactory(
     const previousDocumentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
-      blockInfo,
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier],

@@ -98,22 +98,6 @@ class DataContractStoreRepository {
   }
 
   /**
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<void>>}
-   */
-  async createTree(options = {}) {
-    return this.storage.createTree(
-      [],
-      DataContractStoreRepository.TREE_PATH[0],
-      options,
-    );
-  }
-
-  /**
  * Prove Data Contract by ID from database
  *
  * @param {Identifier} id

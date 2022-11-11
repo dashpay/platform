@@ -118,7 +118,6 @@ class DocumentRepository {
    *
    * @param {DataContract} dataContract
    * @param {string} documentType
-   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {Array} [options.where]
    * @param {number} [options.limit]
@@ -127,12 +126,13 @@ class DocumentRepository {
    * @param {Array} [options.orderBy]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
+   * @param {BlockInfo} [options.blockInfo]
    *
    * @throws InvalidQueryError
    *
    * @returns {Promise<StorageResult<Document[]>>}
    */
-  async find(dataContract, documentType, blockInfo, options = {}) {
+  async find(dataContract, documentType, options = {}) {
     const query = lodashCloneDeep(options);
     let useTransaction = false;
 
@@ -140,6 +140,7 @@ class DocumentRepository {
       ({ useTransaction } = query);
       delete query.useTransaction;
       delete query.dryRun;
+      delete query.blockInfo;
 
       // Remove undefined options before we pass them to RS Drive
       Object.keys(query)
@@ -156,7 +157,7 @@ class DocumentRepository {
         .queryDocuments(
           dataContract,
           documentType,
-          blockInfo,
+          options ? options.blockInfo : undefined,
           query,
           useTransaction,
         );

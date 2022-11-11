@@ -31,7 +31,6 @@ function createRewardShareDocumentFactory(
     const documentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
-      blockInfo,
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier.toBuffer()],

@@ -65,7 +65,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch Documents for specified contract ID and document type', async () => {
     await documentRepository.create(document, blockInfo);
 
-    const result = await fetchDocuments(contractId, documentType, blockInfo);
+    const result = await fetchDocuments(contractId, documentType);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -85,7 +85,7 @@ describe('fetchDocumentsFactory', () => {
 
     const query = { where: [['name', '==', document.get('name')]] };
 
-    const result = await fetchDocuments(contractId, documentType, blockInfo, query);
+    const result = await fetchDocuments(contractId, documentType, query);
 
     const foundDocuments = result.getValue();
 
@@ -102,7 +102,7 @@ describe('fetchDocumentsFactory', () => {
 
     const query = { where: [['name', '==', 'unknown']] };
 
-    const result = await fetchDocuments(contractId, documentType, blockInfo, query);
+    const result = await fetchDocuments(contractId, documentType, query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -123,7 +123,7 @@ describe('fetchDocumentsFactory', () => {
       ],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', blockInfo, query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -154,7 +154,7 @@ describe('fetchDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', blockInfo, query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -185,7 +185,7 @@ describe('fetchDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', blockInfo, query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -213,7 +213,7 @@ describe('fetchDocumentsFactory', () => {
     documentType = 'Unknown';
 
     try {
-      await fetchDocuments(contractId, documentType, blockInfo);
+      await fetchDocuments(contractId, documentType);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {

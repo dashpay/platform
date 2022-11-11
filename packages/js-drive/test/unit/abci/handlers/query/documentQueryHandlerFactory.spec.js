@@ -25,9 +25,6 @@ const UnavailableAbciError = require('../../../../../lib/abci/errors/Unavailable
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
-
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
   let fetchSignedDocumentsMock;
@@ -38,9 +35,6 @@ describe('documentQueryHandlerFactory', () => {
   let options;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextStackMock;
-  let blockExecutionContextMock;
-  let blockInfo;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
@@ -54,25 +48,10 @@ describe('documentQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockInfo = {
-      height: 1,
-      timeMs: 100,
-      epoch: 1,
-    };
-
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-
-    blockExecutionContextMock.createBlockInfo.returns(blockInfo);
-
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-
-    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
-
     documentQueryHandler = documentQueryHandlerFactory(
       fetchSignedDocumentsMock,
       proveSignedDocumentsMock,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     params = {};
@@ -105,7 +84,6 @@ describe('documentQueryHandlerFactory', () => {
     expect(fetchSignedDocumentsMock).to.be.calledOnceWith(
       data.contractId,
       data.type,
-      blockInfo,
       options,
     );
     expect(proveSignedDocumentsMock).to.not.be.called();

@@ -21,7 +21,6 @@ function handleRemovedMasternodeFactory(
     const fetchedDocumentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
-      blockInfo,
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier],

@@ -261,8 +261,8 @@ class DriveStateRepository {
     const result = await this.fetchDocumentsFunction(
       contractId,
       type,
-      blockInfo,
       {
+        blockInfo,
         ...options,
         ...this.#createRepositoryOptions(executionContext),
       },
