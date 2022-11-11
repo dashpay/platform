@@ -219,7 +219,7 @@ describe('Wallet', () => {
       expect(chainStoreState.lastSyncedBlockHeight).to.equal(44)
 
       /** Update chain height */
-      bestBlockHeight = 52;
+      bestBlockHeight = 51;
     })
 
     /**
@@ -230,7 +230,6 @@ describe('Wallet', () => {
       /** Initialize account */
       const account = await wallet.getAccount();
 
-      const walletStore = account.storage.getWalletStore(wallet.walletId);
       const chainStore = account.storage.getChainStore(wallet.network);
 
       /** Ensure that storage contains transaction and relevant chain data */
@@ -249,7 +248,7 @@ describe('Wallet', () => {
       await wallet.storage.saveState();
       let storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
       let chainStoreState = storage.chains[wallet.network];
-      expect(chainStoreState.lastSyncedBlockHeight).to.equal(46)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(45)
 
       /** Start continuous sync */
       await txSyncWorker.execute()
@@ -268,9 +267,9 @@ describe('Wallet', () => {
 
       const merkleBlockFourth = mockMerkleBlock([sendTx.hash], allMerkleBlocks[allMerkleBlocks.length - 1].header);
       allMerkleBlocks.push(merkleBlockFourth);
-      const merkleBlockThirdHeight = 52;
+      const merkleBlockFourthHeight = 52;
       wallet.storage.getDefaultChainStore().state.headersMetadata.set(merkleBlockFourth.header.hash, {
-        height: merkleBlockThirdHeight,
+        height: merkleBlockFourthHeight,
         time: 99999999
       })
 
