@@ -214,9 +214,8 @@ class TransactionsSyncWorker extends Worker {
 
     const addresses = getAddressesToSync(this.keyChainStore);
 
-    // Sync up to chainHeight -1 to avoid overlapping with continuous sync starting point
     await this.transactionsReader
-      .startHistoricalSync(startFrom, chainHeight - 1, addresses);
+      .startHistoricalSync(startFrom, chainHeight, addresses);
 
     this.syncState = STATES.HISTORICAL_SYNC;
 
@@ -228,7 +227,7 @@ class TransactionsSyncWorker extends Worker {
       throw e;
     }
 
-    chainStore.updateLastSyncedBlockHeight(chainHeight - 1);
+    chainStore.updateLastSyncedBlockHeight(chainHeight);
     this.updateProgress();
 
     if (!syncResult.stopped) {
@@ -500,7 +499,8 @@ class TransactionsSyncWorker extends Worker {
     const chainStore = this.storage.getDefaultChainStore();
 
     const headerHash = merkleBlock.header.hash;
-    const headerMetadata = chainStore.state.headersMetadata.get(headerHash);
+    const { headersMetadata, lastSyncedBlockHeight } = chainStore.state;
+    const headerMetadata = headersMetadata.get(headerHash);
 
     // Header metadata was not found, subscribe to BLOCKHEIGHT_CHANGED event
     // in order to check one more time
@@ -528,11 +528,18 @@ class TransactionsSyncWorker extends Worker {
       return;
     }
 
-    // TODO(spv): make sure that we are not doing the same job for already processed headerHeight
-
     const headerHeight = headerMetadata.height;
     if (headerHeight < 0 || Number.isNaN(headerHeight)) {
       rejectMerkleBlock(Error(`Invalid header height: ${headerHeight}`));
+      return;
+    }
+
+    // TODO: revisit
+    // Do nothing in case header height is the same as the last synced
+    // this might happen when the stream reconnects from the same height.
+    // Although we must consider the case with reorgs and invalidate transactions
+    // from the headerHeight and later
+    if (headerHeight <= lastSyncedBlockHeight) {
       return;
     }
 

@@ -212,7 +212,7 @@ describe('TransactionsSyncWorker', () => {
         await onStartPromise;
 
         const chainStore = wallet.storage.getDefaultChainStore();
-        expect(chainStore.state.lastSyncedBlockHeight).to.equal(CHAIN_HEIGHT - 1);
+        expect(chainStore.state.lastSyncedBlockHeight).to.equal(CHAIN_HEIGHT);
       });
     });
 
@@ -417,7 +417,7 @@ describe('TransactionsSyncWorker', () => {
 
         const { transactions, merkleBlock } = sendHistoricalTransactionsWithProofs({
           toAddresses,
-          atHeight: CHAIN_HEIGHT - 1,
+          atHeight: CHAIN_HEIGHT,
         });
         allTransactions.push(...transactions);
         allMerkleBlocks.push(merkleBlock);

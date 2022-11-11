@@ -195,7 +195,7 @@ describe('TransactionsSyncWorker', () => {
         expect(transactionsReader.startHistoricalSync)
           .to.have.been.calledOnceWith(
             1,
-            CHAIN_HEIGHT - 1,
+            CHAIN_HEIGHT,
             ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
           );
         transactionsReader.emit(TransactionsReader.EVENTS.HISTORICAL_DATA_OBTAINED);
@@ -283,7 +283,7 @@ describe('TransactionsSyncWorker', () => {
 
         expect(secondCall.args).to.deep.equal([
           syncCheckpoint,
-          CHAIN_HEIGHT - 1,
+          CHAIN_HEIGHT,
           ADDRESSES.reduce((acc, addresses) => acc.concat(addresses), []),
         ]);
       });
@@ -319,7 +319,7 @@ describe('TransactionsSyncWorker', () => {
             transactionsSyncWorker.transactionsReaderErrorHandler,
           );
         expect(transactionsSyncWorker.syncCheckpoint).to.equal(CHAIN_HEIGHT);
-        expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(CHAIN_HEIGHT - 1);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.been.calledWith(CHAIN_HEIGHT);
         expect(transactionsSyncWorker.updateProgress).to.have.been.calledOnce();
         expect(transactionsSyncWorker.storage.saveState).to.have.been.calledOnce();
 
