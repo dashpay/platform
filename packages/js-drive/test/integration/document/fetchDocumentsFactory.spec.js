@@ -51,7 +51,7 @@ describe('fetchDocumentsFactory', () => {
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
-    await dataContractRepository.store(dataContract, blockInfo);
+    await dataContractRepository.create(dataContract, blockInfo);
 
     fetchDocuments = container.resolve('fetchDocuments');
   });

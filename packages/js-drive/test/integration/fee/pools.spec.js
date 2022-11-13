@@ -49,7 +49,7 @@ describe('Fee Pools', () => {
     const mnSharesContract = getMasternodeRewardSharesContractFixture();
     mnSharesContract.id = Identifier.from(masternodeRewardSharesSystemIds.contractId);
 
-    await dataContractRepository.store(mnSharesContract, blockInfo);
+    await dataContractRepository.create(mnSharesContract, blockInfo);
 
     mnDatas = [];
     const mnCount = 1;

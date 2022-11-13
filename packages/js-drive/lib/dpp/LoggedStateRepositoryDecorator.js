@@ -261,13 +261,33 @@ class LoggedStateRepositoryDecorator {
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
+  async createDataContract(dataContract, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeDataContract(dataContract, executionContext);
+      response = await this.stateRepository.createDataContract(dataContract, executionContext);
     } finally {
-      this.log('storeDataContract', { dataContract }, response);
+      this.log('createDataContract', { dataContract }, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Store Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateDataContract(dataContract, executionContext);
+    } finally {
+      this.log('updateDataContract', { dataContract }, response);
     }
 
     return response;

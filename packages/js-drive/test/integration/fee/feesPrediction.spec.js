@@ -353,7 +353,7 @@ describe('feesPrediction', () => {
 
     describe('DataContractUpdate', () => {
       it('should have predicted fee more than actual fee', async () => {
-        await stateRepository.storeDataContract(dataContract);
+        await stateRepository.createDataContract(dataContract);
 
         dataContract.setVersion(2);
 
@@ -443,7 +443,7 @@ describe('feesPrediction', () => {
 
       dataContract = dpp.dataContract.create(identity.getId(), documentTypes);
 
-      await stateRepository.storeDataContract(dataContract);
+      await stateRepository.createDataContract(dataContract);
 
       // Create documents
 

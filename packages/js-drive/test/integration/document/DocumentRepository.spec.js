@@ -805,8 +805,8 @@ describe('DocumentRepository', function main() {
       timeMs: new Date().getTime(),
     };
 
-    await dataContractRepository.store(dataContract, blockInfo);
-    await dataContractRepository.store(queryDataContract, blockInfo);
+    await dataContractRepository.create(dataContract, blockInfo);
+    await dataContractRepository.create(queryDataContract, blockInfo);
   });
 
   afterEach(async () => {
@@ -1139,7 +1139,7 @@ describe('DocumentRepository', function main() {
           const factory = new DataContractFactory(createDPPMock(), () => {});
           const ownerId = generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
-          await dataContractRepository.store(myDataContract, blockInfo);
+          await dataContractRepository.create(myDataContract, blockInfo);
 
           const result = await documentRepository.find(myDataContract, 'chat', {
             where: [
@@ -1184,7 +1184,7 @@ describe('DocumentRepository', function main() {
           const factory = new DataContractFactory(createDPPMock(), () => {});
           const ownerId = generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
-          await dataContractRepository.store(myDataContract, blockInfo);
+          await dataContractRepository.create(myDataContract, blockInfo);
 
           const result = await documentRepository.find(myDataContract, 'label', {
             where: [

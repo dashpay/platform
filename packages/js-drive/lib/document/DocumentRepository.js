@@ -153,11 +153,17 @@ class DocumentRepository {
     }
 
     try {
+      let epochIndex;
+
+      if (options && options.blockInfo) {
+        epochIndex = options.blockInfo.epoch;
+      }
+
       const [documents, , processingCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
-          options ? options.blockInfo : undefined,
+          epochIndex,
           query,
           useTransaction,
         );
@@ -199,7 +205,7 @@ class DocumentRepository {
     try {
       const { storageFee, processingFee } = await this.storage.getDrive()
         .deleteDocument(
-          dataContract,
+          dataContract.getId(),
           documentType,
           id,
           blockInfo,

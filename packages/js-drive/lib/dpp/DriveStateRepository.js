@@ -206,9 +206,12 @@ class DriveStateRepository {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
     const result = await this.dataContractRepository.fetch(
       id,
       {
+        blockInfo,
         dryRun: executionContext ? executionContext.isDryRun() : false,
         // Transaction is not using since Data Contract
         // should be always committed to use
@@ -224,17 +227,39 @@ class DriveStateRepository {
   }
 
   /**
-   * Store Data Contract
+   * Create Data Contract
    *
    * @param {DataContract} dataContract
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
+  async createDataContract(dataContract, executionContext = undefined) {
     const blockInfo = this.blockExecutionContext.createBlockInfo();
 
-    const result = await this.dataContractRepository.store(
+    const result = await this.dataContractRepository.create(
+      dataContract,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    const blockInfo = this.blockExecutionContext.createBlockInfo();
+
+    const result = await this.dataContractRepository.update(
       dataContract,
       blockInfo,
       this.#createRepositoryOptions(executionContext),

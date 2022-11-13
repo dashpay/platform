@@ -44,7 +44,8 @@ describe('DriveStateRepository', () => {
 
     dataContractRepositoryMock = {
       fetch: this.sinon.stub(),
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
     };
 
     identityRepositoryMock = {
@@ -292,15 +293,36 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#storeDataContract', () => {
-    it('should store data contract to repository', async () => {
-      dataContractRepositoryMock.store.resolves(
+  describe('#createDataContract', () => {
+    it('should create data contract to repository', async () => {
+      dataContractRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
-      await stateRepository.storeDataContract(dataContract, executionContext);
+      await stateRepository.createDataContract(dataContract, executionContext);
 
-      expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
+      expect(dataContractRepositoryMock.create).to.be.calledOnceWith(
+        dataContract,
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateDataContract', () => {
+    it('should store data contract to repository', async () => {
+      dataContractRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.updateDataContract(dataContract, executionContext);
+
+      expect(dataContractRepositoryMock.update).to.be.calledOnceWith(
         dataContract,
         blockInfo,
         {

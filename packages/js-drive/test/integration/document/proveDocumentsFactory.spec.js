@@ -49,7 +49,7 @@ describe('proveDocumentsFactory', () => {
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
-    await dataContractRepository.store(dataContract, blockInfo);
+    await dataContractRepository.create(dataContract, blockInfo);
 
     proveDocuments = container.resolve('proveDocuments');
   });

@@ -2,7 +2,8 @@
  * @param sinonSandbox
  * @return {{
  *   fetchDataContract: *,
- *   storeDataContract: *,
+ *   createDataContract: *,
+ *   updateDataContract: *,
  *   fetchDocuments: *,
  *   createDocument: *,
  *   updateDocument: *,
@@ -18,7 +19,8 @@
 module.exports = function createStateRepositoryMock(sinonSandbox) {
   return {
     fetchDataContract: sinonSandbox.stub(),
-    storeDataContract: sinonSandbox.stub(),
+    createDataContract: sinonSandbox.stub(),
+    updateDataContract: sinonSandbox.stub(),
     fetchDocuments: sinonSandbox.stub(),
     createDocument: sinonSandbox.stub(),
     updateDocument: sinonSandbox.stub(),

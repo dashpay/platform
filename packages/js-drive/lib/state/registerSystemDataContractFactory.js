@@ -70,7 +70,7 @@ function registerSystemDataContractFactory(
 
     dataContract.id = contractId;
 
-    await dataContractRepository.store(dataContract, blockInfo, {
+    await dataContractRepository.create(dataContract, blockInfo, {
       useTransaction: true,
     });
 

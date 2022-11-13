@@ -159,15 +159,27 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Store Data Contract
+   * Create Data Contract
    *
    * @param {DataContract} dataContract
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
-    return this.stateRepository.storeDataContract(dataContract, executionContext);
+  async createDataContract(dataContract, executionContext = undefined) {
+    return this.stateRepository.createDataContract(dataContract, executionContext);
+  }
+
+  /**
+   * Update Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    return this.stateRepository.updateDataContract(dataContract, executionContext);
   }
 
   /**
