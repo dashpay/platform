@@ -13,15 +13,20 @@ describe('DataContract', () => {
   let ownerId;
   let entropy;
   let contractId;
-  let metadataFixture;
+  let dataContract;
+
+  let DataContract;
+  let DataContractDefaults;
+  let Identifier;
+  let Metadata;
 
   before(async () => {
     ({
-      DataContract, DataContractDefaults, Identifier, InvalidDocumentTypeError, Metadata
+      DataContract, DataContractDefaults, Identifier, Metadata,
     } = await loadWasmDpp());
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(() => {
     documentType = 'niceDocument';
 
     documentSchema = {
@@ -29,10 +34,10 @@ describe('DataContract', () => {
         nice: {
           type: 'boolean',
         },
-	aBinaryProperty: {
-	  type: 'object',
-	  byteArray: true
-	}
+        aBinaryProperty: {
+          type: 'object',
+          byteArray: true,
+        },
       },
     };
 
@@ -73,8 +78,8 @@ describe('DataContract', () => {
         $schema: DataContractDefaults.SCHEMA,
         $id: id,
         ownerId,
-	protocolVersion: 1,
-	version: 1,
+        protocolVersion: 1,
+        version: 1,
         documents,
         $defs: {},
       });
@@ -162,10 +167,10 @@ describe('DataContract', () => {
 
       dataContract.setDocumentSchema(anotherType, anotherDefinition);
 
-      const documents = dataContract.getDocuments();
+      const anotherDocuments = dataContract.getDocuments();
 
-      expect(documents).to.have.property(anotherType);
-      expect(documents[anotherType]).to.deep.equal(anotherDefinition);
+      expect(anotherDocuments).to.have.property(anotherType);
+      expect(anotherDocuments[anotherType]).to.deep.equal(anotherDefinition);
     });
   });
 
@@ -236,7 +241,7 @@ describe('DataContract', () => {
         version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
-	$defs: {},
+        $defs: {},
       });
     });
 
@@ -265,19 +270,19 @@ describe('DataContract', () => {
     it('should return DataContract as a Buffer', () => {
       expect(jsDataContract.getProtocolVersion()).to.deep.equal(dataContract.getProtocolVersion());
 
-      const js_result = jsDataContract.toBuffer();
-      const wasm_result = dataContract.toBuffer();
+      const jsResult = jsDataContract.toBuffer();
+      const wasmResult = dataContract.toBuffer();
 
-      expect(wasm_result).to.deep.equal(js_result);
+      expect(wasmResult).to.deep.equal(jsResult);
     });
   });
 
   describe('#hash', () => {
     it('should return DataContract hash', () => {
-      const js_result = jsDataContract.hash();
-      const wasm_result = dataContract.hash();
+      const jsResult = jsDataContract.hash();
+      const wasmResult = dataContract.hash();
 
-      expect(wasm_result).to.deep.equal(js_result);
+      expect(wasmResult).to.deep.equal(jsResult);
     });
   });
 
@@ -293,7 +298,7 @@ describe('DataContract', () => {
     it('should return flat map of properties with `contentEncoding` keywords', () => {
       const result = dataContract.getBinaryProperties(documentType);
       expect(result).to.deep.equal({
-        'aBinaryProperty': {
+        aBinaryProperty: {
           type: 'object',
           byteArray: true,
         },
@@ -306,7 +311,7 @@ describe('DataContract', () => {
         dataContract.getBinaryProperties('unknown');
         expect.fail('Error was not thrown');
       } catch (e) {
-	error = e;
+        error = e;
       }
       expect(error.getDocType()).to.equal('unknown');
     });
