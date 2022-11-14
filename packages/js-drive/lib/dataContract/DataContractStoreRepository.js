@@ -131,7 +131,10 @@ class DataContractStoreRepository {
     );
 
     if (result.length === 0) {
-      return null;
+      return new StorageResult(
+        null,
+        [],
+      );
     }
 
     const [encodedDataContract, feeResult] = result;

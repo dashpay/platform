@@ -71,8 +71,8 @@ describe('IdentityStoreRepository', () => {
       );
 
       const notFoundIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
+        IdentityStoreRepository.TREE_PATH,
+        identity.getId().toBuffer(),
         { useTransaction: false },
       );
 

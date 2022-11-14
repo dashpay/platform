@@ -80,8 +80,8 @@ describe('DataContractStoreRepository', () => {
       expect(result.getOperations().length).to.be.greaterThan(0);
 
       const notFoundDataContractResult = await store.get(
-        DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
-        DataContractStoreRepository.DATA_CONTRACT_KEY,
+        DataContractStoreRepository.TREE_PATH,
+        dataContract.getId().toBuffer(),
         { useTransaction: false },
       );
 
@@ -131,11 +131,11 @@ describe('DataContractStoreRepository', () => {
       expect(result.getOperations().length).to.be.greaterThan(0);
 
       const encodedDataContractResult = await store.get(
-        DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
-        DataContractStoreRepository.DATA_CONTRACT_KEY,
+        DataContractStoreRepository.TREE_PATH,
+        dataContract.getId().toBuffer(),
       );
 
-      expect(encodedDataContractResult.getValue()).to.be.null();
+      expect(encodedDataContractResult.isNull()).to.be.true();
     });
   });
 
@@ -227,7 +227,8 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.fetch(dataContract.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.null();
     });
@@ -238,7 +239,9 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.fetch(dataContract.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equal(0);
 
       const storedDataContract = result.getValue();
 
@@ -255,7 +258,7 @@ describe('DataContractStoreRepository', () => {
         useTransaction: false,
       });
 
-      expect(notFoundDataContractResult.getValue()).to.be.null();
+      expect(notFoundDataContractResult.isNull()).to.be.true();
 
       const transactionalDataContractResult = await repository.fetch(dataContract.getId(), {
         useTransaction: true,
@@ -282,7 +285,8 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.fetch(dataContract.getId(), { dryRun: true });
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.null();
     });
@@ -293,7 +297,8 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.prove(dataContract.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -307,7 +312,8 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.prove(dataContract.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -319,13 +325,13 @@ describe('DataContractStoreRepository', () => {
     it.skip('should return proof using transaction', async () => {
       await store.startTransaction();
 
-      await store.getDrive().createContract(dataContract, new Date(), true);
+      await store.getDrive().createContract(dataContract, blockInfo, true);
 
       const notFoundDataContractResult = await repository.prove(dataContract.getId(), {
         useTransaction: false,
       });
 
-      expect(notFoundDataContractResult.getValue()).to.be.null();
+      expect(notFoundDataContractResult.isNull()).to.be.true();
 
       const transactionalDataContractResult = await repository.prove(dataContract.getId(), {
         useTransaction: true,
@@ -357,7 +363,8 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.proveMany([dataContract.getId(), dataContract2.getId()]);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -372,7 +379,8 @@ describe('DataContractStoreRepository', () => {
       const result = await repository.proveMany([dataContract.getId(), dataContract2.getId()]);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      // TODO: Processing fees are ignored for v0.23
+      expect(result.getOperations().length).to.equals(0);
 
       const proof = result.getValue();
 

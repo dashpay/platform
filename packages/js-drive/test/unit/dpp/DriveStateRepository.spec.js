@@ -284,6 +284,7 @@ describe('DriveStateRepository', () => {
       expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
         id,
         {
+          blockInfo,
           dryRun: false,
           useTransaction: false,
         },

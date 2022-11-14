@@ -50,7 +50,8 @@ describe('fetchDataContractFactory', () => {
     const result = await fetchDataContract(contractId);
 
     expect(result).to.be.instanceOf(StorageResult);
-    expect(result.getOperations().length).to.be.greaterThan(0);
+    // TODO: Processing fees are ignored for v0.23
+    expect(result.getOperations().length).to.equals(0);
 
     const foundDataContract = result.getValue();
 

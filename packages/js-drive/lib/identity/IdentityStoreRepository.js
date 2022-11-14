@@ -92,11 +92,23 @@ class IdentityStoreRepository {
       return new StorageResult(null, []);
     }
 
-    const encodedIdentityResult = await this.storage.get(
-      IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      IdentityStoreRepository.IDENTITY_KEY,
-      options,
-    );
+    let encodedIdentityResult;
+    try {
+      encodedIdentityResult = await this.storage.get(
+        IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        options,
+      );
+    } catch (e) {
+      if (!e.message.startsWith('path parent layer not found')) {
+        throw e;
+      }
+
+      encodedIdentityResult = new StorageResult(
+        null,
+        [],
+      );
+    }
 
     if (encodedIdentityResult.isNull()) {
       return encodedIdentityResult;

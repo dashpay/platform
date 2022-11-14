@@ -72,8 +72,8 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       );
 
       const emptyIdentitiesResult = await store.get(
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
-        identity.getId().toBuffer(),
+        PublicKeyToIdentitiesStoreRepository.TREE_PATH,
+        publicKeyHash,
       );
 
       expect(emptyIdentitiesResult).to.be.instanceOf(StorageResult);
