@@ -28,7 +28,7 @@ async function createContactRequestDataTrigger(documentTransition, context) {
       const error = new DataTriggerConditionError(
         context.getDataContract().getId().toBuffer(),
         documentTransition.getId().toBuffer(),
-        `Identity ${toUserId.toString()} must not be equal to the owner ${ownerId.toString()}`,
+        `Identity ${toUserId.toString()} must not be equal to the owner`,
       );
 
       error.setOwnerId(ownerId);
@@ -40,7 +40,8 @@ async function createContactRequestDataTrigger(documentTransition, context) {
     }
 
     if (coreHeightCreatedAt !== undefined) {
-      const coreChainLockedHeight = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
+      const coreChainLockedHeight = await stateRepository
+        .fetchLatestPlatformCoreChainLockedHeight();
 
       const heightWindowStart = coreChainLockedHeight - BLOCKS_WINDOW_SIZE;
       const heightWindowEnd = coreChainLockedHeight + BLOCKS_WINDOW_SIZE;
@@ -63,7 +64,7 @@ async function createContactRequestDataTrigger(documentTransition, context) {
   }
 
   // toUserId identity exists
-  const identity = await context.getStateRepository().fetchIdentity(
+  const identity = await stateRepository.fetchIdentity(
     toUserId,
     context.getStateTransitionExecutionContext(),
   );
