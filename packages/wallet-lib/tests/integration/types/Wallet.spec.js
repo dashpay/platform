@@ -94,10 +94,6 @@ describe('Wallet', () => {
       txSyncWorker.onStart().catch(console.error);
       await waitOneTick();
 
-      /** Ensure proper transport arguments */
-      // expect(transportMock.subscribeToTransactionsWithProofs.firstCall.args[1])
-      //   .to.deep.equal({ fromBlockHeight: 1, count: 41 });
-
       /** Send first funding transaction to the wallet */
       const { fundingTx } = scenario.transactions;
       historicalStream.sendTransactions([fundingTx]);
@@ -164,6 +160,8 @@ describe('Wallet', () => {
       await waitOneTick();
 
       continuousStream.sendTransactions([sendTx]);
+
+      await waitOneTick();
 
       wallet.storage.getDefaultChainStore().state.chainHeight = 43;
       const merkleBlockSecond = mockMerkleBlock([sendTx.hash], merkleBlockFirst.header);
@@ -262,6 +260,8 @@ describe('Wallet', () => {
       account.broadcastTransaction(sendTx)
 
       continuousStream.sendTransactions([sendTx]);
+
+      await waitOneTick();
 
       wallet.storage.getDefaultChainStore().state.chainHeight = 52;
 
