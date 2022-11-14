@@ -448,6 +448,9 @@ describe('TransactionsSyncWorker', () => {
         });
         allTransactions.push(...transactions);
 
+        // Wait for stream to reconnect after expanding bloom filter gap
+        await waitOneTick();
+
         const { merkleBlock } = sendNewMerkleBlock({
           forTransactions: transactions,
           atHeight: CHAIN_HEIGHT + 1,

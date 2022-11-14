@@ -284,8 +284,6 @@ class TransactionsReader extends EventEmitter {
       _addressesCount: addresses.length,
     });
 
-    // Arguments for the stream restart when it comes to a need to expand bloom filter
-    let addressesGenerated = [];
     let lastSyncedBlockHeight = fromBlockHeight;
 
     const dataHandler = (data) => {
@@ -297,14 +295,28 @@ class TransactionsReader extends EventEmitter {
         const transactions = parseRawTransactions(rawTransactions, addresses, this.network);
 
         /**
-         * @param {string[]} newAddresses
+         * @param {string[]} addressesGenerated
          */
-        const appendAddresses = (newAddresses) => {
-          addressesGenerated = [...addressesGenerated, ...newAddresses];
+        const handleNewAddresses = (addressesGenerated) => {
+          if (addressesGenerated.length) {
+            // Restart stream to expand bloom filter
+            this.cancelStream(stream);
+            this.continuousSyncStream = null;
+
+            const newAddresses = [...addresses, ...addressesGenerated];
+            this.startContinuousSync(
+              fromBlockHeight,
+              newAddresses,
+            ).then((newStream) => {
+              this.continuousSyncStream = newStream;
+            }).catch((e) => {
+              this.emit(EVENTS.ERROR, e);
+            });
+          }
         };
 
         if (transactions.length) {
-          this.emit(EVENTS.NEW_TRANSACTIONS, { transactions, appendAddresses });
+          this.emit(EVENTS.NEW_TRANSACTIONS, { transactions, handleNewAddresses });
         }
       } else if (rawMerkleBlock) {
         const merkleBlock = parseRawMerkleBlock(rawMerkleBlock);
@@ -328,27 +340,6 @@ class TransactionsReader extends EventEmitter {
           }
 
           lastSyncedBlockHeight = merkleBlockHeight;
-          if (addressesGenerated.length) {
-            // Restart stream to expand bloom filter
-            this.cancelStream(stream);
-            this.continuousSyncStream = null;
-
-            const restartArgs = {
-              fromBlockHeight: merkleBlockHeight,
-              addresses: [...addresses, ...addressesGenerated],
-            };
-
-            this.startContinuousSync(
-              restartArgs.fromBlockHeight,
-              restartArgs.addresses,
-            ).then((newStream) => {
-              this.continuousSyncStream = newStream;
-            }).catch((e) => {
-              this.emit(EVENTS.ERROR, e);
-            });
-
-            addressesGenerated = [];
-          }
 
           accepted = true;
         };
@@ -379,11 +370,6 @@ class TransactionsReader extends EventEmitter {
     };
 
     const beforeReconnectHandler = (updateArguments) => {
-      if (addressesGenerated.length) {
-        // No need to reconnect, stream will restart itself for newly generated addresses
-        return;
-      }
-
       logger.debug('[TransactionsReader] Reconnecting to stream with', {
         fromBlockHeight: lastSyncedBlockHeight,
         _addressesCount: addresses.length,

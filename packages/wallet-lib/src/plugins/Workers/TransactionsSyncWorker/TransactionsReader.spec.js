@@ -583,11 +583,12 @@ describe('TransactionsReader - unit', () => {
           continuousSyncStream.sendTransactions(transactions);
 
           const { firstCall } = transactionsReader.emit;
+          expect(transactionsReader.createContinuousSyncStream).to.have.been.calledOnce();
           expect(transactionsReader.emit).to.have.been.calledOnce();
           expect(firstCall.args[0]).to.equal(TransactionsReader.EVENTS.NEW_TRANSACTIONS);
           expect(firstCall.args[1].transactions.map((tx) => tx.hash))
             .to.deep.equal(transactions.map((tx) => tx.hash));
-          expect(firstCall.args[1].appendAddresses)
+          expect(firstCall.args[1].handleNewAddresses)
             .to.be.instanceof(Function);
         });
 
@@ -598,8 +599,76 @@ describe('TransactionsReader - unit', () => {
             new Transaction().to(new PrivateKey().toAddress(), 1000),
           ];
 
-          historicalSyncStream.sendTransactions(transactions);
+          continuousSyncStream.sendTransactions(transactions);
           expect(transactionsReader.emit).to.have.not.been.called();
+        });
+
+        context('Bloom filter expansion', () => {
+          const newAddresses = [
+            'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
+            'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
+          ];
+
+          it('should expand bloom filter in case new addresses were generated', async () => {
+            await transactionsReader.startContinuousSync(
+              fromBlockHeight, DEFAULT_ADDRESSES,
+            );
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ handleNewAddresses }) => {
+                handleNewAddresses(newAddresses);
+              });
+
+            const transactions = [
+              new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
+            ];
+
+            continuousSyncStream.sendTransactions(transactions);
+            await waitOneTick();
+
+            expect(transactionsReader.createContinuousSyncStream).to.have.been.calledTwice();
+            const { secondCall } = transactionsReader.createContinuousSyncStream;
+
+            const newStream = await secondCall.returnValue;
+
+            expect(secondCall.args).to.deep.equal([
+              createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
+              {
+                fromBlockHeight, // Reconnect
+                count: 0,
+              },
+            ]);
+
+            expect(transactionsReader.continuousSyncStream).to.equal(newStream);
+          });
+
+          it('should handle stream restart error', async () => {
+            await transactionsReader.startContinuousSync(
+              fromBlockHeight, DEFAULT_ADDRESSES,
+            );
+
+            const restartError = new Error('Error restarting stream');
+            transactionsReader.createContinuousSyncStream.throws(restartError);
+
+            transactionsReader
+              .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ handleNewAddresses }) => {
+                handleNewAddresses(newAddresses);
+              });
+
+            let emittedError = null;
+            transactionsReader.on('error', (e) => {
+              emittedError = e;
+            });
+
+            const transactions = [
+              new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
+            ];
+            continuousSyncStream.sendTransactions(transactions);
+            await waitOneTick();
+
+            expect(transactionsReader.createContinuousSyncStream).to.have.been.calledTwice();
+            expect(emittedError).to.equal(restartError);
+          });
         });
       });
 
@@ -655,29 +724,19 @@ describe('TransactionsReader - unit', () => {
             .to.equal('Unable to accept rejected merkle block');
         });
 
-        context('Merkle Block accepted (Bloom Filter expansion)', () => {
+        context('Merkle Block accepted', () => {
           let merkleBlockHeight;
           let merkleBlock;
-          let newAddresses;
 
           beforeEach(() => {
             merkleBlockHeight = CHAIN_HEIGHT + 1;
             merkleBlock = mockMerkleBlock([]);
-            newAddresses = [
-              'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
-              'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
-            ];
           });
 
-          it('should restart stream in case new addresses were generated', async () => {
+          it('should accept merkle block', async () => {
             await transactionsReader.startContinuousSync(
               fromBlockHeight, DEFAULT_ADDRESSES,
             );
-
-            transactionsReader
-              .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ appendAddresses }) => {
-                appendAddresses(newAddresses);
-              });
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -693,70 +752,8 @@ describe('TransactionsReader - unit', () => {
             continuousSyncStream.sendMerkleBlock(merkleBlock);
             await waitOneTick();
 
-            expect(transactionsReader.createContinuousSyncStream).to.have.been.calledTwice();
-            const { secondCall } = transactionsReader.createContinuousSyncStream;
-
-            const newStream = await secondCall.returnValue;
-
-            expect(secondCall.args).to.deep.equal([
-              createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
-              {
-                fromBlockHeight: merkleBlockHeight, // Reconnect
-                count: 0,
-              },
-            ]);
-
-            expect(transactionsReader.continuousSyncStream).to.equal(newStream);
-          });
-
-          it('should not restart stream in case no new addresses were generated', async () => {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
-
-            transactionsReader
-              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-                acceptMerkleBlock(merkleBlockHeight);
-              });
-
-            continuousSyncStream.sendMerkleBlock(merkleBlock);
-
-            expect(transactionsReader.createContinuousSyncStream).to.have.been.calledOnce();
-          });
-
-          it('should handle stream restart error', async () => {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
-
-            const restartError = new Error('Error restarting stream');
-            transactionsReader.createContinuousSyncStream.throws(restartError);
-
-            transactionsReader
-              .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ appendAddresses }) => {
-                appendAddresses(newAddresses);
-              });
-
-            transactionsReader
-              .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-                acceptMerkleBlock(merkleBlockHeight);
-              });
-
-            let emittedError = null;
-            transactionsReader.on('error', (e) => {
-              emittedError = e;
-            });
-
-            const transactions = [
-              new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
-            ];
-            continuousSyncStream.sendTransactions(transactions);
-            await waitOneTick();
-            continuousSyncStream.sendMerkleBlock(merkleBlock);
-            await waitOneTick();
-
-            expect(transactionsReader.createContinuousSyncStream).to.have.been.calledTwice();
-            expect(emittedError).to.equal(restartError);
+            expect(transactionsReader.emit)
+              .to.have.not.been.calledWith('error');
           });
 
           it('should throw an error if invalid Merkle Block height provided', async () => {
@@ -856,17 +853,6 @@ describe('TransactionsReader - unit', () => {
     });
 
     context('On "beforeReconnect"', () => {
-      let merkleBlock;
-      let newAddresses;
-
-      beforeEach(() => {
-        merkleBlock = mockMerkleBlock([]);
-        newAddresses = [
-          'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
-          'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
-        ];
-      });
-
       it('should reconnect with the same args if no new merkle block was fetched', async () => {
         await transactionsReader.startContinuousSync(
           fromBlockHeight, DEFAULT_ADDRESSES,
@@ -908,34 +894,6 @@ describe('TransactionsReader - unit', () => {
             count: 0,
           },
         ]);
-      });
-
-      it('should not update args in case new addresses were generated and stream is about to restart', async function () {
-        await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
-
-        transactionsReader
-          .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ appendAddresses }) => {
-            appendAddresses(newAddresses);
-          });
-
-        transactionsReader
-          .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
-            acceptMerkleBlock(fromBlockHeight + 1);
-          });
-
-        const transactions = [
-          new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
-        ];
-        continuousSyncStream.sendTransactions(transactions);
-
-        const listener = this.sinon.stub();
-        continuousSyncStream.emit('beforeReconnect', listener);
-
-        continuousSyncStream.sendMerkleBlock(merkleBlock);
-
-        await waitOneTick();
-
-        expect(listener).to.have.not.been.called();
       });
     });
   });

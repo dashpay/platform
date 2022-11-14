@@ -470,7 +470,7 @@ class TransactionsSyncWorker extends Worker {
    * Processing new TXs during the continuous sync
    */
   newTransactionsHandler(payload) {
-    const { transactions, appendAddresses } = payload;
+    const { transactions, handleNewAddresses } = payload;
 
     if (!transactions.length) {
       throw new Error('No new transactions to process');
@@ -489,7 +489,7 @@ class TransactionsSyncWorker extends Worker {
         newTransactions.map((tx) => [tx]),
       );
 
-      appendAddresses(addressesGenerated);
+      handleNewAddresses(addressesGenerated);
     }
   }
 
