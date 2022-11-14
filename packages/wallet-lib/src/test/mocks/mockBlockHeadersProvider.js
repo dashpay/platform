@@ -7,30 +7,34 @@ const {
 const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream, headersPerStream) => {
   const numStreams = historicalStreams.length;
 
-  const blockHeadersProvider = new BlockHeadersProvider({
+  let currentStream = 0;
+  const subscribeToBlockHeadersWithChainLocks = ({ count }) => {
+    if (count > 0) {
+      const stream = historicalStreams[currentStream];
+
+      if (currentStream === historicalStreams.length - 1) {
+        currentStream = 0;
+      } else {
+        currentStream += 1;
+      }
+      return stream;
+    }
+    return continuousStream;
+  };
+
+  return new BlockHeadersProvider({
     maxParallelStreams: numStreams,
     targetBatchSize: headersPerStream,
+    createHistoricalSyncStream:
+      (fromBlockHeight, count) => subscribeToBlockHeadersWithChainLocks({
+        fromBlockHeight,
+        count,
+      }),
+    createContinuousSyncStream:
+      () => subscribeToBlockHeadersWithChainLocks({
+        count: 0,
+      }),
   });
-
-  let currentStream = 0;
-  blockHeadersProvider.setCoreMethods({
-    getBlock: sinon.stub(),
-    subscribeToBlockHeadersWithChainLocks: ({ count }) => {
-      if (count > 0) {
-        const stream = historicalStreams[currentStream];
-
-        if (currentStream === historicalStreams.length - 1) {
-          currentStream = 0;
-        } else {
-          currentStream += 1;
-        }
-        return stream;
-      }
-      return continuousStream;
-    },
-  });
-
-  return blockHeadersProvider;
 };
 
 module.exports = mockBlockHeadersProvider;

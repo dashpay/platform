@@ -39,10 +39,6 @@ describe('BlockHeadersProvider - integration', () => {
           count: 0,
         }),
     });
-
-    blockHeadersProvider.setCoreMethods({
-      subscribeToBlockHeadersWithChainLocks,
-    });
   };
 
   // Start from height bigger than the first block
