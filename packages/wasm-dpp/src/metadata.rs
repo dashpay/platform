@@ -48,7 +48,7 @@ impl MetadataWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> JsValue {
-	let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-	self.0.serialize(&serializer).expect("implements Serialize")
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        self.0.serialize(&serializer).expect("implements Serialize")
     }
 }

@@ -10,7 +10,6 @@ pub use invalid_data_contract::*;
 
 use crate::mocks;
 
-
 pub fn from_data_contract_to_js_error(e: DataContractError) -> JsValue {
     match e {
         DataContractError::InvalidDataContractError {
