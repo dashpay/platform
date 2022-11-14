@@ -40,7 +40,6 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setSignature(Buffer.from(metadataFixture.signature, 'base64'));
     metadata.setBlockTime(protobufTime);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
@@ -100,6 +99,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofProto.setSignature(proofFixture.signature);
     proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setRound(proofFixture.round);
 
     proto.setIdentitiesList([]);
     proto.setProof(proofProto);
@@ -119,6 +119,8 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
       .to.deep.equal(proofFixture.signatureLLMQHash);
     expect(getIdentitiesResponse.getProof().getSignature())
       .to.deep.equal(proofFixture.signature);
+    expect(getIdentitiesResponse.getProof().getRound())
+      .to.deep.equal(proofFixture.round);
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {

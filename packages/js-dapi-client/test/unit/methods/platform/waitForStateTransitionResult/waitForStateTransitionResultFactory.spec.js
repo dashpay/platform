@@ -33,7 +33,6 @@ describe('waitForStateTransitionResultFactory', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setSignature(Buffer.from(metadataFixture.signature, 'base64'));
     metadata.setBlockTime(protobufTime);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
@@ -80,6 +79,7 @@ describe('waitForStateTransitionResultFactory', () => {
     proof.setMerkleProof(Buffer.from('merkleProof'));
     proof.setSignatureLlmqHash(Buffer.from('signatureLlmqHash'));
     proof.setSignature(Buffer.from('signature'));
+    proof.setRound(42);
 
     response.setProof(proof);
 
@@ -97,6 +97,7 @@ describe('waitForStateTransitionResultFactory', () => {
     expect(result.getProof().getSignature()).to.deep.equal(Buffer.from('signature'));
     expect(result.getProof().getMerkleProof()).to.deep.equal(Buffer.from('merkleProof'));
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(Buffer.from('signatureLlmqHash'));
+    expect(result.getProof().getRound()).to.deep.equal(42);
 
     const request = new WaitForStateTransitionResultRequest();
     request.setStateTransitionHash(hash);

@@ -41,7 +41,6 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setSignature(Buffer.from(metadataFixture.signature, 'base64'));
     metadata.setBlockTime(protobufTime);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
@@ -56,6 +55,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofResponse.setSignature(proofFixture.signature);
     proofResponse.setMerkleProof(proofFixture.merkleProof);
+    proofResponse.setRound(proofFixture.round);
 
     publicKeyHash = identityFixture.getPublicKeyById(1).hash();
 
@@ -113,6 +113,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
+    expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
     expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(

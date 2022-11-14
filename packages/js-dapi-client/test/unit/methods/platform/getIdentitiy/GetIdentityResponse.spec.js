@@ -37,7 +37,6 @@ describe('GetIdentityResponse', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setSignature(Buffer.from(metadataFixture.signature, 'base64'));
     metadata.setBlockTime(protobufTime);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
@@ -72,6 +71,7 @@ describe('GetIdentityResponse', () => {
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+    expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
 
   it('should create an instance from proto', () => {
@@ -95,6 +95,7 @@ describe('GetIdentityResponse', () => {
     proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofProto.setSignature(proofFixture.signature);
     proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setRound(proofFixture.round);
 
     proto.setIdentity(undefined);
     proto.setProof(proofProto);
@@ -109,6 +110,7 @@ describe('GetIdentityResponse', () => {
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+    expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
