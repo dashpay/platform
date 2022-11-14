@@ -119,7 +119,6 @@ function waitForStateTransitionResultHandlerFactory(
 
       responseMetadata.setHeight(metadata.height);
       responseMetadata.setCoreChainLockedHeight(metadata.coreChainLockedHeight);
-      responseMetadata.setSignature(metadata.signature);
       responseMetadata.setBlockTime(protobufTime);
       responseMetadata.setProtocolVersion(metadata.protocolVersion);
 
@@ -130,6 +129,7 @@ function waitForStateTransitionResultHandlerFactory(
       proof.setMerkleProof(proofObject.merkleProof);
       proof.setSignatureLlmqHash(proofObject.signatureLlmqHash);
       proof.setSignature(proofObject.signature);
+      proof.setRound(proofObject.round);
 
       response.setProof(proof);
     }
