@@ -100,6 +100,9 @@ const SpvChain = class {
 
   validate() {
     const longestChain = this.getLongestChain();
+    if (!longestChain.length) {
+      throw new SPVError('Empty SPV chain');
+    }
     const head = longestChain[longestChain.length - 1];
     const tail = this.prunedHeaders[0] || longestChain[0];
 
