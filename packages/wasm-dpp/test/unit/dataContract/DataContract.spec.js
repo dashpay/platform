@@ -127,6 +127,21 @@ describe('DataContract', () => {
     });
   });
 
+  describe('#getDocuments', () => {
+    it('should get Documents definition', () => {
+      const anotherDocuments = {
+        anotherDocument: {
+          properties: {
+            name: { type: 'string' },
+          },
+        },
+      };
+
+      dataContract.setDocuments(anotherDocuments);
+      expect(dataContract.getDocuments()).to.deep.equal(anotherDocuments);
+    });
+  });
+
   describe('#setDocuments', () => {
     it('should set Documents definition', () => {
       const anotherDocuments = {
