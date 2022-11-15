@@ -93,6 +93,7 @@ describe('waitForStateTransitionResultFactory', () => {
       merkleProof: Buffer.from('merkleProof'),
       signatureLLMQHash: Buffer.from('signatureLlmqHash'),
       signature: Buffer.from('signature'),
+      round: 42,
     });
     expect(result.getProof().getSignature()).to.deep.equal(Buffer.from('signature'));
     expect(result.getProof().getMerkleProof()).to.deep.equal(Buffer.from('merkleProof'));
