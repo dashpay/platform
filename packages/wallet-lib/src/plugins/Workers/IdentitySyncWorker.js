@@ -85,11 +85,8 @@ class IdentitySyncWorker extends Worker {
       if (identityBuffers.length === 0) {
         gapCount += 1;
 
-        logger.silly(`IdentitySyncWorker - gap at index ${index}`);
-
         if (gapCount >= this.gapLimit) {
           logger.silly('IdentitySyncWorker - gap limit is reached');
-
           break;
         }
 

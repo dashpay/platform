@@ -356,6 +356,7 @@ class TransactionsReader extends EventEmitter {
       } else if (rawInstantLocks) {
         // TODO(spv): write tests
         const instantLocks = parseRawInstantLocks(rawInstantLocks);
+        logger.debug('[TransactionsReader] Obtained instant locks for transactions', { hashes: instantLocks.map((isLock) => isLock.txid).join(',') });
         this.emit(EVENTS.INSTANT_LOCKS, instantLocks);
       }
     };

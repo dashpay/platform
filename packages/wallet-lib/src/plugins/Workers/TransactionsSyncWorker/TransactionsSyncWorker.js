@@ -510,7 +510,7 @@ class TransactionsSyncWorker extends Worker {
     // Header metadata was not found, subscribe to BLOCKHEIGHT_CHANGED event
     // in order to check one more time
     if (!headerMetadata) {
-      logger.silly('[TransactionsSyncWorker#newMerkleBlockHandler] header metadata not found. Waiting for chain height to change.');
+      logger.silly(`[TransactionsSyncWorker#newMerkleBlockHandler] header metadata not found for block "${merkleBlock.header.hash}". Waiting for chain height to change.`);
       if (this.blockHeightChangedHandler) {
         // This situation should not normally happen
         // because BlockHeadersSyncWorker should fire BLOCKHEIGHT_CHANGED either
@@ -521,6 +521,7 @@ class TransactionsSyncWorker extends Worker {
       }
 
       this.blockHeightChangedHandler = () => {
+        logger.silly(`[TransactionsSyncWorker#newMerkleBlockHandler] handled block height change event. Retry with merkle block ${merkleBlock.header.hash}`);
         this.newMerkleBlockHandler(payload);
         this.blockHeightChangedHandler = null;
       };

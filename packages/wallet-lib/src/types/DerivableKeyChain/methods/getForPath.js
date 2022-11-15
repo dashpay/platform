@@ -1,9 +1,6 @@
-const logger = require('../../../logger');
-
 function getForPath(path, opts = {}) {
   if (path === undefined) throw new Error('Expect a valid path to derivate');
   const stringifiedPath = path.toString();
-  logger.silly(`KeyChain.getForPath(${stringifiedPath})`);
   const isUsed = (opts && opts.isUsed !== undefined) ? opts.isUsed : false;
   const isWatched = (opts && opts.isWatched !== undefined) ? opts.isWatched : false;
   const isDerivable = ['HDPrivateKey', 'HDPublicKey'].includes(this.rootKeyType);
