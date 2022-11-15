@@ -115,8 +115,6 @@ class IdentitySyncWorker extends Worker {
 
       const identity = new Identity(rawIdentity);
 
-      logger.silly(`IdentitySyncWorker - got ${identity.getId()} at ${index}`);
-
       // eslint-disable-next-line no-await-in-loop
       await this.storage
         .getWalletStore(this.walletId)

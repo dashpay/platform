@@ -36,7 +36,7 @@ describe('e2e', () => {
 
       mnemonic = emptyWallet.wallet.exportWallet();
       const { storage } = fundedWallet.wallet;
-      emptyWalletHeight = storage.getChainStore(storage.application.network).state.blockHeight;
+      emptyWalletHeight = storage.getChainStore(storage.application.network).state.chainHeight;
     });
 
     // Skip test if any prior test in this describe failed
