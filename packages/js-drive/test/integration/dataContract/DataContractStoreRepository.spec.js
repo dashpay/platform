@@ -188,8 +188,6 @@ describe('DataContractStoreRepository', () => {
       expect(dataContractWithoutTransactionResult.isNull()).to.be.false();
       expect(dataContractWithoutTransactionResult.getValue().getVersion()).to.equals(1);
 
-      // TODO: Update cache
-
       const dataContractWithTransactionResult = await repository.fetch(dataContract.getId(), {
         useTransaction: true,
       });
@@ -204,6 +202,8 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should not store Data Contract with dry run', async () => {
+      dataContract.incrementVersion();
+
       const result = await repository.update(
         dataContract,
         blockInfo,
@@ -213,12 +213,15 @@ describe('DataContractStoreRepository', () => {
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      const encodedDataContractResult = await store.get(
-        DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
-        DataContractStoreRepository.DATA_CONTRACT_KEY,
-      );
+      const dataContractResult = await repository.fetch(dataContract.getId());
 
-      expect(encodedDataContractResult.getValue()).to.be.null();
+      expect(dataContractResult.isNull()).to.be.false();
+
+      const fetchedDataContract = dataContractResult.getValue();
+
+      expect(fetchedDataContract.getVersion()).to.equals(1);
+
+      expect(fetchedDataContract.toObject()).to.not.deep.equal(dataContract.toObject());
     });
   });
 

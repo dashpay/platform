@@ -355,7 +355,7 @@ describe('feesPrediction', () => {
       it('should have predicted fee more than actual fee', async () => {
         await stateRepository.createDataContract(dataContract);
 
-        dataContract.setVersion(2);
+        dataContract.incrementVersion();
 
         const documents = dataContract.getDocuments();
 

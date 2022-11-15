@@ -1,21 +1,14 @@
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
-const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
-
 /**
  * @implements StateRepository
  */
 class CachedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository} stateRepository
-   * @param {LRUCache} dataContractCache
    */
   constructor(
     stateRepository,
-    dataContractCache,
   ) {
     this.stateRepository = stateRepository;
-    this.contractCache = dataContractCache;
   }
 
   /**
@@ -126,36 +119,10 @@ class CachedStateRepositoryDecorator {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
-    const idString = id.toString();
-
-    let cacheItem = this.contractCache.get(idString);
-
-    if (cacheItem) {
-      if (executionContext) {
-        executionContext.addOperation(...cacheItem.getOperations());
-      }
-
-      return cacheItem.getDataContract();
-    }
-
-    const isolatedExecutionContext = new StateTransitionExecutionContext();
-
-    const dataContract = await this.stateRepository.fetchDataContract(id, isolatedExecutionContext);
-
-    if (executionContext) {
-      executionContext.addOperation(...isolatedExecutionContext.getOperations());
-    }
-
-    if (dataContract !== null) {
-      cacheItem = new DataContractCacheItem(
-        dataContract,
-        isolatedExecutionContext.getOperations(),
-      );
-
-      this.contractCache.set(idString, cacheItem);
-    }
-
-    return dataContract;
+    return this.stateRepository.fetchDataContract(
+      id,
+      executionContext,
+    );
   }
 
   /**
