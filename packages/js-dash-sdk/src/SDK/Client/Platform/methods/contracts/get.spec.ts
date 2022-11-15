@@ -73,7 +73,6 @@ describe('Client - Platform - Contracts - .get()', () => {
             expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
             expect(contract.getMetadata().getBlockHeight()).to.equal(10);
             expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
-            expect(contract.getMetadata().getSignature()).to.equal(metadataFixture.getSignature());
             expect(contract.getMetadata().getBlockTime()).to.equal(metadataFixture.getBlockTime());
             expect(contract.getMetadata().getProtocolVersion()).to.equal(metadataFixture.getProtocolVersion());
             expect(askedFromDapi).to.equal(1);
@@ -85,7 +84,6 @@ describe('Client - Platform - Contracts - .get()', () => {
             expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
             expect(contract.getMetadata().getBlockHeight()).to.equal(10);
             expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
-            expect(contract.getMetadata().getSignature()).to.equal(metadataFixture.getSignature());
             expect(contract.getMetadata().getBlockTime()).to.equal(metadataFixture.getBlockTime());
             expect(contract.getMetadata().getProtocolVersion()).to.equal(metadataFixture.getProtocolVersion());
             expect(askedFromDapi).to.equal(1);

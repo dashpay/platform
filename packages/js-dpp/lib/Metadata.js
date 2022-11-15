@@ -3,14 +3,12 @@ class Metadata {
    * @param {Object} rawMetadata
    * @param {number} rawMetadata.blockHeight
    * @param {number} rawMetadata.coreChainLockedHeight
-   * @param {Buffer} rawMetadata.signature - signature
    * @param {ITimestamp} rawMetadata.blockTime - block time
    * @param {Long} rawMetadata.protocolVersion - protocol version
    */
   constructor(rawMetadata) {
     this.blockHeight = rawMetadata.blockHeight;
     this.coreChainLockedHeight = rawMetadata.coreChainLockedHeight;
-    this.signature = rawMetadata.signature;
     this.blockTime = rawMetadata.blockTime;
     this.protocolVersion = rawMetadata.protocolVersion;
   }
@@ -37,14 +35,6 @@ class Metadata {
    */
   getBlockTime() {
     return this.blockTime;
-  }
-
-  /**
-   * Get signature
-   * @return {Buffer}
-   */
-  getSignature() {
-    return this.signature;
   }
 
   /**

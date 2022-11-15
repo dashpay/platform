@@ -47,7 +47,6 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
         metadata = new Metadata({
             blockHeight: responseMetadata.getHeight(),
             coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
-            signature: responseMetadata.getSignature(),
             blockTime: responseMetadata.getBlockTime(),
             protocolVersion: responseMetadata.getProtocolVersion(),
         });

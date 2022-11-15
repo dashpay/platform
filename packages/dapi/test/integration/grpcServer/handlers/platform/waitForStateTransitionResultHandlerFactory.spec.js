@@ -155,6 +155,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),
+      round: 42,
     };
 
     call = new GrpcCallMock(this.sinon, {
@@ -180,7 +181,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
             seconds: Math.ceil(new Date().getTime() / 1000),
             nanos: 0,
           },
-          signature: Buffer.alloc(12).fill(2),
           protocolVersion: 1,
         },
       }),
