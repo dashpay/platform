@@ -17,6 +17,11 @@ describe('getScoredQuorumHashes', () => {
     smlMock.getQuorumsOfType.returns([
       {
         quorumHash: Buffer.alloc(1, 32).toString('hex'),
+        validMembersCount: 90,
+      },
+      {
+        quorumHash: Buffer.alloc(1, 64).toString('hex'),
+        getAllQuorumMembers: 90,
       },
     ]);
   });
@@ -47,5 +52,47 @@ describe('getScoredQuorumHashes', () => {
     expect(() => {
       getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
     }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of type 1, but contains entries for types 999. Please check the Drive configuration`);
+  });
+
+  it('should filter quorums by minQuorumMembers', () => {
+    smlMock.getQuorumsOfType.returns([
+      {
+        quorumHash: Buffer.alloc(1, 64).toString('hex'),
+        validMembersCount: 90,
+      },
+      {
+        quorumHash: Buffer.alloc(1, 32).toString('hex'),
+        validMembersCount: 89,
+      },
+    ]);
+
+    const result = getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+
+    expect(smlMock.getQuorumsOfType).to.have.been.calledOnceWithExactly(quorumType);
+    expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(
+      quorumType, '40',
+    );
+    expect(result).to.equals(randomQuorum);
+  });
+
+  it('should choose from all quorums if filtered list is empty', () => {
+    smlMock.getQuorumsOfType.returns([
+      {
+        quorumHash: Buffer.alloc(1, 64).toString('hex'),
+        validMembersCount: 10,
+      },
+      {
+        quorumHash: Buffer.alloc(1, 32).toString('hex'),
+        validMembersCount: 10,
+      },
+    ]);
+
+    const result = getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
+
+    expect(smlMock.getQuorumsOfType).to.have.been.calledOnceWithExactly(quorumType);
+    expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(
+      quorumType, '20',
+    );
+    expect(result).to.equals(randomQuorum);
   });
 });
