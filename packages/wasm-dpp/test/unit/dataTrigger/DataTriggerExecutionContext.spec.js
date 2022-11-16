@@ -1,8 +1,8 @@
 const bs58 = require('bs58');
-const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTriggerExecutionContext');
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
-const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
-const StateTransitionExecutionContext = require('../../../lib/stateTransition/StateTransitionExecutionContext');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('DataTriggerExecutionContext', () => {
   let dataContractMock;

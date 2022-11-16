@@ -1,11 +1,11 @@
-const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/calculateStateTransitionFee');
+const calculateStateTransitionFee = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFee');
 
-const getIdentityCreateTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
-const ReadOperation = require('../../../lib/stateTransition/fee/operations/ReadOperation');
-const WriteOperation = require('../../../lib/stateTransition/fee/operations/WriteOperation');
-const DeleteOperation = require('../../../lib/stateTransition/fee/operations/DeleteOperation');
-const PreCalculatedOperation = require('../../../lib/stateTransition/fee/operations/PreCalculatedOperation');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/WriteOperation');
+const DeleteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/DeleteOperation');
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 
 describe('calculateStateTransitionFee', () => {
   let stateTransition;

@@ -725,7 +725,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return invalid result if there are additional properties', async () => {
-        rawDataContract.additionalProperty = { };
+        rawDataContract.additionalProperty = {};
 
         const result = await validateDataContract(rawDataContract);
 
@@ -738,7 +738,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should have no more than 100 properties', async () => {
-        const propertyDefinition = { };
+        const propertyDefinition = {};
 
         rawDataContract.documents.niceDocument.properties = {};
 
@@ -1283,6 +1283,29 @@ describe('validateDataContractFactory', function main() {
       expect(error.getCode()).to.equal(1048);
       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
       expect(error.getDuplicateIndexName()).to.deep.equal('index1');
+    });
+
+    it('should return invalid result if there are unique indices with partially required properties', async () => {
+      const indexDefinition = {
+        name: 'invalidIndex',
+        properties: [
+          { firstName: 'asc' },
+          { otherProperty: 'asc' },
+        ],
+        unique: true,
+      };
+
+      rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
+
+      const result = await validateDataContract(rawDataContract);
+
+      expect(result.isValid()).to.be.false();
+
+      const [error] = result.getErrors();
+
+      expect(error.getCode()).to.equal(1010);
+      expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      expect(error.getIndexDefinition().name).to.deep.equal('invalidIndex');
     });
 
     describe('index', () => {

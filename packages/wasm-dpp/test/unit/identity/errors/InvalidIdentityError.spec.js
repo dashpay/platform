@@ -1,5 +1,5 @@
-const InvalidIdentityError = require('../../../../lib/identity/errors/InvalidIdentityError');
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
+const InvalidIdentityError = require('@dashevo/dpp/lib/identity/errors/InvalidIdentityError');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 describe('InvalidIdentityError', () => {
   let rawIdentity;

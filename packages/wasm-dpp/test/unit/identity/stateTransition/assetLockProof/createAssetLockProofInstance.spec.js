@@ -1,8 +1,8 @@
-const createAssetLockProofInstance = require('../../../../../lib/identity/stateTransition/assetLockProof/createAssetLockProofInstance');
-const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const ChainAssetLockProof = require('../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const InstantAssetLockProof = require('../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const createAssetLockProofInstance = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/createAssetLockProofInstance');
+const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const ChainAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 
 describe('createAssetLockProofInstance', () => {
   it('should create an instance of InstantAssetLockProof', () => {

@@ -7,10 +7,12 @@ class VerificationServer {
   /**
    *
    * @param {Docker} docker
+   * @param {dockerPull} dockerPull
    * @param {StartedContainers} startedContainers
    */
-  constructor(docker, startedContainers) {
+  constructor(docker, dockerPull, startedContainers) {
     this.docker = docker;
+    this.dockerPull = dockerPull;
     this.startedContainers = startedContainers;
     this.server = null;
     this.configPath = null;
@@ -31,7 +33,7 @@ class VerificationServer {
     }
 
     // Set up template
-    const templatePath = path.join(__dirname, '..', '..', '..', 'ssl', 'templates', 'sslValidation.yaml');
+    const templatePath = path.join(__dirname, '..', '..', '..', 'ssl', 'templates', 'sslValidation.yaml.dot');
     const templateString = fs.readFileSync(templatePath, 'utf8');
     const template = dots.template(templateString);
 
@@ -43,13 +45,17 @@ class VerificationServer {
       .replace('.dot', '');
     this.configPath = path.join(configDir, configName);
 
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir);
+    }
     fs.rmSync(this.configPath, { force: true });
-
     fs.writeFileSync(this.configPath, envoyConfig, 'utf8');
+
+    const image = 'envoyproxy/envoy:v1.22-latest';
 
     const opts = {
       name: 'mn-ssl-verification',
-      Image: 'envoyproxy/envoy:v1.22-latest',
+      Image: image,
       Tty: false,
       ExposedPorts: { '80/tcp': {} },
       HostConfig: {
@@ -59,6 +65,7 @@ class VerificationServer {
       },
     };
 
+    await this.dockerPull(image);
     this.server = await this.docker.createContainer(opts);
 
     this.startedContainers.addContainer(opts.name);

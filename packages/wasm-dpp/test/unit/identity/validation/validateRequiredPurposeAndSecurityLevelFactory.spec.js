@@ -1,12 +1,12 @@
-const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
-const validateRequiredPurposeAndSecurityLevelFactory = require('../../../../lib/identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
+const validateRequiredPurposeAndSecurityLevelFactory = require('@dashevo/dpp/lib/identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
 
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const MissingMasterPublicKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
+const MissingMasterPublicKeyError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
 
 describe('validateRequiredPurposeAndSecurityLevel', () => {
   let validateRequiredPurposeAndSecurityLevel;

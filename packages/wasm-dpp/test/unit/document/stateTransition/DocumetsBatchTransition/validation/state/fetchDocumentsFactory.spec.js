@@ -1,12 +1,12 @@
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const fetchDocumentsFactory = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/state/fetchDocumentsFactory');
+const fetchDocumentsFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/fetchDocumentsFactory');
 
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;

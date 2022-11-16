@@ -1,16 +1,16 @@
 const bs58 = require('bs58');
 
-const Identifier = require('../../../lib/identifier/Identifier');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
+const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/InvalidDocumentTypeError');
 
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
-const Metadata = require('../../../lib/Metadata');
-const DataContract = require('../../../lib/dataContract/DataContract');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const Metadata = require('@dashevo/dpp/lib/Metadata');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const hash = require('../../../lib/util/hash');
-const serializer = require('../../../lib/util/serializer');
-const getBinaryPropertiesFromSchema = require('../../../lib/dataContract/getBinaryPropertiesFromSchema');
+const hash = require('@dashevo/dpp/lib/util/hash');
+const serializer = require('@dashevo/dpp/lib/util/serializer');
+const getBinaryPropertiesFromSchema = require('@dashevo/dpp/lib/dataContract/getBinaryPropertiesFromSchema');
 
 describe('DataContract', () => {
   let hashMock;

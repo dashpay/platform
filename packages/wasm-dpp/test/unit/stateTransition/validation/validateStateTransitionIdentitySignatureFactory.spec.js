@@ -1,25 +1,25 @@
-const validateStateTransitionSignatureFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionIdentitySignatureFactory');
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
-const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
-const InvalidStateTransitionSignatureError = require('../../../../lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
-const MissingPublicKeyError = require('../../../../lib/errors/consensus/signature/MissingPublicKeyError');
-const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
+const validateStateTransitionSignatureFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionIdentitySignatureFactory');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const InvalidStateTransitionSignatureError = require('@dashevo/dpp/lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
+const MissingPublicKeyError = require('@dashevo/dpp/lib/errors/consensus/signature/MissingPublicKeyError');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
-const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
-const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
-const PublicKeyIsDisabledConsensusError = require('../../../../lib/errors/consensus/signature/PublicKeyIsDisabledError');
-const WrongPublicKeyPurposeConsensusError = require('../../../../lib/errors/consensus/signature/WrongPublicKeyPurposeError');
-const PublicKeySecurityLevelNotMetConsensusError = require('../../../../lib/errors/consensus/signature/PublicKeySecurityLevelNotMetError');
-const InvalidSignaturePublicKeySecurityLevelConsensusError = require('../../../../lib/errors/consensus/signature/InvalidSignaturePublicKeySecurityLevelError');
-const InvalidIdentityPublicKeyTypeConsensusError = require('../../../../lib/errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
-const InvalidSignaturePublicKeySecurityLevelError = require('../../../../lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
-const PublicKeySecurityLevelNotMetError = require('../../../../lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
-const WrongPublicKeyPurposeError = require('../../../../lib/stateTransition/errors/WrongPublicKeyPurposeError');
-const PublicKeyIsDisabledError = require('../../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
-const DPPError = require('../../../../lib/errors/DPPError');
-const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
-const IdentityNotFoundError = require('../../../../lib/errors/consensus/signature/IdentityNotFoundError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const PublicKeyIsDisabledConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/PublicKeyIsDisabledError');
+const WrongPublicKeyPurposeConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/WrongPublicKeyPurposeError');
+const PublicKeySecurityLevelNotMetConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/PublicKeySecurityLevelNotMetError');
+const InvalidSignaturePublicKeySecurityLevelConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/InvalidSignaturePublicKeySecurityLevelError');
+const InvalidIdentityPublicKeyTypeConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
+const InvalidSignaturePublicKeySecurityLevelError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
+const PublicKeySecurityLevelNotMetError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
+const WrongPublicKeyPurposeError = require('@dashevo/dpp/lib/stateTransition/errors/WrongPublicKeyPurposeError');
+const PublicKeyIsDisabledError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeyIsDisabledError');
+const DPPError = require('@dashevo/dpp/lib/errors/DPPError');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;

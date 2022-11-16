@@ -1,24 +1,24 @@
 const bs58 = require('bs58');
-const AbstractDocumentTransition = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
+const AbstractDocumentTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 
-const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const DataTrigger = require('../../../../../../../lib/dataTrigger/DataTrigger');
-const DataTriggerExecutionResult = require('../../../../../../../lib/dataTrigger/DataTriggerExecutionResult');
-const DataTriggerExecutionContext = require('../../../../../../../lib/dataTrigger/DataTriggerExecutionContext');
-const getDpnsContractFixture = require('../../../../../../../lib/test/fixtures/getDpnsContractFixture');
-const dpnsDocumentFixture = require('../../../../../../../lib/test/fixtures/getDpnsDocumentFixture');
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const DataTrigger = require('@dashevo/dpp/lib/dataTrigger/DataTrigger');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
+const dpnsDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsDocumentFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const dpnsCreateDomainDataTrigger = require('../../../../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const dpnsDeleteDomainDataTrigger = require('../../../../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const dpnsUpdateDomainDataTrigger = require('../../../../../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
+const dpnsCreateDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
+const dpnsDeleteDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
+const dpnsUpdateDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 
-const executeDataTriggersFactory = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
+const executeDataTriggersFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 
-const Identifier = require('../../../../../../../lib/identifier/Identifier');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 describe('executeDataTriggersFactory', () => {
   let childDocument;
