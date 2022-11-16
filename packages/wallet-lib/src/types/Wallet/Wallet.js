@@ -48,7 +48,7 @@ class Wallet extends EventEmitter {
    *
    * @param opts
    */
-  constructor(opts = defaultOptions) {
+  constructor(opts = { ...defaultOptions }) {
     super();
     // Immediate prototype method-composition are used in order to give access in constructor.
     Object.assign(Wallet.prototype, {

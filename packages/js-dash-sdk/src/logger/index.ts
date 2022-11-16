@@ -1,3 +1,10 @@
+import { Logger, Logform } from "winston";
+
+export type ConfigurableLogger = Logger & {
+  getForId: (id: string) => ConfigurableLogger
+}
+
+
 const util = require('util');
 const winston = require('winston');
 
@@ -11,7 +18,7 @@ const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 //   debug    4
 //   silly    5
 
-const createLogger = (formats = []) => winston.createLogger({
+const createLogger = (formats: Logform.Format[] = []): ConfigurableLogger => winston.createLogger({
   level: LOG_LEVEL,
   transports: [
     new winston.transports.Console({
@@ -34,26 +41,26 @@ const createLogger = (formats = []) => winston.createLogger({
       ),
     }),
   ],
-});
+})
 
 const logger = createLogger();
 
 const loggers = {};
-logger.getForWallet = (walletId) => {
-  if (!loggers[walletId]) {
+logger.getForId = (id: string): ConfigurableLogger => {
+  if (!loggers[id]) {
     const format = {
       transform: (info) => {
-        const message = `[Wallet: ${walletId}] ${info.message}`;
+        const message = `[SDK: ${id}] ${info.message}`;
         return { ...info, message };
       },
     };
 
-    loggers[walletId] = createLogger([format]);
+    loggers[id] = createLogger([format]);
   }
 
-  return loggers[walletId];
+  return loggers[id];
 };
 
-logger.verbose(`Logger uses "${LOG_LEVEL}" level`, { level: LOG_LEVEL });
+logger.verbose(`[SDK] Logger uses "${LOG_LEVEL}" level`, { level: LOG_LEVEL });
 
-module.exports = logger;
+export default logger;

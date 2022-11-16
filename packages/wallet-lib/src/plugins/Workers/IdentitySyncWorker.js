@@ -2,7 +2,6 @@ const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 const Worker = require('../Worker');
-const logger = require('../../logger');
 
 const decodeProtocolEntity = decodeProtocolEntityFactory();
 
@@ -49,8 +48,6 @@ class IdentitySyncWorker extends Worker {
       unusedIndices.push(index);
     });
 
-    logger.silly('IdentitySyncWorker - sync start');
-
     let gapCount = 0;
     let unusedIndex;
     let index = -1;
@@ -86,7 +83,6 @@ class IdentitySyncWorker extends Worker {
         gapCount += 1;
 
         if (gapCount >= this.gapLimit) {
-          logger.silly('IdentitySyncWorker - gap limit is reached');
           break;
         }
 
@@ -123,8 +119,6 @@ class IdentitySyncWorker extends Worker {
           index,
         );
     }
-
-    logger.silly('IdentitySyncWorker - sync finished');
   }
 }
 

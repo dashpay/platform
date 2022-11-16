@@ -56,8 +56,9 @@ class Account extends EventEmitter {
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
+    this.logger = logger.getForWallet(this.walletId);
 
-    logger.debug(`Loading up wallet ${this.walletId}`);
+    this.logger.debug(`Loading up wallet ${this.walletId}`);
 
     this.identities = wallet.identities;
 
@@ -124,7 +125,7 @@ class Account extends EventEmitter {
       this.emit = (...args) => {
         const { type } = args[1];
         const payload = JSON.stringify(args[1].payload);
-        logger.debug(`${this.walletId}:${this.index} - Emitted event ${type} - ${payload} `);
+        this.logger.debug(`${this.walletId}:${this.index} - Emitted event ${type} - ${payload} `);
         super.emit(...args);
       };
     }

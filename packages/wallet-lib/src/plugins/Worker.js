@@ -1,5 +1,4 @@
 const _ = require('lodash');
-const logger = require('../logger');
 const StandardPlugin = require('./StandardPlugin');
 
 // eslint-disable-next-line no-underscore-dangle
@@ -49,7 +48,6 @@ class Worker extends StandardPlugin {
     let payloadResult = null;
     const self = this;
     const eventTypeStarting = `WORKER/${this.name.toUpperCase()}/STARTING`;
-    logger.silly(JSON.stringify({ eventTypeStarting, result: payloadResult }));
     this.parentEvents.emit(eventTypeStarting, { type: eventTypeStarting, payload: payloadResult });
     try {
       if (this.worker) await this.stopWorker();
@@ -64,7 +62,6 @@ class Worker extends StandardPlugin {
         }
       }
       const eventTypeStarted = `WORKER/${this.name.toUpperCase()}/STARTED`;
-      logger.silly(JSON.stringify({ eventTypeStarted, result: payloadResult }));
       this.parentEvents.emit(eventTypeStarted, { type: eventTypeStarted, payload: payloadResult });
       this.state.started = true;
 
@@ -105,7 +102,6 @@ class Worker extends StandardPlugin {
     }
 
     this.state.started = false;
-    logger.silly(JSON.stringify({ eventType, result: payloadResult }));
     this.parentEvents.emit(eventType, { type: eventType, payload: payloadResult });
   }
 
@@ -142,7 +138,6 @@ class Worker extends StandardPlugin {
     this.workerPass += 1;
     if (!this.state.ready) this.state.ready = true;
     const eventType = `WORKER/${this.name.toUpperCase()}/EXECUTED`;
-    logger.silly(JSON.stringify({ eventType, result: payloadResult }));
     this.parentEvents.emit(eventType, { type: eventType, payload: payloadResult });
     return true;
   }

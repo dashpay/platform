@@ -45,6 +45,7 @@ module.exports = async function configure(opts = {}) {
 
   this.currentWalletId = opts.walletId;
   this.currentNetwork = opts.network;
+  this.logger = logger.getForWallet(this.currentWalletId);
 
   if (this.rehydrate) {
     await this.rehydrateState();

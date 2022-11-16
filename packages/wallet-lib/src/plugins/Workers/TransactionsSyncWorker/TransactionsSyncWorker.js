@@ -43,6 +43,7 @@ class TransactionsSyncWorker extends Worker {
         'keyChainStore',
         'transport',
         'network',
+        'walletId',
       ],
       ...options,
     });
@@ -74,6 +75,14 @@ class TransactionsSyncWorker extends Worker {
     this.syncState = STATES.IDLE;
   }
 
+  inject(name, obj, allowSensitiveOperations = false) {
+    super.inject(name, obj, allowSensitiveOperations);
+
+    if (name === 'walletId') {
+      this.logger = logger.getForWallet(this.walletId);
+    }
+  }
+
   async init() {
     if (!this.transactionsReader) {
       const createContinuousSyncStream = (bloomFilter, rangeOptions) => ReconnectableStream
@@ -95,6 +104,7 @@ class TransactionsSyncWorker extends Worker {
       this.transactionsReader = new TransactionsReader({
         maxRetries: MAX_RETRIES,
         network: this.network,
+        walletId: this.walletId,
         createContinuousSyncStream,
         createHistoricalSyncStream,
       });
@@ -122,7 +132,7 @@ class TransactionsSyncWorker extends Worker {
     } else if (startFrom > chainHeight) {
       throw new Error(`Start block height ${startFrom} is greater than chain height ${chainHeight}`);
     } else if (startFrom === chainHeight) {
-      logger.debug(`[TransactionsSyncWorker] Start block height is equal to chain height ${chainHeight}, no need to sync`);
+      this.logger.silly(`[TransactionsSyncWorker] Start block height is equal to chain height ${chainHeight}, not syncing.`);
       this.syncCheckpoint = chainHeight;
       chainStore.updateLastSyncedBlockHeight(chainHeight);
       chainStore.pruneHeadersMetadata(chainHeight);
@@ -264,7 +274,7 @@ class TransactionsSyncWorker extends Worker {
 
     this.transactionsReaderErrorHandler = (e) => {
       this.emitError(e);
-      logger.debug('[TransactionsSyncWorker] Error handling continuous chain update', e);
+      this.logger.debug('[TransactionsSyncWorker] Error handling continuous chain update', e);
     };
 
     this.transactionsReader.on(
@@ -309,7 +319,7 @@ class TransactionsSyncWorker extends Worker {
   }
 
   async onStop() {
-    logger.debug('[TransactionsSyncWorker] Stopping...');
+    this.logger.debug('[TransactionsSyncWorker] Stopping...');
     if (this.syncState === STATES.HISTORICAL_SYNC) {
       await this.transactionsReader.stopHistoricalSync();
     } else if (this.syncState === STATES.CONTINUOUS_SYNC) {
@@ -345,7 +355,7 @@ class TransactionsSyncWorker extends Worker {
     } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
-      logger.debug(`[TransactionsSyncWorker] Wallet created from a new mnemonic. Sync from current chain height ${chainHeight}.`);
+      this.logger.debug(`[TransactionsSyncWorker] Wallet created from a new mnemonic. Sync from current chain height ${chainHeight}.`);
       return chainHeight;
     }
 
@@ -356,10 +366,10 @@ class TransactionsSyncWorker extends Worker {
     const skipBefore = parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipBefore > lastSyncedBlockHeight) {
-      logger.debug(`[TransactionsSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
+      this.logger.debug(`[TransactionsSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
       height = skipBefore;
     } else if (lastSyncedBlockHeight > -1) {
-      logger.debug(`[TransactionsSyncWorker] Last synced block height is ${lastSyncedBlockHeight}`);
+      this.logger.debug(`[TransactionsSyncWorker] Last synced block height is ${lastSyncedBlockHeight}`);
       height = lastSyncedBlockHeight;
     } else {
       height = 1;
@@ -510,18 +520,18 @@ class TransactionsSyncWorker extends Worker {
     // Header metadata was not found, subscribe to BLOCKHEIGHT_CHANGED event
     // in order to check one more time
     if (!headerMetadata) {
-      logger.silly(`[TransactionsSyncWorker#newMerkleBlockHandler] header metadata not found for block "${merkleBlock.header.hash}". Waiting for chain height to change.`);
+      this.logger.silly(`[TransactionsSyncWorker#newMerkleBlockHandler] header metadata not found for block "${merkleBlock.header.hash}". Waiting for chain height to change.`);
       if (this.blockHeightChangedHandler) {
         // This situation should not normally happen
         // because BlockHeadersSyncWorker should fire BLOCKHEIGHT_CHANGED either
         // before new MerkleBlock or immediately after, but set an error log just in case
         // TODO: probably remove after the debugging?
-        logger.error('[TransactionsSyncWorker] Block height changed handler is already set.');
+        this.logger.warn('[TransactionsSyncWorker] Block height changed handler is already set.');
         return;
       }
 
       this.blockHeightChangedHandler = () => {
-        logger.silly(`[TransactionsSyncWorker#newMerkleBlockHandler] handled block height change event. Retry with merkle block ${merkleBlock.header.hash}`);
+        this.logger.silly(`[TransactionsSyncWorker#newMerkleBlockHandler] handled block height change event. Retry with merkle block ${merkleBlock.header.hash}`);
         this.newMerkleBlockHandler(payload);
         this.blockHeightChangedHandler = null;
       };
@@ -556,7 +566,7 @@ class TransactionsSyncWorker extends Worker {
 
     const headerTime = new Date(headerMetadata.time * 1000);
 
-    logger.debug('[TransactionsSyncWorker#newMerkleBlockHandler] New merkle block received', {
+    this.logger.debug('[TransactionsSyncWorker#newMerkleBlockHandler] New merkle block received', {
       hash: merkleBlock.header.hash,
       height: headerHeight,
       time: headerTime,
@@ -601,7 +611,7 @@ class TransactionsSyncWorker extends Worker {
     chainStore.pruneHeadersMetadata(headerHeight);
     this.storage.scheduleStateSave();
 
-    logger.debug(`[TransactionsSyncWorker#newMerkleBlockHandler] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`);
+    this.logger.debug(`[TransactionsSyncWorker#-------------------->] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`);
   }
 
   /**
@@ -642,8 +652,8 @@ class TransactionsSyncWorker extends Worker {
     const transactionsCount = transactions.size;
     let progress = syncedBlocksCount / totalBlocksCount;
     progress = Math.round(progress * 1000) / 10;
-    logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress: ${lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
-    logger.debug(`[-------------------------->] TXs: ${transactionsCount}`);
+    this.logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress: ${lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
+    this.logger.debug(`[-------------------------->] TXs: ${transactionsCount}`);
 
     this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
       progress,

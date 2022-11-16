@@ -53,6 +53,14 @@ class BlockHeadersSyncWorker extends Worker {
     this.continuousChainUpdateHandler = this.continuousChainUpdateHandler.bind(this);
   }
 
+  inject(name, obj, allowSensitiveOperations = false) {
+    super.inject(name, obj, allowSensitiveOperations);
+
+    if (name === 'walletId') {
+      this.logger = logger.getForWallet(this.walletId);
+    }
+  }
+
   async onStart() {
     if (this.syncState !== STATES.IDLE) {
       throw new Error(`Worker is already running: ${this.syncState}. Please call .onStop() first.`);
@@ -132,7 +140,7 @@ class BlockHeadersSyncWorker extends Worker {
       );
     });
 
-    logger.debug(`[BlockHeadersSyncWorker] Start reading historical headers from ${startFrom} to ${bestBlockHeight}`);
+    this.logger.debug(`[BlockHeadersSyncWorker] Start reading historical headers from ${startFrom} to ${bestBlockHeight}`);
     await blockHeadersProvider.readHistorical(startFrom, bestBlockHeight);
     this.syncState = STATES.HISTORICAL_SYNC;
 
@@ -161,7 +169,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.blockHeadersProviderErrorHandler = (e) => {
       this.emitError(e);
-      logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
+      this.logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
     };
 
     blockHeadersProvider.on(
@@ -193,7 +201,7 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   async onStop() {
-    logger.debug('[BlockHeadersSyncWorker] Stopping...');
+    this.logger.debug('[BlockHeadersSyncWorker] Stopping...');
     const { blockHeadersProvider } = this.transport.client;
     await blockHeadersProvider.stop();
   }
@@ -215,7 +223,7 @@ class BlockHeadersSyncWorker extends Worker {
     } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
-      logger.debug(`[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync only last ${this.maxHeadersToKeep} blocks.`);
+      this.logger.debug(`[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync only last ${this.maxHeadersToKeep} blocks.`);
       const syncFrom = bestBlockHeight - this.maxHeadersToKeep;
       return syncFrom < 1 ? 1 : syncFrom;
     }
@@ -229,10 +237,10 @@ class BlockHeadersSyncWorker extends Worker {
     const skipBefore = parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipBefore > lastSyncedHeaderHeight) {
-      logger.debug(`[BlockHeadersSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
+      this.logger.debug(`[BlockHeadersSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
       height = skipBefore;
     } else if (lastSyncedHeaderHeight > -1) {
-      logger.debug(`[BlockHeadersSyncWorker] Last synced header height is ${lastSyncedHeaderHeight}`);
+      this.logger.debug(`[BlockHeadersSyncWorker] Last synced header height is ${lastSyncedHeaderHeight}`);
       height = lastSyncedHeaderHeight;
     } else {
       height = 1;
@@ -280,7 +288,7 @@ class BlockHeadersSyncWorker extends Worker {
       this.scheduleProgressUpdate();
     } catch (e) {
       this.emitError(e);
-      logger.debug('[BlockHeadersSyncWorker] Error handling historical chain update:', e);
+      this.logger.debug('[BlockHeadersSyncWorker] Error handling historical chain update:', e);
     }
   }
 
@@ -301,7 +309,7 @@ class BlockHeadersSyncWorker extends Worker {
       const { chainHeight } = chainStore.state;
       // Ignore height overlap in case of the stream reconnected
       if (newChainHeight === chainHeight) {
-        logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${chainHeight}`);
+        this.logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${chainHeight}`);
         return;
       } if (newChainHeight < chainHeight) {
         throw new Error(`New chain height ${newChainHeight} is less than latest height ${chainHeight}`);
@@ -317,16 +325,16 @@ class BlockHeadersSyncWorker extends Worker {
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
       const header = newHeaders[newHeaders.length - 1];
 
-      logger.debug(`[BlockHeadersSyncWorker] Chain height updated: ${newChainHeight}`);
-      logger.debug(`[--------------------->] Validity chain length: ${spvChain.getLongestChain().length}`);
-      logger.debug(`[--------------------->] New block hash: ${header.hash}`);
+      this.logger.debug(`[BlockHeadersSyncWorker] Chain height updated: ${newChainHeight}`);
+      this.logger.debug(`[--------------------->] Validity chain length: ${spvChain.getLongestChain().length}`);
+      this.logger.debug(`[--------------------->] New block hash: ${header.hash}`);
 
       this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
 
       this.storage.scheduleStateSave();
     } catch (e) {
       this.emitError(e);
-      logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
+      this.logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
     }
   }
 
@@ -353,11 +361,11 @@ class BlockHeadersSyncWorker extends Worker {
     const confirmedProgress = Math.round((confirmedSyncedCount / totalCount) * 1000) / 10;
     const totalProgress = Math.round((totalSyncedCount / totalCount) * 1000) / 10;
 
-    logger.debug('[BlockHeadersSyncWorker] Historical fetch progress.');
-    logger.debug(`[--------------------->] Confirmed: ${confirmedSyncedCount}/${totalCount}, ${confirmedProgress}%`);
-    logger.debug(`[--------------------->] Total: ${totalSyncedCount}/${totalCount}, ${totalProgress}%`);
+    this.logger.debug('[BlockHeadersSyncWorker] Historical fetch progress.');
+    this.logger.debug(`[--------------------->] Confirmed: ${confirmedSyncedCount}/${totalCount}, ${confirmedProgress}%`);
+    this.logger.debug(`[--------------------->] Total: ${totalSyncedCount}/${totalCount}, ${totalProgress}%`);
     if (confirmedProgress === 100) {
-      logger.debug(`[--------------------->] Last header: ${longestChain[longestChain.length - 1].hash}`);
+      this.logger.debug(`[--------------------->] Last header: ${longestChain[longestChain.length - 1].hash}`);
     }
 
     this.parentEvents.emit(EVENTS.HEADERS_SYNC_PROGRESS, {

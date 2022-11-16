@@ -22,6 +22,7 @@ const EVENTS = {
  * @property {Function} [createContinuousSyncStream]
  * @property {string} [network]
  * @property {number} maxRetries
+ * @property {string} walletId
  */
 
 /**
@@ -52,6 +53,7 @@ class TransactionsReader extends EventEmitter {
     this.continuousSyncStream = null;
 
     this.cancelStream = this.cancelStream.bind(this);
+    this.logger = logger.getForWallet(options.walletId);
   }
 
   /**
@@ -83,7 +85,7 @@ class TransactionsReader extends EventEmitter {
     const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
     const count = toBlockHeight - fromBlockHeight + 1;
     this.historicalSyncStream = await subscribeWithRetries(fromBlockHeight, count, addresses);
-    logger.debug(`[TransactionsReader] Started syncing blocks from ${fromBlockHeight} to ${toBlockHeight}`);
+    this.logger.debug(`[TransactionsReader] Started syncing blocks from ${fromBlockHeight} to ${toBlockHeight}`);
   }
 
   /**
@@ -165,7 +167,7 @@ class TransactionsReader extends EventEmitter {
                 addresses: [...addresses, ...newAddresses],
               };
 
-              logger.debug('[TransactionsReader] Restarting stream with', {
+              this.logger.silly('[TransactionsReader] Restarting stream with', {
                 fromBlockHeight: restartArgs.fromBlockHeight,
                 count: restartArgs.count,
                 _addressesCount: addresses.length,
@@ -204,7 +206,7 @@ class TransactionsReader extends EventEmitter {
         }
 
         if (currentRetries < maxRetries) {
-          logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, `"${streamError.message}"`);
+          this.logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, `"${streamError.message}"`);
 
           const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
           const remainingCount = count - blocksRead;
@@ -230,7 +232,7 @@ class TransactionsReader extends EventEmitter {
       };
 
       const endHandler = () => {
-        logger.debug('TransactionsReader#stream.endHandler] Historical data updated');
+        this.logger.debug('TransactionsReader#stream.endHandler] Historical data updated');
         this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
       };
 
@@ -279,7 +281,7 @@ class TransactionsReader extends EventEmitter {
     });
     this.continuousSyncStream = stream;
 
-    logger.debug('[TransactionsReader] Started continuous sync with', {
+    this.logger.silly('[TransactionsReader] Started continuous sync with', {
       fromBlockHeight,
       _addressesCount: addresses.length,
     });
@@ -304,6 +306,10 @@ class TransactionsReader extends EventEmitter {
             this.continuousSyncStream = null;
 
             const newAddresses = [...addresses, ...addressesGenerated];
+            this.logger.silly('[TransactionsReader] New addresses generated. Restarting continuous sync with', {
+              fromBlockHeight,
+              _addressesCount: newAddresses.length,
+            });
             this.startContinuousSync(
               fromBlockHeight,
               newAddresses,
@@ -356,14 +362,14 @@ class TransactionsReader extends EventEmitter {
       } else if (rawInstantLocks) {
         // TODO(spv): write tests
         const instantLocks = parseRawInstantLocks(rawInstantLocks);
-        logger.debug('[TransactionsReader] Obtained instant locks for transactions', { hashes: instantLocks.map((isLock) => isLock.txid).join(',') });
+        this.logger.debug('[TransactionsReader] Obtained instant locks for transactions', { hashes: instantLocks.map((isLock) => isLock.txid).join(',') });
         this.emit(EVENTS.INSTANT_LOCKS, instantLocks);
       }
     };
 
     const errorHandler = (streamError) => {
       if (streamError.code === GrpcErrorCodes.CANCELLED) {
-        logger.debug('[TransactionsReader] Stream canceled on client');
+        this.logger.debug('[TransactionsReader] Stream canceled on client');
         return;
       }
 
@@ -371,7 +377,7 @@ class TransactionsReader extends EventEmitter {
     };
 
     const beforeReconnectHandler = (updateArguments) => {
-      logger.debug('[TransactionsReader] Reconnecting to stream with', {
+      this.logger.silly('[TransactionsReader] Reconnecting to stream with', {
         fromBlockHeight: lastSyncedBlockHeight,
         _addressesCount: addresses.length,
       });
@@ -385,7 +391,7 @@ class TransactionsReader extends EventEmitter {
     };
 
     const endHandler = () => {
-      logger.debug('[TransactionsReader] Continuous sync stream ended');
+      this.logger.debug('[TransactionsReader] Continuous sync stream ended');
       this.continuousSyncStream = null;
     };
 
@@ -408,7 +414,7 @@ class TransactionsReader extends EventEmitter {
       await this.cancelStream(this.historicalSyncStream);
       this.historicalSyncStream = null;
       this.emit(EVENTS.STOPPED);
-      logger.debug('[TransactionsReader] Stopped historical sync');
+      this.logger.debug('[TransactionsReader] Stopped historical sync');
     }
   }
 
@@ -417,7 +423,7 @@ class TransactionsReader extends EventEmitter {
       await this.cancelStream(this.continuousSyncStream);
       this.continuousSyncStream = null;
       this.emit(EVENTS.STOPPED);
-      logger.debug('[TransactionsReader] Stopped continuous sync');
+      this.logger.debug('[TransactionsReader] Stopped continuous sync');
     }
   }
 
