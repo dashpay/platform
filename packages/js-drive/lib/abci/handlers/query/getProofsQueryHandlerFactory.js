@@ -45,6 +45,7 @@ function getProofsQueryHandlerFactory(
       quorumHash: signatureLlmqHash,
       stateSignature: signature,
     } = latestBlockExecutionContext.getLastCommitInfo();
+    const round = latestBlockExecutionContext.getRound();
 
     const timeObject = time.toJSON();
     timeObject.seconds = Number(timeObject.seconds);
@@ -69,6 +70,7 @@ function getProofsQueryHandlerFactory(
         signatureLlmqHash,
         signature,
         merkleProof: documentsProof.getValue(),
+        round,
       };
     }
 
@@ -81,6 +83,7 @@ function getProofsQueryHandlerFactory(
         signatureLlmqHash,
         signature,
         merkleProof: identitiesProof.getValue(),
+        round,
       };
     }
 
@@ -93,6 +96,7 @@ function getProofsQueryHandlerFactory(
         signatureLlmqHash,
         signature,
         merkleProof: dataContractsProof.getValue(),
+        round,
       };
     }
 

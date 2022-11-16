@@ -14,6 +14,9 @@ function testProofStructure(expect, proof, proofExist = true) {
 
   expect(proof.signature).to.be.an.instanceof(Buffer);
   expect(proof.signature.length).to.be.equal(96);
+
+  expect(proof.round).to.be.a.number();
+  expect(proof.round).to.be.greaterThanOrEqual(1);
 }
 
 module.exports = testProofStructure;
