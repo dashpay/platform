@@ -212,7 +212,9 @@ class DriveStateRepository {
       id,
       {
         blockInfo,
-        dryRun: executionContext ? executionContext.isDryRun() : false,
+        // This method doesn't implement dry run because we need a contract
+        // to proceed dry run validation and collect further operations
+        dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
         useTransaction: false,

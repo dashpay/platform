@@ -8,7 +8,6 @@ const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggest
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const calculateStateTransitionFee = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFee');
 
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
@@ -72,30 +71,31 @@ async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stat
 
   // Compare operations
 
-  const actualOperations = actualExecutionContext.getOperations();
-  const predictedOperations = predictedExecutionContext.getOperations();
+  // TODO: Processing fees are disabled for v0.23
+  // const actualOperations = actualExecutionContext.getOperations();
+  // const predictedOperations = predictedExecutionContext.getOperations();
 
-  expect(predictedOperations).to.have.lengthOf(actualOperations.length);
+  // expect(predictedOperations).to.have.lengthOf(actualOperations.length);
 
   // Compare fees
 
-  stateTransition.setExecutionContext(actualExecutionContext);
-  const actualFees = calculateStateTransitionFee(stateTransition);
-
-  stateTransition.setExecutionContext(predictedExecutionContext);
-  const predictedFees = calculateStateTransitionFee(stateTransition);
-
-  expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
-
-  predictedOperations.forEach((predictedOperation, i) => {
-    expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
-      actualOperations[i].getStorageCost(),
-    );
-
-    expect(predictedOperation.getProcessingCost()).to.be.greaterThanOrEqual(
-      actualOperations[i].getProcessingCost(),
-    );
-  });
+  // stateTransition.setExecutionContext(actualExecutionContext);
+  // const actualFees = calculateStateTransitionFee(stateTransition);
+  //
+  // stateTransition.setExecutionContext(predictedExecutionContext);
+  // const predictedFees = calculateStateTransitionFee(stateTransition);
+  //
+  // expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
+  //
+  // predictedOperations.forEach((predictedOperation, i) => {
+  //   expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
+  //     actualOperations[i].getStorageCost(),
+  //   );
+  //
+  //   expect(predictedOperation.getProcessingCost()).to.be.greaterThanOrEqual(
+  //     actualOperations[i].getProcessingCost(),
+  //   );
+  // });
 }
 
 describe('feesPrediction', () => {

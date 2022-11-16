@@ -535,7 +535,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       ),
     );
 
-    const secondOperatorIdentityResult = await identityRepository.fetch(secondOperatorIdentifier);
+    const secondOperatorIdentityResult = await identityRepository.fetch(
+      secondOperatorIdentifier,
+      { useTransaction: true },
+    );
 
     const secondOperatorIdentity = secondOperatorIdentityResult.getValue();
 
@@ -555,6 +558,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
           ['$ownerId', '==', secondMasternodeIdentifier],
           ['payToId', '==', secondOperatorIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -771,6 +775,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         where: [
           ['$ownerId', '==', removedMasternodeIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -820,6 +825,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         where: [
           ['$ownerId', '==', invalidMasternodeIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
