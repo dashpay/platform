@@ -16,6 +16,8 @@ const saveState = async function saveState() {
         return acc;
       }, {});
 
+      const { skipSynchronizationBeforeHeight } = this.application.syncOptions || {};
+
       const walletId = this.currentWalletId;
       const storage = {
         version: CONSTANTS.STORAGE.version,
@@ -23,8 +25,7 @@ const saveState = async function saveState() {
         // Memorize skipSync flag in order to wipe the storage
         // and re-sync from block 1 in case the option is removed on next launch
         unsafeOptions: {
-          skipSync: this.application.syncOptions
-            && typeof this.application.syncOptions.skipSynchronizationBeforeHeight === 'number',
+          skipSync: skipSynchronizationBeforeHeight && skipSynchronizationBeforeHeight > 0,
         },
       };
 
