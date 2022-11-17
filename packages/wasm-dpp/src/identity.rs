@@ -35,7 +35,7 @@ impl IdentityWasm {
         let raw_identity: Value =
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
 
-        let identity = Identity::from_raw_identity(raw_identity).unwrap();
+        let identity = Identity::from_json_object(raw_identity).unwrap();
         Ok(IdentityWasm(identity))
     }
 
