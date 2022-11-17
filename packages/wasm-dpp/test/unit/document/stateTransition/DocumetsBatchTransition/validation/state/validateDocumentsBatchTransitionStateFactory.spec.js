@@ -1,34 +1,34 @@
-const validateDocumentsBatchTransitionStateFactory = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsBatchTransitionStateFactory');
+const validateDocumentsBatchTransitionStateFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsBatchTransitionStateFactory');
 
-const Document = require('../../../../../../../lib/document/Document');
-const DocumentsBatchTransition = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
+const Document = require('@dashevo/dpp/lib/document/Document');
+const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
-const DataTriggerExecutionContext = require('../../../../../../../lib/dataTrigger/DataTriggerExecutionContext');
-const DataTriggerExecutionError = require('../../../../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
-const DataTriggerExecutionResult = require('../../../../../../../lib/dataTrigger/DataTriggerExecutionResult');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const DataTriggerExecutionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
 
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const DataContractNotPresentError = require('../../../../../../../lib/errors/DataContractNotPresentError');
+const DataContractNotPresentError = require('@dashevo/dpp/lib/errors/DataContractNotPresentError');
 
-const DocumentAlreadyPresentError = require('../../../../../../../lib/errors/consensus/state/document/DocumentAlreadyPresentError');
-const DocumentNotFoundError = require('../../../../../../../lib/errors/consensus/state/document/DocumentNotFoundError');
-const InvalidDocumentRevisionError = require('../../../../../../../lib/errors/consensus/state/document/InvalidDocumentRevisionError');
-const InvalidDocumentActionError = require('../../../../../../../lib/document/errors/InvalidDocumentActionError');
-const DocumentOwnerIdMismatchError = require('../../../../../../../lib/errors/consensus/state/document/DocumentOwnerIdMismatchError');
-const DocumentTimestampsMismatchError = require('../../../../../../../lib/errors/consensus/state/document/DocumentTimestampsMismatchError');
-const DocumentTimestampWindowViolationError = require('../../../../../../../lib/errors/consensus/state/document/DocumentTimestampWindowViolationError');
+const DocumentAlreadyPresentError = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentAlreadyPresentError');
+const DocumentNotFoundError = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentNotFoundError');
+const InvalidDocumentRevisionError = require('@dashevo/dpp/lib/errors/consensus/state/document/InvalidDocumentRevisionError');
+const InvalidDocumentActionError = require('@dashevo/dpp/lib/document/errors/InvalidDocumentActionError');
+const DocumentOwnerIdMismatchError = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentOwnerIdMismatchError');
+const DocumentTimestampsMismatchError = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentTimestampsMismatchError');
+const DocumentTimestampWindowViolationError = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentTimestampWindowViolationError');
 
-const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
-const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsBatchTransitionStateFactory', () => {
   let validateDocumentsBatchTransitionState;
@@ -41,7 +41,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   let stateRepositoryMock;
   let executeDataTriggersMock;
   let documentTransitions;
-  let abciHeader;
   let fakeTime;
   let blockTime;
   let executionContext;
@@ -69,13 +68,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     blockTime = new Date().getTime() / 1000;
 
-    abciHeader = {
-      time: {
-        seconds: blockTime,
-      },
-    };
-
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(abciHeader);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
+      seconds: blockTime,
+    });
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
 

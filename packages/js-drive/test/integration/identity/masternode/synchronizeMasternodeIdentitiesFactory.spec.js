@@ -369,8 +369,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     container = await createTestDIContainer();
 
-    const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getTime = this.sinon.stub().returns(
+    const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
+    latestBlockExecutionContext.getTime = this.sinon.stub().returns(
       { seconds: 1651585250 },
     );
 

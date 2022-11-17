@@ -1,15 +1,15 @@
 const DataContractCreateTransition = require(
-  '../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition',
+  '@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition',
 );
 
-const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const applyDataContractCreateTransitionFactory = require(
-  '../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/applyDataContractCreateTransitionFactory',
+  '@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/applyDataContractCreateTransitionFactory',
 );
 
-const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
-const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('applyDataContractCreateTransitionFactory', () => {
   let stateTransition;

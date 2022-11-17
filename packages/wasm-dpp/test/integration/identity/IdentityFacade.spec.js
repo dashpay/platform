@@ -1,21 +1,21 @@
 const { PublicKey } = require('@dashevo/dashcore-lib');
-const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 
-const Identity = require('../../../lib/identity/Identity');
-const IdentityCreateTransition = require('../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
-const IdentityTopUpTransition = require('../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
-const InstantAssetLockProof = require('../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
-const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const ChainAssetLockProof = require('../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const IdentityUpdateTransition = require('../../../lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const ChainAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const IdentityUpdateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 describe('IdentityFacade', () => {
   let dpp;

@@ -1,6 +1,6 @@
-const DataContract = require('../../../lib/dataContract/DataContract');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 describe('createDataContract', () => {
   let rawDataContract;

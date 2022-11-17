@@ -1,19 +1,19 @@
 const { expectValidationError } = require(
-  '../../../../../../../lib/test/expect/expectError',
+  '@dashevo/dpp/lib/test/expect/expectError',
 );
 
 const validateIdentityCreateTransitionStateFactory = require(
-  '../../../../../../../lib/identity/stateTransition/IdentityCreateTransition/validation/state/validateIdentityCreateTransitionStateFactory',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/validation/state/validateIdentityCreateTransitionStateFactory',
 );
 
-const getIdentityCreateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const IdentityAlreadyExistsError = require(
-  '../../../../../../../lib/errors/consensus/state/identity/IdentityAlreadyExistsError',
+  '@dashevo/dpp/lib/errors/consensus/state/identity/IdentityAlreadyExistsError',
 );
 
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
-const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 describe('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;

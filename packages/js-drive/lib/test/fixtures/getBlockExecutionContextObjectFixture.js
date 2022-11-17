@@ -21,14 +21,11 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
  * @return {{
  *   dataContracts: Object[],
  *   lastCommitInfo,
- *   invalidTxs: number,
  *   coreChainLockedHeight: number,
  *   height: number,
  *   version: number,
- *   time: number,
+ *   time: Timestamp,
  *   validTxs: number,
- *   cumulativeStorageFee: number,
- *   cumulativeProcessingFee: number,
  *   consensusLogger: Logger,
  *   withdrawalTransactionsMap: Object,
  * }}
@@ -58,14 +55,10 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
   return {
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: CommitInfo.toObject(lastCommitInfo),
-    cumulativeProcessingFee: 1000,
-    cumulativeStorageFee: 2000,
     time,
     height: 10,
     coreChainLockedHeight: 10,
     version,
-    validTxs: 2,
-    invalidTxs: 1,
     consensusLogger: pino(),
     withdrawalTransactionsMap: {
       [hash(txOneBytes).toString('hex')]: txOneBytes,

@@ -5,7 +5,24 @@
 [![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
-The JavaScript implementation of the [Dash Platform Protocol](https://dashplatform.readme.io/docs/explanation-platform-protocol)
+The WASM JavaScript binding of the Rust implementation of the [Dash Platform Protocol](https://dashplatform.readme.io/docs/explanation-platform-protocol)
+
+### THIS IS A DEV VERSION, NOT INTENDED FOR A PRODUCTION USAGE JUST YET
+
+## Dev environment
+
+In order for this binding to work, you have to have a rs-platform cloned
+alongside platform repo, so you can have access to the rust dpp.
+
+## IMPORTANT! Build on a Mac
+
+To build on a mac, you need to perform two steps. First, install `clang`
+from the homebrew. XCode's `clang` doesn't ship with the WASM support. Second,
+just adding llvm to the `.zshrc` doesn't seem to work - run 
+`AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang yarn workspace @dashevo/wasm-dpp build:node`
+instead.
+
+Alternatively, you can add the following to the `yarn workspace @dashevo/wasm-dpp build:node:mac` instead.
 
 ## Table of Contents
 
@@ -16,17 +33,15 @@ The JavaScript implementation of the [Dash Platform Protocol](https://dashplatfo
 
 ## Install
 
-```sh
-npm install @dashevo/dpp
-```
+## TODO
 
 ## Usage
 
-See [documentation](https://dashevo.github.io/platform/Dash-Platform-Protocol/usage/DashPlatformProtocol/) 
+## TODO
 
 ## Maintainer
 
-[@shumkov](https://github.com/shumkov)
+[@antouhou](https://github.com/antouhou)
 
 ## Contributing
 

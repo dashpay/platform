@@ -1,18 +1,18 @@
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const protocolVersion = require('../../../lib/version/protocolVersion');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const InvalidDataContractError = require('../../../lib/dataContract/errors/InvalidDataContractError');
-const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
+const InvalidDataContractError = require('@dashevo/dpp/lib/dataContract/errors/InvalidDataContractError');
+const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
-const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
-const entropyGenerator = require('../../../lib/util/entropyGenerator');
+const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
+const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 
 describe('DataContractFactory', () => {
   let decodeProtocolEntityMock;

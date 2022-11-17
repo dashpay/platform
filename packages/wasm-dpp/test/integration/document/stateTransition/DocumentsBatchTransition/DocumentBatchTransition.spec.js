@@ -1,9 +1,9 @@
-const IdentityPublicKey = require('../../../../../lib/identity/IdentityPublicKey');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
-const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
-const DocumentFactory = require('../../../../../lib/document/DocumentFactory');
-const createDPPMock = require('../../../../../lib/test/mocks/createDPPMock');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
 describe('DocumentBatchTransition', () => {
   let stateTransitionFixture;

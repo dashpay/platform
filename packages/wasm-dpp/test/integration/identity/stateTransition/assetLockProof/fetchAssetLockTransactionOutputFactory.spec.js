@@ -1,14 +1,14 @@
 const { Transaction, Script } = require('@dashevo/dashcore-lib');
 const Output = require('@dashevo/dashcore-lib/lib/transaction/output');
 
-const fetchAssetLockTransactionOutputFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/fetchAssetLockTransactionOutputFactory');
-const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const fetchAssetLockTransactionOutputFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/fetchAssetLockTransactionOutputFactory');
+const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const UnknownAssetLockProofError = require('../../../../../lib/identity/errors/UnknownAssetLockProofTypeError');
-const AssetLockTransactionIsNotFoundError = require('../../../../../lib/identity/errors/AssetLockTransactionIsNotFoundError');
-const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const UnknownAssetLockProofError = require('@dashevo/dpp/lib/identity/errors/UnknownAssetLockProofTypeError');
+const AssetLockTransactionIsNotFoundError = require('@dashevo/dpp/lib/identity/errors/AssetLockTransactionIsNotFoundError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('fetchAssetLockTransactionOutputFactory', () => {
   let fetchAssetLockTransactionOutput;

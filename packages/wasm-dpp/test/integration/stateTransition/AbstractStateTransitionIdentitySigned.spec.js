@@ -1,20 +1,20 @@
 const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
-const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/calculateStateTransitionFee');
+const calculateStateTransitionFee = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFee');
 
-const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock');
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
-const InvalidSignatureTypeError = require('../../../lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
-const InvalidSignaturePublicKeyError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeyError');
-const PublicKeySecurityLevelNotMetError = require('../../../lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
-const WrongPublicKeyPurposeError = require('../../../lib/stateTransition/errors/WrongPublicKeyPurposeError');
-const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/errors/StateTransitionIsNotSignedError');
-const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
-const BlsSignatures = require('../../../lib/bls/bls');
-const PublicKeyIsDisabledError = require('../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
-const InvalidSignaturePublicKeySecurityLevelError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
-const stateTransitionTypes = require('../../../lib/stateTransition/stateTransitionTypes');
+const StateTransitionMock = require('@dashevo/dpp/lib/test/mocks/StateTransitionMock');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const InvalidSignatureTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
+const InvalidSignaturePublicKeyError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidSignaturePublicKeyError');
+const PublicKeySecurityLevelNotMetError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
+const WrongPublicKeyPurposeError = require('@dashevo/dpp/lib/stateTransition/errors/WrongPublicKeyPurposeError');
+const StateTransitionIsNotSignedError = require('@dashevo/dpp/lib/stateTransition/errors/StateTransitionIsNotSignedError');
+const PublicKeyMismatchError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeyMismatchError');
+const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+const PublicKeyIsDisabledError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeyIsDisabledError');
+const InvalidSignaturePublicKeySecurityLevelError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 
 describe('AbstractStateTransitionIdentitySigned', () => {
   let stateTransition;

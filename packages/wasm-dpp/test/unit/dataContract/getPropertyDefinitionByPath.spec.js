@@ -1,5 +1,5 @@
 const getPropertyDefinitionByPath = require(
-  '../../../lib/dataContract/getPropertyDefinitionByPath',
+  '@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath',
 );
 
 describe('getPropertyDefinitionByPath', () => {

@@ -1,23 +1,23 @@
-const Document = require('../../../../../lib/document/Document');
+const Document = require('@dashevo/dpp/lib/document/Document');
 const DocumentsBatchTransition = require(
-  '../../../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition',
+  '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition',
 );
 
 const applyDocumentsBatchTransitionFactory = require(
-  '../../../../../lib/document/stateTransition/DocumentsBatchTransition/applyDocumentsBatchTransitionFactory',
+  '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/applyDocumentsBatchTransitionFactory',
 );
 
-const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require(
-  '../../../../../lib/test/fixtures/getDocumentTransitionsFixture',
+  '@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture',
 );
 
-const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
-const DocumentNotProvidedError = require('../../../../../lib/document/errors/DocumentNotProvidedError');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const DocumentNotProvidedError = require('@dashevo/dpp/lib/document/errors/DocumentNotProvidedError');
 
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documents;
@@ -63,10 +63,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      time: {
-        seconds: 86400,
-      },
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
+      seconds: 86400,
     });
 
     fetchDocumentsMock = this.sinonSandbox.stub();
@@ -146,7 +144,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateTransition.getExecutionContext().disableDryRun();
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.have.been.calledOnceWith();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
 
     const [documentTransition] = stateTransition.getTransitions();
     const newDocument = new Document({

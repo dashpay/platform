@@ -1,7 +1,7 @@
-const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
-const protocolVersion = require('../../lib/version/protocolVersion');
-const getChainAssetLockProofFixture = require('../../lib/test/fixtures/getChainAssetLockProofFixture');
-const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 describe('DashPlatformProtocol', () => {
   let dpp;

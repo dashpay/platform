@@ -20,11 +20,7 @@ describe('BlockExecutionContext', () => {
   let dataContract;
   let lastCommitInfo;
   let logger;
-  let cumulativeProcessingFee;
-  let cumulativeStorageFee;
   let plainObject;
-  let validTxs;
-  let invalidTxs;
   let height;
   let coreChainLockedHeight;
   let version;
@@ -40,16 +36,11 @@ describe('BlockExecutionContext', () => {
     lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
     logger = plainObject.consensusLogger;
-    cumulativeProcessingFee = plainObject.cumulativeProcessingFee;
-    cumulativeStorageFee = plainObject.cumulativeStorageFee;
-    validTxs = plainObject.validTxs;
-    invalidTxs = plainObject.invalidTxs;
     height = Long.fromNumber(plainObject.height);
     coreChainLockedHeight = plainObject.coreChainLockedHeight;
     version = Consensus.fromObject(plainObject.version);
     time = plainObject.time;
     time.seconds = Long.fromNumber(time.seconds);
-
     plainObject.time = plainObject.time.toJSON();
     plainObject.time.seconds = Number(plainObject.time.seconds);
   });
@@ -95,62 +86,6 @@ describe('BlockExecutionContext', () => {
     });
   });
 
-  describe('#getCumulativeProcessingFee', () => {
-    it('should get cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-
-      result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(cumulativeProcessingFee);
-    });
-  });
-
-  describe('#getCumulativeStorageFee', () => {
-    it('should get cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
-
-      result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(cumulativeStorageFee);
-    });
-  });
-
-  describe('#incrementCumulativeProcessingFee', () => {
-    it('should increment cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.incrementCumulativeProcessingFee(15);
-
-      result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(15);
-    });
-  });
-
-  describe('#incrementCumulativeStorageFee', () => {
-    it('should increment cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.incrementCumulativeStorageFee(15);
-
-      result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(15);
-    });
-  });
-
   describe('#reset', () => {
     it('should reset state', () => {
       blockExecutionContext.addDataContract(dataContract);
@@ -165,6 +100,8 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.getCoreChainLockedHeight()).to.be.null();
       expect(blockExecutionContext.getVersion()).to.be.null();
       expect(blockExecutionContext.getTime()).to.be.null();
+      expect(blockExecutionContext.getLastCommitInfo()).to.be.null();
+      expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal({});
     });
   });
 
@@ -288,15 +225,13 @@ describe('BlockExecutionContext', () => {
 
       anotherBlockExecutionContext.dataContracts = [dataContract];
       anotherBlockExecutionContext.lastCommitInfo = lastCommitInfo;
-      anotherBlockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-      anotherBlockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
       anotherBlockExecutionContext.height = height;
       anotherBlockExecutionContext.time = time;
       anotherBlockExecutionContext.version = version;
       anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
-      anotherBlockExecutionContext.validTxs = validTxs;
-      anotherBlockExecutionContext.invalidTxs = invalidTxs;
       anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.withdrawalTransactionsMap = plainObject
+        .withdrawalTransactionsMap;
 
       blockExecutionContext.populate(anotherBlockExecutionContext);
 
@@ -305,12 +240,6 @@ describe('BlockExecutionContext', () => {
       );
       expect(blockExecutionContext.lastCommitInfo).to.equal(
         anotherBlockExecutionContext.lastCommitInfo,
-      );
-      expect(blockExecutionContext.cumulativeProcessingFee).to.equal(
-        anotherBlockExecutionContext.cumulativeProcessingFee,
-      );
-      expect(blockExecutionContext.cumulativeStorageFee).to.equal(
-        anotherBlockExecutionContext.cumulativeStorageFee,
       );
       expect(blockExecutionContext.height).to.equal(
         anotherBlockExecutionContext.height,
@@ -324,14 +253,11 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.coreChainLockedHeight).to.equal(
         anotherBlockExecutionContext.coreChainLockedHeight,
       );
-      expect(blockExecutionContext.validTxs).to.equal(
-        anotherBlockExecutionContext.validTxs,
-      );
-      expect(blockExecutionContext.invalidTxs).to.equal(
-        anotherBlockExecutionContext.invalidTxs,
-      );
       expect(blockExecutionContext.consensusLogger).to.equal(
         anotherBlockExecutionContext.consensusLogger,
+      );
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.equal(
+        anotherBlockExecutionContext.withdrawalTransactionsMap,
       );
     });
   });
@@ -340,14 +266,10 @@ describe('BlockExecutionContext', () => {
     it('should return a plain object', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.time = time;
       blockExecutionContext.version = version;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
 
@@ -357,15 +279,11 @@ describe('BlockExecutionContext', () => {
     it('should skipConsensusLogger if the option passed', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.time = time;
       blockExecutionContext.time.seconds = time.seconds;
       blockExecutionContext.version = version;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
 
@@ -389,14 +307,10 @@ describe('BlockExecutionContext', () => {
         [dataContract],
       );
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
-      expect(blockExecutionContext.cumulativeProcessingFee).to.equal(cumulativeProcessingFee);
-      expect(blockExecutionContext.cumulativeStorageFee).to.equal(cumulativeStorageFee);
       expect(blockExecutionContext.height).to.deep.equal(height);
       expect(blockExecutionContext.version).to.deep.equal(version);
       expect(blockExecutionContext.time).to.deep.equal(time);
       expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
-      expect(blockExecutionContext.validTxs).to.equal(validTxs);
-      expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);
       expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
         plainObject.withdrawalTransactionsMap,
