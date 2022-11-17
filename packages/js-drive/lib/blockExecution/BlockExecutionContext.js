@@ -13,8 +13,6 @@ const {
 
 const Long = require('long');
 
-const timeToMillis = require('../util/timeToMillis');
-
 class BlockExecutionContext {
   constructor() {
     this.reset();
@@ -105,6 +103,20 @@ class BlockExecutionContext {
    */
   getHeader() {
     return this.header;
+  }
+
+  /**
+   * @param {number} timeMs
+   */
+  setTimeMs(timeMs) {
+    this.timeMs = timeMs;
+  }
+
+  /**
+   * @returns {number}
+   */
+  getTimeMs() {
+    return this.timeMs;
   }
 
   /**
@@ -204,30 +216,6 @@ class BlockExecutionContext {
   }
 
   /**
-   *
-   * @returns {BlockInfo}
-   */
-  createBlockInfo() {
-    const header = this.getHeader();
-
-    if (!header) {
-      throw new Error('header is not present yet');
-    }
-
-    const epochInfo = this.getEpochInfo();
-
-    if (!epochInfo) {
-      throw new Error('epoch info is not present yet');
-    }
-
-    return {
-      height: header.height.toNumber(),
-      timeMs: timeToMillis(header.time.seconds, header.time.nanos),
-      epoch: epochInfo.currentEpochIndex,
-    };
-  }
-
-  /**
    * Reset state
    */
   reset() {
@@ -240,6 +228,7 @@ class BlockExecutionContext {
     this.invalidTxs = 0;
     this.consensusLogger = null;
     this.epochInfo = null;
+    this.timeMs = null;
   }
 
   /**
@@ -266,6 +255,7 @@ class BlockExecutionContext {
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
     this.epochInfo = blockExecutionContext.epochInfo;
+    this.timeMs = blockExecutionContext.timeMs;
   }
 
   /**
@@ -285,6 +275,7 @@ class BlockExecutionContext {
     this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
     this.epochInfo = object.epochInfo;
+    this.timeMs = object.timeMs;
 
     this.header = Header.fromObject(object.header);
     this.header.time.seconds = Long.fromNumber(this.header.time.seconds);
@@ -302,6 +293,7 @@ class BlockExecutionContext {
    *  cumulativeProcessingFee: number,
    *  cumulativeStorageFee: number,
    *  epochInfo: EpochInfo
+   *  timeMs: number
    * }}
    */
   toObject(options = {}) {
@@ -319,6 +311,7 @@ class BlockExecutionContext {
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
       epochInfo: this.epochInfo,
+      timeMs: this.timeMs,
     };
 
     if (!options.skipConsensusLogger) {

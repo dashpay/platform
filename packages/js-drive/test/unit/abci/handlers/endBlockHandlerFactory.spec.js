@@ -54,6 +54,7 @@ describe('endBlockHandlerFactory', () => {
 
     blockExecutionContextMock.hasDataContract.returns(true);
     blockExecutionContextMock.getHeader.returns(headerMock);
+    blockExecutionContextMock.getTimeMs.returns(Date.now());
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
 
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);

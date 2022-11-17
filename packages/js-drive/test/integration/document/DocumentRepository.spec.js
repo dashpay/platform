@@ -9,6 +9,7 @@ const createTestDIContainer = require('../../../lib/test/createTestDIContainer')
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 function ucFirst(string) {
   return string.charAt(0).toUpperCase() + string.slice(1);
@@ -799,11 +800,7 @@ describe('DocumentRepository', function main() {
 
     dataContractRepository = container.resolve('dataContractRepository');
 
-    blockInfo = {
-      height: 1,
-      epoch: 1,
-      timeMs: new Date().getTime(),
-    };
+    blockInfo = new BlockInfo(1, 1, Date.now());
 
     await dataContractRepository.create(dataContract, blockInfo);
     await dataContractRepository.create(queryDataContract, blockInfo);

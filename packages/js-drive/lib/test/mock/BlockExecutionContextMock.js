@@ -17,7 +17,8 @@
  * @method getConsensusLogger
  * @method getEpochInfo
  * @method setEpochInfo
- * @method createBlockInfo
+ * @method setTimeMs
+ * @method getTimeMs
  */
 class BlockExecutionContextMock {
   /**
@@ -46,7 +47,8 @@ class BlockExecutionContextMock {
     this.isEmpty = sinon.stub();
     this.setEpochInfo = sinon.stub();
     this.getEpochInfo = sinon.stub();
-    this.createBlockInfo = sinon.stub();
+    this.setTimeMs = sinon.stub();
+    this.getTimeMs = sinon.stub();
   }
 }
 

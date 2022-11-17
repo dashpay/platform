@@ -21,7 +21,7 @@ describe.skip('Platform', () => {
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 
-      client = await createClientWithFundedWallet();
+      client = await createClientWithFundedWallet(200000);
     });
 
     after(async () => {

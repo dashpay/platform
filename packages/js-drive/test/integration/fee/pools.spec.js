@@ -1,5 +1,7 @@
 const moment = require('moment');
 
+const Long = require('long');
+
 const masternodeRewardSharesSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const getMasternodeRewardSharesContractFixture = require('@dashevo/dpp/lib/test/fixtures/getMasternodeRewardSharesContractFixture');
@@ -10,6 +12,8 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
+const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 
 describe('Fee Pools', () => {
   let container;
@@ -21,19 +25,18 @@ describe('Fee Pools', () => {
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
 
-    blockInfo = {
-      height: 1,
-      epoch: 0,
-      timeMs: 100,
-    };
-
     const blockExecutionContext = container.resolve('blockExecutionContext');
 
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: new Date().getTime() / 1000 } },
-    );
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
-    blockExecutionContext.createBlockInfo = this.sinon.stub().returns(blockInfo);
+    blockExecutionContext.getHeader = this.sinon.stub().returns({
+      time: millisToProtoTimestamp(blockInfo.timeMs),
+      height: Long.fromNumber(blockInfo.height),
+    });
+
+    blockExecutionContext.getEpochInfo = this.sinon.stub().returns({
+      currentEpochIndex: blockInfo.epoch,
+    });
 
     const dataContractRepository = container.resolve('dataContractRepository');
     const documentRepository = container.resolve('documentRepository');

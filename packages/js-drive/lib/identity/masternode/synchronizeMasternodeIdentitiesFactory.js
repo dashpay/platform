@@ -34,6 +34,7 @@ function synchronizeMasternodeIdentitiesFactory(
   /**
    * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
+   * @param {BlockInfo} blockInfo
    * @return {Promise<{
    *  created: Array<Identity|Document>,
    *  updated: Array<Identity|Document>,
@@ -42,7 +43,7 @@ function synchronizeMasternodeIdentitiesFactory(
    *  toHeight: number,
    * }>}
    */
-  async function synchronizeMasternodeIdentities(coreHeight) {
+  async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
     if (!lastSyncedCoreHeight) {
       const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
         useTransaction: true,
@@ -51,7 +52,7 @@ function synchronizeMasternodeIdentitiesFactory(
       lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
     }
 
-    let newMasternodes = [];
+    let newMasternodes;
 
     let previousMNList = [];
 
@@ -104,6 +105,7 @@ function synchronizeMasternodeIdentitiesFactory(
               mnEntry,
               previousMnEntry,
               dataContract,
+              blockInfo,
             ),
           );
         }
@@ -123,6 +125,7 @@ function synchronizeMasternodeIdentitiesFactory(
             await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
+              blockInfo,
               previousPayoutScript,
             );
           }
@@ -147,6 +150,7 @@ function synchronizeMasternodeIdentitiesFactory(
             await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
+              blockInfo,
               previousOperatorPayoutScript,
             );
           }
@@ -159,7 +163,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     for (const newMasternodeEntry of newMasternodes) {
       createdEntities = createdEntities.concat(
-        await handleNewMasternode(newMasternodeEntry, dataContract),
+        await handleNewMasternode(newMasternodeEntry, dataContract, blockInfo),
       );
     }
 
@@ -182,6 +186,7 @@ function synchronizeMasternodeIdentitiesFactory(
         await handleRemovedMasternode(
           masternodeIdentifier,
           dataContract,
+          blockInfo,
         ),
       );
     }

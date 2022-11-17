@@ -60,6 +60,7 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
       timeMs: 100,
       epoch: 0,
     },
+    timeMs: Date.now(),
   };
 }
 

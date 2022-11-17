@@ -11,7 +11,6 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {createRewardShareDocument} createRewardShareDocument
  * @param {fetchTransaction} fetchTransaction
- * @param {BlockExecutionContext} blockExecutionContext
  * @return {handleNewMasternode}
  */
 function handleNewMasternodeFactory(
@@ -20,15 +19,15 @@ function handleNewMasternodeFactory(
   createMasternodeIdentity,
   createRewardShareDocument,
   fetchTransaction,
-  blockExecutionContext,
 ) {
   /**
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
    * @return Promise<Array<Identity|Document>>
    */
-  async function handleNewMasternode(masternodeEntry, dataContract) {
+  async function handleNewMasternode(masternodeEntry, dataContract, blockInfo) {
     const result = [];
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
@@ -79,8 +78,6 @@ function handleNewMasternodeFactory(
           operatorPayoutScript,
         ),
       );
-
-      const blockInfo = blockExecutionContext.createBlockInfo();
 
       // Create a document in rewards data contract with percentage
       const rewardShareDocument = await createRewardShareDocument(

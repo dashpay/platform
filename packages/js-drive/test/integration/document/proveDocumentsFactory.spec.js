@@ -3,6 +3,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('proveDocumentsFactory', () => {
   let proveDocuments;
@@ -37,11 +38,7 @@ describe('proveDocumentsFactory', () => {
       },
     ];
 
-    blockInfo = {
-      height: 1,
-      epoch: 0,
-      timeMs: 100,
-    };
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
     /**
      * @type {Drive}

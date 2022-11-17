@@ -6,9 +6,13 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
+const Long = require('long');
+
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
+const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
@@ -76,13 +80,20 @@ describe('DriveStateRepository', () => {
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    blockInfo = {
-      height: 1,
-      timeMs: 100,
-      epoch: 0,
-    };
+    const timeMs = Date.now();
 
-    blockExecutionContextMock.createBlockInfo.returns(blockInfo);
+    blockInfo = new BlockInfo(1, 0, timeMs);
+
+    blockExecutionContextMock.getHeader.returns({
+      time: millisToProtoTimestamp(blockInfo.timeMs),
+      height: Long.fromNumber(blockInfo.height),
+    });
+
+    blockExecutionContextMock.getEpochInfo.returns({
+      currentEpochIndex: blockInfo.epoch,
+    });
+
+    blockExecutionContextMock.getTimeMs.returns(timeMs);
 
     simplifiedMasternodeListMock = {
       getStore: this.sinon.stub(),

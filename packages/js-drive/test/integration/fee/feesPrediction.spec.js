@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 
+const Long = require('long');
+
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
@@ -14,6 +16,8 @@ const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDataContractDocuments = require('../../../lib/test/fixtures/createDataContractDocuments');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
+const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -111,19 +115,18 @@ describe('feesPrediction', () => {
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
 
-    const timeMs = new Date().getTime();
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
-    blockInfo = {
-      height: 1,
-      epoch: 0,
-      timeMs,
-    };
+    blockExecutionContext.getHeader = this.sinon.stub().returns({
+      time: millisToProtoTimestamp(blockInfo.timeMs),
+      height: Long.fromNumber(blockInfo.height),
+    });
 
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: timeMs / 1000 } },
-    );
+    blockExecutionContext.getEpochInfo = this.sinon.stub().returns({
+      currentEpochIndex: blockInfo.epoch,
+    });
 
-    blockExecutionContext.createBlockInfo = this.sinon.stub().returns(blockInfo);
+    blockExecutionContext.getTimeMs = this.sinon.stub().returns(blockInfo.timeMs);
 
     dpp = container.resolve('dpp');
 

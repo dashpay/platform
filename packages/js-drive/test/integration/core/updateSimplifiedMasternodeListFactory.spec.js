@@ -43,7 +43,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
       .to.be.an.instanceOf(SimplifiedMNListStore);
   });
 
-  it('should synchronizeMasternodeIdentities by smlMaxListsLimit number of blocks', async () => {
+  it('should update SML Store so other consumers can use it', async () => {
     dashCore = await startDashCore(dashCoreOptions);
 
     container = await createTestDIContainer(dashCore);

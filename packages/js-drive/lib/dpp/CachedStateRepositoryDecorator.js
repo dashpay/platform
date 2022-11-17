@@ -242,6 +242,15 @@ class CachedStateRepositoryDecorator {
   async fetchSMLStore() {
     return this.stateRepository.fetchSMLStore();
   }
+
+  /**
+   * Returns block time
+   *
+   * @returns {number}
+   */
+  getTimeMs() {
+    return this.stateRepository.getTimeMs();
+  }
 }
 
 module.exports = CachedStateRepositoryDecorator;

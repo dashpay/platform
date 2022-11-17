@@ -15,7 +15,11 @@ describe('SpentAssetLockTransactionsRepository', () => {
   beforeEach(async () => {
     outPointBuffer = Buffer.from([42]);
 
-    rsDrive = new Drive('./db/grovedb_test');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsTransactionalCacheSize: 500,
+    });
+
     store = new GroveDBStore(rsDrive, logger);
 
     await rsDrive.createInitialStateStructure();

@@ -8,6 +8,7 @@ const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
 const noopLogger = require('../../../lib/util/noopLogger');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('DataContractStoreRepository', () => {
   let rsDrive;
@@ -18,7 +19,11 @@ describe('DataContractStoreRepository', () => {
   let blockInfo;
 
   beforeEach(async () => {
-    rsDrive = new Drive('./db/grovedb_test');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsTransactionalCacheSize: 500,
+    });
+
     store = new GroveDBStore(rsDrive, noopLogger);
 
     await rsDrive.createInitialStateStructure();
@@ -29,11 +34,7 @@ describe('DataContractStoreRepository', () => {
 
     dataContract = getDataContractFixture();
 
-    blockInfo = {
-      height: 1,
-      epoch: 1,
-      timeMs: new Date().getTime(),
-    };
+    blockInfo = new BlockInfo(1, 1, Date.now());
   });
 
   afterEach(async () => {

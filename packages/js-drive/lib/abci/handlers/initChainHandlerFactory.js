@@ -6,6 +6,9 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const BlockInfo = require('../../blockExecution/BlockInfo');
+const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
+
 /**
  * Init Chain ABCI handler
  *
@@ -64,10 +67,17 @@ function initChainHandlerFactory(
 
     await rsAbci.initChain({ }, true);
 
-    await registerSystemDataContracts(consensusLogger, time);
+    const blockInfo = new BlockInfo(
+      0,
+      0,
+      protoTimestampToMillis(time),
+    );
+
+    await registerSystemDataContracts(consensusLogger, blockInfo);
 
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
       initialCoreChainLockedHeight,
+      blockInfo,
     );
 
     const {

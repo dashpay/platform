@@ -5,6 +5,7 @@ const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryErro
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
@@ -39,11 +40,7 @@ describe('fetchDocumentsFactory', () => {
       },
     ];
 
-    blockInfo = {
-      height: 1,
-      epoch: 0,
-      timeMs: 100,
-    };
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
     /**
      * @type {Drive}

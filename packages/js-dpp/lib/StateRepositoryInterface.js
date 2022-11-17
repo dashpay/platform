@@ -201,3 +201,11 @@
  * @name StateRepository#fetchSMLStore
  * @returns {Promise<SimplifiedMNListStore>}
  */
+
+/**
+ * Returns current block time in milliseconds
+ *
+ * @method
+ * @name StateRepository#getTimeMs
+ * @returns {number}
+ */

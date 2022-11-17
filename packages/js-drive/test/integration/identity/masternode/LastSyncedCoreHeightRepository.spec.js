@@ -12,7 +12,11 @@ describe('LastSyncedSmlHeightRepository', () => {
   let rsDrive;
 
   beforeEach(async () => {
-    rsDrive = new Drive('./db/grovedb_test');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsTransactionalCacheSize: 500,
+    });
+
     store = new GroveDBStore(rsDrive, logger);
 
     repository = new LastSyncedSmlHeightRepository(store);

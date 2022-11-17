@@ -2,6 +2,7 @@ const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
+const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
  * @implements StateRepository
@@ -206,7 +207,7 @@ class DriveStateRepository {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.dataContractRepository.fetch(
       id,
@@ -237,7 +238,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDataContract(dataContract, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.dataContractRepository.create(
       dataContract,
@@ -259,7 +260,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDataContract(dataContract, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.dataContractRepository.update(
       dataContract,
@@ -283,7 +284,7 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.fetchDocumentsFunction(
       contractId,
@@ -311,7 +312,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDocument(document, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.documentRepository.create(
       document,
@@ -333,7 +334,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDocument(document, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.documentRepository.update(
       document,
@@ -357,7 +358,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(dataContract, type, id, executionContext = undefined) {
-    const blockInfo = this.blockExecutionContext.createBlockInfo();
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.documentRepository.delete(
       dataContract,
@@ -497,6 +498,21 @@ class DriveStateRepository {
       useTransaction: this.#options.useTransaction || false,
       dryRun: executionContext ? executionContext.isDryRun() : false,
     };
+  }
+
+  /**
+   * Returns block time
+   *
+   * @returns {number}
+   */
+  getTimeMs() {
+    const timeMs = this.blockExecutionContext.getTimeMs();
+
+    if (!timeMs) {
+      throw new Error('Time is not set');
+    }
+
+    return timeMs;
   }
 }
 

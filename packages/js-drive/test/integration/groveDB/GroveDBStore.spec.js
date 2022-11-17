@@ -14,7 +14,10 @@ describe('GroveDBStore', () => {
   let otherTreePath;
 
   beforeEach(async () => {
-    rsDrive = new Drive('./db/grovedb_test');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsTransactionalCacheSize: 500,
+    });
 
     store = new GroveDBStore(rsDrive, logger);
 
@@ -377,8 +380,12 @@ describe('GroveDBStore', () => {
 
       rimraf.sync('./db/grovedb_test');
 
-      rsDrive = new Drive('./db/grovedb_test');
-      store = new GroveDBStore(rsDrive, logger, 'testStore');
+      rsDrive = new Drive('./db/grovedb_test', {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsTransactionalCacheSize: 500,
+      });
+
+      store = new GroveDBStore(rsDrive, logger);
 
       const result = await store.getRootHash();
 

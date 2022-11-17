@@ -8,7 +8,7 @@ const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 describe('handleNewMasternodeFactory', () => {
   let handleNewMasternode;
@@ -20,7 +20,6 @@ describe('handleNewMasternodeFactory', () => {
   let transactionFixture;
   let masternodeEntry;
   let dataContract;
-  let blockExecutionContextMock;
   let blockInfo;
 
   beforeEach(function beforeEach() {
@@ -36,15 +35,7 @@ describe('handleNewMasternodeFactory', () => {
     createMasternodeIdentityMock = this.sinon.stub();
     createRewardShareDocumentMock = this.sinon.stub();
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-
-    blockInfo = {
-      height: 1,
-      epoch: 0,
-      timeMs: 100,
-    };
-
-    blockExecutionContextMock.createBlockInfo.returns(blockInfo);
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
     transactionFixture = {
       extraPayload: {
@@ -61,7 +52,6 @@ describe('handleNewMasternodeFactory', () => {
       createMasternodeIdentityMock,
       createRewardShareDocumentMock,
       fetchTransactionMock,
-      blockExecutionContextMock,
     );
   });
 
@@ -71,7 +61,7 @@ describe('handleNewMasternodeFactory', () => {
     const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
     const payoutScript = new Script(payoutAddress);
 
-    await handleNewMasternode(masternodeEntry, dataContract);
+    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
@@ -86,7 +76,7 @@ describe('handleNewMasternodeFactory', () => {
   it('should create masternode identity and a document in rewards data contract with percentage', async () => {
     transactionFixture.extraPayload.operatorReward = 10;
 
-    await handleNewMasternode(masternodeEntry, dataContract);
+    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
 
     const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
     const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);

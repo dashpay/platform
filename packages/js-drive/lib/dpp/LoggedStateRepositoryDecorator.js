@@ -477,6 +477,23 @@ class LoggedStateRepositoryDecorator {
 
     return response;
   }
+
+  /**
+   * Returns block time
+   *
+   * @returns {number}
+   */
+  getTimeMs() {
+    let response;
+
+    try {
+      response = this.blockExecutionContext.getTimeMs();
+    } finally {
+      this.log('getTimeMs', { }, response);
+    }
+
+    return response;
+  }
 }
 
 module.exports = LoggedStateRepositoryDecorator;
