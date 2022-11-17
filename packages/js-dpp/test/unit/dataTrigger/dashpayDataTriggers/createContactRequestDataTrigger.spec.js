@@ -6,6 +6,7 @@ const DataTriggerConditionError = require('../../../../lib/errors/consensus/stat
 
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 
 const getDashPayContractFixture = require('../../../../lib/test/fixtures/getDashPayContractFixture');
 const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtures/getDashPayDocumentFixture');
@@ -18,6 +19,7 @@ describe('createContactRequestDataTrigger', () => {
   let dataContract;
   let contactRequestDocument;
   let documentTransition;
+  let identityFixture;
 
   beforeEach(function beforeEach() {
     contactRequestDocument = getContactRequestDocumentFixture();
@@ -27,8 +29,11 @@ describe('createContactRequestDataTrigger', () => {
       create: [contactRequestDocument],
     });
 
+    identityFixture = getIdentityFixture();
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
+    stateRepositoryMock.fetchIdentity.resolves(identityFixture);
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -103,5 +108,40 @@ describe('createContactRequestDataTrigger', () => {
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
+  });
+
+  it('should fail if ownerId equals toUserId', async () => {
+    contactRequestDocument.data.toUserId = contactRequestDocument.ownerId;
+    [documentTransition] = getDocumentTransitionFixture({
+      create: [contactRequestDocument],
+    });
+
+    const result = await createContactRequestDataTrigger(
+      documentTransition, context, dashPayIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(`Identity ${contactRequestDocument.ownerId.toString()} must not be equal to the owner`);
+  });
+
+  it('should fail if toUserId does not exist', async () => {
+    stateRepositoryMock.fetchIdentity.resolves(null);
+
+    const result = await createContactRequestDataTrigger(
+      documentTransition, context, dashPayIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(`Identity ${contactRequestDocument.data.toUserId.toString()} doesn't exist`);
   });
 });
