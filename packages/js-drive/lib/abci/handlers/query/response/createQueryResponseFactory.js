@@ -47,7 +47,7 @@ function createQueryResponseFactory(
     if (prove) {
       const {
         quorumHash: signatureLlmqHash,
-        stateSignature: signature,
+        blockSignature: signature,
       } = latestBlockExecutionContext.getLastCommitInfo();
 
       const round = latestBlockExecutionContext.getRound();

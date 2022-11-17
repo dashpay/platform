@@ -55,9 +55,10 @@ describe('getProofsQueryHandlerFactory', () => {
     blockExecutionContextMock.getCoreChainLockedHeight.returns(41);
     blockExecutionContextMock.getTime.returns(time);
     blockExecutionContextMock.getVersion.returns(version);
+    blockExecutionContextMock.getRound.returns(42);
     blockExecutionContextMock.getLastCommitInfo.returns({
       quorumHash: Buffer.alloc(32, 1),
-      stateSignature: Buffer.alloc(32, 1),
+      blockSignature: Buffer.alloc(32, 1),
     });
 
     signedIdentityRepositoryMock = {
@@ -98,6 +99,7 @@ describe('getProofsQueryHandlerFactory', () => {
       signatureLlmqHash: Buffer.alloc(32, 1),
       signature: Buffer.alloc(32, 1),
       merkleProof: Buffer.from([1]),
+      round: 42,
       // rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
       // 'hex'),
       // storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210',

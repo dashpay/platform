@@ -33,7 +33,6 @@ describe('createQueryResponseFactory', () => {
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
-      stateSignature: Buffer.alloc(12).fill(2),
       blockSignature: Buffer.alloc(12).fill(2),
     };
 
@@ -80,7 +79,7 @@ describe('createQueryResponseFactory', () => {
 
     expect(response.getProof().toObject()).to.deep.equal({
       signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
-      signature: lastCommitInfo.stateSignature.toString('base64'),
+      signature: lastCommitInfo.blockSignature.toString('base64'),
       merkleProof: '',
       round: 42,
     });

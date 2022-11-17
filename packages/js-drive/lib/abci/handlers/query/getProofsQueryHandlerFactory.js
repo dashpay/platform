@@ -43,7 +43,7 @@ function getProofsQueryHandlerFactory(
     const version = latestBlockExecutionContext.getVersion();
     const {
       quorumHash: signatureLlmqHash,
-      stateSignature: signature,
+      blockSignature: signature,
     } = latestBlockExecutionContext.getLastCommitInfo();
     const round = latestBlockExecutionContext.getRound();
 
