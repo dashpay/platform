@@ -6,6 +6,7 @@ const TransactionsReader = require('./TransactionsReader');
 const { waitOneTick } = require('../../../test/utils');
 const { mockMerkleBlock } = require('../../../test/mocks/dashcore/block');
 const EVENTS = require('../../../EVENTS');
+const logger = require('../../../logger');
 
 describe('TransactionsSyncWorker', () => {
   let transactionsSyncWorker;
@@ -26,6 +27,7 @@ describe('TransactionsSyncWorker', () => {
       executeOnStart: false,
     });
     worker.network = 'livenet';
+    worker.logger = logger;
 
     worker.keyChainStore = {
       getKeyChains: () => ADDRESSES.map((addresses) => ({

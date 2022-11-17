@@ -12,6 +12,7 @@ const { waitOneTick } = require('../../../../src/test/utils');
 const { mockHeadersChain } = require('../../../../src/test/mocks/dashcore/block');
 
 const { BlockHeadersProvider } = DAPIClient;
+const logger = require('../../../../src/logger');
 
 describe('BlockHeadersSyncWorker - integration', () => {
   let headersChain = [];
@@ -40,6 +41,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
       maxHeadersToKeep: HEADERS_TO_KEEP,
       executeOnStart: false,
     });
+    worker.logger = logger;
 
     historicalStreams = Array.from({ length: NUM_STREAMS }).map(() => new BlockHeadersStreamMock());
     continuousStream = new BlockHeadersStreamMock();

@@ -4,6 +4,7 @@ const EventEmitter = require('events');
 const DAPIClient = require('@dashevo/dapi-client');
 const { Block } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
+const logger = require('../../../logger');
 
 const { BlockHeadersProvider } = DAPIClient;
 
@@ -24,6 +25,7 @@ describe('BlockHeadersSyncWorker', () => {
       executeOnStart: false,
       maxHeadersToKeep: 3,
     });
+    worker.logger = logger;
 
     const blockHeadersProvider = new EventEmitter();
     blockHeadersProvider.readHistorical = sinon.spy();
