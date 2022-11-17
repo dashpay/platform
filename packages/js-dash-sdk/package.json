@@ -45,7 +45,7 @@
     "@dashevo/wallet-lib": "workspace:*",
     "bs58": "^4.0.1",
     "node-inspect-extracted": "^1.0.8",
-    "winston": "^3.8.2"
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "@types/chai": "^4.2.12",
