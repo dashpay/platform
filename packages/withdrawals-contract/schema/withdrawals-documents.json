@@ -90,7 +90,6 @@
         ]
       }
     },
-    "minProperties": 6,
     "additionalProperties": false,
     "required": [
       "$createdAt",
