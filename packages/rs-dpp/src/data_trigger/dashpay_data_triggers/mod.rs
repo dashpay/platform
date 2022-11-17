@@ -13,7 +13,7 @@ const BLOCKS_SIZE_WINDOW: i64 = 8;
 const PROPERTY_CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
 const PROPERTY_CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 
-pub async fn create_contract_request_data_trigger<'a, SR>(
+pub async fn create_contact_request_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     _: Option<&Identifier>,
@@ -21,6 +21,10 @@ pub async fn create_contract_request_data_trigger<'a, SR>(
 where
     SR: StateRepositoryLike,
 {
+    if context.state_transition_execution_context.is_dry_run() {
+        return Ok(Default::default());
+    }
+
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,
         _ => bail!(
@@ -65,4 +69,43 @@ where
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod test {
+    use super::create_contact_request_data_trigger;
+    use crate::{
+        data_trigger::DataTriggerExecutionContext,
+        document::document_transition::DocumentTransition,
+        state_repository::MockStateRepositoryLike,
+        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+        tests::fixtures::get_data_contract_fixture,
+    };
+
+    #[tokio::test]
+    async fn should_successfully_execute_on_dry_run() {
+        let transition_execution_context = StateTransitionExecutionContext::default();
+        let state_repository = MockStateRepositoryLike::new();
+        let data_contract = get_data_contract_fixture(None);
+        let owner_id = data_contract.owner_id().to_owned();
+
+        let document_transition = DocumentTransition::Create(Default::default());
+        let data_trigger_context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &owner_id,
+            state_repository: &state_repository,
+            state_transition_execution_context: &transition_execution_context,
+        };
+
+        transition_execution_context.enable_dry_run();
+
+        let result =
+            create_contact_request_data_trigger(&document_transition, &data_trigger_context, None)
+                .await
+                .expect("the execution result should be returned");
+
+        assert!(result.is_ok());
+    }
+
+    // TODO! implement remaining tests
 }

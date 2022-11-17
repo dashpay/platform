@@ -8,6 +8,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator
 use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
@@ -62,6 +63,7 @@ impl<
     pub async fn validate(
         &self,
         raw_transition: &Value,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(raw_transition)?;
 
@@ -114,6 +116,7 @@ impl<
                                 "identity state transition must contain an asset lock proof",
                             ))
                         })?,
+                    execution_context,
                 )
                 .await?,
         );

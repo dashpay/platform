@@ -1,6 +1,7 @@
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
+        fee::FeeError,
         signature::SignatureError,
         ConsensusError,
     },
@@ -62,7 +63,7 @@ pub fn get_basic_error_from_result(
     {
         ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!(
-            "error '{:?}' isn't a basic error",
+            "error '{:?}' isn't a Basic error",
             result.errors[error_number]
         ),
     }
@@ -79,7 +80,24 @@ pub fn get_signature_error_from_result<K: Clone>(
     {
         ConsensusError::SignatureError(signature_error) => signature_error,
         _ => panic!(
-            "error '{:?}' isn't a basic error",
+            "error '{:?}' isn't a Signature error",
+            result.errors[error_number]
+        ),
+    }
+}
+
+pub fn get_fee_error_from_result<K: Clone>(
+    result: &ValidationResult<K>,
+    error_number: usize,
+) -> &FeeError {
+    match result
+        .errors
+        .get(error_number)
+        .expect("error should be found")
+    {
+        ConsensusError::FeeError(signature_error) => signature_error,
+        _ => panic!(
+            "error '{:?}' isn't a Fee error",
             result.errors[error_number]
         ),
     }

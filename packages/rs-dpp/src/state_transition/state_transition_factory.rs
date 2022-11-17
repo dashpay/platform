@@ -20,13 +20,17 @@ use crate::{
 };
 use serde_json::Value as JsonValue;
 
-use super::{StateTransition, StateTransitionType};
+use super::{
+    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+    StateTransitionType,
+};
 
 pub async fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
     raw_state_transition: JsonValue,
 ) -> Result<StateTransition, ProtocolError> {
     let transition_type = try_get_transition_type(&raw_state_transition)?;
+    let execution_context = StateTransitionExecutionContext::default();
 
     match transition_type {
         StateTransitionType::DataContractCreate => {
@@ -57,14 +61,17 @@ pub async fn create_state_transition(
             let raw_transitions = maybe_transitions
                 .as_array()
                 .ok_or_else(|| anyhow!("property transitions isn't an array"))?;
-            let data_contracts =
-                fetch_data_contracts_for_document_transition(state_repository, raw_transitions)
-                    .await?;
+            let data_contracts = fetch_data_contracts_for_document_transition(
+                state_repository,
+                raw_transitions,
+                &execution_context,
+            )
+            .await?;
             let documents_batch_transition =
                 DocumentsBatchTransition::from_raw_object(raw_state_transition, data_contracts)?;
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
-        // TODO
+        // TODO!! add basic validation
         StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError),
     }
 }
@@ -72,6 +79,7 @@ pub async fn create_state_transition(
 async fn fetch_data_contracts_for_document_transition(
     state_repository: &impl StateRepositoryLike,
     raw_document_transitions: impl IntoIterator<Item = &JsonValue>,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<Vec<DataContract>, ProtocolError> {
     let mut data_contracts = vec![];
     for transition in raw_document_transitions {
@@ -83,7 +91,7 @@ async fn fetch_data_contracts_for_document_transition(
 
         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
         let data_contract = state_repository
-            .fetch_data_contract::<DataContract>(&data_contract_id)
+            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
             .await
             .map_err(|_| ProtocolError::DataContractNotPresentError { data_contract_id })?;
         data_contracts.push(data_contract);
@@ -119,7 +127,7 @@ mod test {
             document_transition::{Action, DocumentTransitionObjectLike},
             DocumentsBatchTransition,
         },
-        state_repository::{self, MockStateRepositoryLike},
+        state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionConvert},
         tests::fixtures::get_documents_fixture_with_owner_id_from_contract,
         tests::fixtures::{get_data_contract_fixture, get_document_transitions_fixture},
@@ -135,7 +143,7 @@ mod test {
         let data_contract_to_return = data_contract.clone();
         state_repostiory_mock
             .expect_fetch_data_contract()
-            .returning(move |_| Ok(data_contract_to_return.clone()));
+            .returning(move |_, _| Ok(data_contract_to_return.clone()));
 
         let state_transition_data = json!( {
                     "protocolVersion" :  PROTOCOL_VERSION,
@@ -179,7 +187,7 @@ mod test {
         let data_contract_to_return = data_contract.clone();
         state_repostiory_mock
             .expect_fetch_data_contract()
-            .returning(move |_| Ok(data_contract_to_return.clone()));
+            .returning(move |_, _| Ok(data_contract_to_return.clone()));
 
         let state_transition_data = json!( {
                     "protocolVersion" :  PROTOCOL_VERSION,

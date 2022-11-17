@@ -1,31 +1,32 @@
+use dashcore::BlockHeader;
 use serde_json::Value;
 use std::sync::Arc;
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::basic::BasicError,
-    document::validation::state::validate_documents_batch_transition_state::BlockHeader,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     prelude::Identity,
     state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
     validation::SimpleValidationResult,
     NonConsensusError, SerdeParsingError, StateError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};
 
-pub struct ValidateIdentityUpdateTransitionState<T, ST> {
+pub struct IdentityUpdateTransitionStateValidator<T, ST> {
     state_repository: Arc<ST>,
     public_keys_validator: Arc<T>,
 }
 
-impl<T, SR> ValidateIdentityUpdateTransitionState<T, SR>
+impl<T, SR> IdentityUpdateTransitionStateValidator<T, SR>
 where
     T: TPublicKeysValidator,
     SR: StateRepositoryLike,
 {
     pub fn new(state_repository: Arc<SR>, public_keys_validator: Arc<T>) -> Self {
-        ValidateIdentityUpdateTransitionState {
+        IdentityUpdateTransitionStateValidator {
             state_repository,
             public_keys_validator,
         }
@@ -39,9 +40,16 @@ where
 
         let maybe_stored_identity: Option<Identity> = self
             .state_repository
-            .fetch_identity(state_transition.get_identity_id())
+            .fetch_identity(
+                state_transition.get_identity_id(),
+                state_transition.get_execution_context(),
+            )
             .await
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+
+        if state_transition.get_execution_context().is_dry_run() {
+            return Ok(validation_result);
+        }
 
         let stored_identity = match maybe_stored_identity {
             None => {
@@ -71,9 +79,14 @@ where
                     validation_result
                         .add_error(StateError::InvalidIdentityPublicKeyIdError { id: *key_id });
                 }
-                Some(public_key) => {
-                    if public_key.read_only {
+                Some(public_key_to_disable) => {
+                    if public_key_to_disable.read_only {
                         validation_result.add_error(StateError::IdentityPublicKeyIsReadOnlyError {
+                            public_key_index: *key_id,
+                        })
+                    }
+                    if public_key_to_disable.is_disabled() {
+                        validation_result.add_error(StateError::IdentityPublicKeyDisabledError {
                             public_key_index: *key_id,
                         })
                     }
@@ -100,7 +113,8 @@ where
                 .fetch_latest_platform_block_header()
                 .await
                 .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
-            let last_block_header_time = (block_header.time.seconds * 1000) as u64;
+
+            let last_block_header_time = block_header.time as u64 * 1000;
             let disabled_at_time = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),

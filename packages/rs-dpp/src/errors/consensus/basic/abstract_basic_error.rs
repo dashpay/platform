@@ -132,6 +132,12 @@ pub enum BasicError {
 
     #[error("Identity key {public_key_id} has invalid signature")]
     InvalidIdentityPublicKeySignatureError { public_key_id: KeyID },
+
+    #[error("Data Contract Id must be {}, got {}", bs58::encode(expected_id).into_string(), bs58::encode(invalid_id).into_string())]
+    InvalidDataContractId {
+        expected_id: Vec<u8>,
+        invalid_id: Vec<u8>,
+    },
 }
 
 impl From<IndexError> for BasicError {

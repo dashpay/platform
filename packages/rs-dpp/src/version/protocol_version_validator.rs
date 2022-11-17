@@ -1,10 +1,13 @@
 use std::cmp;
 use std::collections::HashMap;
 
+use anyhow::Context;
+
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedProtocolVersionError,
 };
 use crate::errors::CompatibleProtocolVersionIsNotDefinedError;
+use crate::validation::DataValidator;
 use crate::validation::ValidationResult;
 use crate::version::{COMPATIBILITY_MAP, LATEST_VERSION};
 
@@ -22,6 +25,20 @@ impl Default for ProtocolVersionValidator {
             latest_protocol_version: LATEST_VERSION,
             compatibility_map: COMPATIBILITY_MAP.clone(),
         }
+    }
+}
+
+impl DataValidator for ProtocolVersionValidator {
+    type Item = u32;
+
+    fn validate(
+        &self,
+        data: &Self::Item,
+    ) -> Result<crate::validation::SimpleValidationResult, crate::ProtocolError> {
+        let result = self
+            .validate(*data)
+            .context("error during during protocol version validation")?;
+        Ok(result)
     }
 }
 

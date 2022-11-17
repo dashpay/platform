@@ -1,3 +1,4 @@
+use dashcore::BlockHeader;
 use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,10 @@ use crate::{
     },
     prelude::{Identifier, TimestampMillis},
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionIdentitySigned,
+    state_transition::{
+        state_transition_execution_context::StateTransitionExecutionContext,
+        StateTransitionIdentitySigned, StateTransitionLike,
+    },
     validation::ValidationResult,
     ProtocolError, StateError,
 };
@@ -22,11 +26,6 @@ use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BlockHeader {
-    pub time: HeaderTime,
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HeaderTime {
@@ -52,6 +51,7 @@ pub async fn validate_document_batch_transition_state(
             data_contract_id,
             owner_id,
             transitions,
+            state_transition.get_execution_context(),
         ))
     }
     for execution_result in join_all(futures).await {
@@ -66,34 +66,48 @@ pub async fn validate_document_transitions(
     data_contract_id: &Identifier,
     owner_id: &Identifier,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let transitions: Vec<_> = document_transitions.into_iter().collect();
 
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // data contract to proceed with following logic
+    let tmp_execution_context = StateTransitionExecutionContext::default();
+
+    // Data Contract must exist
     let data_contract = state_repository
-        .fetch_data_contract::<DataContract>(data_contract_id)
+        .fetch_data_contract::<DataContract>(data_contract_id, &tmp_execution_context)
         .await
         .map_err(|_| ProtocolError::DataContractNotPresentError {
             data_contract_id: data_contract_id.clone(),
         })?;
 
-    let fetched_documents = fetch_documents(state_repository, &transitions).await?;
-    let header: BlockHeader = state_repository
+    execution_context.add_operations(tmp_execution_context.get_operations());
+
+    let fetched_documents =
+        fetch_documents(state_repository, &transitions, execution_context).await?;
+
+    // Calculate time window for timestamp
+    let block_header: BlockHeader = state_repository
         .fetch_latest_platform_block_header()
         .await?;
-    let last_header_time_millis = (header.time.seconds * 1000) as u64;
+    let last_header_time_millis = block_header.time as u64 * 1000;
 
-    for transition in transitions.iter() {
-        let validation_result = validate_transition(
-            transition.as_ref(),
-            &fetched_documents,
-            last_header_time_millis,
-            owner_id,
-        );
-        result.merge(validation_result);
-    }
-    if !result.is_valid() {
-        return Ok(result);
+    if !execution_context.is_dry_run() {
+        for transition in transitions.iter() {
+            let validation_result = validate_transition(
+                transition.as_ref(),
+                &fetched_documents,
+                last_header_time_millis,
+                owner_id,
+            );
+            result.merge(validation_result);
+        }
+        if !result.is_valid() {
+            return Ok(result);
+        }
     }
 
     let validation_result = validate_documents_uniqueness_by_indices(
@@ -103,6 +117,7 @@ pub async fn validate_document_transitions(
             .iter()
             .filter(|d| d.as_ref().as_transition_delete().is_none()),
         &data_contract,
+        execution_context,
     )
     .await?;
     if !result.is_valid() {
@@ -114,6 +129,7 @@ pub async fn validate_document_transitions(
         state_repository: state_repository.to_owned(),
         owner_id,
         data_contract: &data_contract,
+        state_transition_execution_context: execution_context,
     };
     let data_trigger_execution_results =
         execute_data_triggers(transitions.iter(), &data_trigger_execution_context).await?;

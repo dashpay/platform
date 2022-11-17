@@ -236,7 +236,7 @@ fn signature_should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize
 }
 
 #[test_case(property_names::IDENTITY_ID, 32)]
-#[test_case(property_names::SIGNATURE, 65)]
+#[test_case(property_names::SIGNATURE, 96)]
 fn signature_should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) {
     let TestData {
         protocol_version_validator,

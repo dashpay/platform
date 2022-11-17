@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
 
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -61,6 +62,7 @@ where
     pub async fn validate(
         &self,
         raw_state_transition: &JsonValue,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut validation_result = SimpleValidationResult::default();
 
@@ -87,10 +89,14 @@ where
         let raw_data_contract_id = raw_data_contract.get_bytes(contract_property_names::ID)?;
         let data_contract_id = Identifier::from_bytes(&raw_data_contract_id)?;
 
+        if execution_context.is_dry_run() {
+            return Ok(result);
+        }
+
         // Data Contract should exists
         let existing_data_contract = match self
             .state_repository
-            .fetch_data_contract::<DataContract>(&data_contract_id)
+            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
             .await
         {
             Ok(data_contract) => data_contract,

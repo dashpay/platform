@@ -69,9 +69,9 @@ where
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
-            }
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
+                public_key_type: identity_public_key.get_type(),
+            }),
         }
     }
 
@@ -184,6 +184,7 @@ mod test {
     use serde_json::json;
 
     use crate::document::DocumentsBatchTransition;
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::util::string_encoding::Encoding;
     use crate::{
         assert_error_contains,
@@ -205,6 +206,8 @@ mod test {
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
+        #[serde(skip)]
+        pub execution_context: StateTransitionExecutionContext,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -227,9 +230,6 @@ mod test {
     }
 
     impl StateTransitionLike for ExampleStateTransition {
-        fn calculate_fee(&self) -> Result<u64, crate::ProtocolError> {
-            unimplemented!()
-        }
         fn get_protocol_version(&self) -> u32 {
             1
         }
@@ -241,6 +241,17 @@ mod test {
         }
         fn set_signature(&mut self, signature: Vec<u8>) {
             self.signature = signature
+        }
+        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+            &self.execution_context
+        }
+
+        fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
+            &mut self.execution_context
+        }
+
+        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+            self.execution_context = execution_context
         }
     }
 
@@ -273,6 +284,7 @@ mod test {
             signature: Default::default(),
             signature_public_key_id: 1,
             owner_id,
+            execution_context: Default::default(),
         }
     }
 

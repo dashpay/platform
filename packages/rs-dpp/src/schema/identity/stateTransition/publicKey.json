@@ -46,13 +46,7 @@
 			"description": "Read only",
 			"$comment": "Identity public key can't be modified with readOnly set to true. It can’t be changed after adding a key"
 		},
-		"signature": {
-			"type": "array",
-			"byteArray": true,
-			"description": "Signature to prove ownership of public key",
-			"minItems": 65,
-			"maxItems": 65
-		}
+		"signature": true
 	},
 	"allOf": [
 		{
@@ -70,8 +64,15 @@
 						"byteArray": true,
 						"minItems": 33,
 						"maxItems": 33,
-						"description": "Raw ECDSA public key",
+						"description": "Raw ECDSA Secp256k1 public key",
 						"$comment": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
+					},
+					"signature": {
+						"type": "array",
+						"byteArray": true,
+						"description": "ECDSA Secp256k1 signature to prove ownership of public key",
+						"minItems": 65,
+						"maxItems": 65
 					}
 				}
 			}
@@ -93,6 +94,13 @@
 						"maxItems": 48,
 						"description": "Raw BLS public key",
 						"$comment": "It must be a valid key of the specified type and unique for the identity. It can’t be changed after adding a key"
+					},
+					"signature": {
+						"type": "array",
+						"byteArray": true,
+						"description": "BLS signature to prove ownership of public key",
+						"minItems": 96,
+						"maxItems": 96
 					}
 				}
 			}
@@ -114,6 +122,13 @@
 						"maxItems": 20,
 						"description": "ECDSA Secp256k1 public key Hash160",
 						"$comment": "It must be a valid key hash of the specified type and unique for the identity. It can’t be changed after adding a key"
+					},
+					"signature": {
+						"type": "array",
+						"byteArray": true,
+						"description": "ECDSA signature to prove ownership of public key",
+						"minItems": 65,
+						"maxItems": 65
 					}
 				}
 			}

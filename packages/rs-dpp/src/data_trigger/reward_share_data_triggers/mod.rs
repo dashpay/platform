@@ -27,6 +27,7 @@ where
     SR: StateRepositoryLike,
 {
     let mut result = DataTriggerExecutionResult::default();
+    let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
     let dt_create = match document_transition {
@@ -46,33 +47,38 @@ where
     let pay_to_id = data.get_string(PROPERTY_PAY_TO_ID)?;
     let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
 
-    // Do not allow creating document if ownerId is not in SML
-    let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+    if !is_dry_run {
+        // Do not allow creating document if ownerId is not in SML
+        let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
 
-    let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+        let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
 
-    let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
-        hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
-            == context.owner_id.to_buffer()
-    });
+        let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
+            hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
+                == context.owner_id.to_buffer()
+        });
 
-    if !owner_id_in_sml {
-        let err = create_error(
-            context,
-            dt_create,
-            "Only masternode identities can share rewards".to_string(),
-        );
-        result.add_error(err.into());
+        if !owner_id_in_sml {
+            let err = create_error(
+                context,
+                dt_create,
+                "Only masternode identities can share rewards".to_string(),
+            );
+            result.add_error(err.into());
+        }
     }
 
     // payToId identity exists
     let pay_to_identifier = Identifier::from_string(pay_to_id, Encoding::Base58)?;
     let maybe_identifier: Option<Vec<u8>> = context
         .state_repository
-        .fetch_identity(&pay_to_identifier)
+        .fetch_identity(
+            &pay_to_identifier,
+            context.state_transition_execution_context,
+        )
         .await?;
 
-    if maybe_identifier.is_none() {
+    if !is_dry_run && maybe_identifier.is_none() {
         let err = create_error(
             context,
             dt_create,
@@ -89,8 +95,13 @@ where
             json!({
                 "where" : [ [ "$owner_id", "==", owner_id ]]
             }),
+            context.state_transition_execution_context,
         )
         .await?;
+
+    if is_dry_run {
+        return Ok(result);
+    }
 
     if documents.len() >= MAX_DOCUMENTS {
         let err = create_error(
@@ -129,10 +140,7 @@ mod test {
 
     use crate::{
         data_contract::DataContract,
-        data_trigger::{
-            dashpay_data_triggers::create_contract_request_data_trigger,
-            DataTriggerExecutionContext,
-        },
+        data_trigger::DataTriggerExecutionContext,
         document::{
             document_transition::{Action, DocumentTransition, DocumentTransitionExt},
             Document,
@@ -140,6 +148,7 @@ mod test {
         mocks::{SMLEntry, SMLStore, SimplifiedMNList},
         prelude::Identifier,
         state_repository::MockStateRepositoryLike,
+        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
         tests::{
             fixtures::{
                 get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
@@ -238,19 +247,22 @@ mod test {
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
             .expect_fetch_identity::<Vec<u8>>()
-            .returning(|_| Ok(None));
+            .returning(|_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents()
-            .returning(move |_, _, _| Ok(documents.clone()));
+            .returning(move |_, _, _, _| Ok(documents.clone()));
 
         // documentsFixture contains percentage = 500
         document_transition.insert_dynamic_property(String::from("percentage"), json!(9501));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
             owner_id: &top_level_identity,
             state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
         };
+
         let result =
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
                 .await;
@@ -278,15 +290,17 @@ mod test {
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
             .expect_fetch_identity::<Vec<u8>>()
-            .returning(move |_| Ok(None));
+            .returning(move |_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents::<Document>()
-            .returning(move |_, _, _| Ok(vec![]));
+            .returning(move |_, _, _, _| Ok(vec![]));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
             owner_id: &top_level_identity,
             state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
         };
         let result =
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
@@ -320,15 +334,17 @@ mod test {
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
             .expect_fetch_identity::<Vec<u8>>()
-            .returning(move |_| Ok(None));
+            .returning(move |_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents::<Document>()
-            .returning(move |_, _, _| Ok(vec![]));
+            .returning(move |_, _, _, _| Ok(vec![]));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
             owner_id: &generate_random_identifier_struct(),
             state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
         };
         let result =
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
@@ -358,15 +374,17 @@ mod test {
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
             .expect_fetch_identity::<Vec<u8>>()
-            .returning(move |_| Ok(Some(identity_to_return.clone())));
+            .returning(move |_, _| Ok(Some(identity_to_return.clone())));
         state_repository_mock
             .expect_fetch_documents::<Document>()
-            .returning(move |_, _, _| Ok(vec![]));
+            .returning(move |_, _, _, _| Ok(vec![]));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
             owner_id: &top_level_identity,
             state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
         };
         let result =
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
@@ -392,16 +410,18 @@ mod test {
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
             .expect_fetch_identity::<Vec<u8>>()
-            .returning(move |_| Ok(Some(identity_to_return.clone())));
+            .returning(move |_, _| Ok(Some(identity_to_return.clone())));
         let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
         state_repository_mock
             .expect_fetch_documents::<Document>()
-            .return_once(move |_, _, _| Ok(documents_to_return));
+            .return_once(move |_, _, _, _| Ok(documents_to_return));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
             owner_id: &top_level_identity,
             state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
         };
 
         let result =
@@ -413,5 +433,38 @@ mod test {
             "Reward shares cannot contain more than 16 identities",
             error.to_string()
         );
+    }
+
+    #[tokio::test]
+    async fn should_pass_on_dry_run() {
+        let TestData {
+            document_transition,
+            data_contract,
+            top_level_identity,
+            ..
+        } = setup_test();
+
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        state_repository_mock
+            .expect_fetch_identity::<Vec<u8>>()
+            .returning(move |_, _| Ok(None));
+        state_repository_mock
+            .expect_fetch_documents::<Document>()
+            .returning(move |_, _, _, _| Ok(vec![]));
+
+        let execution_context = StateTransitionExecutionContext::default();
+        execution_context.enable_dry_run();
+
+        let context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &top_level_identity,
+            state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
+        };
+        let result =
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+                .await
+                .expect("the execution result should be returned");
+        assert!(result.is_ok());
     }
 }

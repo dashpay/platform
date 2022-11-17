@@ -17,7 +17,7 @@ use crate::{
         json_schema::{Index, JsonSchemaExt},
         json_value::JsonValueExt,
     },
-    validation::{JsonSchemaValidator, ValidationResult},
+    validation::{DataValidator, JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
 };
@@ -43,6 +43,17 @@ lazy_static! {
 
 pub struct DataContractValidator {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
+}
+
+impl DataValidator for DataContractValidator {
+    type Item = JsonValue;
+
+    fn validate(
+        &self,
+        data: &Self::Item,
+    ) -> Result<crate::validation::SimpleValidationResult, ProtocolError> {
+        self.validate(data)
+    }
 }
 
 impl DataContractValidator {

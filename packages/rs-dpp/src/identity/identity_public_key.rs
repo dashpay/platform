@@ -22,12 +22,18 @@ pub type TimestampMillis = u64;
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr, Hash)]
 pub enum KeyType {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
+}
+
+impl std::default::Default for KeyType {
+    fn default() -> Self {
+        KeyType::ECDSA_SECP256K1
+    }
 }
 
 impl std::fmt::Display for KeyType {
@@ -287,6 +293,11 @@ impl IdentityPublicKey {
     pub fn set_disabled_at(mut self, timestamp_millis: u64) -> Self {
         self.disabled_at = Some(timestamp_millis);
         self
+    }
+
+    /// Is public key disabled
+    pub fn is_disabled(&self) -> bool {
+        self.disabled_at.is_some()
     }
 
     /// Checks if public key security level is MASTER

@@ -10,6 +10,7 @@ use lazy_static::__Deref;
 
 use crate::{
     identity::convert_credits_to_satoshi, prelude::Identity, state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
 };
 
 use super::IdentityCreditWithdrawalTransition;
@@ -68,7 +69,10 @@ where
 
         let maybe_existing_identity: Option<Identity> = self
             .state_repository
-            .fetch_identity(&state_transition.identity_id)
+            .fetch_identity(
+                &state_transition.identity_id,
+                state_transition.get_execution_context(),
+            )
             .await?;
 
         let mut existing_identity =
@@ -78,7 +82,7 @@ where
 
         // TODO: we need to be able to batch state repository operations
         self.state_repository
-            .update_identity(&existing_identity)
+            .update_identity(&existing_identity, state_transition.get_execution_context())
             .await
     }
 }
