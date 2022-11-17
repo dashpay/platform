@@ -3,9 +3,8 @@
 use std::convert::TryInto;
 use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use ciborium::value::Value as CborValue;
-use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -13,6 +12,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
+use crate::util::hash::ripemd160_sha256;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
@@ -50,7 +50,7 @@ impl TryFrom<u8> for KeyType {
             1 => Ok(Self::BLS12_381),
             2 => Ok(Self::ECDSA_HASH160),
             3 => Ok(Self::BIP13_SCRIPT_HASH),
-            value => bail!("unrecognized security level: {}", value),
+            value => bail!("unrecognized key type: {}", value),
         }
     }
 }
@@ -183,11 +183,13 @@ pub struct IdentityPublicKey {
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
+    //? Consider replacing vec to the enum (33,48,64, None) - to avoid heap allocation
     pub data: Vec<u8>,
     pub read_only: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<TimestampMillis>,
+    //? Consider replacing vec to the enum (EC, BLS, None) - to avoid heap allocation
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub signature: Vec<u8>,
 }
@@ -223,9 +225,8 @@ impl IdentityPublicKey {
     }
 
     /// Set key ID
-    pub fn set_id(mut self, id: KeyID) -> Self {
+    pub fn set_id(&mut self, id: KeyID) {
         self.id = id;
-        self
     }
 
     /// Get key type
@@ -234,9 +235,8 @@ impl IdentityPublicKey {
     }
 
     /// Set key type
-    pub fn set_type(mut self, key_type: KeyType) -> Self {
+    pub fn set_type(&mut self, key_type: KeyType) {
         self.key_type = key_type;
-        self
     }
 
     /// Get raw public key
@@ -245,9 +245,8 @@ impl IdentityPublicKey {
     }
 
     /// Set raw public key
-    pub fn set_data(mut self, data: Vec<u8>) -> Self {
+    pub fn set_data(&mut self, data: Vec<u8>) {
         self.data = data;
-        self
     }
 
     /// Get the purpose value
@@ -256,9 +255,8 @@ impl IdentityPublicKey {
     }
 
     /// Set the purpose value
-    pub fn set_purpose(mut self, purpose: Purpose) -> Self {
+    pub fn set_purpose(&mut self, purpose: Purpose) {
         self.purpose = purpose;
-        self
     }
 
     /// Get the raw security level value. A uint8 number
@@ -268,9 +266,8 @@ impl IdentityPublicKey {
 
     /// Set the raw security level
     //? maybe we should replace the enum with impl TryInto<SecurityLevel> or Into<SecurityLevel>
-    pub fn set_security_level(mut self, security_level: SecurityLevel) -> Self {
+    pub fn set_security_level(&mut self, security_level: SecurityLevel) {
         self.security_level = security_level;
-        self
     }
 
     /// Get readOnly flag
@@ -279,9 +276,8 @@ impl IdentityPublicKey {
     }
 
     /// Set readOnly flag
-    pub fn set_readonly(mut self, ro: bool) -> Self {
+    pub fn set_readonly(&mut self, ro: bool) {
         self.read_only = ro;
-        self
     }
 
     /// Get disabledAt
@@ -290,9 +286,8 @@ impl IdentityPublicKey {
     }
 
     /// Set disabledAt
-    pub fn set_disabled_at(mut self, timestamp_millis: u64) -> Self {
+    pub fn set_disabled_at(&mut self, timestamp_millis: u64) {
         self.disabled_at = Some(timestamp_millis);
-        self
     }
 
     /// Is public key disabled
@@ -321,33 +316,10 @@ impl IdentityPublicKey {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }
 
-        if self.key_type == KeyType::ECDSA_HASH160 || self.key_type == KeyType::BIP13_SCRIPT_HASH {
-            return Ok(self.data.clone());
+        match self.key_type {
+            KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => Ok(ripemd160_sha256(&self.data)),
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.clone()),
         }
-
-        let original_key = match self.data.len() {
-            65 => {
-                let public_key = vec::vec_to_array::<65>(&self.data)
-                    .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-
-                PublicKey::from_slice(&public_key)
-                    .map_err(|e| anyhow!("unable to create pub key - {}", e))?
-            }
-
-            33 => {
-                let public_key = vec::vec_to_array::<33>(&self.data)
-                    .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-                PublicKey::from_slice(&public_key)
-                    .map_err(|e| anyhow!("unable to create pub key - {}", e))?
-            }
-            _ => {
-                return Err(ProtocolError::ParsingError(format!(
-                    "the key length is invalid: {} Allowed sizes: 33 or 65 bytes",
-                    self.data.len()
-                )));
-            }
-        };
-        Ok(original_key.pubkey_hash().to_vec())
     }
 
     pub fn as_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {

@@ -1,4 +1,3 @@
-use dashcore::hashes::siphash24::State;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};

@@ -31,7 +31,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .returning(|_, _| {
                 let mut identity = Identity::default();
 
-                identity = identity.set_balance(42);
+                identity.set_balance(42);
 
                 anyhow::Ok(Some(identity))
             });

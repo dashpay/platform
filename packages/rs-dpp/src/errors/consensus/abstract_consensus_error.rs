@@ -22,9 +22,8 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::StateError;
 
-use super::basic::identity::IdentityInsufficientBalanceError;
 use super::basic::identity::{
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    IdentityInsufficientBalanceError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
 };
 use super::fee::FeeError;

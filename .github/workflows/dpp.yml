@@ -22,7 +22,7 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-      - run: cargo +stable check --lib --release --target wasm32-unknown-unknown  -p js-binding
+      - run: cargo +stable check --lib --release --target wasm32-unknown-unknown -p dpp
 
   test:
     name: Tests

@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use anyhow::anyhow;
 use anyhow::Context;
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};

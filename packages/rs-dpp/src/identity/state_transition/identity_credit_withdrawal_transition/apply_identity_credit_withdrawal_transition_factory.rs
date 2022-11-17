@@ -78,7 +78,7 @@ where
         let mut existing_identity =
             maybe_existing_identity.ok_or_else(|| anyhow!("Identity not found"))?;
 
-        existing_identity = existing_identity.reduce_balance(state_transition.amount);
+        existing_identity.reduce_balance(state_transition.amount);
 
         // TODO: we need to be able to batch state repository operations
         self.state_repository
