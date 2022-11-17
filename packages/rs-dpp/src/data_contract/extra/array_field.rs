@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::errors::ContractError;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ArrayFieldType {
     Integer,
     Number,

@@ -59,7 +59,7 @@ pub fn get_basic_error_from_result(
     match result
         .errors
         .get(error_number)
-        .expect("error should be found")
+        .expect("basic error should be found")
     {
         ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!(

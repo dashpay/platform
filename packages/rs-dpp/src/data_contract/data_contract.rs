@@ -348,7 +348,7 @@ impl DataContract {
         };
 
         Ok(format!(
-            "{}/#documents/{}",
+            "{}#/documents/{}",
             self.id.to_string(Encoding::Base58),
             doc_type
         ))

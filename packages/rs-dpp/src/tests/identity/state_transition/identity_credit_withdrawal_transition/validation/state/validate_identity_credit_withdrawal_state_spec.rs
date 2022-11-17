@@ -73,7 +73,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .returning(|_, _| {
                 let mut identity = Identity::default();
 
-                identity = identity.set_balance(10);
+                identity.set_balance(10);
 
                 anyhow::Ok(Some(identity))
             });
@@ -125,7 +125,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .returning(|_, _| {
                 let mut identity = Identity::default();
 
-                identity = identity.set_balance(10);
+                identity.set_balance(10);
 
                 anyhow::Ok(Some(identity))
             });

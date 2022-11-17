@@ -57,11 +57,9 @@ where
             maybe_identity = Some(get_biggest_possible_identity())
         }
 
-        if let Some(identity) = maybe_identity {
-            let identity = if is_dry_run {
-                identity
-            } else {
-                identity.increase_balance(credits_amount)
+        if let Some(mut identity) = maybe_identity {
+            if !is_dry_run {
+                identity.increase_balance(credits_amount);
             };
 
             self.state_repository

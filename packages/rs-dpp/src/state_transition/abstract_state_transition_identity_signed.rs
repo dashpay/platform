@@ -557,13 +557,12 @@ mod test {
     #[test]
     fn should_throw_public_key_is_disabled_error_if_public_key_is_disabled() {
         let mut st = get_mock_state_transition();
-        let keys = get_test_keys();
-        let identity_public_key = keys
-            .identity_public_key
+        let mut keys = get_test_keys();
+        keys.identity_public_key
             .set_disabled_at(Utc::now().timestamp_millis() as u64);
 
         let result = st
-            .sign(&identity_public_key, &keys.bls_private)
+            .sign(&keys.identity_public_key, &keys.bls_private)
             .expect_err("the protocol error should be returned");
 
         assert!(matches!(
@@ -576,15 +575,14 @@ mod test {
     fn should_throw_invalid_signature_public_key_security_level_error() {
         // should throw InvalidSignaturePublicKeySecurityLevel Error if public key with master level is used to sign non update state transition
         let mut st = get_mock_state_transition();
-        let keys = get_test_keys();
+        let mut keys = get_test_keys();
 
         st.transition_type = StateTransitionType::DataContractCreate;
-        let identity_public_key = keys
-            .identity_public_key
+        keys.identity_public_key
             .set_security_level(SecurityLevel::MASTER);
 
         let result = st
-            .sign(&identity_public_key, &keys.bls_private)
+            .sign(&keys.identity_public_key, &keys.bls_private)
             .expect_err("the protocol error should be returned");
 
         assert!(matches!(

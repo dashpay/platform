@@ -234,7 +234,7 @@ impl DocumentFieldType {
         buf: &mut BufReader<&[u8]>,
         required: bool,
     ) -> Result<Option<Value>, ContractError> {
-        return match self {
+        match self {
             DocumentFieldType::String(_, _) => {
                 let bytes = Self::read_varint_value(buf)?;
                 if let Some(bytes) = bytes {
@@ -301,13 +301,8 @@ impl DocumentFieldType {
                     .filter_map(|(key, field)| {
                         let read_value = field.document_type.read_from(buf, field.required);
                         match read_value {
-                            Ok(read_value) => {
-                                if let Some(read_value) = read_value {
-                                    Some(Ok((Value::Text(key.clone()), read_value)))
-                                } else {
-                                    None
-                                }
-                            }
+                            Ok(read_value) => read_value
+                                .map(|read_value| Ok((Value::Text(key.clone()), read_value))),
                             Err(e) => Some(Err(e)),
                         }
                     })
@@ -328,7 +323,7 @@ impl DocumentFieldType {
             DocumentFieldType::VariableTypeArray(_) => Err(ContractError::Unsupported(
                 "serialization of arrays not yet supported",
             )),
-        };
+        }
     }
 
     pub fn encode_value_with_size(
@@ -339,7 +334,7 @@ impl DocumentFieldType {
         if value.is_null() {
             return Ok(vec![]);
         }
-        return match self {
+        match self {
             DocumentFieldType::String(_, _) => {
                 if let Value::Text(value) = value {
                     let vec = value.into_bytes();
@@ -501,7 +496,7 @@ impl DocumentFieldType {
             DocumentFieldType::VariableTypeArray(_) => Err(ContractError::Unsupported(
                 "serialization of variable type arrays not yet supported",
             )),
-        };
+        }
     }
 
     pub fn encode_value_ref_with_size(

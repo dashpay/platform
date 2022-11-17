@@ -33,27 +33,6 @@ pub struct Identity {
     pub metadata: Option<Metadata>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct IdentityForBuffer {
-    // TODO the struct probably should be made from references
-    id: Identifier,
-    public_keys: Vec<IdentityPublicKey>,
-    balance: u64,
-    revision: Revision,
-}
-
-impl From<&Identity> for IdentityForBuffer {
-    fn from(i: &Identity) -> Self {
-        IdentityForBuffer {
-            id: i.id.clone(),
-            public_keys: i.public_keys.clone(),
-            balance: i.balance,
-            revision: i.revision,
-        }
-    }
-}
-
 impl Identity {
     /// Get Identity protocol version
     pub fn get_protocol_version(&self) -> u32 {
@@ -66,9 +45,8 @@ impl Identity {
     }
 
     /// Set Identity public key
-    pub fn set_public_keys(mut self, pub_key: Vec<IdentityPublicKey>) -> Self {
+    pub fn set_public_keys(&mut self, pub_key: Vec<IdentityPublicKey>) {
         self.public_keys = pub_key;
-        self
     }
 
     /// Get Identity public keys revision
@@ -102,27 +80,25 @@ impl Identity {
     }
 
     /// Set Identity balance
-    pub fn set_balance(mut self, balance: u64) -> Self {
+    pub fn set_balance(&mut self, balance: u64) {
         self.balance = balance;
-        self
     }
 
     /// Increase Identity balance
-    pub fn increase_balance(mut self, amount: u64) -> Self {
+    pub fn increase_balance(&mut self, amount: u64) -> u64 {
         self.balance += amount;
-        self
+        self.balance
     }
 
     /// Reduce the Identity balance
-    pub fn reduce_balance(mut self, amount: u64) -> Self {
+    pub fn reduce_balance(&mut self, amount: u64) -> u64 {
         self.balance -= amount;
-        self
+        self.balance
     }
 
     /// Set Identity asset lock
-    pub fn set_asset_lock_proof(mut self, lock: AssetLockProof) -> Self {
+    pub fn set_asset_lock_proof(&mut self, lock: AssetLockProof) {
         self.asset_lock_proof = Some(lock);
-        self
     }
 
     /// Get Identity asset lock
@@ -131,9 +107,8 @@ impl Identity {
     }
 
     /// Set Identity revision
-    pub fn set_revision(mut self, revision: Revision) -> Self {
+    pub fn set_revision(&mut self, revision: Revision) {
         self.revision = revision;
-        self
     }
 
     /// Get Identity revision
@@ -147,9 +122,8 @@ impl Identity {
     }
 
     /// Set metadata
-    pub fn set_metadata(mut self, m: Metadata) -> Self {
+    pub fn set_metadata(&mut self, m: Metadata) {
         self.metadata = Some(m);
-        self
     }
 
     /// Get the biggest public KeyID
@@ -254,9 +228,20 @@ impl Identity {
     }
 
     pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        // // TODO identifier_default_deserializer: default deserializer should be changed to bytes
-        // // Identifiers fields should be replaced with the string format to deserialize Identity
         raw_object.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Base58)?;
+
+        let identity: Identity = serde_json::from_value(raw_object)?;
+
+        Ok(identity)
+    }
+
+    pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
+        let pks = raw_object.get("publicKeys").unwrap().as_array().unwrap();
+
+        for pk in pks {
+            let _pkd: IdentityPublicKey = serde_json::from_value(pk.clone())
+                .map_err(|_e| ProtocolError::Generic(format!("Can't parse public key: {}", pk)))?;
+        }
 
         let identity: Identity = serde_json::from_value(raw_object)?;
 
