@@ -14,6 +14,7 @@ use crate::{
     document::{document_transition::Action, generate_document_id::generate_document_id},
     prelude::Identifier,
     state_repository::StateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
@@ -55,6 +56,7 @@ pub async fn validate_documents_batch_transition_basic(
     protocol_version_validator: &ProtocolVersionValidator,
     raw_state_transition: &JsonValue,
     state_repository: &impl StateRepositoryLike,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let validator =
@@ -117,10 +119,15 @@ pub async fn validate_documents_batch_transition_basic(
     }
 
     for (data_contract_id, transitions) in document_transitions_by_contracts {
-        let data_contract: DataContract = match state_repository
-            .fetch_data_contract(&data_contract_id)
-            .await
-        {
+        let maybe_data_contract = state_repository
+            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
+            .await;
+
+        if execution_context.is_dry_run() {
+            return Ok(result);
+        }
+
+        let data_contract = match maybe_data_contract {
             Err(_) => {
                 result.add_error(BasicError::DataContractNotPresent {
                     data_contract_id: data_contract_id.clone(),

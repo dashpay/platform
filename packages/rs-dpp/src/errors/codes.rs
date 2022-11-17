@@ -1,4 +1,4 @@
-use crate::consensus::{basic::IndexError, signature::SignatureError};
+use crate::consensus::{basic::IndexError, fee::FeeError, signature::SignatureError};
 
 use super::{
     abstract_state_error::StateError, consensus::basic::BasicError, consensus::ConsensusError,
@@ -48,6 +48,7 @@ impl ErrorWithCode for ConsensusError {
             Self::StateError(e) => e.get_code(),
             Self::BasicError(e) => e.get_code(),
             Self::SignatureError(e) => e.get_code(),
+            Self::FeeError(e) => e.get_code(),
 
             Self::IdentityAlreadyExistsError(_) => 4011,
 
@@ -80,6 +81,7 @@ impl ErrorWithCode for StateError {
             Self::MaxIdentityPublicKeyLimitReached { .. } => 4020,
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
+            Self::IdentityPublicKeyDisabledError { .. } => 4023,
         }
     }
 }
@@ -126,6 +128,7 @@ impl ErrorWithCode for BasicError {
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
             Self::IndexError(ref e) => e.get_code(),
             Self::IdentityNotFoundError { .. } => 2000,
+            Self::InvalidDataContractId { .. } => 1011,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -163,6 +166,14 @@ impl ErrorWithCode for SignatureError {
             Self::WrongPublicKeyPurposeError { .. } => 2005,
             Self::PublicKeyIsDisabledError { .. } => 2006,
             Self::PublicKeySecurityLevelNotMetError { .. } => 2007,
+        }
+    }
+}
+
+impl ErrorWithCode for FeeError {
+    fn get_code(&self) -> u32 {
+        match *self {
+            Self::BalanceIsNotEnoughError { .. } => 3000,
         }
     }
 }

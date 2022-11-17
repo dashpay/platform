@@ -1,4 +1,5 @@
 use anyhow::Result;
+use dashcore::{Block, BlockHeader};
 use getrandom::getrandom;
 use serde_json::Value;
 
@@ -180,4 +181,22 @@ macro_rules! assert_consensus_errors {
 
         errors
     }};
+}
+
+pub fn create_empty_block(timestamp_secs: Option<u32>) -> Block {
+    Block {
+        txdata: vec![],
+        header: new_block_header(timestamp_secs),
+    }
+}
+
+pub fn new_block_header(timestamp_secs: Option<u32>) -> BlockHeader {
+    BlockHeader {
+        bits: 0,
+        nonce: 0,
+        merkle_root: Default::default(),
+        prev_blockhash: Default::default(),
+        version: 0,
+        time: timestamp_secs.unwrap_or_default(),
+    }
 }

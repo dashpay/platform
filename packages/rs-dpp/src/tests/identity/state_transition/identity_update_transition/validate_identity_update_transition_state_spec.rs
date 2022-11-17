@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use dashcore::BlockHeader;
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
     consensus::{basic::TestConsensusError, ConsensusError},
-    document::validation::state::validate_documents_batch_transition_state::{
-        BlockHeader, HeaderTime,
-    },
     identity::{
         state_transition::identity_update_transition::{
             identity_update_transition::IdentityUpdateTransition,
-            validate_identity_update_transition_state::ValidateIdentityUpdateTransitionState,
+            validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator,
         },
         validation::MockTPublicKeysValidator,
         Purpose, SecurityLevel,
@@ -21,7 +19,7 @@ use crate::{
     state_transition::StateTransitionLike,
     tests::{
         fixtures::{get_identity_update_transition_fixture, identity_fixture},
-        utils::get_state_error_from_result,
+        utils::{get_state_error_from_result, new_block_header},
     },
     validation::SimpleValidationResult,
     StateError,
@@ -37,11 +35,8 @@ struct TestData {
 
 fn setup_test() -> TestData {
     let identity = identity_fixture();
-    let block_header = BlockHeader {
-        time: HeaderTime {
-            seconds: Utc::now().timestamp() as usize,
-        },
-    };
+    let block_header = new_block_header(Some(Utc::now().timestamp() as u32));
+
     let mut validate_public_keys_mock = MockTPublicKeysValidator::new();
     validate_public_keys_mock
         .expect_validate_keys()
@@ -52,7 +47,7 @@ fn setup_test() -> TestData {
     let block_header_to_return = block_header.clone();
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
         .returning(move || Ok(block_header_to_return.clone()));
@@ -88,7 +83,7 @@ async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_in
     } = setup_test();
     state_transition.set_revision(identity.get_revision() + 2);
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -126,9 +121,9 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -147,6 +142,42 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
 }
 
 #[tokio::test]
+async fn should_return_error_if_disabling_public_key_is_already_disabled() {
+    let TestData {
+        mut identity,
+        validate_public_keys_mock,
+        mut state_transition,
+        ..
+    } = setup_test();
+    identity.public_keys.get_mut(0).unwrap().disabled_at =
+        Some(Utc::now().timestamp_millis() as u64);
+    state_transition.set_public_key_ids_to_disable(vec![0]);
+
+    let identity_to_return = identity.clone();
+    let mut state_repository_mock = MockStateRepositoryLike::new();
+    state_repository_mock
+        .expect_fetch_identity()
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
+
+    let validator = IdentityUpdateTransitionStateValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(validate_public_keys_mock),
+    );
+    let result = validator
+        .validate(&state_transition)
+        .await
+        .expect("the validation result should be returned");
+    let state_error = get_state_error_from_result(&result, 0);
+
+    assert!(matches!(
+        state_error,
+        StateError::IdentityPublicKeyDisabledError {
+            public_key_index
+        } if   public_key_index == &0
+    ));
+}
+
+#[tokio::test]
 async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() {
     let TestData {
         validate_public_keys_mock,
@@ -159,7 +190,7 @@ async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() 
         Utc::now().timestamp_millis() as u64 - (BLOCK_TIME_WINDOW_MILLIS * 2),
     ));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -187,7 +218,7 @@ async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_
     state_transition.set_public_key_ids_to_disable(vec![3]);
     state_transition.set_public_keys_disabled_at(Some(Utc::now().timestamp_millis() as u64));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -216,7 +247,7 @@ async fn should_pass_when_disabling_public_key() {
     state_transition.set_public_key_ids_to_disable(vec![1]);
     state_transition.set_public_keys_disabled_at(Some(Utc::now().timestamp_millis() as u64));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -238,7 +269,7 @@ async fn should_pass_when_adding_public_key() {
     state_transition.set_public_key_ids_to_disable(vec![]);
     state_transition.set_public_keys_disabled_at(None);
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -260,7 +291,7 @@ async fn should_pass_when_both_adding_and_disabling_public_keys() {
     state_transition.set_public_key_ids_to_disable(vec![1]);
     state_transition.set_public_keys_disabled_at(Some(Utc::now().timestamp_millis() as u64));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -299,12 +330,12 @@ async fn should_validate_purpose_and_security_level() {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
         .returning(move || Ok(block_header.clone()));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -333,7 +364,7 @@ async fn should_validate_pubic_keys_to_add() {
         .expect_validate_keys()
         .return_once(|_| Ok(validation_result));
 
-    let validator = ValidateIdentityUpdateTransitionState::new(
+    let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
@@ -346,4 +377,31 @@ async fn should_validate_pubic_keys_to_add() {
         result.errors[0],
         ConsensusError::TestConsensusError(_)
     ));
+}
+
+#[tokio::test]
+async fn should_return_valid_result_on_dry_run() {
+    let TestData {
+        validate_public_keys_mock,
+        mut state_transition,
+        ..
+    } = setup_test();
+    state_transition.set_public_key_ids_to_disable(vec![3]);
+    state_transition.set_public_keys_disabled_at(Some(Utc::now().timestamp_millis() as u64));
+    state_transition.execution_context.enable_dry_run();
+
+    let mut state_repository_mock = MockStateRepositoryLike::new();
+    state_repository_mock
+        .expect_fetch_identity::<Identity>()
+        .return_once(|_, _| Ok(None));
+
+    let validator = IdentityUpdateTransitionStateValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(validate_public_keys_mock),
+    );
+    let result = validator
+        .validate(&state_transition)
+        .await
+        .expect("the validation result should be returned");
+    assert!(result.is_valid());
 }

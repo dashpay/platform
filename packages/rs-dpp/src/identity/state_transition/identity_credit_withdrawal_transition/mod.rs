@@ -7,6 +7,7 @@ use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::Identifier,
     state_transition::{
+        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -52,6 +53,8 @@ pub struct IdentityCreditWithdrawalTransition {
     pub output_script: CoreScript,
     pub signature_public_key_id: KeyID,
     pub signature: Vec<u8>,
+    #[serde(skip)]
+    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for IdentityCreditWithdrawalTransition {
@@ -66,6 +69,7 @@ impl std::default::Default for IdentityCreditWithdrawalTransition {
             output_script: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
+            execution_context: Default::default(),
         }
     }
 }
@@ -145,8 +149,16 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         self.signature = signature
     }
 
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        unimplemented!()
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        &self.execution_context
+    }
+
+    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
+        &mut self.execution_context
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        self.execution_context = execution_context
     }
 }
 

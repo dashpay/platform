@@ -34,6 +34,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
                 }
             },
             "required": [
+
                 "lastName",
                 "$updatedAt"
             ],

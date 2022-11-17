@@ -9,6 +9,7 @@ use crate::{
     },
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::{
         json_schema::{Index, JsonSchemaExt},
         string_encoding::Encoding,
@@ -29,6 +30,7 @@ pub async fn validate_documents_uniqueness_by_indices<SR>(
     owner_id: &Identifier,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     data_contract: &DataContract,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError>
 where
     SR: StateRepositoryLike,
@@ -56,12 +58,17 @@ where
                         &data_contract.id,
                         query.document_type,
                         json!( { "where": query.where_query}),
+                        execution_context,
                     ),
                     (query.index_definition, query.document_transition),
                 )
             });
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
+
+        if execution_context.is_dry_run() {
+            return Ok(validation_result);
+        }
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;

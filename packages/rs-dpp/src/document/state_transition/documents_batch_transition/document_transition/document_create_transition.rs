@@ -33,6 +33,10 @@ pub struct DocumentCreateTransition {
 }
 
 impl DocumentCreateTransition {
+    pub fn get_revision(&self) -> u32 {
+        INITIAL_REVISION
+    }
+
     pub fn bytes_to_strings(
         raw_create_document_transition: &mut JsonValue,
     ) -> Result<(), ProtocolError> {

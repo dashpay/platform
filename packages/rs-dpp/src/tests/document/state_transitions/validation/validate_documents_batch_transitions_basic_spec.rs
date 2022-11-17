@@ -6,7 +6,7 @@ use crate::{
         DocumentsBatchTransition,
     },
     state_repository::{MockStateRepositoryLike},
-    state_transition::StateTransitionConvert,
+    state_transition::{StateTransitionConvert, state_transition_execution_context::StateTransitionExecutionContext},
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
@@ -78,7 +78,7 @@ fn setup_test(action: Action) -> TestData {
     let contract_to_return = data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract()
-        .returning(move |_| Ok(contract_to_return.clone()));
+        .returning(move |_, _| Ok(contract_to_return.clone()));
 
     TestData {
         data_contract,
@@ -109,6 +109,7 @@ async fn property_should_be_present(property: &str) {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -137,6 +138,7 @@ async fn protocol_version_should_be_integer() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -161,6 +163,7 @@ async fn protocol_version_should_be_valid() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("protocol error should be returned");
@@ -185,6 +188,7 @@ async fn type_should_be_equal_1() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -212,6 +216,7 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -245,6 +250,7 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -271,6 +277,7 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -295,6 +302,7 @@ async fn transitions_should_be_an_array() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -319,6 +327,7 @@ async fn transitions_should_have_at_least_one_element() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -347,6 +356,7 @@ async fn transitions_should_have_no_more_than_10_elements() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -372,6 +382,7 @@ async fn transitions_should_have_an_object_as_elements() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -402,6 +413,7 @@ async fn property_in_document_transition_should_be_present(property: &str) {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -435,6 +447,7 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -461,6 +474,7 @@ async fn property_should_be_byte_array(property_name: &str) {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -493,6 +507,7 @@ async fn data_contract_id_should_be_byte_array() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -519,6 +534,7 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -550,6 +566,7 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -576,12 +593,13 @@ async fn data_contract_should_exist_in_the_state() {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
-        .returning(|_| Err(anyhow!("no contract found")));
+        .returning(|_, _| Err(anyhow!("no contract found")));
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -605,6 +623,7 @@ async fn type_should_be_defined_in_data_contract() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -628,6 +647,7 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -651,6 +671,7 @@ async fn id_should_be_valid_generated_id() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -677,6 +698,7 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -705,6 +727,7 @@ async fn revision_should_be_number() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -729,6 +752,7 @@ async fn revision_should_not_be_fractional() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -753,6 +777,7 @@ async fn revision_should_be_at_least_1() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -779,6 +804,7 @@ async fn id_should_be_present_in_delete_transition() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -820,6 +846,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -830,7 +857,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
 }
 
 #[tokio::test]
-async fn signature_should_be_not_longer_than_65_bytes() {
+async fn signature_should_be_not_longer_than_96_bytes() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -838,13 +865,14 @@ async fn signature_should_be_not_longer_than_65_bytes() {
         ..
     } = setup_test(Action::Create);
 
-    let array = [0u8; 66].to_vec();
+    let array = [0u8; 97].to_vec();
     raw_state_transition["signature"] = json!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -869,6 +897,7 @@ async fn signature_public_key_should_be_an_integer() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
     )
     .await
     .expect("validation result should be returned");
@@ -894,6 +923,35 @@ async fn validation_should_be_successful() {
         &protocol_version_validator,
         &raw_state_transition,
         &state_repository_mock,
+        &Default::default(),
+    )
+    .await
+    .expect("validation result should be returned");
+
+    assert!(result.is_valid());
+}
+
+#[tokio::test]
+async fn should_not_validate_document_transitions_on_dry_run() {
+    let TestData {
+        raw_state_transition,
+        protocol_version_validator,
+        ..
+    } = setup_test(Action::Create);
+
+    let execution_context = StateTransitionExecutionContext::default();
+    execution_context.enable_dry_run();
+
+    let mut state_repository_mock = MockStateRepositoryLike::new();
+    state_repository_mock
+        .expect_fetch_data_contract::<DataContract>()
+        .return_once(|_, _| Err(anyhow!("some error")));
+
+    let result = validate_documents_batch_transition_basic(
+        &protocol_version_validator,
+        &raw_state_transition,
+        &state_repository_mock,
+        &execution_context,
     )
     .await
     .expect("validation result should be returned");

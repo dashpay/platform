@@ -16,7 +16,7 @@ const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 const PROPERTY_LABEL: &str = "label";
 const PROPERTY_NORMALIZED_LABEL: &str = "normalizedLabel";
 const PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME: &str = "normalizedParentDomainName";
-const PROPERTY_PREORDER_SALT: &str = "prorderSalt";
+const PROPERTY_PREORDER_SALT: &str = "preorderSalt";
 const PROPERTY_ALLOW_SUBDOMAINS: &str = "subdomainRules.allowSubdomains";
 const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
@@ -30,6 +30,7 @@ pub async fn create_domain_data_trigger<'a, SR>(
 where
     SR: StateRepositoryLike,
 {
+    let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,
         _ => bail!(
@@ -64,63 +65,65 @@ where
     let mut result = DataTriggerExecutionResult::default();
     let full_domain_name = normalized_label;
 
-    if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
-        let err = create_error(
-            context,
-            dt_create,
-            format!(
-                "Full domain name length can not be more than {} characters long but got {}",
-                MAX_PRINTABLE_DOMAIN_NAME_LENGTH,
-                full_domain_name.len()
-            ),
-        );
-        result.add_error(err.into())
-    }
-
-    if normalized_label != label.to_lowercase() {
-        let err = create_error(
-            context,
-            dt_create,
-            "Normalized label doesn't match label".to_string(),
-        );
-        result.add_error(err.into());
-    }
-
-    if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_UNIQUE_IDENTITY_ID) {
-        if id != &owner_id {
+    if !is_dry_run {
+        if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
             let err = create_error(
                 context,
                 dt_create,
                 format!(
-                    "ownerId {} doesn't match {} {}",
-                    owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
+                    "Full domain name length can not be more than {} characters long but got {}",
+                    MAX_PRINTABLE_DOMAIN_NAME_LENGTH,
+                    full_domain_name.len()
                 ),
             );
             result.add_error(err.into())
         }
-    }
 
-    if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_ALIAS_IDENTITY_ID) {
-        if id != &owner_id {
+        if normalized_label != label.to_lowercase() {
             let err = create_error(
                 context,
                 dt_create,
-                format!(
-                    "ownerId {} doesn't match {} {}",
-                    owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
-                ),
+                "Normalized label doesn't match label".to_string(),
             );
             result.add_error(err.into());
         }
-    }
 
-    if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
-        let err = create_error(
-            context,
-            dt_create,
-            "Can't create top level domain for this identity".to_string(),
-        );
-        result.add_error(err.into())
+        if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_UNIQUE_IDENTITY_ID) {
+            if id != &owner_id {
+                let err = create_error(
+                    context,
+                    dt_create,
+                    format!(
+                        "ownerId {} doesn't match {} {}",
+                        owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
+                    ),
+                );
+                result.add_error(err.into())
+            }
+        }
+
+        if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_ALIAS_IDENTITY_ID) {
+            if id != &owner_id {
+                let err = create_error(
+                    context,
+                    dt_create,
+                    format!(
+                        "ownerId {} doesn't match {} {}",
+                        owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
+                    ),
+                );
+                result.add_error(err.into());
+            }
+        }
+
+        if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
+            let err = create_error(
+                context,
+                dt_create,
+                "Can't create top level domain for this identity".to_string(),
+            );
+            result.add_error(err.into())
+        }
     }
 
     if !normalized_parent_domain_name.is_empty() {
@@ -140,42 +143,45 @@ where
                         ["normalizedLabel", "==", parent_domain_label]
                     ]
                 }),
+                context.state_transition_execution_context,
             )
             .await?;
 
-        if documents.is_empty() {
-            let err = create_error(
-                context,
-                dt_create,
-                "Parent domain is not present".to_string(),
-            );
-            result.add_error(err.into());
-        }
-        let parent_domain = &documents[0];
+        if !is_dry_run {
+            if documents.is_empty() {
+                let err = create_error(
+                    context,
+                    dt_create,
+                    "Parent domain is not present".to_string(),
+                );
+                result.add_error(err.into());
+            }
+            let parent_domain = &documents[0];
 
-        if rule_allow_subdomains {
-            let err = create_error(
-                context,
-                dt_create,
-                "Allowing subdomains registration is forbidden for non top level domains"
-                    .to_string(),
-            );
-            result.add_error(err.into());
-        }
+            if rule_allow_subdomains {
+                let err = create_error(
+                    context,
+                    dt_create,
+                    "Allowing subdomains registration is forbidden for non top level domains"
+                        .to_string(),
+                );
+                result.add_error(err.into());
+            }
 
-        if (!parent_domain
-            .data
-            .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
-            .as_bool()
-            .unwrap())
-            && context.owner_id != &parent_domain.owner_id
-        {
-            let err = create_error(
-                context,
-                dt_create,
-                "The subdomain can be created only by the parent domain owner".to_string(),
-            );
-            result.add_error(err.into());
+            if (!parent_domain
+                .data
+                .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
+                .as_bool()
+                .unwrap())
+                && context.owner_id != &parent_domain.owner_id
+            {
+                let err = create_error(
+                    context,
+                    dt_create,
+                    "The subdomain can be created only by the parent domain owner".to_string(),
+                );
+                result.add_error(err.into());
+            }
         }
     }
 
@@ -194,8 +200,13 @@ where
                 //? should this be a base64 encoded
                 "where" : [["saltedDomainHash", "==", salted_domain_hash]]
             }),
+            context.state_transition_execution_context,
         )
         .await?;
+
+    if is_dry_run {
+        return Ok(result);
+    }
 
     if preorder_documents.is_empty() {
         let err = create_error(
@@ -207,4 +218,55 @@ where
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        data_trigger::DataTriggerExecutionContext,
+        document::{document_transition::Action, Document},
+        state_repository::MockStateRepositoryLike,
+        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+        tests::{
+            fixtures::{
+                get_document_transitions_fixture, get_dpns_data_contract_fixture,
+                get_dpns_parent_document_fixture, ParentDocumentOptions,
+            },
+            utils::generate_random_identifier_struct,
+        },
+    };
+
+    use super::create_domain_data_trigger;
+
+    #[tokio::test]
+    async fn should_return_execution_result_on_dry_run() {
+        let mut state_repository = MockStateRepositoryLike::new();
+        let transition_execution_context = StateTransitionExecutionContext::default();
+        let owner_id = generate_random_identifier_struct();
+        let document = get_dpns_parent_document_fixture(ParentDocumentOptions {
+            owner_id: owner_id.clone(),
+            ..Default::default()
+        });
+        let data_contract = get_dpns_data_contract_fixture(Some(owner_id.clone()));
+        let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
+        let first_transition = transitions.get(0).expect("transition should be present");
+
+        state_repository
+            .expect_fetch_documents::<Document>()
+            .returning(|_, _, _, _| Ok(vec![]));
+        transition_execution_context.enable_dry_run();
+
+        let data_trigger_context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &owner_id,
+            state_repository: &state_repository,
+            state_transition_execution_context: &transition_execution_context,
+        };
+
+        let result =
+            create_domain_data_trigger(first_transition, &data_trigger_context, Some(&owner_id))
+                .await
+                .expect("the execution result should be returned");
+        assert!(result.is_ok());
+    }
 }

@@ -7,6 +7,7 @@ use crate::{
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
     prelude::Identity,
     state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
     validation::ValidationResult,
     NonConsensusError,
 };
@@ -34,7 +35,10 @@ where
 
         let maybe_existing_identity: Option<Identity> = self
             .state_repository
-            .fetch_identity(&state_transition.identity_id)
+            .fetch_identity(
+                &state_transition.identity_id,
+                state_transition.get_execution_context(),
+            )
             .await
             .map_err(|err| NonConsensusError::StateRepositoryFetchError(err.to_string()))?;
 

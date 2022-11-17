@@ -20,7 +20,11 @@ use crate::{
     },
 };
 
-use super::{StateTransition, StateTransitionType};
+use super::{
+    fee::calculate_state_transition_fee::calculate_state_transition_fee,
+    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+    StateTransitionType,
+};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -52,7 +56,9 @@ pub trait StateTransitionLike:
     /// set a new signature
     fn set_signature(&mut self, signature: Vec<u8>);
     /// Calculates the ST fee in credits
-    fn calculate_fee(&self) -> Result<u64, ProtocolError>;
+    fn calculate_fee(&self) -> i64 {
+        calculate_state_transition_fee(self)
+    }
 
     /// Signs data with the private key
     fn sign_by_private_key(
@@ -80,7 +86,9 @@ pub trait StateTransitionLike:
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
+                    public_key_type: key_type,
+                })
             }
         };
         Ok(())
@@ -98,7 +106,7 @@ pub trait StateTransitionLike:
             }
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key),
             KeyType::BIP13_SCRIPT_HASH => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type })
             }
         }
     }
@@ -166,6 +174,10 @@ pub trait StateTransitionLike:
     fn is_identity_state_transition(&self) -> bool {
         IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
     }
+
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext;
+    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext;
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats

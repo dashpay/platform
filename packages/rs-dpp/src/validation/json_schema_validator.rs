@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 
+use anyhow::anyhow;
+use anyhow::Context;
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};
 
 use crate::consensus::ConsensusError;
 use crate::util::json_value::JsonValueExt;
+use crate::validation::DataValidator;
 use crate::validation::ValidationResult;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 
@@ -13,6 +16,19 @@ use super::meta_validators;
 pub struct JsonSchemaValidator {
     raw_schema_json: Value,
     schema: Option<JSONSchema>,
+}
+
+impl DataValidator for JsonSchemaValidator {
+    type Item = Value;
+    fn validate(
+        &self,
+        data: &Self::Item,
+    ) -> Result<super::SimpleValidationResult, crate::ProtocolError> {
+        let result = self
+            .validate(data)
+            .context("error during validating json schema")?;
+        Ok(result)
+    }
 }
 
 impl JsonSchemaValidator {

@@ -8,12 +8,13 @@ use serde_json::Value as JsonValue;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_create_transition::SerializationOptions;
 use crate::prelude::Identifier;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;
-use crate::{InvalidVectorSizeError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -32,6 +33,7 @@ pub struct IdentityTopUpTransition {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
     pub signature: Vec<u8>,
+    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl Default for IdentityTopUpTransition {
@@ -42,6 +44,7 @@ impl Default for IdentityTopUpTransition {
             identity_id: Default::default(),
             protocol_version: Default::default(),
             signature: Default::default(),
+            execution_context: Default::default(),
         }
     }
 }
@@ -213,7 +216,16 @@ impl StateTransitionLike for IdentityTopUpTransition {
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature
     }
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        todo!()
+
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        &self.execution_context
+    }
+
+    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
+        &mut self.execution_context
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        self.execution_context = execution_context
     }
 }

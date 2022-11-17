@@ -6,6 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Error, Value as JsonValue};
 
 pub use asset_lock_proof_validator::*;
+pub use asset_lock_public_key_hash_fetcher::*;
 pub use asset_lock_transaction_output_fetcher::*;
 pub use asset_lock_transaction_validator::*;
 pub use chain::*;
@@ -14,7 +15,7 @@ pub use instant::*;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
 use crate::util::json_value::JsonValueExt;
-use crate::{InvalidVectorSizeError, NonConsensusError, SerdeParsingError};
+use crate::{NonConsensusError, SerdeParsingError};
 
 mod asset_lock_proof_validator;
 mod asset_lock_public_key_hash_fetcher;
