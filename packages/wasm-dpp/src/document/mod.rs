@@ -124,9 +124,8 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(mut self, metadata: MetadataWasm) -> Self {
+    pub fn set_metadata(&mut self, metadata: MetadataWasm) {
         self.0.metadata = Some(metadata.into());
-        self
     }
 
     #[wasm_bindgen(js_name=toObject)]
