@@ -11,7 +11,7 @@ BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-
 
 
 if ! [[ -d $OUTPUT_DIR ]];  then
-  mkdipr -p $OUTPUT_DIR
+  mkdir -p $OUTPUT_DIR
 fi
 
 if ! [ -x "$(command -v wasm-bindgen)" ]; then
