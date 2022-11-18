@@ -15,6 +15,8 @@ var jspb = require('google-protobuf');
 var goog = jspb;
 var global = Function('return this')();
 
+var google_protobuf_timestamp_pb = require('google-protobuf/google/protobuf/timestamp_pb.js');
+goog.object.extend(proto, google_protobuf_timestamp_pb);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest', null, global);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse', null, global);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.ConsensusParamsBlock', null, global);
@@ -468,8 +470,9 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.toObject = function(opt_includeI
 proto.org.dash.platform.dapi.v0.Proof.toObject = function(includeInstance, msg) {
   var f, obj = {
     merkleProof: msg.getMerkleProof_asB64(),
-    signatureLlmqHash: msg.getSignatureLlmqHash_asB64(),
-    signature: msg.getSignature_asB64()
+    quorumHash: msg.getQuorumHash_asB64(),
+    signature: msg.getSignature_asB64(),
+    round: jspb.Message.getFieldWithDefault(msg, 4, 0)
   };
 
   if (includeInstance) {
@@ -512,11 +515,15 @@ proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader = function(msg
       break;
     case 2:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setSignatureLlmqHash(value);
+      msg.setQuorumHash(value);
       break;
     case 3:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setSignature(value);
+      break;
+    case 4:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setRound(value);
       break;
     default:
       reader.skipField();
@@ -554,7 +561,7 @@ proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter = function(message
       f
     );
   }
-  f = message.getSignatureLlmqHash_asU8();
+  f = message.getQuorumHash_asU8();
   if (f.length > 0) {
     writer.writeBytes(
       2,
@@ -565,6 +572,13 @@ proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter = function(message
   if (f.length > 0) {
     writer.writeBytes(
       3,
+      f
+    );
+  }
+  f = message.getRound();
+  if (f !== 0) {
+    writer.writeUint32(
+      4,
       f
     );
   }
@@ -614,35 +628,35 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.setMerkleProof = function(value)
 
 
 /**
- * optional bytes signature_llmq_hash = 2;
+ * optional bytes quorum_hash = 2;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash = function() {
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumHash = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
 };
 
 
 /**
- * optional bytes signature_llmq_hash = 2;
- * This is a type-conversion wrapper around `getSignatureLlmqHash()`
+ * optional bytes quorum_hash = 2;
+ * This is a type-conversion wrapper around `getQuorumHash()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash_asB64 = function() {
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumHash_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getSignatureLlmqHash()));
+      this.getQuorumHash()));
 };
 
 
 /**
- * optional bytes signature_llmq_hash = 2;
+ * optional bytes quorum_hash = 2;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getSignatureLlmqHash()`
+ * This is a type-conversion wrapper around `getQuorumHash()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash_asU8 = function() {
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumHash_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getSignatureLlmqHash()));
+      this.getQuorumHash()));
 };
 
 
@@ -650,7 +664,7 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash_asU8 = func
  * @param {!(string|Uint8Array)} value
  * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.setSignatureLlmqHash = function(value) {
+proto.org.dash.platform.dapi.v0.Proof.prototype.setQuorumHash = function(value) {
   return jspb.Message.setProto3BytesField(this, 2, value);
 };
 
@@ -697,6 +711,24 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.setSignature = function(value) {
 };
 
 
+/**
+ * optional uint32 round = 4;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getRound = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.setRound = function(value) {
+  return jspb.Message.setProto3IntField(this, 4, value);
+};
+
+
 
 
 
@@ -730,7 +762,9 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.toObject = function(o
 proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInstance, msg) {
   var f, obj = {
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    timeMs: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0)
   };
 
   if (includeInstance) {
@@ -775,6 +809,14 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       var value = /** @type {number} */ (reader.readUint32());
       msg.setCoreChainLockedHeight(value);
       break;
+    case 3:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setTimeMs(value);
+      break;
+    case 4:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setProtocolVersion(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -818,6 +860,20 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
       f
     );
   }
+  f = message.getTimeMs();
+  if (f !== 0) {
+    writer.writeUint64(
+      3,
+      f
+    );
+  }
+  f = message.getProtocolVersion();
+  if (f !== 0) {
+    writer.writeUint32(
+      4,
+      f
+    );
+  }
 };
 
 
@@ -854,6 +910,42 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getCoreChainLockedHei
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setCoreChainLockedHeight = function(value) {
   return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional uint64 time_ms = 3;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTimeMs = function(value) {
+  return jspb.Message.setProto3IntField(this, 3, value);
+};
+
+
+/**
+ * optional uint32 protocol_version = 4;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setProtocolVersion = function(value) {
+  return jspb.Message.setProto3IntField(this, 4, value);
 };
 
 

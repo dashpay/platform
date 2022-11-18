@@ -54,17 +54,20 @@ GPB_FINAL @interface PlatformRoot : GPBRootObject
 
 typedef GPB_ENUM(Proof_FieldNumber) {
   Proof_FieldNumber_MerkleProof = 1,
-  Proof_FieldNumber_SignatureLlmqHash = 2,
+  Proof_FieldNumber_QuorumHash = 2,
   Proof_FieldNumber_Signature = 3,
+  Proof_FieldNumber_Round = 4,
 };
 
 GPB_FINAL @interface Proof : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *merkleProof;
 
-@property(nonatomic, readwrite, copy, null_resettable) NSData *signatureLlmqHash;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *signature;
+
+@property(nonatomic, readwrite) uint32_t round;
 
 @end
 
@@ -73,6 +76,8 @@ GPB_FINAL @interface Proof : GPBMessage
 typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
   ResponseMetadata_FieldNumber_Height = 1,
   ResponseMetadata_FieldNumber_CoreChainLockedHeight = 2,
+  ResponseMetadata_FieldNumber_TimeMs = 3,
+  ResponseMetadata_FieldNumber_ProtocolVersion = 4,
 };
 
 GPB_FINAL @interface ResponseMetadata : GPBMessage
@@ -80,6 +85,10 @@ GPB_FINAL @interface ResponseMetadata : GPBMessage
 @property(nonatomic, readwrite) int64_t height;
 
 @property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint32_t protocolVersion;
 
 @end
 

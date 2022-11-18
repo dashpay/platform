@@ -44,7 +44,7 @@ describe('finalizeBlockHandlerFactory', () => {
       stopTimer: this.sinon.stub(),
     };
 
-    const decidedLastCommit = {};
+    const commit = {};
 
     const height = new Long(42);
 
@@ -55,7 +55,7 @@ describe('finalizeBlockHandlerFactory', () => {
     const coreChainLockedHeight = 10;
 
     requestMock = {
-      decidedLastCommit,
+      commit,
       height,
       time,
       coreChainLockedHeight,
@@ -146,7 +146,7 @@ describe('finalizeBlockHandlerFactory', () => {
       },
     ];
 
-    requestMock.decidedLastCommit = { thresholdVoteExtensions };
+    requestMock.commit = { thresholdVoteExtensions };
 
     await finalizeBlockHandler(requestMock);
 

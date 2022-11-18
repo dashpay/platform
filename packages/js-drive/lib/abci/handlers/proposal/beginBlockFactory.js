@@ -98,6 +98,7 @@ function beginBlockFactory(
     proposalBlockExecutionContext.setTime(time);
     proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
     proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
+    proposalBlockExecutionContext.setRound(round);
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
