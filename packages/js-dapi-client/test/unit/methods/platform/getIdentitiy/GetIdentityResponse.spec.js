@@ -1,4 +1,3 @@
-const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const {
   v0: {
