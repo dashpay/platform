@@ -27,7 +27,6 @@
 // We don't use [Foo class] because it is not a static value.
 GPBObjCClassDeclaration(ConsensusParamsBlock);
 GPBObjCClassDeclaration(ConsensusParamsEvidence);
-GPBObjCClassDeclaration(GPBTimestamp);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
 GPBObjCClassDeclaration(StateTransitionBroadcastError);
@@ -60,7 +59,7 @@ static GPBFileDescriptor *PlatformRoot_FileDescriptor(void) {
 @implementation Proof
 
 @dynamic merkleProof;
-@dynamic signatureLlmqHash;
+@dynamic quorumHash;
 @dynamic signature;
 @dynamic round;
 
@@ -68,7 +67,7 @@ typedef struct Proof__storage_ {
   uint32_t _has_storage_[1];
   uint32_t round;
   NSData *merkleProof;
-  NSData *signatureLlmqHash;
+  NSData *quorumHash;
   NSData *signature;
 } Proof__storage_;
 
@@ -88,11 +87,11 @@ typedef struct Proof__storage_ {
         .dataType = GPBDataTypeBytes,
       },
       {
-        .name = "signatureLlmqHash",
+        .name = "quorumHash",
         .dataTypeSpecific.clazz = Nil,
-        .number = Proof_FieldNumber_SignatureLlmqHash,
+        .number = Proof_FieldNumber_QuorumHash,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(Proof__storage_, signatureLlmqHash),
+        .offset = (uint32_t)offsetof(Proof__storage_, quorumHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
@@ -139,15 +138,15 @@ typedef struct Proof__storage_ {
 
 @dynamic height;
 @dynamic coreChainLockedHeight;
-@dynamic hasBlockTime, blockTime;
+@dynamic timeMs;
 @dynamic protocolVersion;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
-  GPBTimestamp *blockTime;
+  uint32_t timeMs;
+  uint32_t protocolVersion;
   int64_t height;
-  uint64_t protocolVersion;
 } ResponseMetadata__storage_;
 
 // This method is threadsafe because it is initially called
@@ -175,13 +174,13 @@ typedef struct ResponseMetadata__storage_ {
         .dataType = GPBDataTypeUInt32,
       },
       {
-        .name = "blockTime",
-        .dataTypeSpecific.clazz = GPBObjCClass(GPBTimestamp),
-        .number = ResponseMetadata_FieldNumber_BlockTime,
+        .name = "timeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_TimeMs,
         .hasIndex = 2,
-        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, blockTime),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, timeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "protocolVersion",
@@ -190,7 +189,7 @@ typedef struct ResponseMetadata__storage_ {
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, protocolVersion),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt64,
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =

@@ -470,7 +470,7 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.toObject = function(opt_includeI
 proto.org.dash.platform.dapi.v0.Proof.toObject = function(includeInstance, msg) {
   var f, obj = {
     merkleProof: msg.getMerkleProof_asB64(),
-    signatureLlmqHash: msg.getSignatureLlmqHash_asB64(),
+    quorumHash: msg.getQuorumHash_asB64(),
     signature: msg.getSignature_asB64(),
     round: jspb.Message.getFieldWithDefault(msg, 4, 0)
   };
@@ -515,7 +515,7 @@ proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader = function(msg
       break;
     case 2:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setSignatureLlmqHash(value);
+      msg.setQuorumHash(value);
       break;
     case 3:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
@@ -561,7 +561,7 @@ proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter = function(message
       f
     );
   }
-  f = message.getSignatureLlmqHash_asU8();
+  f = message.getQuorumHash_asU8();
   if (f.length > 0) {
     writer.writeBytes(
       2,
@@ -628,35 +628,35 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.setMerkleProof = function(value)
 
 
 /**
- * optional bytes signature_llmq_hash = 2;
+ * optional bytes quorum_hash = 2;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash = function() {
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumHash = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
 };
 
 
 /**
- * optional bytes signature_llmq_hash = 2;
- * This is a type-conversion wrapper around `getSignatureLlmqHash()`
+ * optional bytes quorum_hash = 2;
+ * This is a type-conversion wrapper around `getQuorumHash()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash_asB64 = function() {
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumHash_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getSignatureLlmqHash()));
+      this.getQuorumHash()));
 };
 
 
 /**
- * optional bytes signature_llmq_hash = 2;
+ * optional bytes quorum_hash = 2;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getSignatureLlmqHash()`
+ * This is a type-conversion wrapper around `getQuorumHash()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash_asU8 = function() {
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumHash_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getSignatureLlmqHash()));
+      this.getQuorumHash()));
 };
 
 
@@ -664,7 +664,7 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.getSignatureLlmqHash_asU8 = func
  * @param {!(string|Uint8Array)} value
  * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
  */
-proto.org.dash.platform.dapi.v0.Proof.prototype.setSignatureLlmqHash = function(value) {
+proto.org.dash.platform.dapi.v0.Proof.prototype.setQuorumHash = function(value) {
   return jspb.Message.setProto3BytesField(this, 2, value);
 };
 
@@ -763,7 +763,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInst
   var f, obj = {
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
-    blockTime: (f = msg.getBlockTime()) && google_protobuf_timestamp_pb.Timestamp.toObject(includeInstance, f),
+    timeMs: jspb.Message.getFieldWithDefault(msg, 3, 0),
     protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0)
   };
 
@@ -810,12 +810,11 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       msg.setCoreChainLockedHeight(value);
       break;
     case 3:
-      var value = new google_protobuf_timestamp_pb.Timestamp;
-      reader.readMessage(value,google_protobuf_timestamp_pb.Timestamp.deserializeBinaryFromReader);
-      msg.setBlockTime(value);
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setTimeMs(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint32());
       msg.setProtocolVersion(value);
       break;
     default:
@@ -861,17 +860,16 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
       f
     );
   }
-  f = message.getBlockTime();
-  if (f != null) {
-    writer.writeMessage(
+  f = message.getTimeMs();
+  if (f !== 0) {
+    writer.writeUint32(
       3,
-      f,
-      google_protobuf_timestamp_pb.Timestamp.serializeBinaryToWriter
+      f
     );
   }
   f = message.getProtocolVersion();
   if (f !== 0) {
-    writer.writeUint64(
+    writer.writeUint32(
       4,
       f
     );
@@ -916,44 +914,25 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setCoreChainLockedHei
 
 
 /**
- * optional google.protobuf.Timestamp block_time = 3;
- * @return {?proto.google.protobuf.Timestamp}
+ * optional uint32 time_ms = 3;
+ * @return {number}
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getBlockTime = function() {
-  return /** @type{?proto.google.protobuf.Timestamp} */ (
-    jspb.Message.getWrapperField(this, google_protobuf_timestamp_pb.Timestamp, 3));
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
 };
 
 
 /**
- * @param {?proto.google.protobuf.Timestamp|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
-*/
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setBlockTime = function(value) {
-  return jspb.Message.setWrapperField(this, 3, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
+ * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.clearBlockTime = function() {
-  return this.setBlockTime(undefined);
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTimeMs = function(value) {
+  return jspb.Message.setProto3IntField(this, 3, value);
 };
 
 
 /**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.hasBlockTime = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional uint64 protocol_version = 4;
+ * optional uint32 protocol_version = 4;
  * @return {number}
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = function() {

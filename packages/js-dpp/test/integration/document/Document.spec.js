@@ -1,4 +1,3 @@
-const Long = require('long');
 const Identifier = require('../../../lib/identifier/Identifier');
 const Metadata = require('../../../lib/Metadata');
 
@@ -17,11 +16,8 @@ describe('Document', () => {
     metadataFixture = new Metadata({
       blockHeight: 42,
       coreChainLockedHeight: 0,
-      blockTime: {
-        seconds: Math.ceil(new Date().getTime() / 1000),
-        nanos: 0,
-      },
-      protocolVersion: Long.fromInt(1),
+      timeMs: new Date().getTime(),
+      protocolVersion: 1,
     });
 
     document.setMetadata(metadataFixture);

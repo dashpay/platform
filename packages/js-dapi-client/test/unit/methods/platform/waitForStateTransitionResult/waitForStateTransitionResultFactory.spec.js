@@ -1,4 +1,3 @@
-const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const {
   v0: {
     PlatformPromiseClient,
@@ -26,14 +25,10 @@ describe('waitForStateTransitionResultFactory', () => {
     hash = Buffer.from('hash');
     metadataFixture = getMetadataFixture();
 
-    const protobufTime = new Timestamp();
-    protobufTime.setSeconds(metadataFixture.blockTime.seconds);
-    protobufTime.setNanos(metadataFixture.blockTime.nanos);
-
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setBlockTime(protobufTime);
+    metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new WaitForStateTransitionResultResponse();
@@ -77,7 +72,7 @@ describe('waitForStateTransitionResultFactory', () => {
     const proof = new Proof();
 
     proof.setMerkleProof(Buffer.from('merkleProof'));
-    proof.setSignatureLlmqHash(Buffer.from('signatureLlmqHash'));
+    proof.setQuorumHash(Buffer.from('quorumHash'));
     proof.setSignature(Buffer.from('signature'));
     proof.setRound(42);
 
@@ -91,13 +86,13 @@ describe('waitForStateTransitionResultFactory', () => {
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.be.deep.equal({
       merkleProof: Buffer.from('merkleProof'),
-      signatureLLMQHash: Buffer.from('signatureLlmqHash'),
+      quorumHash: Buffer.from('quorumHash'),
       signature: Buffer.from('signature'),
       round: 42,
     });
     expect(result.getProof().getSignature()).to.deep.equal(Buffer.from('signature'));
     expect(result.getProof().getMerkleProof()).to.deep.equal(Buffer.from('merkleProof'));
-    expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(Buffer.from('signatureLlmqHash'));
+    expect(result.getProof().getQuorumHash()).to.deep.equal(Buffer.from('quorumHash'));
     expect(result.getProof().getRound()).to.deep.equal(42);
 
     const request = new WaitForStateTransitionResultRequest();

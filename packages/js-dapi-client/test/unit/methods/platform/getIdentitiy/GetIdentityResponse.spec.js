@@ -30,14 +30,10 @@ describe('GetIdentityResponse', () => {
     proto = new GetIdentityResponse();
     proto.setIdentity(identityFixture.toBuffer());
 
-    const protobufTime = new Timestamp();
-    protobufTime.setSeconds(metadataFixture.blockTime.seconds);
-    protobufTime.setNanos(metadataFixture.blockTime.nanos);
-
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setBlockTime(protobufTime);
+    metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setMetadata(metadata);
@@ -69,7 +65,7 @@ describe('GetIdentityResponse', () => {
     expect(identity).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
@@ -92,7 +88,7 @@ describe('GetIdentityResponse', () => {
   it('should create an instance with proof from proto', () => {
     const proofProto = new ProofResponse();
 
-    proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
     proofProto.setMerkleProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
@@ -108,7 +104,7 @@ describe('GetIdentityResponse', () => {
     const proof = getIdentityResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });

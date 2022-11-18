@@ -327,7 +327,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IProof
                          * @property {Uint8Array|null} [merkleProof] Proof merkleProof
-                         * @property {Uint8Array|null} [signatureLlmqHash] Proof signatureLlmqHash
+                         * @property {Uint8Array|null} [quorumHash] Proof quorumHash
                          * @property {Uint8Array|null} [signature] Proof signature
                          * @property {number|null} [round] Proof round
                          */
@@ -356,12 +356,12 @@ $root.org = (function() {
                         Proof.prototype.merkleProof = $util.newBuffer([]);
 
                         /**
-                         * Proof signatureLlmqHash.
-                         * @member {Uint8Array} signatureLlmqHash
+                         * Proof quorumHash.
+                         * @member {Uint8Array} quorumHash
                          * @memberof org.dash.platform.dapi.v0.Proof
                          * @instance
                          */
-                        Proof.prototype.signatureLlmqHash = $util.newBuffer([]);
+                        Proof.prototype.quorumHash = $util.newBuffer([]);
 
                         /**
                          * Proof signature.
@@ -405,8 +405,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.merkleProof != null && Object.hasOwnProperty.call(message, "merkleProof"))
                                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.merkleProof);
-                            if (message.signatureLlmqHash != null && Object.hasOwnProperty.call(message, "signatureLlmqHash"))
-                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.signatureLlmqHash);
+                            if (message.quorumHash != null && Object.hasOwnProperty.call(message, "quorumHash"))
+                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.quorumHash);
                             if (message.signature != null && Object.hasOwnProperty.call(message, "signature"))
                                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signature);
                             if (message.round != null && Object.hasOwnProperty.call(message, "round"))
@@ -449,7 +449,7 @@ $root.org = (function() {
                                     message.merkleProof = reader.bytes();
                                     break;
                                 case 2:
-                                    message.signatureLlmqHash = reader.bytes();
+                                    message.quorumHash = reader.bytes();
                                     break;
                                 case 3:
                                     message.signature = reader.bytes();
@@ -495,9 +495,9 @@ $root.org = (function() {
                             if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
                                 if (!(message.merkleProof && typeof message.merkleProof.length === "number" || $util.isString(message.merkleProof)))
                                     return "merkleProof: buffer expected";
-                            if (message.signatureLlmqHash != null && message.hasOwnProperty("signatureLlmqHash"))
-                                if (!(message.signatureLlmqHash && typeof message.signatureLlmqHash.length === "number" || $util.isString(message.signatureLlmqHash)))
-                                    return "signatureLlmqHash: buffer expected";
+                            if (message.quorumHash != null && message.hasOwnProperty("quorumHash"))
+                                if (!(message.quorumHash && typeof message.quorumHash.length === "number" || $util.isString(message.quorumHash)))
+                                    return "quorumHash: buffer expected";
                             if (message.signature != null && message.hasOwnProperty("signature"))
                                 if (!(message.signature && typeof message.signature.length === "number" || $util.isString(message.signature)))
                                     return "signature: buffer expected";
@@ -524,11 +524,11 @@ $root.org = (function() {
                                     $util.base64.decode(object.merkleProof, message.merkleProof = $util.newBuffer($util.base64.length(object.merkleProof)), 0);
                                 else if (object.merkleProof.length >= 0)
                                     message.merkleProof = object.merkleProof;
-                            if (object.signatureLlmqHash != null)
-                                if (typeof object.signatureLlmqHash === "string")
-                                    $util.base64.decode(object.signatureLlmqHash, message.signatureLlmqHash = $util.newBuffer($util.base64.length(object.signatureLlmqHash)), 0);
-                                else if (object.signatureLlmqHash.length >= 0)
-                                    message.signatureLlmqHash = object.signatureLlmqHash;
+                            if (object.quorumHash != null)
+                                if (typeof object.quorumHash === "string")
+                                    $util.base64.decode(object.quorumHash, message.quorumHash = $util.newBuffer($util.base64.length(object.quorumHash)), 0);
+                                else if (object.quorumHash.length >= 0)
+                                    message.quorumHash = object.quorumHash;
                             if (object.signature != null)
                                 if (typeof object.signature === "string")
                                     $util.base64.decode(object.signature, message.signature = $util.newBuffer($util.base64.length(object.signature)), 0);
@@ -561,11 +561,11 @@ $root.org = (function() {
                                         object.merkleProof = $util.newBuffer(object.merkleProof);
                                 }
                                 if (options.bytes === String)
-                                    object.signatureLlmqHash = "";
+                                    object.quorumHash = "";
                                 else {
-                                    object.signatureLlmqHash = [];
+                                    object.quorumHash = [];
                                     if (options.bytes !== Array)
-                                        object.signatureLlmqHash = $util.newBuffer(object.signatureLlmqHash);
+                                        object.quorumHash = $util.newBuffer(object.quorumHash);
                                 }
                                 if (options.bytes === String)
                                     object.signature = "";
@@ -578,8 +578,8 @@ $root.org = (function() {
                             }
                             if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
                                 object.merkleProof = options.bytes === String ? $util.base64.encode(message.merkleProof, 0, message.merkleProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.merkleProof) : message.merkleProof;
-                            if (message.signatureLlmqHash != null && message.hasOwnProperty("signatureLlmqHash"))
-                                object.signatureLlmqHash = options.bytes === String ? $util.base64.encode(message.signatureLlmqHash, 0, message.signatureLlmqHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.signatureLlmqHash) : message.signatureLlmqHash;
+                            if (message.quorumHash != null && message.hasOwnProperty("quorumHash"))
+                                object.quorumHash = options.bytes === String ? $util.base64.encode(message.quorumHash, 0, message.quorumHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.quorumHash) : message.quorumHash;
                             if (message.signature != null && message.hasOwnProperty("signature"))
                                 object.signature = options.bytes === String ? $util.base64.encode(message.signature, 0, message.signature.length) : options.bytes === Array ? Array.prototype.slice.call(message.signature) : message.signature;
                             if (message.round != null && message.hasOwnProperty("round"))
@@ -609,8 +609,8 @@ $root.org = (function() {
                          * @interface IResponseMetadata
                          * @property {number|Long|null} [height] ResponseMetadata height
                          * @property {number|null} [coreChainLockedHeight] ResponseMetadata coreChainLockedHeight
-                         * @property {google.protobuf.ITimestamp|null} [blockTime] ResponseMetadata blockTime
-                         * @property {number|Long|null} [protocolVersion] ResponseMetadata protocolVersion
+                         * @property {number|null} [timeMs] ResponseMetadata timeMs
+                         * @property {number|null} [protocolVersion] ResponseMetadata protocolVersion
                          */
 
                         /**
@@ -645,20 +645,20 @@ $root.org = (function() {
                         ResponseMetadata.prototype.coreChainLockedHeight = 0;
 
                         /**
-                         * ResponseMetadata blockTime.
-                         * @member {google.protobuf.ITimestamp|null|undefined} blockTime
+                         * ResponseMetadata timeMs.
+                         * @member {number} timeMs
                          * @memberof org.dash.platform.dapi.v0.ResponseMetadata
                          * @instance
                          */
-                        ResponseMetadata.prototype.blockTime = null;
+                        ResponseMetadata.prototype.timeMs = 0;
 
                         /**
                          * ResponseMetadata protocolVersion.
-                         * @member {number|Long} protocolVersion
+                         * @member {number} protocolVersion
                          * @memberof org.dash.platform.dapi.v0.ResponseMetadata
                          * @instance
                          */
-                        ResponseMetadata.prototype.protocolVersion = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+                        ResponseMetadata.prototype.protocolVersion = 0;
 
                         /**
                          * Creates a new ResponseMetadata instance using the specified properties.
@@ -688,10 +688,10 @@ $root.org = (function() {
                                 writer.uint32(/* id 1, wireType 0 =*/8).int64(message.height);
                             if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
                                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.coreChainLockedHeight);
-                            if (message.blockTime != null && Object.hasOwnProperty.call(message, "blockTime"))
-                                $root.google.protobuf.Timestamp.encode(message.blockTime, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            if (message.timeMs != null && Object.hasOwnProperty.call(message, "timeMs"))
+                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.timeMs);
                             if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
-                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.protocolVersion);
+                                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.protocolVersion);
                             return writer;
                         };
 
@@ -733,10 +733,10 @@ $root.org = (function() {
                                     message.coreChainLockedHeight = reader.uint32();
                                     break;
                                 case 3:
-                                    message.blockTime = $root.google.protobuf.Timestamp.decode(reader, reader.uint32());
+                                    message.timeMs = reader.uint32();
                                     break;
                                 case 4:
-                                    message.protocolVersion = reader.uint64();
+                                    message.protocolVersion = reader.uint32();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -779,14 +779,12 @@ $root.org = (function() {
                             if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
                                 if (!$util.isInteger(message.coreChainLockedHeight))
                                     return "coreChainLockedHeight: integer expected";
-                            if (message.blockTime != null && message.hasOwnProperty("blockTime")) {
-                                var error = $root.google.protobuf.Timestamp.verify(message.blockTime);
-                                if (error)
-                                    return "blockTime." + error;
-                            }
+                            if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                if (!$util.isInteger(message.timeMs))
+                                    return "timeMs: integer expected";
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
-                                if (!$util.isInteger(message.protocolVersion) && !(message.protocolVersion && $util.isInteger(message.protocolVersion.low) && $util.isInteger(message.protocolVersion.high)))
-                                    return "protocolVersion: integer|Long expected";
+                                if (!$util.isInteger(message.protocolVersion))
+                                    return "protocolVersion: integer expected";
                             return null;
                         };
 
@@ -813,20 +811,10 @@ $root.org = (function() {
                                     message.height = new $util.LongBits(object.height.low >>> 0, object.height.high >>> 0).toNumber();
                             if (object.coreChainLockedHeight != null)
                                 message.coreChainLockedHeight = object.coreChainLockedHeight >>> 0;
-                            if (object.blockTime != null) {
-                                if (typeof object.blockTime !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.ResponseMetadata.blockTime: object expected");
-                                message.blockTime = $root.google.protobuf.Timestamp.fromObject(object.blockTime);
-                            }
+                            if (object.timeMs != null)
+                                message.timeMs = object.timeMs >>> 0;
                             if (object.protocolVersion != null)
-                                if ($util.Long)
-                                    (message.protocolVersion = $util.Long.fromValue(object.protocolVersion)).unsigned = true;
-                                else if (typeof object.protocolVersion === "string")
-                                    message.protocolVersion = parseInt(object.protocolVersion, 10);
-                                else if (typeof object.protocolVersion === "number")
-                                    message.protocolVersion = object.protocolVersion;
-                                else if (typeof object.protocolVersion === "object")
-                                    message.protocolVersion = new $util.LongBits(object.protocolVersion.low >>> 0, object.protocolVersion.high >>> 0).toNumber(true);
+                                message.protocolVersion = object.protocolVersion >>> 0;
                             return message;
                         };
 
@@ -850,12 +838,8 @@ $root.org = (function() {
                                 } else
                                     object.height = options.longs === String ? "0" : 0;
                                 object.coreChainLockedHeight = 0;
-                                object.blockTime = null;
-                                if ($util.Long) {
-                                    var long = new $util.Long(0, 0, true);
-                                    object.protocolVersion = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                                } else
-                                    object.protocolVersion = options.longs === String ? "0" : 0;
+                                object.timeMs = 0;
+                                object.protocolVersion = 0;
                             }
                             if (message.height != null && message.hasOwnProperty("height"))
                                 if (typeof message.height === "number")
@@ -864,13 +848,10 @@ $root.org = (function() {
                                     object.height = options.longs === String ? $util.Long.prototype.toString.call(message.height) : options.longs === Number ? new $util.LongBits(message.height.low >>> 0, message.height.high >>> 0).toNumber() : message.height;
                             if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
                                 object.coreChainLockedHeight = message.coreChainLockedHeight;
-                            if (message.blockTime != null && message.hasOwnProperty("blockTime"))
-                                object.blockTime = $root.google.protobuf.Timestamp.toObject(message.blockTime, options);
+                            if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                object.timeMs = message.timeMs;
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
-                                if (typeof message.protocolVersion === "number")
-                                    object.protocolVersion = options.longs === String ? String(message.protocolVersion) : message.protocolVersion;
-                                else
-                                    object.protocolVersion = options.longs === String ? $util.Long.prototype.toString.call(message.protocolVersion) : options.longs === Number ? new $util.LongBits(message.protocolVersion.low >>> 0, message.protocolVersion.high >>> 0).toNumber(true) : message.protocolVersion;
+                                object.protocolVersion = message.protocolVersion;
                             return object;
                         };
 

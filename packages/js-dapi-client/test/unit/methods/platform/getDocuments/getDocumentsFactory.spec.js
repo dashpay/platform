@@ -1,4 +1,3 @@
-const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const cbor = require('cbor');
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
@@ -56,14 +55,10 @@ describe('getDocumentsFactory', () => {
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 
-    const protobufTime = new Timestamp();
-    protobufTime.setSeconds(metadataFixture.blockTime.seconds);
-    protobufTime.setNanos(metadataFixture.blockTime.nanos);
-
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setBlockTime(protobufTime);
+    metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new GetDocumentsResponse();
@@ -77,7 +72,7 @@ describe('getDocumentsFactory', () => {
     getDocuments = getDocumentsFactory(grpcTransportMock);
 
     proofResponse = new ProofResponse();
-    proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofResponse.setQuorumHash(proofFixture.quorumHash);
     proofResponse.setSignature(proofFixture.signature);
     proofResponse.setMerkleProof(proofFixture.merkleProof);
     proofResponse.setRound(proofFixture.round);
@@ -137,7 +132,7 @@ describe('getDocumentsFactory', () => {
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
     expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);

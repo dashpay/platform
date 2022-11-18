@@ -9,8 +9,8 @@ function testProofStructure(expect, proof, proofExist = true) {
     expect(proof.merkleProof.length).to.be.equal(0);
   }
 
-  expect(proof.signatureLLMQHash).to.be.an.instanceof(Buffer);
-  expect(proof.signatureLLMQHash.length).to.be.equal(32);
+  expect(proof.quorumHash).to.be.an.instanceof(Buffer);
+  expect(proof.quorumHash.length).to.be.equal(32);
 
   expect(proof.signature).to.be.an.instanceof(Buffer);
   expect(proof.signature.length).to.be.equal(96);

@@ -1,4 +1,3 @@
-const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 const {
   v0: {
     PlatformPromiseClient,
@@ -35,14 +34,10 @@ describe('getDataContractFactory', () => {
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
 
-    const protobufTime = new Timestamp();
-    protobufTime.setSeconds(metadataFixture.blockTime.seconds);
-    protobufTime.setNanos(metadataFixture.blockTime.nanos);
-
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
-    metadata.setBlockTime(protobufTime);
+    metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response.setMetadata(metadata);
@@ -59,7 +54,7 @@ describe('getDataContractFactory', () => {
 
     proof = new Proof();
 
-    proof.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proof.setQuorumHash(proofFixture.quorumHash);
     proof.setSignature(proofFixture.signature);
     proof.setMerkleProof(proofFixture.merkleProof);
     proof.setRound(proofFixture.round);

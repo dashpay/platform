@@ -30,23 +30,19 @@ function createQueryResponseFactory(
     const time = latestBlockExecutionContext.getTime();
     const version = latestBlockExecutionContext.getVersion();
 
-    const protobufTime = new Timestamp();
-    protobufTime.setSeconds(time.seconds);
-    protobufTime.setNanos(time.nanos);
-
     const response = new ResponseClass();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(blockHeight);
     metadata.setCoreChainLockedHeight(coreChainLockedHeight);
-    metadata.setBlockTime(protobufTime);
+    metadata.setTimeMs(time);
     metadata.setProtocolVersion(version.app);
 
     response.setMetadata(metadata);
 
     if (prove) {
       const {
-        quorumHash: signatureLlmqHash,
+        quorumHash,
         blockSignature: signature,
       } = latestBlockExecutionContext.getLastCommitInfo();
 
@@ -54,7 +50,7 @@ function createQueryResponseFactory(
 
       const proof = new Proof();
 
-      proof.setSignatureLlmqHash(signatureLlmqHash);
+      proof.setQuorumHash(quorumHash);
       proof.setSignature(signature);
       proof.setRound(round);
 

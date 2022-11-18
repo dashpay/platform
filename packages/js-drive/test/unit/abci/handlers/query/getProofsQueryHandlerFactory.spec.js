@@ -96,7 +96,7 @@ describe('getProofsQueryHandlerFactory', () => {
 
   it('should return proof for passed data contract ids', async () => {
     const expectedProof = {
-      signatureLlmqHash: Buffer.alloc(32, 1),
+      quorumHash: Buffer.alloc(32, 1),
       signature: Buffer.alloc(32, 1),
       merkleProof: Buffer.from([1]),
       round: 42,
@@ -121,10 +121,7 @@ describe('getProofsQueryHandlerFactory', () => {
           metadata: {
             height: 42,
             coreChainLockedHeight: 41,
-            blockTime: {
-              seconds: 86400,
-              nanos: 0,
-            },
+            timeMs: 86400000,
             protocolVersion: 1,
           },
         },

@@ -4,13 +4,6 @@ const {
     GetDataContractResponse,
   },
 } = require('@dashevo/dapi-grpc');
-const {
-  google: {
-    protobuf: {
-      Timestamp,
-    },
-  },
-} = require('@dashevo/abci/types');
 
 const BlockExecutionContextMock = require('../../../../../../lib/test/mock/BlockExecutionContextMock');
 const createQueryResponseFactory = require('../../../../../../lib/abci/handlers/query/response/createQueryResponseFactory');
@@ -26,10 +19,7 @@ describe('createQueryResponseFactory', () => {
       app: Long.fromInt(1),
     };
 
-    const time = new Timestamp({
-      seconds: Math.ceil(new Date().getTime() / 1000),
-      nanos: 0,
-    });
+    const time = new Date().getTime();
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
@@ -39,7 +29,7 @@ describe('createQueryResponseFactory', () => {
     metadata = {
       height: 1,
       coreChainLockedHeight: 1,
-      blockTime: time.toJSON(),
+      timeMs: time,
       protocolVersion: version.app,
     };
 
@@ -47,7 +37,7 @@ describe('createQueryResponseFactory', () => {
 
     blockExecutionContextMock.getHeight.returns(metadata.height);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
-    blockExecutionContextMock.getTime.returns(metadata.blockTime);
+    blockExecutionContextMock.getTime.returns(metadata.timeMs);
     blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
     blockExecutionContextMock.isEmpty.returns(false);
@@ -78,7 +68,7 @@ describe('createQueryResponseFactory', () => {
     expect(response.getMetadata().toObject()).to.deep.equal(metadata);
 
     expect(response.getProof().toObject()).to.deep.equal({
-      signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
+      quorumHash: lastCommitInfo.quorumHash.toString('base64'),
       signature: lastCommitInfo.blockSignature.toString('base64'),
       merkleProof: '',
       round: 42,

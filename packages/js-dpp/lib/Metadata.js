@@ -3,13 +3,13 @@ class Metadata {
    * @param {Object} rawMetadata
    * @param {number} rawMetadata.blockHeight
    * @param {number} rawMetadata.coreChainLockedHeight
-   * @param {ITimestamp} rawMetadata.blockTime - block time
-   * @param {Long} rawMetadata.protocolVersion - protocol version
+   * @param {number} rawMetadata.timeMs - block time
+   * @param {number} rawMetadata.protocolVersion - protocol version
    */
   constructor(rawMetadata) {
     this.blockHeight = rawMetadata.blockHeight;
     this.coreChainLockedHeight = rawMetadata.coreChainLockedHeight;
-    this.blockTime = rawMetadata.blockTime;
+    this.timeMs = rawMetadata.timeMs;
     this.protocolVersion = rawMetadata.protocolVersion;
   }
 
@@ -31,15 +31,15 @@ class Metadata {
 
   /**
    * Get block time
-   * @return {ITimestamp}
+   * @return {number}
    */
-  getBlockTime() {
-    return this.blockTime;
+  getTimeMs() {
+    return this.timeMs;
   }
 
   /**
    * Get protocol version
-   * @return {Long}
+   * @return {number}
    */
   getProtocolVersion() {
     return this.protocolVersion;

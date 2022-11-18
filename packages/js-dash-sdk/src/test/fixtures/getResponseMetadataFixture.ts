@@ -4,10 +4,7 @@ function getResponseMetadataFixture() {
   const metadata = {
     height: 10,
     coreChainLockedHeight: 42,
-    getBlockTime: {
-      seconds: Math.ceil(new Date().getTime() / 1000),
-      nanos: 0,
-    },
+    getTimeMs: new Date().getTime(),
     protocolVersion: 1,
   };
 

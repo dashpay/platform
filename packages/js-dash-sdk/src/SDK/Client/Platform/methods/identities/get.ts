@@ -35,7 +35,7 @@ export async function get(this: Platform, id: Identifier|string): Promise<any> {
         metadata = new Metadata({
             blockHeight: responseMetadata.getHeight(),
             coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
-            blockTime: responseMetadata.getBlockTime(),
+            timeMs: responseMetadata.getTimeMs(),
             protocolVersion: responseMetadata.getProtocolVersion(),
         });
     }

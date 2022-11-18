@@ -42,13 +42,10 @@ function getProofsQueryHandlerFactory(
     const time = latestBlockExecutionContext.getTime();
     const version = latestBlockExecutionContext.getVersion();
     const {
-      quorumHash: signatureLlmqHash,
+      quorumHash,
       blockSignature: signature,
     } = latestBlockExecutionContext.getLastCommitInfo();
     const round = latestBlockExecutionContext.getRound();
-
-    const timeObject = time.toJSON();
-    timeObject.seconds = Number(timeObject.seconds);
 
     const response = {
       documentsProof: null,
@@ -57,7 +54,7 @@ function getProofsQueryHandlerFactory(
       metadata: {
         height: blockHeight.toNumber(),
         coreChainLockedHeight,
-        blockTime: timeObject,
+        timeMs: time,
         protocolVersion: version.app.toNumber(),
       },
     };
@@ -67,7 +64,7 @@ function getProofsQueryHandlerFactory(
         .proveManyDocumentsFromDifferentContracts(documents);
 
       response.documentsProof = {
-        signatureLlmqHash,
+        quorumHash,
         signature,
         merkleProof: documentsProof.getValue(),
         round,
@@ -80,7 +77,7 @@ function getProofsQueryHandlerFactory(
       );
 
       response.identitiesProof = {
-        signatureLlmqHash,
+        quorumHash,
         signature,
         merkleProof: identitiesProof.getValue(),
         round,
@@ -93,7 +90,7 @@ function getProofsQueryHandlerFactory(
       );
 
       response.dataContractsProof = {
-        signatureLlmqHash,
+        quorumHash,
         signature,
         merkleProof: dataContractsProof.getValue(),
         round,

@@ -16,7 +16,7 @@ service Platform {
 
 message Proof {
   bytes merkle_proof = 1;
-  bytes signature_llmq_hash = 2;
+  bytes quorum_hash = 2;
   bytes signature = 3;
   uint32 round = 4;
 }
@@ -24,8 +24,8 @@ message Proof {
 message ResponseMetadata {
   int64 height = 1;
   uint32 core_chain_locked_height = 2;
-  google.protobuf.Timestamp block_time = 3;
-  uint64 protocol_version = 4;
+  uint32 time_ms = 3;
+  uint32 protocol_version = 4;
 }
 
 message StateTransitionBroadcastError {

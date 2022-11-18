@@ -2,13 +2,13 @@ class Proof {
   /**
    * @param {object} properties
    * @param {Buffer} properties.merkleProof
-   * @param {Buffer} properties.signatureLLMQHash
+   * @param {Buffer} properties.quorumHash
    * @param {Buffer} properties.signature
    * @param {number} properties.round
    */
   constructor(properties) {
     this.merkleProof = properties.merkleProof;
-    this.signatureLLMQHash = properties.signatureLLMQHash;
+    this.quorumHash = properties.quorumHash;
     this.signature = properties.signature;
     this.round = properties.round;
   }
@@ -23,8 +23,8 @@ class Proof {
   /**
    * @returns {Buffer}
    */
-  getSignatureLLMQHash() {
-    return this.signatureLLMQHash;
+  getQuorumHash() {
+    return this.quorumHash;
   }
 
   /**
@@ -50,7 +50,7 @@ class Proof {
   static createFromProto(proofProto) {
     return new Proof({
       merkleProof: Buffer.from(proofProto.getMerkleProof()),
-      signatureLLMQHash: Buffer.from(proofProto.getSignatureLlmqHash()),
+      quorumHash: Buffer.from(proofProto.getQuorumHash()),
       signature: Buffer.from(proofProto.getSignature()),
       round: proofProto.getRound(),
     });
