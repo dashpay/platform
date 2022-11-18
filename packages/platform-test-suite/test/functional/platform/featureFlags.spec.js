@@ -18,11 +18,11 @@ describe('Platform', () => {
 
       before(async () => {
         ownerClient = await createClientWithFundedWallet(
-          90000,
+          150000,
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
-        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 80000);
+        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 100000);
 
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
