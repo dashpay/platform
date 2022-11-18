@@ -19,6 +19,6 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
         )
         .into(),
 
-        _ => JsValue::from_str(&*format!("Kek: {}", pe.to_string().as_str())),
+        _ => JsValue::from_str(&format!("Kek: {:#}", pe,)),
     }
 }
