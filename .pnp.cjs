@@ -87,6 +87,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       {\
         "name": "@dashevo/wasm-dpp",\
         "reference": "workspace:packages/wasm-dpp"\
+      },\
+      {\
+        "name": "@dashevo/withdrawals-contract",\
+        "reference": "workspace:packages/withdrawals-contract"\
       }\
     ],\
     "enableTopLevelFallback": true,\
@@ -108,6 +112,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
       ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
+      ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
       ["dash", ["workspace:packages/js-dash-sdk"]],\
       ["dashmate", ["workspace:packages/dashmate"]]\
     ],\
@@ -3045,6 +3050,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wasm-re2", "npm:1.0.2"]\
           ],\
           "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@dashevo/withdrawals-contract", [\
+        ["workspace:packages/withdrawals-contract", {\
+          "packageLocation": "./packages/withdrawals-contract/",\
+          "packageDependencies": [\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["chai", "npm:4.3.4"],\
+            ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
+            ["eslint", "npm:7.32.0"],\
+            ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
+            ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["mocha", "npm:9.2.2"],\
+            ["sinon", "npm:11.1.2"],\
+            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"]\
+          ],\
+          "linkType": "SOFT"\
         }]\
       ]],\
       ["@dashevo/x11-hash-js", [\
