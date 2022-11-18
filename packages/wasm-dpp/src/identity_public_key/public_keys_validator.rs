@@ -6,13 +6,13 @@ use dpp::identity::validation::{PublicKeysValidator, TPublicKeysValidator};
 use dpp::validation::ValidationResult;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name = PublicKeyValidator)]
-pub struct PublicKeyValidatorWasm(PublicKeysValidator<BlsAdapter>);
+#[wasm_bindgen(js_name = PublicKeysValidator)]
+pub struct PublicKeysValidatorWasm(PublicKeysValidator<BlsAdapter>);
 
-#[wasm_bindgen(js_class = PublicKeyValidator)]
-impl PublicKeyValidatorWasm {
+#[wasm_bindgen(js_class = PublicKeysValidator)]
+impl PublicKeysValidatorWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(adapter: JsBlsAdapter) -> PublicKeyValidatorWasm {
+    pub fn new(adapter: JsBlsAdapter) -> PublicKeysValidatorWasm {
         Self(PublicKeysValidator::new(BlsAdapter(adapter)).unwrap())
     }
 

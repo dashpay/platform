@@ -21,7 +21,7 @@ extern "C" {
     pub type JsBlsAdapter;
 
     #[wasm_bindgen(method)]
-    pub fn validate_public_key(this: &JsBlsAdapter, pk: &[u8]) -> bool;
+    pub fn validatePublicKey(this: &JsBlsAdapter, pk: &[u8]) -> bool;
 
     // #[wasm_bindgen(constructor)]
     // pub fn new() -> Buffer;
@@ -37,7 +37,7 @@ pub struct BlsAdapter(pub JsBlsAdapter);
 
 impl BlsValidator for BlsAdapter {
     fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError> {
-        let is_valid = self.0.validate_public_key(pk);
+        let is_valid = self.0.validatePublicKey(pk);
 
         if !is_valid {
             return Err(PublicKeyValidationError::new("Failed"))
