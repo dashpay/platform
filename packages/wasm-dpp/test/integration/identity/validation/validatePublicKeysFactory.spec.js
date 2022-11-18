@@ -42,6 +42,8 @@ const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 const identityPublicKeySchema = require('@dashevo/dpp/schema/identity/publicKey.json');
 const stateTransitionPublicKeySchema = require('@dashevo/dpp/schema/identity/stateTransition/publicKey.json');
 
+const loadDpp = require('../../../..');
+
 describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;

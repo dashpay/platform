@@ -18,10 +18,10 @@ use dpp::{BlsValidator, PublicKeyValidationError};
 
 #[wasm_bindgen]
 extern "C" {
-    pub type BlsAdapter;
+    pub type JsBlsAdapter;
 
     #[wasm_bindgen(method)]
-    pub fn validate_public_key(this: &BlsAdapter, pk: &[u8]) -> bool;
+    pub fn validate_public_key(this: &JsBlsAdapter, pk: &[u8]) -> bool;
 
     // #[wasm_bindgen(constructor)]
     // pub fn new() -> Buffer;
@@ -33,9 +33,9 @@ extern "C" {
     // pub fn from_string(js_sys: String) -> Buffer;
 }
 
-pub struct BlsAdapterRust(pub BlsAdapter);
+pub struct BlsAdapter(pub JsBlsAdapter);
 
-impl BlsValidator for BlsAdapterRust {
+impl BlsValidator for BlsAdapter {
     fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError> {
         let is_valid = self.0.validate_public_key(pk);
 

@@ -14,6 +14,10 @@ mod security_level;
 pub use security_level::*;
 
 mod key_type;
+mod identity_public_key_validator;
+
+pub use identity_public_key_validator::*;
+
 pub use key_type::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
