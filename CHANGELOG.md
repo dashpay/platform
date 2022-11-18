@@ -1,3 +1,18 @@
+## [0.24.0-dev.8](https://github.com/dashpay/platform/compare/v0.24.0-dev.7...v0.24.0-dev.8) (2022-11-18)
+
+
+### Features
+
+* add `withdrawals` data contract package ([#604](https://github.com/dashpay/platform/issues/604))
+* **dpp:** dashpay datatrigger toUserIds better validation ([#620](https://github.com/dashpay/platform/issues/620))
+* **drive:** select the most vital validator set quorums ([#617](https://github.com/dashpay/platform/issues/617))
+
+
+### Bug Fixes
+
+* DataContract.spec.js in wasm-dpp ([#618](https://github.com/dashpay/platform/issues/618))
+* renamed method from rs-dpp ([#623](https://github.com/dashpay/platform/issues/623))
+
 ## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.23.0-dev.6...v0.24.0-dev.7) (2022-11-07)
 
 
