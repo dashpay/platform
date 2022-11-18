@@ -13,6 +13,7 @@ const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
           );
         } catch (e) {
           logger.error('Error injecting plugin', e);
+          console.log(e);
           this.emit('error', e, {
             type: 'plugin',
             pluginType: 'plugin',

@@ -1,10 +1,14 @@
-const core = require('./clients/core/v0/web/core_grpc_web_pb');
-const platform = require('./clients/platform/v0/web/platform_grpc_web_pb');
+const { CoreClient: CorePromiseClient } = require('./clients/core/v0/web/core_pb_service');
+const { PlatformClient: PlatformPromiseClient } = require('./clients/platform/v0/web/platform_pb_service');
+
+const coreMessages = require('./clients/core/v0/web/core_pb');
+const platformMessages = require('./clients/platform/v0/web/platform_pb');
 
 module.exports = {
   v0: {
-
-    ...core,
-    ...platform,
+    ...coreMessages,
+    ...platformMessages,
+    CorePromiseClient,
+    PlatformPromiseClient,
   },
 };
