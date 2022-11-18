@@ -4,9 +4,9 @@ const {
     ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
-const { Timestamp } = require('google-protobuf/google/protobuf/timestamp_pb');
 
 const UnavailableAbciError = require('../../../errors/UnavailableAbciError');
+const timeToMillis = require('../../../../util/timeToMillis');
 
 /**
  * @param {BlockExecutionContext} latestBlockExecutionContext
@@ -35,7 +35,7 @@ function createQueryResponseFactory(
     const metadata = new ResponseMetadata();
     metadata.setHeight(blockHeight);
     metadata.setCoreChainLockedHeight(coreChainLockedHeight);
-    metadata.setTimeMs(time);
+    metadata.setTimeMs(timeToMillis(time.seconds, time.nanos));
     metadata.setProtocolVersion(version.app);
 
     response.setMetadata(metadata);

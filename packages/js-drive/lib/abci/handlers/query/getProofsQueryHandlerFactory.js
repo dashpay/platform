@@ -8,6 +8,7 @@ const {
 
 const cbor = require('cbor');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const timeToMillis = require('../../../util/timeToMillis');
 
 /**
  *
@@ -54,7 +55,7 @@ function getProofsQueryHandlerFactory(
       metadata: {
         height: blockHeight.toNumber(),
         coreChainLockedHeight,
-        timeMs: time,
+        timeMs: timeToMillis(time.seconds, time.nanos),
         protocolVersion: version.app.toNumber(),
       },
     };
