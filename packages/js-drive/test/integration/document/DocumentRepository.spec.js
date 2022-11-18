@@ -678,7 +678,7 @@ describe('DocumentRepository', function main() {
   let documentSchema;
   let blockInfo;
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     const now = 86400;
     container = await createTestDIContainer();
 
@@ -736,7 +736,7 @@ describe('DocumentRepository', function main() {
       //   },
       // },
     };
-    //
+
     const documentsSchema = dataContract.getDocuments();
 
     documentSchema = documentsSchema[document.getType()];
@@ -791,6 +791,9 @@ describe('DocumentRepository', function main() {
     queryDataContract = dpp.dataContract.create(generateRandomIdentifier(), queryDocumentSchema);
 
     documentRepository = container.resolve('documentRepository');
+    documentRepository.logger = {
+      info: this.sinon.stub(),
+    };
 
     /**
      * @type {Drive}
