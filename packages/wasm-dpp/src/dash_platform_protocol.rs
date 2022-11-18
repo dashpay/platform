@@ -5,17 +5,19 @@ use wasm_bindgen::prelude::*;
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
 use dpp::version::ProtocolVersionValidator;
+use crate::bls_adapter::{BlsAdapter, BlsAdapterRust};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
-pub struct DashPlatformProtocol(IdentityFacade);
+pub struct DashPlatformProtocol(IdentityFacade<BlsAdapterRust>);
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
 impl DashPlatformProtocol {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> DashPlatformProtocol {
+    pub fn new(bls_adapter: BlsAdapter) -> DashPlatformProtocol {
+        let bls = BlsAdapterRust(bls_adapter);
         // TODO: remove default validator and make a real one instead
         let validator = ProtocolVersionValidator::default();
-        let public_keys_validator = PublicKeysValidator::new().unwrap();
+        let public_keys_validator = PublicKeysValidator::new(bls).unwrap();
         let identity_facade =
             IdentityFacade::new(Arc::new(validator), Arc::new(public_keys_validator)).unwrap();
 
@@ -23,8 +25,8 @@ impl DashPlatformProtocol {
     }
 }
 
-impl Default for DashPlatformProtocol {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for DashPlatformProtocol {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }

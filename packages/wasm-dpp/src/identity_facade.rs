@@ -8,6 +8,7 @@ use dpp::identity::IdentityFacade;
 use dpp::validation::ValidationResult;
 use dpp::version::ProtocolVersionValidator;
 use dpp::NonConsensusError;
+use crate::bls_adapter::{BlsAdapter, BlsAdapterRust};
 
 #[wasm_bindgen(js_name=ValidationResult)]
 pub struct ValidationResultWasm(ValidationResult<()>);
@@ -38,15 +39,16 @@ impl From<ValidationResult<()>> for ValidationResultWasm {
 }
 
 #[wasm_bindgen(js_name=IdentityFacade)]
-pub struct IdentityFacadeWasm(IdentityFacade);
+pub struct IdentityFacadeWasm(IdentityFacade<BlsAdapterRust>);
 
 #[wasm_bindgen(js_class=IdentityFacade)]
 impl IdentityFacadeWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> IdentityFacadeWasm {
+    pub fn new(bls_adapter: BlsAdapter) -> IdentityFacadeWasm {
+        let bls = BlsAdapterRust(bls_adapter);
         // TODO: REMOVE THAT LINE, TAKE IT AS AN ARGUMENT
         let protocol_version_validator = ProtocolVersionValidator::default();
-        let public_keys_validator = PublicKeysValidator::new().unwrap();
+        let public_keys_validator = PublicKeysValidator::new(bls).unwrap();
         let identity_facade = IdentityFacade::new(
             Arc::new(protocol_version_validator),
             Arc::new(public_keys_validator),
@@ -80,8 +82,8 @@ impl From<NonConsensusError> for NonConsensusErrorWasm {
     }
 }
 
-impl Default for IdentityFacadeWasm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for IdentityFacadeWasm {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
