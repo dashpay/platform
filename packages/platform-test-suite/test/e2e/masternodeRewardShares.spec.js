@@ -22,11 +22,11 @@ describe('Masternode Reward Shares', () => {
     await dpp.initialize();
 
     client = await createClientWithFundedWallet(
+      510000,
       process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
-      200000,
     );
 
-    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 50000);
+    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 500000);
 
     const masternodeRewardSharesContract = await client.platform.contracts.get(
       masternodeRewardSharesContractId,
