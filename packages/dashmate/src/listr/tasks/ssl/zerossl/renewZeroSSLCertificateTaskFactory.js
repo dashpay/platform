@@ -1,7 +1,4 @@
 const { Listr } = require('listr2');
-const fs = require('fs');
-const path = require('path');
-const { HOME_DIR_PATH } = require('../../../../constants');
 
 /**
  *
@@ -11,6 +8,8 @@ const { HOME_DIR_PATH } = require('../../../../constants');
  * @param {listCertificates} listCertificates
  * @param {saveCertificateTask} saveCertificateTask
  * @param {VerificationServer} verificationServer
+ * @param {generateKeyPair} generateKeyPair
+ * @param {generateCsr} generateCsr
  * @return {renewZeroSSLCertificateTask}
  */
 function renewZeroSSLCertificateTaskFactory(
@@ -20,6 +19,8 @@ function renewZeroSSLCertificateTaskFactory(
   listCertificates,
   saveCertificateTask,
   verificationServer,
+  generateKeyPair,
+  generateCsr,
 ) {
   /**
    * @typedef {renewZeroSSLCertificateTask}
@@ -29,13 +30,21 @@ function renewZeroSSLCertificateTaskFactory(
   async function renewZeroSSLCertificateTask(config) {
     return new Listr([
       {
+        title: 'Generate a keypair',
+        task: async (ctx) => {
+          ctx.keyPair = await generateKeyPair();
+        },
+      },
+      {
+        title: 'Generate CSR',
+        task: async (ctx) => {
+          ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
+        },
+      },
+      {
         title: 'Request certificate challenge',
         task: async (ctx) => {
-          const crtFile = path.join(HOME_DIR_PATH, 'ssl', config.getName(), 'bundle.crt');
-
-          ctx.csr = fs.readFileSync(crtFile, 'utf8');
-
-          ctx.response = await createZeroSSLCertificate(ctx.csr, config);
+          ctx.response = await createZeroSSLCertificate(ctx.csr, config.get('externalIp'), config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'));
         },
       },
       {
@@ -64,7 +73,11 @@ function renewZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Save certificate',
-        task: async () => saveCertificateTask(config),
+        task: async (ctx) => {
+          config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.response.id);
+
+          await saveCertificateTask(config);
+        },
       },
       {
         title: 'Stop verification server',
