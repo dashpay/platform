@@ -2279,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7f2fbb7ea7-456b70a1b9.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7acd001b9d-86504da08f.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2339,6 +2339,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["jayson", "npm:3.6.5"],\
             ["lodash", "npm:4.17.21"],\
             ["lru-cache", "npm:5.1.1"],\
@@ -2384,6 +2385,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["eslint-plugin-jsdoc", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:27.1.2"],\
             ["events", "npm:3.3.0"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
@@ -2680,7 +2682,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
@@ -2711,6 +2713,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["find-my-way", "npm:2.2.5"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["js-merkle", "npm:0.1.5"],\
             ["levelup", "npm:4.4.0"],\
             ["lodash.clonedeep", "npm:4.5.0"],\

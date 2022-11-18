@@ -1281,14 +1281,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashpay/js-abci#2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc":
+"@dashevo/abci@github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f":
   version: 0.24.0-dev.1
-  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"
+  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
     protocol-buffers-encodings: ^1.1.0
-  checksum: 456b70a1b93059f10e2f13fb3a8319fee0f9a94a168712e72998f3eaf199a89ee644052d1976e3aff22219a549ba796b6a7ae9c45cdfc288a42b58195405cd8c
+  checksum: 86504da08f35d618a19ce99b3e2500580d6e20c34859be911efc35951099b42c4d641de0a92a83e0bb712df013ac57c97f9bf63a9d0e56b40db089864f5e1574
   languageName: node
   linkType: hard
 
@@ -1342,6 +1342,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     eslint-plugin-jsdoc: ^27.0.0
     events: ^3.3.0
+    google-protobuf: ^3.12.2
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
@@ -1413,6 +1414,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
+    google-protobuf: ^3.12.2
     jayson: ^3.3.4
     lodash: ^4.17.19
     lru-cache: ^5.1.1
@@ -1659,7 +1661,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashpay/js-abci#2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"
+    "@dashevo/abci": "github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
@@ -1690,6 +1692,7 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     find-my-way: ^2.2.2
+    google-protobuf: ^3.12.2
     js-merkle: ^0.1.5
     levelup: ^4.4.0
     lodash.clonedeep: ^4.5.0

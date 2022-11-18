@@ -194,6 +194,28 @@ class BlockExecutionContext {
   }
 
   /**
+   * Set committed round
+   *
+   * @param {number} round
+   *
+   * @returns {BlockExecutionContext}
+   */
+  setRound(round) {
+    this.round = round;
+
+    return this;
+  }
+
+  /**
+   * Get committed round
+   *
+   * @return {number}
+   */
+  getRound() {
+    return this.round;
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -205,6 +227,7 @@ class BlockExecutionContext {
     this.lastCommitInfo = null;
     this.consensusLogger = null;
     this.withdrawalTransactionsMap = {};
+    this.round = null;
   }
 
   /**
@@ -230,6 +253,7 @@ class BlockExecutionContext {
     this.version = blockExecutionContext.version;
     this.consensusLogger = blockExecutionContext.consensusLogger;
     this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
+    this.round = blockExecutionContext.round;
   }
 
   /**
@@ -253,6 +277,7 @@ class BlockExecutionContext {
     this.coreChainLockedHeight = object.coreChainLockedHeight;
     this.version = Consensus.fromObject(object.version);
     this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
+    this.round = object.round;
   }
 
   /**
@@ -269,6 +294,7 @@ class BlockExecutionContext {
    *  previousHeight: number,
    *  previousCoreChainLockedHeight: number,
    *  withdrawalTransactionsMap: Object,
+   *  round: number,
    * }}
    */
   toObject(options = {}) {
@@ -287,6 +313,7 @@ class BlockExecutionContext {
       coreChainLockedHeight: this.coreChainLockedHeight,
       lastCommitInfo: this.lastCommitInfo ? CommitInfo.toObject(this.lastCommitInfo) : null,
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
+      round: this.round,
     };
 
     if (!options.skipConsensusLogger) {

@@ -109,19 +109,21 @@ function waitForStateTransitionResultHandlerFactory(
       );
 
       const { proof: proofObject, metadata } = await fetchProofForStateTransition(stateTransition);
-
       const responseMetadata = new ResponseMetadata();
 
       responseMetadata.setHeight(metadata.height);
       responseMetadata.setCoreChainLockedHeight(metadata.coreChainLockedHeight);
+      responseMetadata.setTimeMs(metadata.timeMs);
+      responseMetadata.setProtocolVersion(metadata.protocolVersion);
 
       response.setMetadata(responseMetadata);
 
       const proof = new Proof();
 
       proof.setMerkleProof(proofObject.merkleProof);
-      proof.setSignatureLlmqHash(proofObject.signatureLlmqHash);
+      proof.setQuorumHash(proofObject.quorumHash);
       proof.setSignature(proofObject.signature);
+      proof.setRound(proofObject.round);
 
       response.setProof(proof);
     }

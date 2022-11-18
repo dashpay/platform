@@ -8,6 +8,7 @@ const {
 
 const cbor = require('cbor');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const timeToMillis = require('../../../util/timeToMillis');
 
 /**
  *
@@ -39,11 +40,13 @@ function getProofsQueryHandlerFactory(
   }) {
     const blockHeight = latestBlockExecutionContext.getHeight();
     const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
-
+    const time = latestBlockExecutionContext.getTime();
+    const version = latestBlockExecutionContext.getVersion();
     const {
-      quorumHash: signatureLlmqHash,
-      stateSignature: signature,
+      quorumHash,
+      blockSignature: signature,
     } = latestBlockExecutionContext.getLastCommitInfo();
+    const round = latestBlockExecutionContext.getRound();
 
     const response = {
       documentsProof: null,
@@ -52,6 +55,8 @@ function getProofsQueryHandlerFactory(
       metadata: {
         height: blockHeight.toNumber(),
         coreChainLockedHeight,
+        timeMs: timeToMillis(time.seconds, time.nanos),
+        protocolVersion: version.app.toNumber(),
       },
     };
 
@@ -60,9 +65,10 @@ function getProofsQueryHandlerFactory(
         .proveManyDocumentsFromDifferentContracts(documents);
 
       response.documentsProof = {
-        signatureLlmqHash,
+        quorumHash,
         signature,
         merkleProof: documentsProof.getValue(),
+        round,
       };
     }
 
@@ -72,9 +78,10 @@ function getProofsQueryHandlerFactory(
       );
 
       response.identitiesProof = {
-        signatureLlmqHash,
+        quorumHash,
         signature,
         merkleProof: identitiesProof.getValue(),
+        round,
       };
     }
 
@@ -84,9 +91,10 @@ function getProofsQueryHandlerFactory(
       );
 
       response.dataContractsProof = {
-        signatureLlmqHash,
+        quorumHash,
         signature,
         merkleProof: dataContractsProof.getValue(),
+        round,
       };
     }
 
