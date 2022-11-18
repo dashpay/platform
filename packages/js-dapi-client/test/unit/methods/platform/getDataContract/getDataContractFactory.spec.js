@@ -105,7 +105,7 @@ describe('getDataContractFactory', () => {
     expect(result.getDataContract()).to.deep.equal(Buffer.alloc(0));
     expect(result.getProof()).to.be.an.instanceOf(ProofClass);
     expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
