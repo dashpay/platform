@@ -42,7 +42,7 @@ describe('Platform', () => {
       dpp = new Dash.PlatformProtocol();
       await dpp.initialize();
 
-      client = await createClientWithFundedWallet(410000);
+      client = await createClientWithFundedWallet(550000);
 
       walletAccount = await client.getWalletAccount();
     });
