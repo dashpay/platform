@@ -144,9 +144,9 @@ typedef struct Proof__storage_ {
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
-  uint32_t timeMs;
   uint32_t protocolVersion;
   int64_t height;
+  uint64_t timeMs;
 } ResponseMetadata__storage_;
 
 // This method is threadsafe because it is initially called
@@ -180,7 +180,7 @@ typedef struct ResponseMetadata__storage_ {
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, timeMs),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt32,
+        .dataType = GPBDataTypeUInt64,
       },
       {
         .name = "protocolVersion",

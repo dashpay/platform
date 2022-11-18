@@ -609,7 +609,7 @@ $root.org = (function() {
                          * @interface IResponseMetadata
                          * @property {number|Long|null} [height] ResponseMetadata height
                          * @property {number|null} [coreChainLockedHeight] ResponseMetadata coreChainLockedHeight
-                         * @property {number|null} [timeMs] ResponseMetadata timeMs
+                         * @property {number|Long|null} [timeMs] ResponseMetadata timeMs
                          * @property {number|null} [protocolVersion] ResponseMetadata protocolVersion
                          */
 
@@ -646,11 +646,11 @@ $root.org = (function() {
 
                         /**
                          * ResponseMetadata timeMs.
-                         * @member {number} timeMs
+                         * @member {number|Long} timeMs
                          * @memberof org.dash.platform.dapi.v0.ResponseMetadata
                          * @instance
                          */
-                        ResponseMetadata.prototype.timeMs = 0;
+                        ResponseMetadata.prototype.timeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                         /**
                          * ResponseMetadata protocolVersion.
@@ -689,7 +689,7 @@ $root.org = (function() {
                             if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
                                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.coreChainLockedHeight);
                             if (message.timeMs != null && Object.hasOwnProperty.call(message, "timeMs"))
-                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.timeMs);
+                                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.timeMs);
                             if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
                                 writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.protocolVersion);
                             return writer;
@@ -733,7 +733,7 @@ $root.org = (function() {
                                     message.coreChainLockedHeight = reader.uint32();
                                     break;
                                 case 3:
-                                    message.timeMs = reader.uint32();
+                                    message.timeMs = reader.uint64();
                                     break;
                                 case 4:
                                     message.protocolVersion = reader.uint32();
@@ -780,8 +780,8 @@ $root.org = (function() {
                                 if (!$util.isInteger(message.coreChainLockedHeight))
                                     return "coreChainLockedHeight: integer expected";
                             if (message.timeMs != null && message.hasOwnProperty("timeMs"))
-                                if (!$util.isInteger(message.timeMs))
-                                    return "timeMs: integer expected";
+                                if (!$util.isInteger(message.timeMs) && !(message.timeMs && $util.isInteger(message.timeMs.low) && $util.isInteger(message.timeMs.high)))
+                                    return "timeMs: integer|Long expected";
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
                                 if (!$util.isInteger(message.protocolVersion))
                                     return "protocolVersion: integer expected";
@@ -812,7 +812,14 @@ $root.org = (function() {
                             if (object.coreChainLockedHeight != null)
                                 message.coreChainLockedHeight = object.coreChainLockedHeight >>> 0;
                             if (object.timeMs != null)
-                                message.timeMs = object.timeMs >>> 0;
+                                if ($util.Long)
+                                    (message.timeMs = $util.Long.fromValue(object.timeMs)).unsigned = true;
+                                else if (typeof object.timeMs === "string")
+                                    message.timeMs = parseInt(object.timeMs, 10);
+                                else if (typeof object.timeMs === "number")
+                                    message.timeMs = object.timeMs;
+                                else if (typeof object.timeMs === "object")
+                                    message.timeMs = new $util.LongBits(object.timeMs.low >>> 0, object.timeMs.high >>> 0).toNumber(true);
                             if (object.protocolVersion != null)
                                 message.protocolVersion = object.protocolVersion >>> 0;
                             return message;
@@ -838,7 +845,11 @@ $root.org = (function() {
                                 } else
                                     object.height = options.longs === String ? "0" : 0;
                                 object.coreChainLockedHeight = 0;
-                                object.timeMs = 0;
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.timeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.timeMs = options.longs === String ? "0" : 0;
                                 object.protocolVersion = 0;
                             }
                             if (message.height != null && message.hasOwnProperty("height"))
@@ -849,7 +860,10 @@ $root.org = (function() {
                             if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
                                 object.coreChainLockedHeight = message.coreChainLockedHeight;
                             if (message.timeMs != null && message.hasOwnProperty("timeMs"))
-                                object.timeMs = message.timeMs;
+                                if (typeof message.timeMs === "number")
+                                    object.timeMs = options.longs === String ? String(message.timeMs) : message.timeMs;
+                                else
+                                    object.timeMs = options.longs === String ? $util.Long.prototype.toString.call(message.timeMs) : options.longs === Number ? new $util.LongBits(message.timeMs.low >>> 0, message.timeMs.high >>> 0).toNumber(true) : message.timeMs;
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
                                 object.protocolVersion = message.protocolVersion;
                             return object;

@@ -24,7 +24,7 @@ message Proof {
 message ResponseMetadata {
   int64 height = 1;
   uint32 core_chain_locked_height = 2;
-  uint32 time_ms = 3;
+  uint64 time_ms = 3;
   uint32 protocol_version = 4;
 }
 

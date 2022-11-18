@@ -86,7 +86,7 @@ GPB_FINAL @interface ResponseMetadata : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
 
-@property(nonatomic, readwrite) uint32_t timeMs;
+@property(nonatomic, readwrite) uint64_t timeMs;
 
 @property(nonatomic, readwrite) uint32_t protocolVersion;
 

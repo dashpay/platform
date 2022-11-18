@@ -810,7 +810,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       msg.setCoreChainLockedHeight(value);
       break;
     case 3:
-      var value = /** @type {number} */ (reader.readUint32());
+      var value = /** @type {number} */ (reader.readUint64());
       msg.setTimeMs(value);
       break;
     case 4:
@@ -862,7 +862,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
   }
   f = message.getTimeMs();
   if (f !== 0) {
-    writer.writeUint32(
+    writer.writeUint64(
       3,
       f
     );
@@ -914,7 +914,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setCoreChainLockedHei
 
 
 /**
- * optional uint32 time_ms = 3;
+ * optional uint64 time_ms = 3;
  * @return {number}
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function() {
