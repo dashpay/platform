@@ -22,7 +22,7 @@ describe('Masternode Reward Shares', () => {
     await dpp.initialize();
 
     client = await createClientWithFundedWallet(
-      510000,
+      2000000,
       process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
     );
 
@@ -94,7 +94,7 @@ describe('Masternode Reward Shares', () => {
       // Masternode identity should exist
       expect(masternodeIdentity).to.exist();
 
-      await client.platform.identities.topUp(masternodeIdentity.getId(), 50000);
+      await client.platform.identities.topUp(masternodeIdentity.getId(), 500000);
 
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
