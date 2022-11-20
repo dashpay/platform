@@ -1234,7 +1234,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -1256,7 +1255,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -1279,7 +1277,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -1400,7 +1397,6 @@ describe('DocumentRepository', function main() {
               await documentRepository.find(queryDataContract, 'documentA', {
                 where:
                   [['a', '==']],
-
               });
 
               expect.fail('should throw an error');
@@ -1455,7 +1451,6 @@ describe('DocumentRepository', function main() {
                   const result = await documentRepository.find(
                     dataContract,
                     document.getType(),
-
                     query,
                   );
 
@@ -1478,7 +1473,6 @@ describe('DocumentRepository', function main() {
                   const result = await documentRepository.find(
                     queryDataContract,
                     'documentString',
-
                     {
                       where: [['a', '<', longString]],
                       orderBy: [['a', 'asc']],
@@ -1493,7 +1487,6 @@ describe('DocumentRepository', function main() {
                     await documentRepository.find(
                       queryDataContract,
                       'documentString',
-
                       {
                         where: [['a', '<', veryLongString]],
                         orderBy: [['a', 'asc']],
@@ -1553,7 +1546,6 @@ describe('DocumentRepository', function main() {
                   const result = await documentRepository.find(
                     dataContract,
                     document.getType(),
-
                     query,
                   );
 
@@ -1582,7 +1574,6 @@ describe('DocumentRepository', function main() {
                   const result = await documentRepository.find(
                     dataContract,
                     document.getType(),
-
                     query,
                   );
 
@@ -1618,7 +1609,6 @@ describe('DocumentRepository', function main() {
                   const result = await documentRepository.find(
                     dataContract,
                     document.getType(),
-
                     query,
                   );
 
@@ -1658,7 +1648,6 @@ describe('DocumentRepository', function main() {
                   const result = await documentRepository.find(
                     dataContract,
                     document.getType(),
-
                     query,
                   );
 
@@ -1912,7 +1901,6 @@ describe('DocumentRepository', function main() {
                 const result = await documentRepository.find(
                   dataContract,
                   document.getType(),
-
                   query,
                 );
 
@@ -2012,7 +2000,6 @@ describe('DocumentRepository', function main() {
                 const result = await documentRepository.find(
                   dataContract,
                   document.getType(),
-
                   query,
                 );
 
@@ -2098,7 +2085,6 @@ describe('DocumentRepository', function main() {
                 const result = await documentRepository.find(
                   dataContract,
                   document.getType(),
-
                   query,
                 );
 
@@ -2241,7 +2227,6 @@ describe('DocumentRepository', function main() {
                 const result = await documentRepository.find(
                   dataContract,
                   document.getType(),
-
                   query,
                 );
 
@@ -2342,7 +2327,6 @@ describe('DocumentRepository', function main() {
                 const result = await documentRepository.find(
                   dataContract,
                   document.getType(),
-
                   query,
                 );
 
@@ -2496,7 +2480,6 @@ describe('DocumentRepository', function main() {
                     await documentRepository.find(queryDataContract, 'document', {
                       where: [
                         ['arr', 'contains', [value]],
-
                       ],
                     });
 
@@ -2521,7 +2504,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             options,
           );
 
@@ -2665,7 +2647,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -2695,7 +2676,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -2761,7 +2741,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             options,
           );
 
@@ -2841,7 +2820,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -2912,7 +2890,6 @@ describe('DocumentRepository', function main() {
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
-
             query,
           );
 
@@ -3124,7 +3101,6 @@ describe('DocumentRepository', function main() {
             const result = await documentRepository.find(
               queryDataContract,
               documentType,
-
               {
                 where: [
                   ['a', operator, value],
@@ -3261,7 +3237,6 @@ describe('DocumentRepository', function main() {
       const removedDocumentsResult = await documentRepository.find(
         dataContract,
         document.getType(),
-
         {
           ...query,
           useTransaction: true,
