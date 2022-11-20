@@ -220,9 +220,9 @@ describe('beginBlockHandlerFactory', () => {
             equals: this.sinon.stub().returns(true),
             toNumber: this.sinon.stub().returns(1000),
           },
-          time: millisToProtoTimestamp(timeMs),
         },
       ),
+      getTimeMs: this.sinon.stub().returns(timeMs),
     });
 
     groveDBStoreMock.isTransactionStarted.resolves(true);

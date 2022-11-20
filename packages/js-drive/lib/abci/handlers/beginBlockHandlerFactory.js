@@ -135,9 +135,7 @@ function beginBlockHandlerFactory(
     };
 
     if (previousContext) {
-      const previousHeader = previousContext.getHeader();
-
-      rsRequest.previousBlockTimeMs = protoTimestampToMillis(previousHeader.time);
+      rsRequest.previousBlockTimeMs = previousContext.getTimeMs();
     }
 
     logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
