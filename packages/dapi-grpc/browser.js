@@ -1,5 +1,5 @@
 const CorePromiseClient = require('./clients/core/v0/web/CorePromiseClient');
-const { PlatformClient: PlatformPromiseClient } = require('./clients/platform/v0/web/platform_pb_service');
+const PlatformPromiseClient = require('./clients/platform/v0/web/PlatformPromiseClient');
 
 const coreMessages = require('./clients/core/v0/web/core_pb');
 const platformMessages = require('./clients/platform/v0/web/platform_pb');
