@@ -8,6 +8,7 @@ const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 describe('handleNewMasternodeFactory', () => {
   let handleNewMasternode;
@@ -19,6 +20,7 @@ describe('handleNewMasternodeFactory', () => {
   let transactionFixture;
   let masternodeEntry;
   let dataContract;
+  let blockInfo;
 
   beforeEach(function beforeEach() {
     const smlFixture = getSmlFixture();
@@ -32,6 +34,8 @@ describe('handleNewMasternodeFactory', () => {
 
     createMasternodeIdentityMock = this.sinon.stub();
     createRewardShareDocumentMock = this.sinon.stub();
+
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
     transactionFixture = {
       extraPayload: {
@@ -57,7 +61,7 @@ describe('handleNewMasternodeFactory', () => {
     const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
     const payoutScript = new Script(payoutAddress);
 
-    await handleNewMasternode(masternodeEntry, dataContract);
+    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
@@ -72,7 +76,7 @@ describe('handleNewMasternodeFactory', () => {
   it('should create masternode identity and a document in rewards data contract with percentage', async () => {
     transactionFixture.extraPayload.operatorReward = 10;
 
-    await handleNewMasternode(masternodeEntry, dataContract);
+    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
 
     const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
     const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
@@ -98,6 +102,7 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'),
       10,
+      blockInfo,
     );
   });
 });

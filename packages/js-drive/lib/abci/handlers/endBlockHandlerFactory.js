@@ -12,8 +12,6 @@ const {
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
-const timeToMillis = require('../../util/timeToMillis');
-
 /**
  * Begin block ABCI handler
  *
@@ -77,29 +75,7 @@ function endBlockHandlerFactory(
 
     logger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
-    const { currentEpochIndex, isEpochChange } = rsResponse;
-
-    if (isEpochChange) {
-      const previousContext = blockExecutionContextStack.getFirst();
-
-      const blockTime = timeToMillis(header.time.seconds, header.time.nanos);
-
-      const debugData = {
-        currentEpochIndex,
-        blockTime,
-      };
-
-      if (previousContext) {
-        const latestHeader = previousContext.getHeader();
-        debugData.previousBlockTimeMs = timeToMillis(
-          latestHeader.time.seconds, latestHeader.time.nanos,
-        );
-      }
-
-      const blockTimeFormatted = new Date(blockTime).toUTCString();
-
-      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
-    }
+    const { currentEpochIndex } = blockExecutionContext.getEpochInfo();
 
     if (processingFees > 0 || storageFees > 0) {
       consensusLogger.debug({

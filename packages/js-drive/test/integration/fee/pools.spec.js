@@ -1,5 +1,7 @@
 const moment = require('moment');
 
+const Long = require('long');
+
 const masternodeRewardSharesSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const getMasternodeRewardSharesContractFixture = require('@dashevo/dpp/lib/test/fixtures/getMasternodeRewardSharesContractFixture');
@@ -10,20 +12,31 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
+const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 
 describe('Fee Pools', () => {
   let container;
   let rsDrive;
   let mnDatas;
   let identityRepository;
+  let blockInfo;
 
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: new Date().getTime() / 1000 } },
-    );
+
+    blockInfo = new BlockInfo(1, 0, Date.now());
+
+    blockExecutionContext.getHeader = this.sinon.stub().returns({
+      time: millisToProtoTimestamp(blockInfo.timeMs),
+      height: Long.fromNumber(blockInfo.height),
+    });
+
+    blockExecutionContext.getEpochInfo = this.sinon.stub().returns({
+      currentEpochIndex: blockInfo.epoch,
+    });
 
     const dataContractRepository = container.resolve('dataContractRepository');
     const documentRepository = container.resolve('documentRepository');
@@ -39,7 +52,7 @@ describe('Fee Pools', () => {
     const mnSharesContract = getMasternodeRewardSharesContractFixture();
     mnSharesContract.id = Identifier.from(masternodeRewardSharesSystemIds.contractId);
 
-    await dataContractRepository.store(mnSharesContract);
+    await dataContractRepository.create(mnSharesContract, blockInfo);
 
     mnDatas = [];
     const mnCount = 1;
@@ -57,7 +70,7 @@ describe('Fee Pools', () => {
 
       await identityRepository.create(mnIdentity);
       await identityRepository.create(payToIdentity);
-      await documentRepository.create(payToDocument);
+      await documentRepository.create(payToDocument, blockInfo);
 
       mnDatas.push({
         mnIdentity,

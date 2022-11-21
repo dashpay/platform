@@ -53,11 +53,11 @@ function registerSystemDataContractsFactory(
    * @typedef {registerSystemDataContracts}
    *
    * @param {BaseLogger} contextLogger
-   * @param {{ seconds: Long }} genesisTime
+   * @param {BlockInfo} blockInfo
    *
    * @return {Promise<void>}
    */
-  async function registerSystemDataContracts(contextLogger, genesisTime) {
+  async function registerSystemDataContracts(contextLogger, blockInfo) {
     contextLogger.debug('Registering Feature Flags data contract');
     contextLogger.trace({
       ownerId: featureFlagsOwnerId,
@@ -73,6 +73,7 @@ function registerSystemDataContractsFactory(
       featureFlagsOwnerMasterPublicKey,
       featureFlagsOwnerSecondPublicKey,
       featureFlagsDocuments,
+      blockInfo,
     );
 
     contextLogger.debug('Registering DPNS data contract');
@@ -90,13 +91,10 @@ function registerSystemDataContractsFactory(
       dpnsOwnerMasterPublicKey,
       dpnsOwnerSecondPublicKey,
       dpnsDocuments,
+      blockInfo,
     );
 
-    const genesisDate = new Date(
-      genesisTime.seconds.toNumber() * 1000,
-    );
-
-    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, genesisDate);
+    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, blockInfo);
 
     contextLogger.debug('Registering Masternode Rewards data contract');
     contextLogger.trace({
@@ -113,6 +111,7 @@ function registerSystemDataContractsFactory(
       masternodeRewardSharesOwnerMasterPublicKey,
       masternodeRewardSharesOwnerSecondPublicKey,
       masternodeRewardSharesDocuments,
+      blockInfo,
     );
 
     contextLogger.debug('Registering Dashpay data contract');
@@ -130,6 +129,7 @@ function registerSystemDataContractsFactory(
       dashpayOwnerMasterPublicKey,
       dashpayOwnerSecondPublicKey,
       dashpayDocuments,
+      blockInfo,
     );
   }
 

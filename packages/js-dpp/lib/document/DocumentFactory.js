@@ -73,7 +73,7 @@ class DocumentFactory {
     // Only if they are required by the contract
     const { required: documentRequiredFields } = dataContract.getDocumentSchema(type);
 
-    const creationTime = new Date().getTime();
+    const creationTime = Date.now();
 
     if (documentRequiredFields
         && documentRequiredFields.includes('$createdAt')) {

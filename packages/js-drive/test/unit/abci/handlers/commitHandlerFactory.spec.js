@@ -29,7 +29,7 @@ describe('commitHandlerFactory', () => {
   let rootTreeMock;
   let dppMock;
   let header;
-  let dataContractCacheMock;
+  let rsAbciMock;
   let blockExecutionContextStackMock;
   let blockExecutionContextStackRepositoryMock;
   let groveDBStoreMock;
@@ -59,10 +59,8 @@ describe('commitHandlerFactory', () => {
 
     const loggerMock = new LoggerMock(this.sinon);
 
-    dataContractCacheMock = {
-      set: this.sinon.stub(),
-      get: this.sinon.stub(),
-      has: this.sinon.stub(),
+    rsAbciMock = {
+      afterFinalizeBlock: this.sinon.stub(),
     };
 
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
@@ -84,9 +82,9 @@ describe('commitHandlerFactory', () => {
       blockExecutionContextStackRepositoryMock,
       rotateSignedStoreMock,
       loggerMock,
-      dataContractCacheMock,
       groveDBStoreMock,
       executionTimerMock,
+      rsAbciMock,
     );
   });
 
