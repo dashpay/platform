@@ -9,7 +9,7 @@ describe('Core', () => {
     let client;
 
     before(async () => {
-      client = await createClientWithFundedWallet();
+      client = await createClientWithFundedWallet(200000);
     });
 
     after(async () => {

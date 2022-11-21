@@ -24,7 +24,7 @@ describe('e2e', () => {
     let secondTransaction;
 
     before(async () => {
-      fundedWallet = await createClientWithFundedWallet();
+      fundedWallet = await createClientWithFundedWallet(10000);
       const network = process.env.NETWORK;
       emptyWallet = new Dash.Client({
         seeds: getDAPISeeds(),

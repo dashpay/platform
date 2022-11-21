@@ -41,7 +41,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   let stateRepositoryMock;
   let executeDataTriggersMock;
   let documentTransitions;
-  let abciHeader;
   let fakeTime;
   let blockTime;
   let executionContext;
@@ -67,15 +66,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-    blockTime = new Date().getTime() / 1000;
+    blockTime = Date.now();
 
-    abciHeader = {
-      time: {
-        seconds: blockTime,
-      },
-    };
-
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(abciHeader);
+    stateRepositoryMock.getTimeMs.returns(blockTime);
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
 
@@ -481,12 +474,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     let timeWindowEnd;
 
     beforeEach(() => {
-      timeWindowStart = new Date(blockTime * 1000);
+      timeWindowStart = new Date(blockTime);
       timeWindowStart.setMinutes(
         timeWindowStart.getMinutes() - 5,
       );
 
-      timeWindowEnd = new Date(blockTime * 1000);
+      timeWindowEnd = new Date(blockTime);
       timeWindowEnd.setMinutes(
         timeWindowEnd.getMinutes() + 5,
       );

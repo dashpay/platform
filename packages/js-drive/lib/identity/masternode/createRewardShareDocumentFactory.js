@@ -18,6 +18,7 @@ function createRewardShareDocumentFactory(
    * @param {Identifier} masternodeIdentifier
    * @param {Identifier} operatorIdentifier
    * @param {number} percentage
+   * @param {BlockInfo} blockInfo
    * @returns {Promise<Document|null>}
    */
   async function createRewardShareDocument(
@@ -25,6 +26,7 @@ function createRewardShareDocumentFactory(
     masternodeIdentifier,
     operatorIdentifier,
     percentage,
+    blockInfo,
   ) {
     const documentsResult = await documentRepository.find(
       dataContract,
@@ -73,7 +75,7 @@ function createRewardShareDocumentFactory(
 
     rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
-    await documentRepository.create(rewardShareDocument, {
+    await documentRepository.create(rewardShareDocument, blockInfo, {
       useTransaction: true,
     });
 

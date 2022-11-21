@@ -14,11 +14,11 @@ let faucetClient;
 
 /**
  * Create and fund DashJS client
+ * @param {number} amount - amount of Duffs to fund wallet with
  * @param {string} [HDPrivateKey]
- * @param {number} [amount] - amount of Duffs to fund wallet with
  * @returns {Promise<Client>}
  */
-async function createClientWithFundedWallet(HDPrivateKey = undefined, amount = 100000) {
+async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
   const useFaucetWalletStorage = process.env.FAUCET_WALLET_USE_STORAGE === 'true';
   const seeds = getDAPISeeds();
 

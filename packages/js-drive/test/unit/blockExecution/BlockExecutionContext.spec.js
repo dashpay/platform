@@ -24,6 +24,8 @@ describe('BlockExecutionContext', () => {
   let plainObject;
   let validTxs;
   let invalidTxs;
+  let epochInfo;
+  let timeMs;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -41,6 +43,8 @@ describe('BlockExecutionContext', () => {
     cumulativeStorageFee = plainObject.cumulativeStorageFee;
     validTxs = plainObject.validTxs;
     invalidTxs = plainObject.invalidTxs;
+    epochInfo = plainObject.epochInfo;
+    timeMs = plainObject.timeMs;
   });
 
   describe('#addDataContract', () => {
@@ -190,6 +194,22 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setTimeMs', () => {
+    it('should time in milliseconds');
+  });
+
+  describe('#getTimeMs', () => {
+    it('should return time in milliseconds');
+  });
+
+  describe('#setEpochInfo', () => {
+    it('should set epoch info');
+  });
+
+  describe('#getEpochInfo', () => {
+    it('should return epoch info');
+  });
+
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -202,6 +222,8 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.validTxs = validTxs;
       anotherBlockExecutionContext.invalidTxs = invalidTxs;
       anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.epochInfo = epochInfo;
+      anotherBlockExecutionContext.timeMs = timeMs;
 
       blockExecutionContext.populate(anotherBlockExecutionContext);
 
@@ -229,6 +251,12 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.consensusLogger).to.equal(
         anotherBlockExecutionContext.consensusLogger,
       );
+      expect(blockExecutionContext.epochInfo).to.equal(
+        anotherBlockExecutionContext.epochInfo,
+      );
+      expect(blockExecutionContext.timeMs).to.equal(
+        anotherBlockExecutionContext.timeMs,
+      );
     });
   });
 
@@ -242,6 +270,8 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.epochInfo = epochInfo;
+      blockExecutionContext.timeMs = timeMs;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -255,6 +285,8 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.epochInfo = epochInfo;
+      blockExecutionContext.timeMs = timeMs;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 
@@ -282,6 +314,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.validTxs).to.equal(validTxs);
       expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);
+      expect(blockExecutionContext.timeMs).to.equal(timeMs);
     });
   });
 });

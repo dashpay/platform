@@ -43,18 +43,14 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
       .to.be.an.instanceOf(SimplifiedMNListStore);
   });
 
-  it('should synchronizeMasternodeIdentities by smlMaxListsLimit number of blocks', async () => {
+  it('should update SML Store so other consumers can use it', async () => {
     dashCore = await startDashCore(dashCoreOptions);
 
     container = await createTestDIContainer(dashCore);
 
-    // Create misc tree
-    const groveDBStore = container.resolve('groveDBStore');
-    await groveDBStore.createTree(
-      [],
-      Buffer.from([5]),
-      { useTransaction: true },
-    );
+    // Create initial state
+    const rsDrive = container.resolve('rsDrive');
+    await rsDrive.createInitialStateStructure(false);
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
     const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');

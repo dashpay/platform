@@ -106,6 +106,20 @@ class BlockExecutionContext {
   }
 
   /**
+   * @param {number} timeMs
+   */
+  setTimeMs(timeMs) {
+    this.timeMs = timeMs;
+  }
+
+  /**
+   * @returns {number}
+   */
+  getTimeMs() {
+    return this.timeMs;
+  }
+
+  /**
    * Set current block lastCommitInfo
    * @param {ILastCommitInfo} lastCommitInfo
    * @return {BlockExecutionContext}
@@ -188,6 +202,20 @@ class BlockExecutionContext {
   }
 
   /**
+   * @param {EpochInfo} epochInfo
+   */
+  setEpochInfo(epochInfo) {
+    this.epochInfo = epochInfo;
+  }
+
+  /**
+   * @returns {EpochInfo}
+   */
+  getEpochInfo() {
+    return this.epochInfo;
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -199,6 +227,8 @@ class BlockExecutionContext {
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
+    this.epochInfo = null;
+    this.timeMs = null;
   }
 
   /**
@@ -224,6 +254,8 @@ class BlockExecutionContext {
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
+    this.epochInfo = blockExecutionContext.epochInfo;
+    this.timeMs = blockExecutionContext.timeMs;
   }
 
   /**
@@ -239,11 +271,13 @@ class BlockExecutionContext {
     this.cumulativeProcessingFee = object.cumulativeProcessingFee;
     this.cumulativeStorageFee = object.cumulativeStorageFee;
 
-    this.header = Header.fromObject(object.header);
     this.validTxs = object.validTxs;
     this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
+    this.epochInfo = object.epochInfo;
+    this.timeMs = object.timeMs;
 
+    this.header = Header.fromObject(object.header);
     this.header.time.seconds = Long.fromNumber(this.header.time.seconds);
     this.header.height = Long.fromNumber(this.header.height);
   }
@@ -257,7 +291,9 @@ class BlockExecutionContext {
    *  header: null,
    *  validTxs: number,
    *  cumulativeProcessingFee: number,
-   *  cumulativeStorageFee: number
+   *  cumulativeStorageFee: number,
+   *  epochInfo: EpochInfo
+   *  timeMs: number
    * }}
    */
   toObject(options = {}) {
@@ -274,6 +310,8 @@ class BlockExecutionContext {
       lastCommitInfo: LastCommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
+      epochInfo: this.epochInfo,
+      timeMs: this.timeMs,
     };
 
     if (!options.skipConsensusLogger) {
