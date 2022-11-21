@@ -49,11 +49,11 @@ use ciborium::value::Value;
 use grovedb::TransactionArg;
 
 use crate::contract::Contract;
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::structure::StructureError;
 use crate::error::Error;
 
+use crate::drive::block_info::BlockInfo;
 use dpp::data_contract::extra::DriveContractExt;
 
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.
@@ -73,9 +73,9 @@ pub fn setup_contract(
         .apply_contract_cbor(
             contract_cbor,
             contract_id,
-            0f64,
+            BlockInfo::default(),
             true,
-            StorageFlags::default(),
+            None,
             transaction,
         )
         .expect("contract should be applied");
@@ -95,9 +95,9 @@ pub fn setup_contract_from_hex(
         .apply_contract_cbor(
             contract_cbor,
             None,
-            0f64,
+            BlockInfo::default(),
             true,
-            StorageFlags::default(),
+            None,
             transaction,
         )
         .expect("contract should be applied");

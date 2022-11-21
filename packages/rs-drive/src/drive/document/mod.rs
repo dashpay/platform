@@ -89,16 +89,16 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
 
 /// Returns the size of the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
-    document_type_name_len: usize,
-) -> usize {
+    document_type_name_len: u32,
+) -> u32 {
     defaults::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_PRIMARY_KEY_PATH_FOR_DOCUMENT_ID_SIZE
         + document_type_name_len
 }
 
 /// Returns the size of the path to the time at which a document type was stored.
 fn contract_documents_keeping_history_storage_time_reference_path_size(
-    document_type_name_len: usize,
-) -> usize {
+    document_type_name_len: u32,
+) -> u32 {
     defaults::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
         + document_type_name_len
 }
@@ -107,7 +107,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
 fn make_document_reference(
     document: &Document,
     document_type: &DocumentType,
-    storage_flags: &StorageFlags,
+    storage_flags: Option<&StorageFlags>,
 ) -> Element {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
@@ -133,7 +133,7 @@ fn make_document_reference(
     Element::Reference(
         UpstreamRootHeightReference(4, reference_path),
         Some(max_reference_hops),
-        storage_flags.to_element_flags(),
+        StorageFlags::map_to_some_element_flags(storage_flags),
     )
 }
 
@@ -145,6 +145,7 @@ pub(crate) mod tests {
     use tempfile::TempDir;
 
     use crate::common::json_document_to_cbor;
+    use crate::drive::block_info::BlockInfo;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
 
@@ -170,9 +171,9 @@ pub(crate) mod tests {
             .apply_contract_cbor(
                 dashpay_cbor.clone(),
                 None,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to apply contract successfully");

@@ -7,4 +7,10 @@ pub enum DocumentError {
     /// Error
     #[error("invalid document propoerty type error: {0}")]
     InvalidDocumentPropertyType(&'static str),
+    /// Error
+    #[error("invalid contract identifier size error")]
+    InvalidContractIdSize(),
+    /// Error
+    #[error("contact with specified identifier is not found")]
+    ContractNotFound(),
 }

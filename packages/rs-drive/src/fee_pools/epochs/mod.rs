@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 //  not just Epoch which is more abstract thing that we will probably need in future too
 
 /// Epoch struct
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Epoch {
     /// Epoch index

@@ -372,7 +372,7 @@ impl Platform {
             )))?;
 
         self.drive
-            .add_insert_identity_operations(identity, storage_flags, batch)
+            .add_insert_identity_operations(identity, storage_flags.as_ref(), batch)
             .map_err(Error::Drive)
     }
 
@@ -792,7 +792,7 @@ mod tests {
             ) {
                 Ok(_) => assert!(false, "expect tree not exists"),
                 Err(e) => match e {
-                    Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => assert!(true),
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -875,7 +875,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            let proposer_payouts = platform
+            let _proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
@@ -904,7 +904,7 @@ mod tests {
             ) {
                 Ok(_) => assert!(false, "expect tree not exists"),
                 Err(e) => match e {
-                    Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => assert!(true),
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -1281,7 +1281,7 @@ mod tests {
 
             let payout_credits = masternode_reward * shares_percentage;
 
-            let payout_credits: u64 = payout_credits.try_into().expect("should convert to i64");
+            let payout_credits: u64 = payout_credits.try_into().expect("should convert to u64");
 
             for paid_mn_identity in paid_mn_identities {
                 assert_eq!(paid_mn_identity.balance, payout_credits);

@@ -33,6 +33,7 @@
 //!
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, WriteBytesExt};
@@ -41,7 +42,7 @@ use dpp::data_contract::extra::DriveContractExt;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{bytes_for_system_value_from_tree_map, get_key_from_cbor_map};
-use crate::contract::Contract;
+use crate::contract::{reduced_value_string_representation, Contract};
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::Drive;
 use dpp::data_contract::extra::{ContractError, DocumentType};
@@ -77,7 +78,7 @@ impl Document {
         document_type
             .properties
             .iter()
-            .map(|(field_name, field)| {
+            .try_for_each(|(field_name, field)| {
                 if let Some(value) = self.properties.get(field_name) {
                     let value = field
                         .document_type
@@ -93,8 +94,7 @@ impl Document {
                     buffer.push(0);
                     Ok(())
                 }
-            })
-            .collect::<Result<(), Error>>()?;
+            })?;
         Ok(buffer)
     }
 
@@ -109,7 +109,7 @@ impl Document {
         document_type
             .properties
             .iter()
-            .map(|(field_name, field)| {
+            .try_for_each(|(field_name, field)| {
                 if let Some(value) = self.properties.remove(field_name) {
                     let value = field
                         .document_type
@@ -125,8 +125,7 @@ impl Document {
                     buffer.push(0);
                     Ok(())
                 }
-            })
-            .collect::<Result<(), Error>>()?;
+            })?;
         Ok(buffer)
     }
 
@@ -161,19 +160,11 @@ impl Document {
             .filter_map(|(key, field)| {
                 let read_value = field.document_type.read_from(&mut buf, field.required);
                 match read_value {
-                    Ok(read_value) => {
-                        if let Some(read_value) = read_value {
-                            Some(Ok((key.clone(), read_value)))
-                        } else {
-                            None
-                        }
-                    }
+                    Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
                     Err(e) => Some(Err(e)),
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, ContractError>>()?;
-        let id = <[u8; 32]>::try_from(id).unwrap();
-        let owner_id = <[u8; 32]>::try_from(owner_id).unwrap();
         Ok(Document {
             id,
             properties,
@@ -185,8 +176,8 @@ impl Document {
     /// If Document and Owner IDs are provided, they are used, otherwise they are created.
     pub fn from_cbor(
         document_cbor: &[u8],
-        document_id: Option<&[u8]>,
-        owner_id: Option<&[u8]>,
+        document_id: Option<[u8; 32]>,
+        owner_id: Option<[u8; 32]>,
     ) -> Result<Self, Error> {
         let (version, read_document_cbor) = document_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
@@ -217,15 +208,7 @@ impl Document {
                 }
                 owner_id.as_slice().try_into()
             }
-            Some(owner_id) => {
-                // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-                if owner_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid owner id",
-                    )));
-                }
-                owner_id.try_into()
-            }
+            Some(owner_id) => Ok(owner_id),
         }
         .expect("conversion to 32bytes shouldn't fail");
 
@@ -247,12 +230,7 @@ impl Document {
             }
             Some(document_id) => {
                 // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
-                if document_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid document id",
-                    )));
-                }
-                document_id.try_into()
+                Ok(document_id)
             }
         }
         .expect("document_id must be 32 bytes");
@@ -325,7 +303,7 @@ impl Document {
         &'a self,
         key_path: &str,
         document_type: &DocumentType,
-        owner_id: Option<&[u8]>,
+        owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, Error> {
         // returns the owner id if the key path is $ownerId and an owner id is given
         if key_path == "$ownerId" && owner_id.is_some() {
@@ -393,7 +371,7 @@ impl Document {
         key: &str,
         document_type_name: &str,
         contract: &Contract,
-        owner_id: Option<&[u8]>,
+        owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, Error> {
         let document_type = contract.document_types().get(document_type_name).ok_or({
             Error::Contract(ContractError::DocumentTypeNotFound(
@@ -401,6 +379,21 @@ impl Document {
             ))
         })?;
         self.get_raw_for_document_type(key, document_type, owner_id)
+    }
+}
+
+impl fmt::Display for Document {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "id:{} ", bs58::encode(self.id).into_string())?;
+        write!(f, "owner_id:{} ", bs58::encode(self.owner_id).into_string())?;
+        if self.properties.is_empty() {
+            write!(f, "no properties")?;
+        } else {
+            for (key, value) in self.properties.iter() {
+                write!(f, "{}:{} ", key, reduced_value_string_representation(value))?
+            }
+        }
+        Ok(())
     }
 }
 
@@ -441,5 +434,43 @@ mod tests {
                 .serialize_consume(document_type)
                 .expect("expected to serialize");
         }
+    }
+
+    #[test]
+    fn test_document_cbor_serialization() {
+        let dashpay_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            Some(1),
+        );
+        let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+        let document = document_type.random_document(Some(3333));
+
+        let document_cbor = document.to_cbor();
+
+        let recovered_document = Document::from_cbor(document_cbor.as_slice(), None, None)
+            .expect("expected to get document");
+
+        assert_eq!(recovered_document, document);
+    }
+
+    #[test]
+    fn test_document_display() {
+        let dashpay_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            Some(1),
+        );
+        let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+        let document = document_type.random_document(Some(3333));
+
+        let document_string = format!("{}", document);
+        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk $createdAt:1627081806.116 $updatedAt:1575820087.909 avatarUrl:1DbW18RuyblDX7hxB38O[...(106)] displayName:rzhRkzY2L213txD6gR2S[...(21)] publicMessage:ixPGeedfb4oeyipRFe8y[...(57)] ")
     }
 }
