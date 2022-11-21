@@ -12,17 +12,30 @@ const { CoreClient } = require('./core_pb_service');
 const rewireStream = (stream) => {
   const defaultOnFunction = stream.on.bind(stream);
 
+  // TODO: remove after SPV refactoring
+  // This is only needed for hacks applied by legacy TransactionSyncStreamWorker
+  // onError events
+  stream.f = [];
+  // onEnd events
+  stream.c = []
+
   // Rewire default on function to comply with EventEmitter interface
   stream.on = ((type, handler) => {
-    // Handle `error` event using `end` event
-    if (type === 'error') {
-      return stream.on('end', ({code, details, metadata }) => {
-        if (code !== 0) {
-          handler(new GrpcError(code, details, metadata));
+    if (type === 'end') {
+      stream.c.push(handler);
+      return defaultOnFunction(type, handler);
+    } else if (type === 'error') { // Handle `error` event using `end` event
+      stream.f.push(handler);
+      return stream.on('end', (payload) => {
+        if (payload) {
+          const { code, details, metadata } = payload;
+          if (code !== 0) {
+            handler(new GrpcError(code, details, metadata));
+          }
         }
       });
     } else {
-      // `end` and `data` events could proceed normally
+      // `data` event could be processed normally
       return defaultOnFunction(type, handler);
     }
   });
