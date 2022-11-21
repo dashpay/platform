@@ -10,7 +10,9 @@ const {
   driveOpen,
   driveClose,
   driveCreateInitialStateStructure,
-  driveApplyContract,
+  driveFetchContract,
+  driveCreateContract,
+  driveUpdateContract,
   driveCreateDocument,
   driveUpdateDocument,
   driveDeleteDocument,
@@ -22,6 +24,7 @@ const {
   abciInitChain,
   abciBlockBegin,
   abciBlockEnd,
+  abciAfterFinalizeBlock,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -37,7 +40,9 @@ const driveCloseAsync = appendStack(promisify(driveClose));
 const driveCreateInitialStateStructureAsync = appendStack(
   promisify(driveCreateInitialStateStructure),
 );
-const driveApplyContractAsync = appendStack(promisify(driveApplyContract));
+const driveFetchContractAsync = appendStack(promisify(driveFetchContract));
+const driveCreateContractAsync = appendStack(promisify(driveCreateContract));
+const driveUpdateContractAsync = appendStack(promisify(driveUpdateContract));
 const driveCreateDocumentAsync = appendStack(promisify(driveCreateDocument));
 const driveUpdateDocumentAsync = appendStack(promisify(driveUpdateDocument));
 const driveDeleteDocumentAsync = appendStack(promisify(driveDeleteDocument));
@@ -53,14 +58,18 @@ const driveInsertIdentityAsync = appendStack(promisify(driveInsertIdentity));
 const abciInitChainAsync = appendStack(promisify(abciInitChain));
 const abciBlockBeginAsync = appendStack(promisify(abciBlockBegin));
 const abciBlockEndAsync = appendStack(promisify(abciBlockEnd));
+const abciAfterFinalizeBlockAsync = appendStack(promisify(abciAfterFinalizeBlock));
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
   /**
    * @param {string} dbPath
+   * @param {Object} config
+   * @param {number} config.dataContractsGlobalCacheSize
+   * @param {number} config.dataContractsTransactionalCacheSize
    */
-  constructor(dbPath) {
-    this.drive = driveOpen(dbPath);
+  constructor(dbPath, config) {
+    this.drive = driveOpen(dbPath, config);
     this.groveDB = new GroveDB(this.drive);
   }
 
@@ -88,18 +97,52 @@ class Drive {
   }
 
   /**
+   * @param {Buffer|Identifier} id
+   * @param {number} epochIndex
+   * @param {GroveDBTransaction} [transaction]
+   *
+   * @returns {Promise<[DataContract, FeeResult]>}
+   */
+  async fetchContract(id, epochIndex = undefined, transaction = undefined) {
+    return driveFetchContractAsync.call(
+      this.drive,
+      Buffer.from(id),
+      epochIndex,
+      transaction,
+    );
+  }
+
+  /**
    * @param {DataContract} dataContract
-   * @param {Date} blockTime
+   * @param {BlockInfo} blockInfo
    * @param {GroveDBTransaction} [transaction=undefined]
    * @param {boolean} [dryRun=false]
    *
-   * @returns {Promise<[number, number]>}
+   * @returns {Promise<FeeResult>}
    */
-  async applyContract(dataContract, blockTime, transaction = undefined, dryRun = false) {
-    return driveApplyContractAsync.call(
+  async createContract(dataContract, blockInfo, transaction = undefined, dryRun = false) {
+    return driveCreateContractAsync.call(
       this.drive,
       dataContract.toBuffer(),
-      blockTime,
+      blockInfo,
+      !dryRun,
+      transaction,
+    );
+  }
+
+  /**
+   * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
+   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async updateContract(dataContract, blockInfo, transaction = undefined, dryRun = false) {
+    return driveUpdateContractAsync.call(
+      this.drive,
+      dataContract.toBuffer(),
+      blockInfo,
       !dryRun,
       transaction,
     );
@@ -107,21 +150,21 @@ class Drive {
 
   /**
    * @param {Document} document
-   * @param {Date} blockTime
+   * @param {BlockInfo} blockInfo
    * @param {GroveDBTransaction} [transaction=undefined]
    * @param {boolean} [dryRun=false]
    *
-   * @returns {Promise<[number, number]>}
+   * @returns {Promise<FeeResult>}
    */
-  async createDocument(document, blockTime, transaction = undefined, dryRun = false) {
+  async createDocument(document, blockInfo, transaction = undefined, dryRun = false) {
     return driveCreateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
-      document.getDataContract().toBuffer(),
+      document.getDataContractId().toBuffer(),
       document.getType(),
       document.getOwnerId().toBuffer(),
       true,
-      blockTime,
+      blockInfo,
       !dryRun,
       transaction,
     );
@@ -129,46 +172,49 @@ class Drive {
 
   /**
    * @param {Document} document
-   * @param {Date} blockTime
+   * @param {BlockInfo} blockInfo
    * @param {GroveDBTransaction} [transaction=undefined]
    * @param {boolean} [dryRun=false]
    *
-   * @returns {Promise<[number, number]>}
+   * @returns {Promise<FeeResult>}
    */
-  async updateDocument(document, blockTime, transaction = undefined, dryRun = false) {
+  async updateDocument(document, blockInfo, transaction = undefined, dryRun = false) {
     return driveUpdateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
-      document.getDataContract().toBuffer(),
+      document.getDataContractId().toBuffer(),
       document.getType(),
       document.getOwnerId().toBuffer(),
-      blockTime,
+      blockInfo,
       !dryRun,
       transaction,
     );
   }
 
   /**
-   * @param {DataContract} dataContract
+   * @param {Identifier} dataContractId
    * @param {string} documentType
    * @param {Identifier} documentId
+   * @param {BlockInfo} blockInfo
    * @param {GroveDBTransaction} [transaction=undefined]
    * @param {boolean} [dryRun=false]
    *
-   * @returns {Promise<[number, number]>}
+   * @returns {Promise<FeeResult>}
    */
   async deleteDocument(
-    dataContract,
+    dataContractId,
     documentType,
     documentId,
+    blockInfo,
     transaction = undefined,
     dryRun = false,
   ) {
     return driveDeleteDocumentAsync.call(
       this.drive,
       documentId.toBuffer(),
-      dataContract.toBuffer(),
+      dataContractId.toBuffer(),
       documentType,
+      blockInfo,
       !dryRun,
       transaction,
     );
@@ -178,6 +224,7 @@ class Drive {
    *
    * @param {DataContract} dataContract
    * @param {string} documentType
+   * @param {number} [epochIndex]
    * @param [query]
    * @param [query.where]
    * @param [query.limit]
@@ -188,14 +235,21 @@ class Drive {
    *
    * @returns {Promise<[Document[], number]>}
    */
-  async queryDocuments(dataContract, documentType, query = {}, transaction = undefined) {
+  async queryDocuments(
+    dataContract,
+    documentType,
+    epochIndex = undefined,
+    query = {},
+    transaction = undefined,
+  ) {
     const encodedQuery = await cbor.encodeAsync(query);
 
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
       this.drive,
       encodedQuery,
-      dataContract.id.toBuffer(),
+      dataContract.getId().toBuffer(),
       documentType,
+      epochIndex,
       transaction,
     );
 
@@ -234,7 +288,7 @@ class Drive {
     return await driveProveDocumentsQueryAsync.call(
       this.drive,
       encodedQuery,
-      dataContract.id.toBuffer(),
+      dataContract.getId().toBuffer(),
       documentType,
       transaction,
     );
@@ -242,22 +296,24 @@ class Drive {
 
   /**
    * @param {Identity} identity
+   * @param {BlockInfo} blockInfo
    * @param {GroveDBTransaction} [transaction=undefined]
    * @param {boolean} [dryRun=false]
    *
-   * @returns {Promise<[number, number]>}
+   * @returns {Promise<FeeResult>}
    */
-  async insertIdentity(identity, transaction = undefined, dryRun = false) {
+  async insertIdentity(identity, blockInfo, transaction = undefined, dryRun = false) {
     return driveInsertIdentityAsync.call(
       this.drive,
       identity.toBuffer(),
+      blockInfo,
       !dryRun,
       transaction,
     );
   }
 
   /**
-   * Fetch latest index of the withdrawal transaction in a queue
+   * Fetch the latest index of the withdrawal transaction in a queue
    *
    * @param {GroveDBTransaction} [transaction=undefined]
    *
@@ -320,7 +376,7 @@ class Drive {
       },
 
       /**
-       * ABCI init chain
+       * ABCI block begin
        *
        * @param {BlockBeginRequest} request
        * @param {GroveDBTransaction} [transaction=undefined]
@@ -345,7 +401,7 @@ class Drive {
       },
 
       /**
-       * ABCI init chain
+       * ABCI block end
        *
        * @param {BlockEndRequest} request
        * @param {GroveDBTransaction} [transaction=undefined]
@@ -363,9 +419,39 @@ class Drive {
 
         return cbor.decode(responseBytes);
       },
+
+      /**
+       * ABCI after finalize block
+       *
+       * @param {AfterFinalizeBlockRequest} request
+       *
+       * @returns {Promise<AfterFinalizeBlockResponse>}
+       */
+      async afterFinalizeBlock(request) {
+        const requestBytes = cbor.encode({
+          ...request,
+          // cborium doesn't eat Buffers
+          updatedDataContractIds: request.updatedDataContractIds
+            .map((identifier) => Array.from(identifier)),
+        });
+
+        const responseBytes = await abciAfterFinalizeBlockAsync.call(
+          drive,
+          requestBytes,
+        );
+
+        return cbor.decode(responseBytes);
+      },
     };
   }
 }
+
+/**
+ * @typedef BlockInfo
+ * @property {number} height
+ * @property {number} epoch
+ * @property {number} timeMs
+ */
 
 /**
  * @typedef InitChainRequest
@@ -387,6 +473,14 @@ class Drive {
 /**
  * @typedef BlockBeginResponse
  * @property {Buffer[]} unsignedWithdrawalTransactions
+ * @property {EpochInfo} epochInfo
+ */
+
+/**
+ * @typedef EpochInfo
+ * @property {number} currentEpochIndex
+ * @property {boolean} isEpochChange
+ * @property {number} [previousEpochIndex] - Available only on epoch change
  */
 
 /**
@@ -402,10 +496,17 @@ class Drive {
 
 /**
  * @typedef BlockEndResponse
- * @property {number} currentEpochIndex
- * @property {boolean} isEpochChange
  * @property {number} [proposersPaidCount]
  * @property {number} [paidEpochIndex]
+ */
+
+/**
+ * @typedef AfterFinalizeBlockRequest
+ * @property {Identifier[]|Buffer[]} updatedDataContractIds
+ */
+
+/**
+ * @typedef AfterFinalizeBlockResponse
  */
 
 module.exports = Drive;

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use ciborium::value::Value as CborValue;
 
+use crate::data_contract::extra::mutability::DEFAULT_CONTRACT_CAN_BE_DELETED;
 use mutability::{
     DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
     DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY,
@@ -39,6 +40,11 @@ pub fn get_mutability(
         mutability::property::KEEPS_HISTORY,
         DEFAULT_CONTRACT_KEEPS_HISTORY,
     )?;
+    let can_be_deleted: bool = common::bool_for_system_value_from_tree_map(
+        contract,
+        mutability::property::CAN_BE_DELETED,
+        DEFAULT_CONTRACT_CAN_BE_DELETED,
+    )?;
     let readonly: bool = common::bool_for_system_value_from_tree_map(
         contract,
         mutability::property::READONLY,
@@ -57,8 +63,9 @@ pub fn get_mutability(
     )?;
 
     Ok(ContractConfig {
-        keeps_history,
+        can_be_deleted,
         readonly,
+        keeps_history,
         documents_keep_history_contract_default,
         documents_mutable_contract_default,
     })

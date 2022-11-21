@@ -32,11 +32,9 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
-use std::ops::Deref;
-
 use crate::abci::messages::{
-    BlockBeginRequest, BlockBeginResponse, BlockEndRequest, BlockEndResponse, InitChainRequest,
-    InitChainResponse,
+    AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest, BlockBeginResponse,
+    BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
 };
 use crate::block::{BlockExecutionContext, BlockInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
@@ -48,26 +46,32 @@ use crate::platform::Platform;
 
 /// A trait for handling the Tenderdash ABCI (Application Blockchain Interface).
 pub trait TenderdashAbci {
-    /// Send request to initialize the blockchain
+    /// Called with JS drive on init chain
     fn init_chain(
         &self,
         request: InitChainRequest,
         transaction: TransactionArg,
     ) -> Result<InitChainResponse, Error>;
 
-    /// Send request to begin a block
+    /// Called with JS Drive on block begin
     fn block_begin(
         &self,
         request: BlockBeginRequest,
         transaction: TransactionArg,
     ) -> Result<BlockBeginResponse, Error>;
 
-    /// Send request to end a block
+    /// Called with JS Drive on block end
     fn block_end(
         &self,
         request: BlockEndRequest,
         transaction: TransactionArg,
     ) -> Result<BlockEndResponse, Error>;
+
+    /// Called with JS Drive after the current block db transaction is committed
+    fn after_finalize_block(
+        &self,
+        request: AfterFinalizeBlockRequest,
+    ) -> Result<AfterFinalizeBlockResponse, Error>;
 }
 
 impl TenderdashAbci for Platform {
@@ -113,7 +117,7 @@ impl TenderdashAbci for Platform {
 
         let block_execution_context = BlockExecutionContext {
             block_info,
-            epoch_info,
+            epoch_info: epoch_info.clone(),
         };
 
         self.block_execution_context
@@ -127,6 +131,7 @@ impl TenderdashAbci for Platform {
             )?;
 
         let response = BlockBeginResponse {
+            epoch_info,
             unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
         };
 
@@ -141,14 +146,11 @@ impl TenderdashAbci for Platform {
     ) -> Result<BlockEndResponse, Error> {
         // Retrieve block execution context
         let block_execution_context = self.block_execution_context.borrow();
-        let block_execution_context = match block_execution_context.deref() {
-            Some(block_execution_context) => block_execution_context,
-            None => {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
-                )))
-            }
-        };
+        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "block execution context must be set in block begin handler",
+            ),
+        ))?;
 
         // Process fees
         let process_block_fees_result = self.process_block_fees(
@@ -158,12 +160,20 @@ impl TenderdashAbci for Platform {
             transaction,
         )?;
 
-        Ok(
-            BlockEndResponse::from_epoch_info_and_process_block_fees_result(
-                &block_execution_context.epoch_info,
-                &process_block_fees_result,
-            ),
-        )
+        Ok(BlockEndResponse::from_process_block_fees_result(
+            &process_block_fees_result,
+        ))
+    }
+
+    fn after_finalize_block(
+        &self,
+        _: AfterFinalizeBlockRequest,
+    ) -> Result<AfterFinalizeBlockResponse, Error> {
+        let mut drive_cache = self.drive.cache.borrow_mut();
+
+        drive_cache.cached_contracts.clear_all_transactional_cache();
+
+        Ok(AfterFinalizeBlockResponse {})
     }
 }
 
@@ -179,7 +189,8 @@ mod tests {
         use std::ops::Div;
 
         use crate::abci::messages::{
-            BlockBeginRequest, BlockEndRequest, FeesAggregate, InitChainRequest,
+            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, FeesAggregate,
+            InitChainRequest,
         };
         use crate::common::helpers::setup::setup_platform;
 
@@ -276,19 +287,48 @@ mod tests {
 
                     let block_begin_response = platform
                         .block_begin(block_begin_request, Some(&transaction))
-                        .expect(
-                            format!(
+                        .unwrap_or_else(|_| {
+                            panic!(
                                 "should begin process block #{} for day #{}",
                                 block_height, day
                             )
-                            .as_str(),
-                        );
+                        });
+
+                    // Set previous block time
+                    previous_block_time_ms = Some(block_time_ms);
+
+                    // Should calculate correct current epochs
+                    let (epoch_index, epoch_change) = if day > epoch_1_start_day {
+                        (1, false)
+                    } else if day == epoch_1_start_day {
+                        if block_num < epoch_1_start_block {
+                            (0, false)
+                        } else if block_num == epoch_1_start_block {
+                            (1, true)
+                        } else {
+                            (1, false)
+                        }
+                    } else if day == 0 && block_num == 0 {
+                        (0, true)
+                    } else {
+                        (0, false)
+                    };
+
+                    assert_eq!(
+                        block_begin_response.epoch_info.current_epoch_index,
+                        epoch_index
+                    );
+
+                    assert_eq!(
+                        block_begin_response.epoch_info.is_epoch_change,
+                        epoch_change
+                    );
 
                     if day == 0 && block_num == 0 {
                         let unsigned_withdrawal_hexes = block_begin_response
                             .unsigned_withdrawal_transactions
                             .iter()
-                            .map(|bytes| hex::encode(bytes))
+                            .map(hex::encode)
                             .collect::<Vec<String>>();
 
                         assert_eq!(unsigned_withdrawal_hexes, vec![
@@ -325,37 +365,25 @@ mod tests {
 
                     let block_end_response = platform
                         .block_end(block_end_request, Some(&transaction))
-                        .expect(
-                            format!(
+                        .unwrap_or_else(|_| {
+                            panic!(
                                 "should end process block #{} for day #{}",
                                 block_height, day
                             )
-                            .as_str(),
-                        );
+                        });
 
-                    // Set previous block time
-                    previous_block_time_ms = Some(block_time_ms);
-
-                    // Should calculate correct current epochs
-                    let (epoch_index, epoch_change) = if day > epoch_1_start_day {
-                        (1, false)
-                    } else if day == epoch_1_start_day {
-                        if block_num < epoch_1_start_block {
-                            (0, false)
-                        } else if block_num == epoch_1_start_block {
-                            (1, true)
-                        } else {
-                            (1, false)
-                        }
-                    } else if day == 0 && block_num == 0 {
-                        (0, true)
-                    } else {
-                        (0, false)
+                    let after_finalize_block_request = AfterFinalizeBlockRequest {
+                        updated_data_contract_ids: Vec::new(),
                     };
 
-                    assert_eq!(block_end_response.current_epoch_index, epoch_index);
-
-                    assert_eq!(block_end_response.is_epoch_change, epoch_change);
+                    platform
+                        .after_finalize_block(after_finalize_block_request)
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "should begin process block #{} for day #{}",
+                                block_height, day
+                            )
+                        });
 
                     // Should pay to all proposers for epoch 0, when epochs 1 started
                     if epoch_index != 0 && epoch_change {
@@ -448,32 +476,14 @@ mod tests {
                         validator_set_quorum_hash: Default::default(),
                     };
 
-                    platform
+                    let block_begin_response = platform
                         .block_begin(block_begin_request, Some(&transaction))
-                        .expect(
-                            format!(
+                        .unwrap_or_else(|_| {
+                            panic!(
                                 "should begin process block #{} for day #{}",
                                 block_height, day
                             )
-                            .as_str(),
-                        );
-
-                    let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
-                        },
-                    };
-
-                    let block_end_response = platform
-                        .block_end(block_end_request, Some(&transaction))
-                        .expect(
-                            format!(
-                                "should end process block #{} for day #{}",
-                                block_height, day
-                            )
-                            .as_str(),
-                        );
+                        });
 
                     // Set previous block time
                     previous_block_time_ms = Some(block_time_ms);
@@ -491,9 +501,44 @@ mod tests {
                         (0, false)
                     };
 
-                    assert_eq!(block_end_response.current_epoch_index, epoch_index);
+                    assert_eq!(
+                        block_begin_response.epoch_info.current_epoch_index,
+                        epoch_index
+                    );
 
-                    assert_eq!(block_end_response.is_epoch_change, epoch_change);
+                    assert_eq!(
+                        block_begin_response.epoch_info.is_epoch_change,
+                        epoch_change
+                    );
+
+                    let block_end_request = BlockEndRequest {
+                        fees: FeesAggregate {
+                            processing_fees: 1600,
+                            storage_fees: storage_fees_per_block,
+                        },
+                    };
+
+                    let block_end_response = platform
+                        .block_end(block_end_request, Some(&transaction))
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "should end process block #{} for day #{}",
+                                block_height, day
+                            )
+                        });
+
+                    let after_finalize_block_request = AfterFinalizeBlockRequest {
+                        updated_data_contract_ids: Vec::new(),
+                    };
+
+                    platform
+                        .after_finalize_block(after_finalize_block_request)
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "should begin process block #{} for day #{}",
+                                block_height, day
+                            )
+                        });
 
                     // Should pay to all proposers for epoch 0, when epochs 1 started
                     if epoch_index != 0 && epoch_change {

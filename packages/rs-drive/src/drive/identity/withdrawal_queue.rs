@@ -188,6 +188,7 @@ impl Drive {
                     withdrawals_path,
                     id,
                     true,
+                    true,
                     transaction,
                     &mut batch_operations,
                 )?;

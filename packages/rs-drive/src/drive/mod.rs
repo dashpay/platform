@@ -32,10 +32,8 @@
 
 use std::cell::RefCell;
 use std::path::Path;
-use std::sync::Arc;
 
 use grovedb::{GroveDb, Transaction, TransactionArg};
-use moka::sync::Cache;
 
 use object_size_info::DocumentAndContractInfo;
 use object_size_info::DocumentInfo::DocumentSize;
@@ -49,6 +47,10 @@ use crate::fee::op::DriveOperation::GroveOperation;
 
 /// Batch module
 pub mod batch;
+/// Block info module
+pub mod block_info;
+/// Drive Cache
+pub mod cache;
 /// Config module
 pub mod config;
 /// Contract module
@@ -74,15 +76,13 @@ pub mod object_size_info;
 /// Query module
 pub mod query;
 
+use crate::drive::block_info::BlockInfo;
+use crate::drive::cache::{DataContractCache, DriveCache};
+use crate::fee::FeeResult;
+use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::extra::DriveContractExt;
 
-/// Drive cache struct
-pub struct DriveCache {
-    /// Cached contracts
-    pub cached_contracts: Cache<[u8; 32], Arc<Contract>>,
-    /// Genesis time in ms
-    pub genesis_time_ms: Option<u64>,
-}
+type TransactionPointerAddress = usize;
 
 /// Drive struct
 pub struct Drive {
@@ -158,12 +158,19 @@ impl Drive {
         match GroveDb::open(path) {
             Ok(grove) => {
                 let config = config.unwrap_or_default();
-                let genesis_time_ms = config.default_genesis_time.clone();
+                let genesis_time_ms = config.default_genesis_time;
+                let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
+                let data_contracts_transactional_cache_size =
+                    config.data_contracts_transactional_cache_size;
+
                 Ok(Drive {
                     grove,
                     config,
                     cache: RefCell::new(DriveCache {
-                        cached_contracts: Cache::new(200),
+                        cached_contracts: DataContractCache::new(
+                            data_contracts_global_cache_size,
+                            data_contracts_transactional_cache_size,
+                        ),
                         genesis_time_ms,
                     }),
                 })
@@ -255,17 +262,18 @@ impl Drive {
         &self,
         contract: &Contract,
         document_type_name: &str,
-    ) -> Result<(i64, u64), Error> {
+        epoch_index: u16,
+    ) -> Result<FeeResult, Error> {
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentSize(document_type.max_size() as usize),
+                document_info: DocumentSize(document_type.max_size() as u32),
                 contract,
                 document_type,
                 owner_id: None,
             },
             false,
-            0.0,
+            BlockInfo::default_with_epoch(Epoch::new(epoch_index)),
             false,
             None,
         )

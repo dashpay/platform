@@ -153,7 +153,9 @@ mod tests {
                     "should not be able to get start block height on uninit epochs pool"
                 ),
                 Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -188,6 +190,7 @@ mod tests {
                     epoch.get_path(),
                     super::epoch_key_constants::KEY_START_BLOCK_HEIGHT.as_slice(),
                     super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()
@@ -219,6 +222,7 @@ mod tests {
                     epoch.get_path(),
                     super::epoch_key_constants::KEY_START_BLOCK_HEIGHT.as_slice(),
                     super::Element::empty_tree(),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()
@@ -239,7 +243,6 @@ mod tests {
     }
 
     mod get_first_epoch_start_block_height_between_epochs {
-        use crate::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
         use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::fee_pools::epochs::Epoch;

@@ -24,22 +24,23 @@ sqlparser = "0.13.0"
 enum-map = "2.0.3"
 thiserror = "1.0.30"
 moka = "0.8.1"
-nohash-hasher = "0.2.0"
+intmap = { version="2.0.0", features=["serde"] }
 chrono = "0.4.20"
+bincode = "1.3.3"
 dpp = { path = "../dpp" }
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-rev = "f5e98c34648f14431aecfbf4a9110e23f64cad89"
+branch = "develop"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-rev = "f5e98c34648f14431aecfbf4a9110e23f64cad89"
+branch = "develop"
 
 [dependencies.costs]
 git = "https://github.com/dashevo/grovedb"
-rev = "f5e98c34648f14431aecfbf4a9110e23f64cad89"
+branch = "develop"
 
 [dev-dependencies]
 criterion = "0.3.5"
