@@ -1,64 +1,36 @@
-const { CoreClient } = require('./core_pb_service');
-// const grpc = require('@grpc/grpc-js');
 const { promisify } = require('util');
+const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 
-// const {
-  // convertObjectToMetadata,
-  // utils: {
-  //   isObject,
-  // },
-//   client: {
-//     interceptors: {
-//       jsonToProtobufInterceptorFactory,
-//     },
-//     converters: {
-//       jsonToProtobufFactory,
-//       protobufToJsonFactory,
-//     },
-//   },
-// } = require('@dashevo/grpc-common');
-//
-// const {
-//   org: {
-//     dash: {
-//       platform: {
-//         dapi: {
-//           v0: {
-//             GetStatusRequest: PBJSGetStatusRequest,
-//             GetStatusResponse: PBJSGetStatusResponse,
-//             GetBlockRequest: PBJSGetBlockRequest,
-//             GetBlockResponse: PBJSGetBlockResponse,
-//             BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
-//             BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
-//             GetTransactionRequest: PBJSGetTransactionRequest,
-//             GetTransactionResponse: PBJSGetTransactionResponse,
-//             BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
-//             BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
-//             GetEstimatedTransactionFeeRequest: PBJSGetEstimatedTransactionFeeRequest,
-//             GetEstimatedTransactionFeeResponse: PBJSGetEstimatedTransactionFeeResponse,
-//             TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
-//             TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
-//           },
-//         },
-//       },
-//     },
-//   },
-// } = require('./core_pb');
-//
-// const {
-//   GetStatusResponse: ProtocGetStatusResponse,
-//   GetBlockResponse: ProtocGetBlockResponse,
-//   BroadcastTransactionResponse: ProtocBroadcastTransactionResponse,
-//   GetTransactionResponse: ProtocGetTransactionResponse,
-//   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
-//   GetEstimatedTransactionFeeResponse: ProtocGetEstimatedTransactionFeeResponse,
-//   TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
-// } = require('./core_protoc');
+const { CoreClient } = require('./core_pb_service');
 
-// const getCoreDefinition = require('../../../../lib/getCoreDefinition');
-// const stripHostname = require('../../../../lib/utils/stripHostname');
-//
-// const CoreNodeJSClient = getCoreDefinition(0);
+/**
+ * Function rewires @imporbable-eng/grpc-web stream
+ * to comply with the EventEmitter interface
+ * @param stream
+ * @return {!grpc.web.ClientReadableStream}
+ */
+const rewireStream = (stream) => {
+  const defaultOnFunction = stream.on.bind(stream);
+
+  // Rewire default on function to comply with EventEmitter interface
+  stream.on = ((type, handler) => {
+    // Handle `error` event using `end` event
+    if (type === 'error') {
+      return stream.on('end', ({code, details, metadata }) => {
+        if (code !== 0) {
+          handler(new GrpcError(code, details, metadata));
+        }
+      });
+    } else {
+      // `end` and `data` events could proceed normally
+      return defaultOnFunction(type, handler);
+    }
+  });
+
+  // Assign an empty function to `once` method
+  // because @imporbable-eng/grpc-web doesn't support it
+  stream.removeListener = () => {}
+}
 
 class CorePromiseClient {
   /**
@@ -68,252 +40,111 @@ class CorePromiseClient {
    */
   constructor(hostname, credentials , options = {}) {
     this.client = new CoreClient(hostname, options)
-
-    // this.client.getStatus = promisify(
-    //   this.client.getStatus.bind(this.client),
-    // );
-
-    // this.client.getBlock = promisify(
-    //   this.client.getBlock.bind(this.client),
-    // );
-    //
-    // this.client.broadcastTransaction = promisify(
-    //   this.client.broadcastTransaction.bind(this.client),
-    // );
-    //
-    // this.client.getTransaction = promisify(
-    //   this.client.getTransaction.bind(this.client),
-    // );
-    //
-    // this.client.getEstimatedTransactionFee = promisify(
-    //   this.client.getEstimatedTransactionFee.bind(this.client),
-    // );
   }
 
   /**
    * @param {!GetStatusRequest} getStatusRequest
    * @param {?Object<string, string>} metadata
-   * @param {CallOptions} [options={}]
    * @return {Promise<!GetStatusResponse>}
    */
-  getStatus(getStatusRequest, metadata = {}, options = {}) {
-    // if (!isObject(metadata)) {
-    //   throw new Error('metadata must be an object');
-    // }
-
+  getStatus(getStatusRequest, metadata = {}) {
     return promisify(
       this.client.getStatus.bind(this.client),
     )(
       getStatusRequest,
       metadata,
-      // {
-      //   interceptors: [
-      //     jsonToProtobufInterceptorFactory(
-      //       jsonToProtobufFactory(
-      //         ProtocGetStatusResponse,
-      //         PBJSGetStatusResponse,
-      //       ),
-      //       protobufToJsonFactory(
-      //         PBJSGetStatusRequest,
-      //       ),
-      //     ),
-      //   ],
-      //   ...options,
-      // },
     );
   }
 
-  // /**
-  //  * @param {!GetBlockRequest} getBlockRequest
-  //  * @param {?Object<string, string>} metadata
-  //  * @param {CallOptions} [options={}]
-  //  * @return {Promise<!GetBlockResponse>}
-  //  */
-  // getBlock(getBlockRequest, metadata = {}, options = {}) {
-  //   if (!isObject(metadata)) {
-  //     throw new Error('metadata must be an object');
-  //   }
-  //
-  //   return this.client.getBlock(
-  //     getBlockRequest,
-  //     convertObjectToMetadata(metadata),
-  //     {
-  //       interceptors: [
-  //         jsonToProtobufInterceptorFactory(
-  //           jsonToProtobufFactory(
-  //             ProtocGetBlockResponse,
-  //             PBJSGetBlockResponse,
-  //           ),
-  //           protobufToJsonFactory(
-  //             PBJSGetBlockRequest,
-  //           ),
-  //         ),
-  //       ],
-  //       ...options,
-  //     },
-  //   );
-  // }
-  //
-  // /**
-  //  * @param {!BroadcastTransactionRequest} broadcastTransactionRequest
-  //  * @param {?Object<string, string>} metadata
-  //  * @param {CallOptions} [options={}]
-  //  * @return {Promise<!BroadcastTransactionResponse>}
-  //  */
-  // broadcastTransaction(broadcastTransactionRequest, metadata = {}, options = {}) {
-  //   if (!isObject(metadata)) {
-  //     throw new Error('metadata must be an object');
-  //   }
-  //
-  //   return this.client.broadcastTransaction(
-  //     broadcastTransactionRequest,
-  //     convertObjectToMetadata(metadata),
-  //     {
-  //       interceptors: [
-  //         jsonToProtobufInterceptorFactory(
-  //           jsonToProtobufFactory(
-  //             ProtocBroadcastTransactionResponse,
-  //             PBJSBroadcastTransactionResponse,
-  //           ),
-  //           protobufToJsonFactory(
-  //             PBJSBroadcastTransactionRequest,
-  //           ),
-  //         ),
-  //       ],
-  //       ...options,
-  //     },
-  //   );
-  // }
-  //
-  // /**
-  //  * @param {!GetTransactionRequest} getTransactionRequest
-  //  * @param {?Object<string, string>} metadata
-  //  * @param {CallOptions} [options={}]
-  //  * @return {Promise<!GetTransactionResponse>}
-  //  */
-  // getTransaction(getTransactionRequest, metadata = {}, options = {}) {
-  //   if (!isObject(metadata)) {
-  //     throw new Error('metadata must be an object');
-  //   }
-  //
-  //   return this.client.getTransaction(
-  //     getTransactionRequest,
-  //     convertObjectToMetadata(metadata),
-  //     {
-  //       interceptors: [
-  //         jsonToProtobufInterceptorFactory(
-  //           jsonToProtobufFactory(
-  //             ProtocGetTransactionResponse,
-  //             PBJSGetTransactionResponse,
-  //           ),
-  //           protobufToJsonFactory(
-  //             PBJSGetTransactionRequest,
-  //           ),
-  //         ),
-  //       ],
-  //       ...options,
-  //     },
-  //   );
-  // }
-  //
-  // /**
-  //  * @param {!GetEstimatedTransactionFeeRequest} getEstimatedTransactionFeeRequest
-  //  * @param {?Object<string, string>} metadata
-  //  * @param {CallOptions} [options={}]
-  //  * @returns {Promise<!GetEstimatedTransactionFeeResponse>}
-  //  */
-  // getEstimatedTransactionFee(getEstimatedTransactionFeeRequest, metadata = {}, options = {}) {
-  //   if (!isObject(metadata)) {
-  //     throw new Error('metadata must be an object');
-  //   }
-  //
-  //   return this.client.getEstimatedTransactionFee(
-  //     getEstimatedTransactionFeeRequest,
-  //     convertObjectToMetadata(metadata),
-  //     {
-  //       interceptors: [
-  //         jsonToProtobufInterceptorFactory(
-  //           jsonToProtobufFactory(
-  //             ProtocGetEstimatedTransactionFeeResponse,
-  //             PBJSGetEstimatedTransactionFeeResponse,
-  //           ),
-  //           protobufToJsonFactory(
-  //             PBJSGetEstimatedTransactionFeeRequest,
-  //           ),
-  //         ),
-  //       ],
-  //       ...options,
-  //     },
-  //   );
-  // }
-  //
-  // /**
-  //  * @param {!BlockHeadersWithChainLocksRequest} blockHeadersWithChainLocksRequest
-  //  * @param {?Object<string, string>} metadata
-  //  * @param {CallOptions} [options={}]
-  //  * @return {!grpc.web.ClientReadableStream<!BlockHeadersWithChainLocksResponse>|undefined}
-  //  *     The XHR Node Readable Stream
-  //  */
-  // subscribeToBlockHeadersWithChainLocks(
-  //   blockHeadersWithChainLocksRequest,
-  //   metadata = {},
-  //   options = {},
-  // ) {
-  //   if (!isObject(metadata)) {
-  //     throw new Error('metadata must be an object');
-  //   }
-  //
-  //   return this.client.subscribeToBlockHeadersWithChainLocks(
-  //     blockHeadersWithChainLocksRequest,
-  //     convertObjectToMetadata(metadata),
-  //     {
-  //       interceptors: [
-  //         jsonToProtobufInterceptorFactory(
-  //           jsonToProtobufFactory(
-  //             ProtocBlockHeadersWithChainLocksResponse,
-  //             PBJSBlockHeadersWithChainLocksResponse,
-  //           ),
-  //           protobufToJsonFactory(
-  //             PBJSBlockHeadersWithChainLocksRequest,
-  //           ),
-  //         ),
-  //       ],
-  //       ...options,
-  //     },
-  //   );
-  // }
-  //
-  // /**
-  //  * @param {TransactionsWithProofsRequest} transactionsWithProofsRequest The request proto
-  //  * @param {?Object<string, string>} metadata User defined call metadata
-  //  * @param {CallOptions} [options={}]
-  //  * @return {!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>|undefined}
-  //  *     The XHR Node Readable Stream
-  //  */
-  // subscribeToTransactionsWithProofs(transactionsWithProofsRequest, metadata = {}, options = {}) {
-  //   if (!isObject(metadata)) {
-  //     throw new Error('metadata must be an object');
-  //   }
-  //
-  //   return this.client.subscribeToTransactionsWithProofs(
-  //     transactionsWithProofsRequest,
-  //     convertObjectToMetadata(metadata),
-  //     {
-  //       interceptors: [
-  //         jsonToProtobufInterceptorFactory(
-  //           jsonToProtobufFactory(
-  //             ProtocTransactionsWithProofsResponse,
-  //             PBJSTransactionsWithProofsResponse,
-  //           ),
-  //           protobufToJsonFactory(
-  //             PBJSTransactionsWithProofsRequest,
-  //           ),
-  //         ),
-  //       ],
-  //       ...options,
-  //     },
-  //   );
-  // }
+  /**
+   * @param {!GetBlockRequest} getBlockRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetBlockResponse>}
+   */
+  getBlock(getBlockRequest, metadata = {}) {
+    return promisify(
+      this.client.getBlock.bind(this.client),
+    )(
+      getBlockRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!BroadcastTransactionRequest} broadcastTransactionRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!BroadcastTransactionResponse>}
+   */
+  broadcastTransaction(broadcastTransactionRequest, metadata = {}) {
+    return promisify(
+      this.client.broadcastTransaction.bind(this.client),
+    )(
+      broadcastTransactionRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetTransactionRequest} getTransactionRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetTransactionResponse>}
+   */
+  getTransaction(getTransactionRequest, metadata = {}) {
+    return promisify(
+      this.client.getTransaction.bind(this.client),
+    )(
+      getTransactionRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetEstimatedTransactionFeeRequest} getEstimatedTransactionFeeRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetEstimatedTransactionFeeResponse>}
+   */
+  getEstimatedTransactionFee(getEstimatedTransactionFeeRequest, metadata = {}) {
+    return promisify(
+      this.client.getEstimatedTransactionFee.bind(this.client),
+    )(
+      getEstimatedTransactionFeeRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!BlockHeadersWithChainLocksRequest} blockHeadersWithChainLocksRequest
+   * @param {?Object<string, string>} metadata
+   * @return {!grpc.web.ClientReadableStream<!BlockHeadersWithChainLocksResponse>|undefined}
+   */
+  subscribeToBlockHeadersWithChainLocks(
+    blockHeadersWithChainLocksRequest,
+    metadata = {},
+  ) {
+    const stream = this.client.subscribeToBlockHeadersWithChainLocks(
+      blockHeadersWithChainLocksRequest,
+      metadata,
+    )
+
+    rewireStream(stream);
+
+    return stream;
+  }
+
+  /**
+   * @param {TransactionsWithProofsRequest} transactionsWithProofsRequest The request proto
+   * @param {?Object<string, string>} metadata User defined call metadata
+   * @return {!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>|undefined}
+   */
+  subscribeToTransactionsWithProofs(transactionsWithProofsRequest, metadata = {}) {
+    const stream = this.client.subscribeToTransactionsWithProofs(
+      transactionsWithProofsRequest,
+      metadata
+    )
+
+    rewireStream(stream);
+    return stream;
+  }
 }
 
 module.exports = CorePromiseClient;
