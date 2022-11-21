@@ -32,14 +32,12 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::{Element, TransactionArg};
 use std::collections::HashSet;
-
-use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
 use std::option::Option::None;
 
-use crate::contract::document::Document;
-use crate::contract::{Contract, DocumentType};
+use crate::contract::Contract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE, STORAGE_FLAGS_SIZE};
 use crate::drive::document::{
     contract_document_type_path,
@@ -50,10 +48,11 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentAndSerialization, DocumentSize, DocumentWithoutSerialization,
+    DocumentRefAndSerialization, DocumentRefWithoutSerialization, DocumentSize,
+    DocumentWithoutSerialization,
 };
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
-use crate::drive::object_size_info::KeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElementSize,
 };
@@ -62,20 +61,23 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyE
 use crate::drive::{defaults, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
+use crate::fee::{calculate_fee, FeeResult};
 
-use dpp::data_contract::extra::encode_float;
+use crate::common::encode::encode_unsigned_integer;
+use crate::contract::document::Document;
+use crate::drive::block_info::BlockInfo;
+use crate::error::document::DocumentError;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
     /// Adds a document to primary storage.
-    // If a document isn't sent to this function then we are just calling to know the query and
-    // insert operations
+    /// If a document isn't sent to this function then we are just calling to know the query and
+    /// insert operations
     pub(crate) fn add_document_to_primary_storage(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        block_time: f64,
+        block_info: &BlockInfo,
         insert_without_check: bool,
         apply: bool,
         transaction: TransactionArg,
@@ -90,37 +92,37 @@ impl Drive {
         );
         if document_type.documents_keep_history {
             let (path_key_info, storage_flags) =
-                if let DocumentAndSerialization((document, _, storage_flags)) =
+                if let DocumentRefAndSerialization((document, _, storage_flags)) =
                     document_and_contract_info.document_info
                 {
                     (
                         PathFixedSizeKeyRef((primary_key_path, document.id.as_slice())),
-                        storage_flags.clone(),
+                        storage_flags,
                     )
                 } else {
                     (
                         PathKeySize((
                             defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH
-                                + document_type.name.len(),
+                                + document_type.name.len() as u32,
                             DEFAULT_HASH_SIZE,
                         )),
-                        StorageFlags::default(),
+                        StorageFlags::optional_default_as_ref(),
                     )
                 };
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                &storage_flags,
+                storage_flags,
                 apply,
                 transaction,
                 drive_operations,
             )?;
-            let encoded_time = encode_float(block_time)?;
-            let path_key_element_info = match document_and_contract_info.document_info {
-                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+            let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
+            let path_key_element_info = match &document_and_contract_info.document_info {
+                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(
-                        Vec::from(serialized_document),
-                        storage_flags.to_element_flags(),
+                        serialized_document.to_vec(),
+                        StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
                     let document_id_in_primary_path =
                         contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -137,8 +139,29 @@ impl Drive {
                 DocumentWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
-                    let element =
-                        Element::Item(serialized_document, storage_flags.to_element_flags());
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                    );
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_document_id(
+                            contract.id.as_bytes(),
+                            document_type.name.as_str(),
+                            document.id.as_slice(),
+                        );
+                    PathFixedSizeKeyElement((
+                        document_id_in_primary_path,
+                        encoded_time.as_slice(),
+                        element,
+                    ))
+                }
+                DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                    );
                     let document_id_in_primary_path =
                         contract_documents_keeping_history_primary_key_path_for_document_id(
                             contract.id.as_bytes(),
@@ -154,19 +177,19 @@ impl Drive {
                 DocumentSize(max_size) => {
                     let path_max_length =
                         contract_documents_keeping_history_primary_key_path_for_document_id_size(
-                            document_type.name.len(),
+                            document_type.name.len() as u32,
                         );
                     PathKeyElementSize((
                         path_max_length,
-                        8_usize,
-                        Element::required_item_space(max_size, STORAGE_FLAGS_SIZE),
+                        8,
+                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                     ))
                 }
             };
             self.batch_insert(path_key_element_info, drive_operations)?;
 
             let path_key_element_info =
-                if let DocumentAndSerialization((document, _, storage_flags)) =
+                if let DocumentRefAndSerialization((document, _, storage_flags)) =
                     document_and_contract_info.document_info
                 {
                     // we should also insert a reference at 0 to the current value
@@ -183,17 +206,17 @@ impl Drive {
                         Element::Reference(
                             SiblingReference(encoded_time),
                             Some(1),
-                            storage_flags.to_element_flags(),
+                            StorageFlags::map_to_some_element_flags(storage_flags),
                         ),
                     ))
                 } else {
                     let path_max_length =
                         contract_documents_keeping_history_primary_key_path_for_document_id_size(
-                            document_type.name.len(),
+                            document_type.name.len() as u32,
                         );
                     let reference_max_size =
                         contract_documents_keeping_history_storage_time_reference_path_size(
-                            document_type.name.len(),
+                            document_type.name.len() as u32,
                         );
                     PathKeyElementSize((
                         path_max_length,
@@ -204,53 +227,81 @@ impl Drive {
 
             self.batch_insert(path_key_element_info, drive_operations)?;
         } else if insert_without_check {
-            let path_key_element_info = match document_and_contract_info.document_info {
-                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+            let path_key_element_info = match &document_and_contract_info.document_info {
+                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(
-                        Vec::from(serialized_document),
-                        storage_flags.to_element_flags(),
+                        serialized_document.to_vec(),
+                        StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
                     PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
                 }
-                DocumentWithoutSerialization((document, storage_flags)) => {
+                DocumentRefWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
-                    let element =
-                        Element::Item(serialized_document, storage_flags.to_element_flags());
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                    );
                     PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentSize(max_size) => PathKeyElementSize((
-                    defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH + document_type.name.len(),
+                    defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH
+                        + document_type.name.len() as u32,
                     DEFAULT_HASH_SIZE,
-                    Element::required_item_space(max_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                 )),
+                DocumentWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                    );
+                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                }
             };
             self.batch_insert(path_key_element_info, drive_operations)?;
         } else {
-            let path_key_element_info = match document_and_contract_info.document_info {
-                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+            let path_key_element_info = match &document_and_contract_info.document_info {
+                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(
-                        Vec::from(serialized_document),
-                        storage_flags.to_element_flags(),
+                        serialized_document.to_vec(),
+                        StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
                     PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
-                    let element =
-                        Element::Item(serialized_document, storage_flags.to_element_flags());
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                    );
+                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                    );
                     PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentSize(max_size) => PathKeyElementSize((
-                    defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH + document_type.name.len(),
+                    defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH
+                        + document_type.name.len() as u32,
                     DEFAULT_HASH_SIZE,
-                    Element::required_item_space(max_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                 )),
             };
             let inserted = self.batch_insert_if_not_exists(
                 path_key_element_info,
-                apply,
+                if apply {
+                    None
+                } else {
+                    Some(document_type.max_size())
+                },
                 transaction,
                 drive_operations,
             )?;
@@ -274,19 +325,19 @@ impl Drive {
         serialized_document: &[u8],
         serialized_contract: &[u8],
         document_type_name: &str,
-        owner_id: Option<&[u8]>,
+        owner_id: Option<[u8; 32]>,
         override_document: bool,
-        block_time: f64,
+        block_info: BlockInfo,
         apply: bool,
-        storage_flags: StorageFlags,
+        storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,
-    ) -> Result<(i64, u64), Error> {
+    ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
-            DocumentAndSerialization((&document, serialized_document, &storage_flags));
+            DocumentRefAndSerialization((&document, serialized_document, storage_flags));
 
         let document_type = contract.document_type_for_name(document_type_name)?;
 
@@ -298,7 +349,7 @@ impl Drive {
                 owner_id,
             },
             override_document,
-            block_time,
+            block_info,
             apply,
             transaction,
         )
@@ -310,17 +361,17 @@ impl Drive {
         serialized_document: &[u8],
         contract: &Contract,
         document_type_name: &str,
-        owner_id: Option<&[u8]>,
+        owner_id: Option<[u8; 32]>,
         override_document: bool,
-        block_time: f64,
+        block_info: BlockInfo,
         apply: bool,
-        storage_flags: StorageFlags,
+        storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,
-    ) -> Result<(i64, u64), Error> {
+    ) -> Result<FeeResult, Error> {
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
-            DocumentAndSerialization((&document, serialized_document, &storage_flags));
+            DocumentRefAndSerialization((&document, serialized_document, storage_flags));
 
         let document_type = contract.document_type_for_name(document_type_name)?;
 
@@ -332,10 +383,62 @@ impl Drive {
                 owner_id,
             },
             override_document,
-            block_time,
+            block_info,
             apply,
             transaction,
         )
+    }
+
+    /// Deserializes a document and adds it to a contract by id.
+    pub fn add_serialized_document_for_contract_id(
+        &self,
+        serialized_document: &[u8],
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        owner_id: Option<[u8; 32]>,
+        override_document: bool,
+        block_info: BlockInfo,
+        apply: bool,
+        storage_flags: Option<&StorageFlags>,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+
+        let contract_fetch_info = self
+            .get_contract_with_fetch_info_and_add_to_operations(
+                contract_id,
+                Some(&block_info.epoch),
+                transaction,
+                &mut drive_operations,
+            )?
+            .ok_or(Error::Document(DocumentError::ContractNotFound()))?;
+
+        let contract = &contract_fetch_info.contract;
+
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+
+        let document_info =
+            DocumentRefAndSerialization((&document, serialized_document, storage_flags));
+
+        let document_type = contract.document_type_for_name(document_type_name)?;
+
+        self.add_document_for_contract_apply_and_add_to_operations(
+            DocumentAndContractInfo {
+                document_info,
+                contract,
+                document_type,
+                owner_id,
+            },
+            override_document,
+            &block_info,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )?;
+
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+
+        Ok(fees)
     }
 
     /// Adds a document to a contract.
@@ -343,33 +446,52 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
-        block_time: f64,
+        block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-    ) -> Result<(i64, u64), Error> {
+    ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.add_document_for_contract_operations(
+        self.add_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
             override_document,
-            block_time,
+            &block_info,
             apply,
             transaction,
             &mut drive_operations,
         )?;
-        let fees = calculate_fee(None, Some(drive_operations))?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)
     }
 
     /// Performs the operations to add a document to a contract.
-    pub(crate) fn add_document_for_contract_operations(
+    pub(crate) fn add_document_for_contract_apply_and_add_to_operations(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
-        block_time: f64,
+        block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
+        let batch_operations = self.add_document_for_contract_operations(
+            document_and_contract_info,
+            override_document,
+            block_info,
+            apply,
+            transaction,
+        )?;
+        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+    }
+
+    /// Gathers the operations to add a document to a contract.
+    pub(crate) fn add_document_for_contract_operations(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        override_document: bool,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
         // second we need to construct the path for documents on the contract
         // the path is
@@ -385,32 +507,42 @@ impl Drive {
             document_and_contract_info.contract.id.as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
         );
+
+        // Apply means stateful query
+        let query_stateless_with_max_value_size = if apply {
+            None
+        } else {
+            Some(document_and_contract_info.document_type.max_size())
+        };
+
         if override_document
-            && self
-                .grove_get(
-                    primary_key_path,
-                    document_and_contract_info.document_info.id_key_value_info(),
-                    transaction,
-                    &mut batch_operations,
-                )
-                .is_ok()
             && document_and_contract_info
                 .document_info
                 .is_document_and_serialization()
-        {
-            self.update_document_for_contract_operations(
-                document_and_contract_info,
-                block_time,
-                apply,
+            && self.grove_has_raw(
+                primary_key_path,
+                document_and_contract_info
+                    .document_info
+                    .id_key_value_info()
+                    .as_key_ref_request()?,
+                query_stateless_with_max_value_size,
                 transaction,
                 &mut batch_operations,
+            )?
+        {
+            let update_operations = self.update_document_for_contract_operations(
+                document_and_contract_info,
+                block_info,
+                apply,
+                transaction,
             )?;
-            return Ok(());
+            batch_operations.extend(update_operations);
+            return Ok(batch_operations);
         } else {
             // if we have override_document set that means we already checked if it exists
             self.add_document_to_primary_storage(
                 &document_and_contract_info,
-                block_time,
+                block_info,
                 override_document,
                 apply,
                 transaction,
@@ -418,7 +550,9 @@ impl Drive {
             )?;
         }
 
-        let storage_flags = document_and_contract_info.document_info.get_storage_flags();
+        let storage_flags = document_and_contract_info
+            .document_info
+            .get_storage_flags_ref();
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
 
@@ -456,7 +590,7 @@ impl Drive {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
                     path_key_info.clone(),
-                    &storage_flags,
+                    storage_flags,
                     apply,
                     transaction,
                     &mut batch_operations,
@@ -474,7 +608,7 @@ impl Drive {
             {
                 PathInfo::PathIterator::<0>(index_path)
             } else {
-                PathInfo::PathSize(index_path.iter().map(|x| x.len()).sum())
+                PathInfo::PathSize(index_path.iter().map(|x| x.len() as u32).sum())
             };
 
             // we push the actual value of the index path
@@ -505,7 +639,7 @@ impl Drive {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
                         path_key_info.clone(),
-                        &storage_flags,
+                        storage_flags,
                         apply,
                         transaction,
                         &mut batch_operations,
@@ -528,7 +662,7 @@ impl Drive {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
                         path_key_info.clone(),
-                        &storage_flags,
+                        storage_flags,
                         apply,
                         transaction,
                         &mut batch_operations,
@@ -555,7 +689,7 @@ impl Drive {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
                 self.batch_insert_empty_tree_if_not_exists(
                     path_key_info,
-                    &storage_flags,
+                    storage_flags,
                     apply,
                     transaction,
                     &mut batch_operations,
@@ -564,12 +698,20 @@ impl Drive {
                 index_path_info.push(Key(vec![0]))?;
 
                 let key_element_info = match &document_and_contract_info.document_info {
-                    DocumentAndSerialization((document, _, storage_flags))
-                    | DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentRefAndSerialization((document, _, storage_flags))
+                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            storage_flags,
+                            *storage_flags,
+                        );
+                        KeyElement((document.id.as_slice(), document_reference))
+                    }
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let document_reference = make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            storage_flags.as_ref(),
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
@@ -588,12 +730,20 @@ impl Drive {
                 self.batch_insert(path_key_element_info, &mut batch_operations)?;
             } else {
                 let key_element_info = match &document_and_contract_info.document_info {
-                    DocumentAndSerialization((document, _, storage_flags))
-                    | DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentRefAndSerialization((document, _, storage_flags))
+                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            storage_flags,
+                            *storage_flags,
+                        );
+                        KeyElement((&[0], document_reference))
+                    }
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let document_reference = make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            storage_flags.as_ref(),
                         );
                         KeyElement((&[0], document_reference))
                     }
@@ -611,7 +761,11 @@ impl Drive {
                 // here we should return an error if the element already exists
                 let inserted = self.batch_insert_if_not_exists(
                     path_key_element_info,
-                    apply,
+                    if apply {
+                        None
+                    } else {
+                        Some(document_and_contract_info.document_type.max_size())
+                    },
                     transaction,
                     &mut batch_operations,
                 )?;
@@ -622,7 +776,7 @@ impl Drive {
                 }
             }
         }
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        Ok(batch_operations)
     }
 }
 
@@ -639,8 +793,9 @@ mod tests {
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
+    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
+    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::fee::op::DriveOperation;
 
     #[test]
@@ -658,11 +813,11 @@ mod tests {
                 &dashpay_cr_serialized_document,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -672,11 +827,11 @@ mod tests {
                 &dashpay_cr_serialized_document,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -686,11 +841,11 @@ mod tests {
                 &dashpay_cr_serialized_document,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 true,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to override a document successfully");
@@ -725,11 +880,11 @@ mod tests {
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -739,11 +894,11 @@ mod tests {
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -753,19 +908,18 @@ mod tests {
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 true,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("expected to override a document successfully");
     }
 
-    #[ignore]
     #[test]
-    fn test_add_dashpay_fee_for_documents() {
+    fn test_add_dashpay_contact_request_with_fee() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -777,7 +931,7 @@ mod tests {
 
         let contract = setup_contract(
             &drive,
-            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             Some(&db_transaction),
         );
@@ -789,22 +943,126 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let (actual_storage_fee, actual_processing_fee) = drive
+        let FeeResult {
+            storage_fee,
+            processing_fee,
+            removed_bytes_from_identities,
+            removed_bytes_from_system,
+        } = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        assert_eq!(1, actual_storage_fee);
-        assert_eq!(1, actual_processing_fee);
+        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        assert_eq!(3211, added_bytes);
+        assert_eq!(2804600, processing_fee);
+    }
+
+    #[test]
+    fn test_add_dashpay_profile_with_fee() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let dashpay_cr_serialized_document = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(1),
+        );
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let FeeResult {
+            storage_fee,
+            processing_fee,
+            removed_bytes_from_identities,
+            removed_bytes_from_system,
+        } = drive
+            .add_serialized_document_for_contract(
+                &dashpay_cr_serialized_document,
+                &contract,
+                "profile",
+                Some(random_owner_id),
+                false,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_ref(),
+                Some(&db_transaction),
+            )
+            .expect("expected to insert a document successfully");
+
+        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        assert_eq!(1414, added_bytes);
+        assert_eq!(1862400, processing_fee);
+    }
+
+    #[test]
+    fn test_add_dashpay_profile_worst_case_cost_fee() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let dashpay_cr_serialized_document = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(1),
+        );
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let FeeResult {
+            storage_fee,
+            processing_fee,
+            removed_bytes_from_identities,
+            removed_bytes_from_system,
+        } = drive
+            .add_serialized_document_for_contract(
+                &dashpay_cr_serialized_document,
+                &contract,
+                "profile",
+                Some(random_owner_id),
+                false,
+                BlockInfo::default(),
+                false,
+                StorageFlags::optional_default_as_ref(),
+                Some(&db_transaction),
+            )
+            .expect("expected to insert a document successfully");
+
+        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        assert_eq!(1414, added_bytes);
+        assert_eq!(191877800, processing_fee);
     }
 
     #[ignore]
@@ -832,39 +1090,37 @@ mod tests {
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let (storage_fee, processing_fee) = drive
+        let fees = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 false,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("expected to get back fee for document insertion successfully");
 
-        let (actual_storage_fee, actual_processing_fee) = drive
+        let actual_fees = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        assert_eq!(storage_fee, actual_storage_fee);
-        assert_eq!(processing_fee, actual_processing_fee);
+        assert_eq!(fees, actual_fees);
     }
 
-    #[ignore]
     #[test]
     fn test_add_dashpay_fee_for_documents_detail() {
         let tmp_dir = TempDir::new().unwrap();
@@ -889,13 +1145,16 @@ mod tests {
         );
 
         let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(&owner_id))
+        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
             .expect("expected to deserialize document successfully");
 
-        let storage_flags = StorageFlags { epoch: 0 };
+        let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
-        let document_info =
-            DocumentAndSerialization((&document, &dashpay_cr_serialized_document, &storage_flags));
+        let document_info = DocumentRefAndSerialization((
+            &document,
+            &dashpay_cr_serialized_document,
+            storage_flags.as_ref(),
+        ));
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -910,15 +1169,15 @@ mod tests {
             .expect("expected a root hash calculation to succeed");
 
         drive
-            .add_document_for_contract_operations(
+            .add_document_for_contract_apply_and_add_to_operations(
                 DocumentAndContractInfo {
                     document_info: document_info.clone(),
                     contract: &contract,
                     document_type,
-                    owner_id: Some(&owner_id),
+                    owner_id: Some(owner_id),
                 },
                 false,
-                0f64,
+                &BlockInfo::default(),
                 false,
                 Some(&db_transaction),
                 &mut fee_drive_operations,
@@ -934,15 +1193,15 @@ mod tests {
         assert_eq!(root_hash, root_hash_after_fee);
 
         drive
-            .add_document_for_contract_operations(
+            .add_document_for_contract_apply_and_add_to_operations(
                 DocumentAndContractInfo {
                     document_info,
                     contract: &contract,
                     document_type,
-                    owner_id: Some(&owner_id),
+                    owner_id: Some(owner_id),
                 },
                 false,
-                0f64,
+                &BlockInfo::default(),
                 true,
                 Some(&db_transaction),
                 &mut actual_drive_operations,
@@ -953,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_dpns_documents() {
+    fn test_add_dpns_document_with_fee() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -978,7 +1237,7 @@ mod tests {
         let document = Document::from_cbor(
             &dpns_domain_serialized_document,
             None,
-            Some(&random_owner_id),
+            Some(random_owner_id),
         )
         .expect("expected to deserialize the document");
 
@@ -986,26 +1245,35 @@ mod tests {
             .document_type_for_name("domain")
             .expect("expected to get a document type");
 
-        let storage_flags = StorageFlags { epoch: 0 };
+        let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
-        drive
+        let FeeResult {
+            storage_fee,
+            processing_fee,
+            removed_bytes_from_identities,
+            removed_bytes_from_system,
+        } = drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentAndSerialization((
+                    document_info: DocumentRefAndSerialization((
                         &document,
                         &dpns_domain_serialized_document,
-                        &storage_flags,
+                        storage_flags.as_ref(),
                     )),
                     contract: &contract,
                     document_type,
                     owner_id: None,
                 },
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
+
+        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        assert_eq!(1966, added_bytes);
+        assert_eq!(2538000, processing_fee);
 
         drive
             .grove
@@ -1039,11 +1307,11 @@ mod tests {
                 &dashpay_cr_serialized_document_0,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1052,11 +1320,11 @@ mod tests {
                 &dashpay_cr_serialized_document_1,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1065,11 +1333,11 @@ mod tests {
                 &dashpay_cr_serialized_document_2,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1095,11 +1363,11 @@ mod tests {
                 &dashpay_cr_serialized_document_0,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1108,11 +1376,11 @@ mod tests {
                 &dashpay_cr_serialized_document_0_dup,
                 &dashpay_cbor,
                 "contactRequest",
-                Some(&random_owner_id),
+                Some(random_owner_id),
                 false,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 None,
             )
             .expect_err(
@@ -1137,9 +1405,9 @@ mod tests {
             .apply_contract_cbor(
                 contract_cbor.clone(),
                 None,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -1155,9 +1423,9 @@ mod tests {
                 "domain",
                 None,
                 true,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("should create dash tld");
@@ -1181,9 +1449,9 @@ mod tests {
                 "domain",
                 None,
                 true,
-                0f64,
+                BlockInfo::default(),
                 true,
-                StorageFlags::default(),
+                StorageFlags::optional_default_as_ref(),
                 Some(&db_transaction),
             )
             .expect("should add random tld");

@@ -38,7 +38,6 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tempfile::TempDir;
 
 use rs_drive::common;
 use rs_drive::common::helpers::setup::setup_drive;
@@ -48,12 +47,13 @@ use rs_drive::drive::config::DriveConfig;
 use rs_drive::drive::contract::add_init_contracts_structure_operations;
 use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
-use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
+use rs_drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use rs_drive::drive::Drive;
 use rs_drive::error::{query::QueryError, Error};
 use rs_drive::query::DriveQuery;
 
 use dpp::data_contract::extra::DriveContractExt;
+use rs_drive::drive::block_info::BlockInfo;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -192,7 +192,7 @@ pub fn setup(
                     continue;
                 }
             }
-            let value = serde_json::to_value(&person).expect("serialized person");
+            let value = serde_json::to_value(person).expect("serialized person");
             let document_cbor =
                 common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
             let document = Document::from_cbor(document_cbor.as_slice(), None, None)
@@ -201,7 +201,7 @@ pub fn setup(
                 .document_type_for_name("person")
                 .expect("expected to get document type");
 
-            let storage_flags = StorageFlags { epoch: 0 };
+            let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
             // if block_time == 100 && i == 9 {
             //     dbg!("block time {} {} {:#?}",block_time, i, person);
@@ -210,17 +210,17 @@ pub fn setup(
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
-                        document_info: DocumentAndSerialization((
+                        document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            &storage_flags,
+                            storage_flags.as_ref(),
                         )),
                         contract: &contract,
                         document_type,
                         owner_id: None,
                     },
                     true,
-                    block_time as f64,
+                    BlockInfo::default_with_time(block_time),
                     true,
                     Some(&db_transaction),
                 )
@@ -256,8 +256,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            230, 236, 88, 150, 111, 150, 60, 149, 247, 147, 196, 208, 248, 49, 68, 225, 141, 201,
-            251, 163, 138, 143, 223, 178, 244, 176, 103, 71, 146, 151, 51, 206
+            172, 91, 214, 52, 75, 82, 199, 59, 140, 214, 98, 176, 78, 117, 136, 4, 206, 173, 202,
+            110, 251, 122, 65, 84, 82, 170, 169, 167, 237, 225, 148, 4
         ]
     );
 
@@ -289,10 +289,10 @@ fn test_query_historical() {
         .document_types()
         .get("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, Some(&db_transaction))
+        .execute_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -328,7 +328,13 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+        )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
@@ -350,7 +356,13 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+        )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
@@ -387,7 +399,13 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+        )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
@@ -411,7 +429,13 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+        )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
@@ -443,7 +467,13 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+        )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 0);
@@ -464,7 +494,13 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+        )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
@@ -488,7 +524,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -533,7 +569,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -574,7 +610,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -649,7 +685,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 3);
 
@@ -698,7 +734,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -741,7 +777,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -778,7 +814,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -850,7 +886,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -899,7 +935,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None)
+        .execute_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -987,18 +1023,22 @@ fn test_query_historical() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = StorageFlags { epoch: 0 };
+    let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document, &person_cbor, &storage_flags)),
+                document_info: DocumentRefAndSerialization((
+                    &document,
+                    &person_cbor,
+                    storage_flags.as_ref(),
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
             },
             true,
-            0f64,
+            BlockInfo::genesis(),
             true,
             Some(&db_transaction),
         )
@@ -1031,18 +1071,22 @@ fn test_query_historical() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = StorageFlags { epoch: 0 };
+    let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document, &person_cbor, &storage_flags)),
+                document_info: DocumentRefAndSerialization((
+                    &document,
+                    &person_cbor,
+                    storage_flags.as_ref(),
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
             },
             true,
-            0f64,
+            BlockInfo::genesis(),
             true,
             Some(&db_transaction),
         )
@@ -1066,6 +1110,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1090,6 +1135,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1115,6 +1161,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1142,6 +1189,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1181,6 +1229,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1216,6 +1265,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1241,6 +1291,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1291,6 +1342,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect_err("not yet implemented");
@@ -1343,6 +1395,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1371,6 +1424,7 @@ fn test_query_historical() {
             &contract,
             person_document_type,
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1385,9 +1439,9 @@ fn test_query_historical() {
         .apply_contract_cbor(
             contract_cbor.clone(),
             None,
-            0f64,
+            BlockInfo::genesis(),
             true,
-            StorageFlags::default(),
+            StorageFlags::optional_default_as_ref(),
             Some(&db_transaction),
         )
         .expect("expected to apply contract successfully");
@@ -1406,6 +1460,7 @@ fn test_query_historical() {
             contract_cbor.as_slice(),
             String::from("contact"),
             query_cbor.as_slice(),
+            None,
             Some(&db_transaction),
         )
         .expect("query should be executed");
@@ -1433,6 +1488,7 @@ fn test_query_historical() {
         &contract,
         person_document_type,
         query_cbor.as_slice(),
+        None,
         Some(&db_transaction),
     );
 
@@ -1461,6 +1517,7 @@ fn test_query_historical() {
         &contract,
         person_document_type,
         query_cbor.as_slice(),
+        None,
         Some(&db_transaction),
     );
 
@@ -1478,8 +1535,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            241, 184, 162, 238, 216, 246, 105, 87, 175, 234, 213, 27, 204, 105, 136, 216, 252, 202,
-            124, 135, 225, 215, 78, 235, 18, 4, 87, 142, 108, 143, 29, 53
+            24, 23, 196, 202, 192, 165, 122, 145, 140, 157, 74, 18, 23, 255, 138, 36, 203, 41, 67,
+            117, 241, 155, 227, 81, 16, 111, 146, 137, 157, 141, 1, 169
         ]
     );
 }

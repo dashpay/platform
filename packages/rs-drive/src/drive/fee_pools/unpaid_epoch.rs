@@ -85,7 +85,9 @@ mod tests {
                     "should not be able to get unpaid epoch if fee pools tree is not initialized"
                 ),
                 Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -96,12 +98,25 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            // We need to first delete the item, because you can not replace an item with a tree
+            drive
+                .grove
+                .delete(
+                    pools_path(),
+                    KEY_UNPAID_EPOCH_INDEX.as_slice(),
+                    None,
+                    Some(&transaction),
+                )
+                .unwrap()
+                .expect("should delete old item");
+
             drive
                 .grove
                 .insert(
                     pools_path(),
                     KEY_UNPAID_EPOCH_INDEX.as_slice(),
                     Element::empty_tree(),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()
@@ -129,6 +144,7 @@ mod tests {
                     pools_path(),
                     KEY_UNPAID_EPOCH_INDEX.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()

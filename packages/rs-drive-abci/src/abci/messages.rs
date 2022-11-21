@@ -69,6 +69,8 @@ pub struct BlockBeginRequest {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockBeginResponse {
+    /// Fee epoch info
+    pub epoch_info: EpochInfo,
     /// List of unsigned withdrawal transaction bytes
     pub unsigned_withdrawal_transactions: Vec<Vec<u8>>,
 }
@@ -100,10 +102,6 @@ pub struct FeesAggregate {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockEndResponse {
-    /// The current epoch index
-    pub current_epoch_index: u16,
-    /// Boolean whether this block is the first of an epoch
-    pub is_epoch_change: bool,
     /// Number of proposers to be paid
     pub proposers_paid_count: Option<u16>,
     /// Index of the last epoch that marked as paid
@@ -111,9 +109,8 @@ pub struct BlockEndResponse {
 }
 
 impl BlockEndResponse {
-    /// Retrieves Epoch info and fee info for the block to be implemented in the BlockEndResponse
-    pub(crate) fn from_epoch_info_and_process_block_fees_result(
-        epoch_info: &EpochInfo,
+    /// Retrieves fee info for the block to be implemented in the BlockEndResponse
+    pub(crate) fn from_process_block_fees_result(
         process_block_fees_result: &ProcessedBlockFeesResult,
     ) -> Self {
         let (proposers_paid_count, paid_epoch_index) = process_block_fees_result
@@ -127,13 +124,24 @@ impl BlockEndResponse {
             });
 
         Self {
-            current_epoch_index: epoch_info.current_epoch_index,
-            is_epoch_change: epoch_info.is_epoch_change,
             proposers_paid_count,
             paid_epoch_index,
         }
     }
 }
+
+/// A struct for handling finalize block responses
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AfterFinalizeBlockRequest {
+    /// List of updated contract ids
+    pub updated_data_contract_ids: Vec<[u8; 32]>,
+}
+
+/// A struct for handling finalize block responses
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AfterFinalizeBlockResponse {}
 
 impl<'a> Serializable<'a> for InitChainRequest {}
 impl<'a> Serializable<'a> for InitChainResponse {}
@@ -141,6 +149,8 @@ impl<'a> Serializable<'a> for BlockBeginRequest {}
 impl<'a> Serializable<'a> for BlockBeginResponse {}
 impl<'a> Serializable<'a> for BlockEndRequest {}
 impl<'a> Serializable<'a> for BlockEndResponse {}
+impl<'a> Serializable<'a> for AfterFinalizeBlockRequest {}
+impl<'a> Serializable<'a> for AfterFinalizeBlockResponse {}
 
 /// A trait for serializing or deserializing ABCI messages
 pub trait Serializable<'a>: Serialize + Deserialize<'a> {

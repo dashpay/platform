@@ -36,18 +36,19 @@ use grovedb::Element;
 use std::collections::HashSet;
 use std::ops::AddAssign;
 
-use KeyInfo::{Key, KeyRef, KeySize};
+use DriveKeyInfo::{Key, KeyRef, KeySize};
 use KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
 use PathInfo::{PathFixedSizeIterator, PathIterator, PathSize};
 use PathKeyElementInfo::{PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize};
 use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
 use crate::contract::document::Document;
-use crate::contract::{Contract, DocumentType};
+use crate::contract::Contract;
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::extra::DocumentType;
 
 use dpp::data_contract::extra::ContractError;
 
@@ -61,17 +62,21 @@ pub enum PathInfo<'a, const N: usize> {
     PathIterator(Vec<Vec<u8>>),
 
     /// A path size
-    PathSize(usize),
+    PathSize(u32),
 }
 
 impl<'a, const N: usize> PathInfo<'a, N> {
     /// Returns the length of the path as a usize.
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u32 {
         match self {
             PathFixedSizeIterator(path_iterator) => {
-                (*path_iterator).into_iter().map(|a| a.len()).sum()
+                (*path_iterator).into_iter().map(|a| a.len() as u32).sum()
             }
-            PathIterator(path_iterator) => path_iterator.clone().into_iter().map(|a| a.len()).sum(),
+            PathIterator(path_iterator) => path_iterator
+                .clone()
+                .into_iter()
+                .map(|a| a.len() as u32)
+                .sum(),
             PathSize(path_size) => *path_size,
         }
     }
@@ -88,7 +93,7 @@ impl<'a, const N: usize> PathInfo<'a, N> {
     }
 
     /// Pushes the given key into the path.
-    pub fn push(&mut self, key_info: KeyInfo<'a>) -> Result<(), Error> {
+    pub fn push(&mut self, key_info: DriveKeyInfo<'a>) -> Result<(), Error> {
         match self {
             PathFixedSizeIterator(_) => {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -105,8 +110,8 @@ impl<'a, const N: usize> PathInfo<'a, N> {
                 }
             },
             PathSize(mut path_size) => match key_info {
-                Key(key) => path_size.add_assign(key.len()),
-                KeyRef(key_ref) => path_size.add_assign(key_ref.len()),
+                Key(key) => path_size.add_assign(key.len() as u32),
+                KeyRef(key_ref) => path_size.add_assign(key_ref.len() as u32),
                 KeySize(key_size) => path_size.add_assign(key_size),
             },
         }
@@ -116,28 +121,28 @@ impl<'a, const N: usize> PathInfo<'a, N> {
 
 /// Key info
 #[derive(Clone)]
-pub enum KeyInfo<'a> {
+pub enum DriveKeyInfo<'a> {
     /// A key
     Key(Vec<u8>),
     /// A key by reference
     KeyRef(&'a [u8]),
     /// A key size
-    KeySize(usize),
+    KeySize(u32),
 }
 
-impl<'a> Default for KeyInfo<'a> {
+impl<'a> Default for DriveKeyInfo<'a> {
     fn default() -> Self {
         Key(vec![])
     }
 }
 
-impl<'a> KeyInfo<'a> {
+impl<'a> DriveKeyInfo<'a> {
     /// Returns the length of the key as a usize.
     pub fn len(&'a self) -> usize {
         match self {
             Key(key) => key.len(),
             KeyRef(key) => key.len(),
-            KeySize(key_size) => *key_size,
+            KeySize(key_size) => *key_size as usize,
         }
     }
 
@@ -156,12 +161,12 @@ impl<'a> KeyInfo<'a> {
             Key(key) => match path_info {
                 PathFixedSizeIterator(iter) => PathFixedSizeKey((iter, key)),
                 PathIterator(iter) => PathKey((iter, key)),
-                PathSize(size) => PathKeySize((size, key.len())),
+                PathSize(size) => PathKeySize((size, key.len() as u32)),
             },
             KeyRef(key_ref) => match path_info {
                 PathFixedSizeIterator(iter) => PathFixedSizeKeyRef((iter, key_ref)),
                 PathIterator(iter) => PathKeyRef((iter, key_ref)),
-                PathSize(size) => PathKeySize((size, key_ref.len())),
+                PathSize(size) => PathKeySize((size, key_ref.len() as u32)),
             },
             KeySize(key_size) => PathKeySize((path_info.len(), key_size)),
         }
@@ -172,7 +177,7 @@ impl<'a> KeyInfo<'a> {
         match self {
             Key(key) => PathFixedSizeKey((path, key)),
             KeyRef(key_ref) => PathFixedSizeKeyRef((path, key_ref)),
-            KeySize(key_size) => PathKeySize((path.len(), key_size)),
+            KeySize(key_size) => PathKeySize((path.len() as u32, key_size)),
         }
     }
 
@@ -181,7 +186,7 @@ impl<'a> KeyInfo<'a> {
         match self {
             Key(key) => PathKey((path, key)),
             KeyRef(key_ref) => PathKeyRef((path, key_ref)),
-            KeySize(key_size) => PathKeySize((path.len(), key_size)),
+            KeySize(key_size) => PathKeySize((path.len() as u32, key_size)),
         }
     }
 }
@@ -199,7 +204,7 @@ pub enum PathKeyInfo<'a, const N: usize> {
     /// An into iter Path with a Key
     PathKeyRef((Vec<Vec<u8>>, &'a [u8])),
     /// A path size
-    PathKeySize((usize, usize)),
+    PathKeySize((u32, u32)),
 }
 
 impl<'a, const N: usize> PathKeyInfo<'a, N> {
@@ -228,7 +233,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
             PathFixedSizeKeyRef((path_iterator, key)) => {
                 (*path_iterator).into_iter().map(|a| a.len()).sum::<usize>() + key.len()
             }
-            PathKeySize((path_size, key_size)) => *path_size + *key_size,
+            PathKeySize((path_size, key_size)) => *path_size as usize + *key_size as usize,
         }
     }
 
@@ -311,7 +316,7 @@ pub enum ElementInfo {
     /// An element
     Element(Element),
     /// An element size
-    ElementSize(usize),
+    ElementSize(u32),
 }
 
 /// Key element info
@@ -319,7 +324,7 @@ pub enum KeyElementInfo<'a> {
     /// An element
     KeyElement((&'a [u8], Element)),
     /// An element size
-    KeyElementSize((usize, usize)),
+    KeyElementSize((u32, u32)),
 }
 
 /// Path key element info
@@ -329,7 +334,7 @@ pub enum PathKeyElementInfo<'a, const N: usize> {
     /// A triple Path Key and Element
     PathKeyElement((Vec<Vec<u8>>, &'a [u8], Element)),
     /// A triple of sum of Path lengths, Key length and Element size
-    PathKeyElementSize((usize, usize, usize)),
+    PathKeyElementSize((u32, u32, u32)),
 }
 
 impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
@@ -350,8 +355,8 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
             PathSize(path_size) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => Ok(PathKeyElementSize((
                     path_size,
-                    key.len(),
-                    element.node_byte_size(key.len()),
+                    key.len() as u32,
+                    element.node_byte_size(key.len() as u32),
                 ))),
                 KeyElementInfo::KeyElementSize((key_len, element_size)) => {
                     Ok(PathKeyElementSize((path_size, key_len, element_size)))
@@ -397,12 +402,12 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
     }
 
     /// Returns length of self
-    pub fn insert_len(&'a self) -> usize {
+    pub fn insert_len(&'a self) -> u32 {
         match self {
             //todo v23: this is an incorrect approximation
-            PathKeyElement((_, key, element)) => element.node_byte_size(key.len()),
+            PathKeyElement((_, key, element)) => element.node_byte_size(key.len() as u32),
             PathKeyElementSize((_, key_size, element_size)) => *key_size + *element_size,
-            PathFixedSizeKeyElement((_, key, element)) => element.node_byte_size(key.len()),
+            PathFixedSizeKeyElement((_, key, element)) => element.node_byte_size(key.len() as u32),
         }
     }
 }
@@ -416,33 +421,33 @@ pub struct DocumentAndContractInfo<'a> {
     /// Document type
     pub document_type: &'a DocumentType,
     /// Owner ID
-    pub owner_id: Option<&'a [u8]>,
+    pub owner_id: Option<[u8; 32]>,
 }
 
 /// Document info
 #[derive(Clone)]
 pub enum DocumentInfo<'a> {
-    /// The document and it's serialized form
-    DocumentAndSerialization((&'a Document, &'a [u8], &'a StorageFlags)),
+    /// The borrowed document and it's serialized form
+    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<&'a StorageFlags>)),
+    /// The borrowed document without it's serialized form
+    DocumentRefWithoutSerialization((&'a Document, Option<&'a StorageFlags>)),
     /// The document without it's serialized form
-    DocumentWithoutSerialization((&'a Document, &'a StorageFlags)),
+    DocumentWithoutSerialization((Document, Option<StorageFlags>)),
     /// An element size
-    DocumentSize(usize),
+    DocumentSize(u32),
 }
 
 impl<'a> DocumentInfo<'a> {
     /// Returns true if self is a document with serialization.
     pub fn is_document_and_serialization(&self) -> bool {
-        match self {
-            DocumentInfo::DocumentAndSerialization(_) => true,
-            _ => false,
-        }
+        matches!(self, DocumentInfo::DocumentRefAndSerialization(..))
     }
 
     /// Makes the document ID the key.
     pub fn id_key_value_info(&self) -> KeyValueInfo {
         match self {
-            DocumentInfo::DocumentAndSerialization((document, _, _)) => {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
                 KeyRefRequest(document.id.as_slice())
             }
             DocumentInfo::DocumentWithoutSerialization((document, _)) => {
@@ -459,11 +464,19 @@ impl<'a> DocumentInfo<'a> {
         &self,
         key_path: &str,
         document_type: &DocumentType,
-        owner_id: Option<&[u8]>,
-    ) -> Result<Option<KeyInfo>, Error> {
+        owner_id: Option<[u8; 32]>,
+    ) -> Result<Option<DriveKeyInfo>, Error> {
         match self {
-            DocumentInfo::DocumentAndSerialization((document, _, _))
-            | DocumentInfo::DocumentWithoutSerialization((document, _)) => {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
+                let raw_value =
+                    document.get_raw_for_document_type(key_path, document_type, owner_id)?;
+                match raw_value {
+                    None => Ok(None),
+                    Some(value) => Ok(Some(Key(value))),
+                }
+            }
+            DocumentInfo::DocumentWithoutSerialization((document, _)) => {
                 let raw_value =
                     document.get_raw_for_document_type(key_path, document_type, owner_id)?;
                 match raw_value {
@@ -483,21 +496,22 @@ impl<'a> DocumentInfo<'a> {
                         Error::Drive(DriveError::CorruptedCodeExecution(
                             "document type must have a max size",
                         ))
-                    })? as usize;
-                    Ok(Some(KeySize(max_size)))
+                    })?;
+                    Ok(Some(KeySize(max_size as u32)))
                 }
             },
         }
     }
 
     /// Gets storage flags
-    pub fn get_storage_flags(&self) -> StorageFlags {
-        match *self {
-            DocumentInfo::DocumentAndSerialization((_, _, storage_flags))
-            | DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
-                storage_flags.clone()
+    pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
+            | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags)) => *storage_flags,
+            DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
+                storage_flags.as_ref()
             }
-            DocumentInfo::DocumentSize(_) => StorageFlags::default(),
+            DocumentInfo::DocumentSize(_) => StorageFlags::optional_default_as_ref(),
         }
     }
 }
@@ -508,15 +522,31 @@ pub enum KeyValueInfo<'a> {
     /// A key by reference
     KeyRefRequest(&'a [u8]),
     /// Max size possible for value
-    KeyValueMaxSize((usize, usize)),
+    KeyValueMaxSize((u16, u32)),
 }
 
 impl<'a> KeyValueInfo<'a> {
-    /// Returns key length
-    pub fn key_len(&'a self) -> usize {
+    /// Returns key ref request
+    pub fn as_key_ref_request(&'a self) -> Result<&'a [u8], Error> {
         match self {
-            KeyRefRequest(key) => key.len(),
+            KeyRefRequest(key) => Ok(key),
+            KeyValueMaxSize((_, _)) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "requesting KeyValueInfo as key ref request however it is a key value max size",
+            ))),
+        }
+    }
+
+    /// Returns key length
+    pub fn key_len(&'a self) -> u16 {
+        match self {
+            KeyRefRequest(key) => key.len() as u16,
             KeyValueMaxSize((key_size, _)) => *key_size,
         }
     }
+}
+
+/// Deletion Info
+pub struct DeletionInfo<'a, const N: usize> {
+    upper_path: PathInfo<'a, N>,
+    lower_path: Vec<KeyValueInfo<'a>>,
 }

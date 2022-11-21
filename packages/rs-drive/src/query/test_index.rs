@@ -3,9 +3,10 @@ mod tests {
     use serde_json::json;
 
     use crate::common;
-    use crate::contract::{Contract, DocumentType, Index, IndexProperty};
+    use crate::contract::Contract;
     use crate::error::{query::QueryError, Error};
     use crate::query::DriveQuery;
+    use dpp::data_contract::extra::{DocumentType, Index, IndexProperty};
 
     fn construct_indexed_document_type() -> DocumentType {
         DocumentType {

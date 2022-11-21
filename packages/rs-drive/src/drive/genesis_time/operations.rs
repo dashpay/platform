@@ -32,19 +32,17 @@
 
 use crate::drive::genesis_time::KEY_GENESIS_TIME;
 use crate::drive::RootTree;
-use grovedb::batch::{GroveDbOp, Op};
+use grovedb::batch::GroveDbOp;
 use grovedb::Element;
 
 /// Returns a groveDB operation which updates the chain's genesis time with the time given.
 pub(super) fn update_genesis_time_operation(genesis_time_ms: u64) -> GroveDbOp {
-    GroveDbOp {
-        path: vec![vec![RootTree::Pools as u8]],
-        key: KEY_GENESIS_TIME.to_vec(),
-        // TODO make this into a Op::Replace
-        op: Op::Insert {
-            element: Element::Item(genesis_time_ms.to_be_bytes().to_vec(), None),
-        },
-    }
+    // TODO make this into a Op::Replace
+    GroveDbOp::insert_run_op(
+        vec![vec![RootTree::Pools as u8]],
+        KEY_GENESIS_TIME.to_vec(),
+        Element::Item(genesis_time_ms.to_be_bytes().to_vec(), None),
+    )
 }
 
 #[cfg(test)]

@@ -43,14 +43,14 @@ use serde::{Deserialize, Serialize};
 pub const EPOCH_CHANGE_TIME_MS: u64 = 1576800000;
 
 /// Info pertinent to the current epoch.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct EpochInfo {
     /// Current epoch index
     pub current_epoch_index: u16,
 
     /// Previous epoch index
-    // Available only on epoch change
+    /// Available only on epoch change
     pub previous_epoch_index: Option<u16>,
 
     /// Boolean true if it's the first block of a new epoch

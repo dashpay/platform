@@ -109,7 +109,6 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::helpers::setup::setup_drive;
     use crate::drive::genesis_time::KEY_GENESIS_TIME;
     use crate::drive::RootTree;
     use crate::error;
@@ -128,7 +127,9 @@ mod tests {
                     "should not be able to get genesis time on uninit fee pools"
                 ),
                 Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -148,6 +149,7 @@ mod tests {
                     [Into::<&[u8; 1]>::into(super::RootTree::Pools).as_slice()],
                     super::KEY_GENESIS_TIME.as_slice(),
                     super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    None,
                     None,
                 )
                 .unwrap()

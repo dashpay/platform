@@ -63,12 +63,6 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
-
-    use crate::drive::batch::GroveDbOpBatch;
-    use crate::error;
-    use crate::fee_pools::epochs::epoch_key_constants;
-    use crate::fee_pools::epochs::Epoch;
 
     mod is_epoch_tree_exists {
         use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
