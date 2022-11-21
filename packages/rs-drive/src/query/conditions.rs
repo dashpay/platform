@@ -41,9 +41,10 @@ use WhereOperator::{
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 
-use crate::contract::{document::Document, DocumentType};
+use crate::contract::document::Document;
 use crate::error::query::QueryError;
 use crate::error::Error;
+use dpp::data_contract::extra::DocumentType;
 
 /// Converts SQL values to CBOR.
 fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
@@ -982,8 +983,8 @@ impl<'a> WhereClause {
             }
             ast::Expr::BinaryOp { left, op, right } => {
                 if *op == ast::BinaryOperator::And {
-                    Self::build_where_clauses_from_operations(&*left, where_clauses)?;
-                    Self::build_where_clauses_from_operations(&*right, where_clauses)?;
+                    Self::build_where_clauses_from_operations(left, where_clauses)?;
+                    Self::build_where_clauses_from_operations(right, where_clauses)?;
                 } else {
                     let mut where_operator = WhereOperator::from_sql_operator(op.clone())
                         .ok_or(Error::Query(QueryError::Unsupported("Unknown operator")))?;

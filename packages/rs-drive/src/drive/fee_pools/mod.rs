@@ -66,7 +66,6 @@ pub fn aggregate_storage_fees_distribution_pool_vec_path() -> Vec<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::drive::batch::GroveDbOpBatch;
     use crate::error;
     use crate::fee_pools::epochs::Epoch;
 

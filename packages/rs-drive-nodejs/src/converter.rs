@@ -1,7 +1,10 @@
 use neon::prelude::*;
 use neon::types::buffer::TypedArray;
 use num::FromPrimitive;
+use rs_drive::drive::block_info::BlockInfo;
 use rs_drive::drive::flags::StorageFlags;
+use rs_drive::fee::FeeResult;
+use rs_drive::fee_pools::epochs::Epoch;
 use rs_drive::grovedb::reference_path::ReferencePathType;
 use rs_drive::grovedb::{Element, PathQuery, Query, SizedQuery};
 use std::borrow::Borrow;
@@ -15,60 +18,53 @@ fn element_to_string(element: &Element) -> &'static str {
 }
 
 pub fn js_object_to_element<'a, C: Context<'a>>(
-    js_object: Handle<JsObject>,
     cx: &mut C,
+    js_object: Handle<JsObject>,
 ) -> NeonResult<Element> {
     let js_element_type: Handle<JsString> = js_object.get(cx, "type")?;
 
     let element_type: String = js_element_type.value(cx);
 
-    let js_element_epoch: Handle<JsNumber> = js_object.get(cx, "epoch")?;
+    let js_element_epoch: Option<Handle<JsNumber>> = js_object.get_opt(cx, "epoch")?;
 
-    let epoch = u16::try_from(js_element_epoch.value(cx) as i64)
-        .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
+    let element_flags = if let Some(js_epoch) = js_element_epoch {
+        let epoch = u16::try_from(js_epoch.value(cx) as i64)
+            .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
 
-    let storage_flags = StorageFlags { epoch };
+        let js_maybe_owner_id: Option<Handle<JsBuffer>> = js_object.get_opt(cx, "ownerId")?;
+
+        let maybe_owner_id = js_maybe_owner_id
+            .map(|js_buffer| js_buffer_to_identifier(cx, js_buffer))
+            .transpose()?;
+
+        let storage_flags = StorageFlags::new_single_epoch(epoch, maybe_owner_id);
+
+        storage_flags.to_some_element_flags()
+    } else {
+        None
+    };
 
     match element_type.as_str() {
         "item" => {
             let js_buffer: Handle<JsBuffer> = js_object.get(cx, "value")?;
             let item = js_buffer_to_vec_u8(js_buffer, cx);
 
-            Ok(Element::new_item_with_flags(
-                item,
-                storage_flags.to_element_flags(),
-            ))
+            Ok(Element::new_item_with_flags(item, element_flags))
         }
         "reference" => {
             let js_object: Handle<JsObject> = js_object.get(cx, "value")?;
-            let reference = js_object_to_reference(js_object, cx)?;
+            let reference = js_object_to_reference(cx, js_object)?;
 
-            Ok(Element::new_reference_with_flags(
-                reference,
-                storage_flags.to_element_flags(),
-            ))
+            Ok(Element::new_reference_with_flags(reference, element_flags))
         }
-        "tree" => {
-            let js_buffer: Handle<JsBuffer> = js_object.get(cx, "value")?;
-            let tree_vec = js_buffer_to_vec_u8(js_buffer, cx);
-
-            Ok(Element::new_tree_with_flags(
-                tree_vec.try_into().or_else(|v: Vec<u8>| {
-                    cx.throw_error(format!(
-                        "Tree buffer is expected to be 32 bytes long, but got {}",
-                        v.len()
-                    ))
-                })?,
-                storage_flags.to_element_flags(),
-            ))
-        }
+        "tree" => Ok(Element::empty_tree_with_flags(element_flags)),
         _ => cx.throw_error(format!("Unexpected element type {}", element_type)),
     }
 }
 
 fn js_object_to_reference<'a, C: Context<'a>>(
-    js_object: Handle<JsObject>,
     cx: &mut C,
+    js_object: Handle<JsObject>,
 ) -> NeonResult<ReferencePathType> {
     let js_reference_type: Handle<JsString> = js_object.get(cx, "type")?;
     let reference_type: String = js_reference_type.value(cx);
@@ -129,32 +125,41 @@ fn js_object_to_reference<'a, C: Context<'a>>(
 }
 
 pub fn element_to_js_object<'a, C: Context<'a>>(
-    element: Element,
     cx: &mut C,
+    element: Element,
 ) -> NeonResult<Handle<'a, JsValue>> {
     let js_object = cx.empty_object();
     let js_type_string = cx.string(element_to_string(&element));
     js_object.set(cx, "type", js_type_string)?;
 
-    let js_value: Handle<JsValue> = match element {
+    let maybe_js_value: Option<Handle<JsValue>> = match element {
         Element::Item(item, _) => {
             let js_buffer = JsBuffer::external(cx, item);
-            js_buffer.upcast()
+            Some(js_buffer.upcast())
         }
-        Element::Reference(reference, _, _) => reference_to_dictionary(reference, cx)?,
-        Element::Tree(tree, _) => {
+        Element::Reference(reference, _, _) => {
+            let reference = reference_to_dictionary(cx, reference)?;
+
+            Some(reference)
+        }
+        Element::Tree(Some(tree), _) => {
             let js_buffer = JsBuffer::external(cx, tree);
-            js_buffer.upcast()
+
+            Some(js_buffer.upcast())
         }
+        Element::Tree(None, _) => None,
     };
 
-    js_object.set(cx, "value", js_value)?;
-    NeonResult::Ok(js_object.upcast())
+    if let Some(js_value) = maybe_js_value {
+        js_object.set(cx, "value", js_value)?;
+    }
+
+    Ok(js_object.upcast())
 }
 
 pub fn nested_vecs_to_js<'a, C: Context<'a>>(
-    v: Vec<Vec<u8>>,
     cx: &mut C,
+    v: Vec<Vec<u8>>,
 ) -> NeonResult<Handle<'a, JsValue>> {
     let js_array: Handle<JsArray> = cx.empty_array();
 
@@ -168,15 +173,15 @@ pub fn nested_vecs_to_js<'a, C: Context<'a>>(
 }
 
 pub fn reference_to_dictionary<'a, C: Context<'a>>(
-    reference: ReferencePathType,
     cx: &mut C,
+    reference: ReferencePathType,
 ) -> NeonResult<Handle<'a, JsValue>> {
     let js_object: Handle<JsObject> = cx.empty_object();
 
     match reference {
         ReferencePathType::AbsolutePathReference(path) => {
             let js_type_name = cx.string("absolutePathReference");
-            let js_path = nested_vecs_to_js(path, cx)?;
+            let js_path = nested_vecs_to_js(cx, path)?;
 
             js_object.set(cx, "type", js_type_name)?;
             js_object.set(cx, "path", js_path)?;
@@ -184,7 +189,7 @@ pub fn reference_to_dictionary<'a, C: Context<'a>>(
         ReferencePathType::UpstreamRootHeightReference(relativity_index, path) => {
             let js_type_name = cx.string("upstreamRootHeightReference");
             let js_relativity_index = cx.number(relativity_index);
-            let js_path = nested_vecs_to_js(path, cx)?;
+            let js_path = nested_vecs_to_js(cx, path)?;
 
             js_object.set(cx, "type", js_type_name)?;
             js_object.set(cx, "relativityIndex", js_relativity_index)?;
@@ -193,7 +198,7 @@ pub fn reference_to_dictionary<'a, C: Context<'a>>(
         ReferencePathType::UpstreamFromElementHeightReference(relativity_index, path) => {
             let js_type_name = cx.string("upstreamFromElementHeightReference");
             let js_relativity_index = cx.number(relativity_index);
-            let js_path = nested_vecs_to_js(path, cx)?;
+            let js_path = nested_vecs_to_js(cx, path)?;
 
             js_object.set(cx, "type", js_type_name)?;
             js_object.set(cx, "relativityIndex", js_relativity_index)?;
@@ -216,6 +221,20 @@ pub fn reference_to_dictionary<'a, C: Context<'a>>(
     }
 
     Ok(js_object.upcast())
+}
+
+pub fn js_buffer_to_identifier<'a, C: Context<'a>>(
+    cx: &mut C,
+    js_buffer: Handle<JsBuffer>,
+) -> NeonResult<[u8; 32]> {
+    // let guard = cx.lock();
+
+    let key_memory_view = js_buffer.borrow();
+
+    // let key_buffer = js_buffer.deref();
+    // let key_memory_view = js_buffer.borrow(&guard);
+    let key_slice: &[u8] = key_memory_view.as_slice(cx);
+    <[u8; 32]>::try_from(key_slice).or_else(|_| cx.throw_type_error("hash must be 32 bytes long"))
 }
 
 pub fn js_buffer_to_vec_u8<'a, C: Context<'a>>(js_buffer: Handle<JsBuffer>, cx: &mut C) -> Vec<u8> {
@@ -368,4 +387,58 @@ pub fn js_path_query_to_path_query<'a, C: Context<'a>>(
     let query = js_object_to_sized_query(js_path_query.get(cx, "query")?, cx)?;
 
     Ok(PathQuery::new(path, query))
+}
+
+pub fn js_object_to_block_info<'a, C: Context<'a>>(
+    js_object: Handle<JsObject>,
+    cx: &mut C,
+) -> NeonResult<BlockInfo> {
+    let js_height: Handle<JsNumber> = js_object.get(cx, "height")?;
+    let js_epoch: Handle<JsNumber> = js_object.get(cx, "epoch")?;
+    let js_time: Handle<JsNumber> = js_object.get(cx, "timeMs")?;
+
+    let epoch = Epoch::new(js_epoch.value(cx) as u16);
+
+    let block_info = BlockInfo {
+        height: js_height.value(cx) as u64,
+        time_ms: js_time.value(cx) as u64,
+        epoch,
+    };
+
+    Ok(block_info)
+}
+
+pub fn fee_result_to_js_object<'a, C: Context<'a>>(
+    cx: &mut C,
+    fee_result: FeeResult,
+) -> NeonResult<Handle<'a, JsObject>> {
+    // TODO: We can't go with f64 because we can lose costs
+    let js_processing_fee = cx.number(fee_result.processing_fee as f64);
+    let js_storage_fee = cx.number(fee_result.storage_fee as f64);
+
+    let js_removed_from_identities: Handle<JsObject> = cx.empty_object();
+
+    for (identifier, epoch_index_map) in fee_result.removed_bytes_from_identities.into_iter() {
+        let js_epoch_index_map = cx.empty_object();
+        for (epoch, bytes) in epoch_index_map {
+            let js_bytes = cx.number(bytes);
+
+            js_epoch_index_map.set(cx, epoch.to_string().as_str(), js_bytes)?;
+        }
+
+        let js_identity_to_epochs = cx.empty_object();
+
+        let js_identifier = JsBuffer::external(cx, identifier);
+
+        js_identity_to_epochs.set(cx, "identifier", js_identifier)?;
+        js_identity_to_epochs.set(cx, "epochsToBytes", js_epoch_index_map)?;
+    }
+
+    let js_fee_results: Handle<JsObject> = cx.empty_object();
+
+    js_fee_results.set(cx, "processingFee", js_processing_fee)?;
+    js_fee_results.set(cx, "storageFee", js_storage_fee)?;
+    js_fee_results.set(cx, "removedFromIdentities", js_removed_from_identities)?;
+
+    Ok(js_fee_results)
 }

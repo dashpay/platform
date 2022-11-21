@@ -2,27 +2,40 @@
 #[derive(Debug, thiserror::Error)]
 pub enum DriveError {
     /// Error
-    // This error should never occur, it is the equivalent of a panic.
+    /// This error should never occur, it is the equivalent of a panic.
     #[error("corrupted code execution error: {0}")]
     CorruptedCodeExecution(&'static str),
+
     /// Error
     #[error("unsupported error: {0}")]
     Unsupported(&'static str),
+
     /// Error
     #[error("unsupported private error: {0}")]
     UnsupportedPrivate(&'static str),
+
     /// Error
     #[error("grovedb insertion error: {0}")]
     GroveDBInsertion(&'static str),
+
     /// Error
     #[error("updating readonly immutable contract error: {0}")]
     UpdatingReadOnlyImmutableContract(&'static str),
     /// Error
     #[error("updating readonly immutable document error: {0}")]
     UpdatingReadOnlyImmutableDocument(&'static str),
+
+    /// Error
+    #[error("invalid deletion of document that keeps history error: {0}")]
+    InvalidDeletionOfDocumentThatKeepsHistory(&'static str),
+
     /// Error
     #[error("deleting document that does not exist error: {0}")]
     DeletingDocumentThatDoesNotExist(&'static str),
+    /// Error
+    #[error("updating document that did not already exist error: {0}")]
+    UpdatingDocumentThatDoesNotExist(&'static str),
+
     /// Error
     #[error("changing contract to readonly error: {0}")]
     ChangingContractToReadOnly(&'static str),
@@ -60,6 +73,7 @@ pub enum DriveError {
     /// Error
     #[error("corrupted identity not an item error: {0}")]
     CorruptedIdentityNotItem(&'static str),
+
     /// Error
     #[error("corrupted withdrawal not an item error: {0}")]
     CorruptedWithdrawalNotItem(&'static str),

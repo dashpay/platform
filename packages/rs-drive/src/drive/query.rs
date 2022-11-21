@@ -34,14 +34,17 @@
 
 use grovedb::TransactionArg;
 
-use crate::contract::{Contract, DocumentType};
+use crate::contract::Contract;
 use crate::drive::Drive;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::query::DriveQuery;
+use dpp::data_contract::extra::DocumentType;
 
+use crate::drive::block_info::BlockInfo;
+use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
@@ -51,23 +54,37 @@ impl Drive {
         query_cbor: &[u8],
         contract_id: [u8; 32],
         document_type_name: &str,
+        epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let contract = self
-            .get_contract(contract_id, transaction, &mut drive_operations)?
+            .get_contract_with_fetch_info_and_add_to_operations(
+                contract_id,
+                epoch,
+                transaction,
+                &mut drive_operations,
+            )?
             .ok_or(Error::Query(QueryError::ContractNotFound(
                 "contract not found",
             )))?;
-        let document_type = contract.document_type_for_name(document_type_name)?;
+        let document_type = contract
+            .contract
+            .document_type_for_name(document_type_name)?;
         let (items, skipped) = self.query_documents_from_contract_internal(
-            &contract,
+            &contract.contract,
             document_type,
             query_cbor,
             transaction,
             &mut drive_operations,
         )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+
         Ok((items, skipped, cost))
     }
 
@@ -77,6 +94,7 @@ impl Drive {
         contract_cbor: &[u8],
         document_type_name: String,
         query_cbor: &[u8],
+        block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -91,7 +109,12 @@ impl Drive {
             transaction,
             &mut drive_operations,
         )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
         Ok((items, skipped, cost))
     }
 
@@ -101,17 +124,23 @@ impl Drive {
         contract: &Contract,
         document_type: &DocumentType,
         query_cbor: &[u8],
+        block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let (items, skipped) = self.query_documents_from_contract_internal(
-            &contract,
+            contract,
             document_type,
             query_cbor,
             transaction,
             &mut drive_operations,
         )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
         Ok((items, skipped, cost))
     }
 
@@ -136,23 +165,37 @@ impl Drive {
         query_cbor: &[u8],
         contract_id: [u8; 32],
         document_type_name: &str,
+        block_info: Option<BlockInfo>,
+        epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> Result<(Vec<u8>, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let contract = self
-            .get_contract(contract_id, transaction, &mut drive_operations)?
+            .get_contract_with_fetch_info_and_add_to_operations(
+                contract_id,
+                epoch,
+                transaction,
+                &mut drive_operations,
+            )?
             .ok_or(Error::Query(QueryError::ContractNotFound(
                 "contract not found",
             )))?;
-        let document_type = contract.document_type_for_name(document_type_name)?;
+        let document_type = contract
+            .contract
+            .document_type_for_name(document_type_name)?;
         let items = self.query_documents_from_contract_as_grove_proof_internal(
-            &contract,
+            &contract.contract,
             document_type,
             query_cbor,
             transaction,
             &mut drive_operations,
         )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
         Ok((items, cost))
     }
 
@@ -163,6 +206,7 @@ impl Drive {
         contract_cbor: &[u8],
         document_type_name: String,
         query_cbor: &[u8],
+        block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<u8>, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -177,7 +221,12 @@ impl Drive {
             transaction,
             &mut drive_operations,
         )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
         Ok((items, cost))
     }
 
@@ -188,6 +237,7 @@ impl Drive {
         contract: &Contract,
         document_type: &DocumentType,
         query_cbor: &[u8],
+        block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<u8>, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -199,7 +249,12 @@ impl Drive {
             transaction,
             &mut drive_operations,
         )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
         Ok((items, cost))
     }
 
@@ -224,6 +279,7 @@ impl Drive {
         contract: &Contract,
         document_type: &DocumentType,
         query_cbor: &[u8],
+        block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -236,7 +292,12 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?;
-        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
         Ok((root_hash, items, cost))
     }
 

@@ -33,7 +33,7 @@
 //!
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::flags::StorageFlags;
+use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
@@ -64,7 +64,13 @@ pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: Transactio
     };
 
     drive
-        .insert_identity(identity.clone(), true, StorageFlags::default(), transaction)
+        .insert_identity(
+            identity.clone(),
+            BlockInfo::default(),
+            true,
+            None,
+            transaction,
+        )
         .expect("should insert identity");
 
     identity
@@ -82,8 +88,8 @@ pub fn increment_in_epoch_each_proposers_block_count(
     for proposer_pro_tx_hash in proposers {
         let op = epoch_tree
             .increment_proposer_block_count_operation(
-                &drive,
-                &proposer_pro_tx_hash,
+                drive,
+                proposer_pro_tx_hash,
                 None,
                 transaction,
             )

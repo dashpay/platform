@@ -181,7 +181,9 @@ mod tests {
                     "should not be able to get storage fee on uninit epochs pool"
                 ),
                 Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -200,6 +202,7 @@ mod tests {
                     epoch.get_path(),
                     KEY_STORAGE_FEE_POOL.as_slice(),
                     super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()
@@ -233,6 +236,7 @@ mod tests {
                     epoch.get_path(),
                     super::epoch_key_constants::KEY_POOL_PROCESSING_FEES.as_slice(),
                     super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()
@@ -293,7 +297,9 @@ mod tests {
                     "should not be able to get multiplier on uninit epochs pool"
                 ),
                 Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathNotFound(_)) => assert!(true),
+                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -312,6 +318,7 @@ mod tests {
                     epoch.get_path(),
                     super::epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
                     super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    None,
                     Some(&transaction),
                 )
                 .unwrap()

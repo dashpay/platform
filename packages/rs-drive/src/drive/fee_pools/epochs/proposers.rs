@@ -83,7 +83,9 @@ impl Drive {
         {
             Ok(result) => Ok(result),
             Err(err) => match err {
-                grovedb::Error::PathNotFound(_) => Ok(true),
+                grovedb::Error::PathNotFound(_) | grovedb::Error::PathParentLayerNotFound(_) => {
+                    Ok(true)
+                }
                 _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "internal grovedb error",
                 ))),
@@ -204,7 +206,7 @@ mod tests {
                     "should not be able to get proposer block count on uninit epochs pool"
                 ),
                 Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathNotFound(_)) => {
+                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
                         assert!(true)
                     }
                     _ => assert!(false, "invalid error type"),

@@ -24,6 +24,9 @@ pub trait DriveContractExt {
     fn keeps_history(&self) -> bool;
     fn set_keeps_history(&mut self, value: bool);
 
+    fn can_be_deleted(&self) -> bool;
+    fn set_can_be_deleted(&mut self, can_be_deleted: bool);
+
     fn readonly(&self) -> bool;
     fn set_readonly(&mut self, is_read_only: bool);
 
@@ -86,6 +89,13 @@ impl DriveContractExt for DataContract {
 
     fn set_keeps_history(&mut self, value: bool) {
         self.config.keeps_history = value
+    }
+
+    fn can_be_deleted(&self) -> bool {
+        self.config.can_be_deleted
+    }
+    fn set_can_be_deleted(&mut self, can_be_deleted: bool) {
+        self.config.can_be_deleted = can_be_deleted;
     }
 
     fn readonly(&self) -> bool {
@@ -464,6 +474,7 @@ mod test {
         assert!(matches!(
             deserialized_contract.config,
             ContractConfig {
+                can_be_deleted: false,
                 readonly: true,
                 keeps_history: true,
                 documents_mutable_contract_default: false,

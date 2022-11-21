@@ -41,9 +41,10 @@ use rs_drive::common::helpers::identities::create_test_identity;
 use rs_drive::contract::document::Document;
 use rs_drive::contract::Contract;
 use rs_drive::dpp::data_contract::extra::DriveContractExt;
+use rs_drive::drive::block_info::BlockInfo;
 use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
-use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
+use rs_drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use rs_drive::drive::Drive;
 use rs_drive::grovedb::TransactionArg;
 
@@ -79,24 +80,24 @@ fn create_test_mn_share_document(
         .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)
         .expect("expected to get a document type");
 
-    let storage_flags = StorageFlags { epoch: 0 };
+    let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
     let document_cbor = document.to_cbor();
 
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((
+                document_info: DocumentRefAndSerialization((
                     &document,
                     &document_cbor,
-                    &storage_flags,
+                    storage_flags.as_ref(),
                 )),
-                contract: &contract,
+                contract,
                 document_type,
                 owner_id: None,
             },
             false,
-            0f64,
+            BlockInfo::genesis(),
             true,
             transaction,
         )

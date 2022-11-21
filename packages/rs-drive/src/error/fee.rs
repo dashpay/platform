@@ -55,6 +55,9 @@ pub enum FeeError {
     #[error("corrupted unpaid epoch index not an item error: {0}")]
     CorruptedUnpaidEpochIndexNotItem(&'static str),
     /// Corrupted code execution error
+    #[error("corrupted removed bytes from identities serialization error: {0}")]
+    CorruptedRemovedBytesFromIdentitiesSerialization(&'static str),
+    /// Corrupted code execution error
     #[error("corrupted code execution error: {0}")]
     CorruptedCodeExecution(&'static str),
     /// Decimal conversion error

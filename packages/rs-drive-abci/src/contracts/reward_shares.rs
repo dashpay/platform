@@ -41,8 +41,9 @@ use crate::error::Error;
 use crate::platform::Platform;
 use rs_drive::common::value_to_cbor;
 use rs_drive::contract::document::Document;
-use rs_drive::contract::{Contract, DataContract};
+use rs_drive::contract::Contract;
 use rs_drive::dpp::data_contract::extra::DriveContractExt;
+use rs_drive::drive::block_info::BlockInfo;
 use rs_drive::drive::flags::StorageFlags;
 use rs_drive::grovedb::TransactionArg;
 use serde_json::json;
@@ -75,6 +76,7 @@ impl Platform {
             &query_cbor,
             MN_REWARD_SHARES_CONTRACT_ID,
             MN_REWARD_SHARES_DOCUMENT_TYPE,
+            None,
             transaction,
         )?;
 
@@ -93,13 +95,15 @@ impl Platform {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
+        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+
         self.drive
             .apply_contract(
                 &contract,
-                contract_cbor.clone(),
-                0f64,
+                contract_cbor,
+                BlockInfo::genesis(),
                 true,
-                StorageFlags { epoch: 0 },
+                storage_flags.as_ref(),
                 transaction,
             )
             .expect("expected to apply contract successfully");

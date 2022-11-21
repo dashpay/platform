@@ -18,7 +18,10 @@ describe('GroveDB', () => {
   let otherTreeKey;
 
   beforeEach(() => {
-    drive = new Drive(TEST_DATA_PATH);
+    drive = new Drive(TEST_DATA_PATH, {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsTransactionalCacheSize: 500,
+    });
 
     groveDb = drive.getGroveDB();
 
@@ -42,13 +45,13 @@ describe('GroveDB', () => {
     await groveDb.insert(
       rootTreePath,
       otherTreeKey,
-      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0 },
     );
 
     await groveDb.insert(
       rootTreePath,
       treeKey,
-      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0 },
     );
 
     await groveDb.insert(
@@ -85,7 +88,7 @@ describe('GroveDB', () => {
     await groveDb.insert(
       rootTreePath,
       treeKey,
-      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0 },
     );
 
     // Inserting an item into the subtree
@@ -106,7 +109,7 @@ describe('GroveDB', () => {
     await groveDb.insert(
       rootTreePath,
       treeKey,
-      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0 },
     );
 
     // Inserting an item into the subtree
@@ -133,7 +136,7 @@ describe('GroveDB', () => {
 
       expect.fail('Expected to throw en error');
     } catch (e) {
-      expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
+      expect(e.message).to.be.equal('path key not found: key not found in Merk for get: 746573745f6b6579');
     }
   });
 
@@ -144,11 +147,11 @@ describe('GroveDB', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e.message).to.equal('path not found: subtree doesn\'t exist');
+        expect(e.message).to.equal('path key not found: key not found in Merk for get: 6e6f7468696e67');
         // appendStack wrapper should add call stack to neon binding errors
-        expect(e.stack).to.not.equal('path not found: subtree doesn\'t exist');
+        expect(e.stack).to.not.equal('path key not found: key not found in Merk for get: 6e6f7468696e67');
         expect(e.stack).to.be.a('string').and.satisfy((msg) => (
-          msg.startsWith('Error: path not found: subtree doesn\'t exist')
+          msg.startsWith('Error: path key not found: key not found in Merk for get: 6e6f7468696e67')
         ));
       }
     });
@@ -160,7 +163,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.startTransaction();
@@ -188,7 +191,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.startTransaction();
@@ -214,7 +217,7 @@ describe('GroveDB', () => {
 
         expect.fail('Expected to throw an error');
       } catch (e) {
-        expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
+        expect(e.message).to.be.equal('path key not found: key not found in Merk for get: 746573745f6b6579');
       }
     });
   });
@@ -225,7 +228,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.startTransaction();
@@ -244,7 +247,7 @@ describe('GroveDB', () => {
 
         expect.fail('Expected to throw an error');
       } catch (e) {
-        expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
+        expect(e.message).to.be.equal('path key not found: key not found in Merk for get: 746573745f6b6579');
       }
 
       await groveDb.commitTransaction();
@@ -262,7 +265,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.startTransaction();
@@ -283,7 +286,7 @@ describe('GroveDB', () => {
 
         expect.fail('Expected to throw an error');
       } catch (e) {
-        expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
+        expect(e.message).to.be.equal('path key not found: key not found in Merk for get: 746573745f6b6579');
       }
     });
   });
@@ -294,7 +297,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.startTransaction();
@@ -319,7 +322,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.startTransaction();
@@ -345,7 +348,7 @@ describe('GroveDB', () => {
 
         expect.fail('Expected to throw an error');
       } catch (e) {
-        expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
+        expect(e.message).to.be.equal('path key not found: key not found in Merk for get: 746573745f6b6579');
       }
     });
   });
@@ -356,7 +359,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       // Inserting an item into the subtree
@@ -377,7 +380,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       // Inserting an item into the subtree
@@ -408,7 +411,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         [],
         Buffer.from('test_tree'),
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
     });
 
@@ -420,29 +423,12 @@ describe('GroveDB', () => {
         await groveDb.insert(
           path,
           key,
-          { type: 'not_a_tree', epoch: 0, value: Buffer.alloc(32) },
+          { type: 'not_a_tree', epoch: 0 },
         );
 
         expect.fail('Expected to throw en error');
       } catch (e) {
         expect(e.message).to.be.equal('Unexpected element type not_a_tree');
-      }
-    });
-
-    it('should throw when trying to insert a tree that is not 32 bytes', async () => {
-      const path = [];
-      const key = Buffer.from('test_key');
-
-      try {
-        await groveDb.insert(
-          path,
-          key,
-          { type: 'tree', epoch: 0, value: Buffer.alloc(1) },
-        );
-
-        expect.fail('Expected to throw en error');
-      } catch (e) {
-        expect(e.message).to.be.equal('Tree buffer is expected to be 32 bytes long, but got 1');
       }
     });
   });
@@ -488,7 +474,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       aValue = Buffer.from('a');
@@ -896,7 +882,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       dKey = Buffer.from('dKey');
@@ -912,7 +898,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         dKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.insert(
@@ -939,7 +925,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         eKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.insert(
@@ -1009,7 +995,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       dKey = Buffer.from('dKey');
@@ -1025,7 +1011,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         dKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.insert(
@@ -1052,7 +1038,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         eKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.insert(
@@ -1097,7 +1083,7 @@ describe('GroveDB', () => {
       expect(result).to.exist();
 
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(218);
+      expect(result).to.have.lengthOf(234);
     });
   });
 
@@ -1117,7 +1103,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       dKey = Buffer.from('dKey');
@@ -1133,7 +1119,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         dKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.insert(
@@ -1160,7 +1146,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         eKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree' },
       );
 
       await groveDb.insert(
@@ -1169,10 +1155,17 @@ describe('GroveDB', () => {
         { type: 'item', epoch: 0, value: eaValue },
       );
 
+      const ownerId = Buffer.alloc(32).fill('c');
+
       await groveDb.insert(
         ePath,
         Buffer.from('ebKey'),
-        { type: 'item', epoch: 0, value: ebValue },
+        {
+          type: 'item',
+          epoch: 0,
+          ownerId,
+          value: ebValue,
+        },
       );
     });
 
@@ -1210,7 +1203,7 @@ describe('GroveDB', () => {
       expect(result).to.exist();
 
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(357);
+      expect(result).to.have.lengthOf(376);
     });
   });
 
@@ -1219,7 +1212,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         [],
         Buffer.from('test_tree'),
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       await groveDb.flush();
@@ -1245,7 +1238,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0 },
       );
 
       // Inserting an item into the subtree
