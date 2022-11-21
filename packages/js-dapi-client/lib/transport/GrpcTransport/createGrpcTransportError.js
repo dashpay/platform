@@ -57,6 +57,12 @@ function createGrpcTransportError(grpcError, dapiAddress) {
     metadata = grpcError.metadata;
     if (grpcError.metadata instanceof Metadata) {
       metadata = grpcError.metadata.getMap();
+    } else if (grpcError.metadata.headersMap) {
+      // Handle @improbable-eng/grpc-web case
+      metadata = {};
+      grpcError.metadata.forEach((key, values) => {
+        metadata[key] = values.join();
+      });
     }
   }
 
