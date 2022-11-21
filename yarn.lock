@@ -1281,14 +1281,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashpay/js-abci#2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc":
+"@dashevo/abci@github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f":
   version: 0.24.0-dev.1
-  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"
+  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
     protocol-buffers-encodings: ^1.1.0
-  checksum: 456b70a1b93059f10e2f13fb3a8319fee0f9a94a168712e72998f3eaf199a89ee644052d1976e3aff22219a549ba796b6a7ae9c45cdfc288a42b58195405cd8c
+  checksum: 86504da08f35d618a19ce99b3e2500580d6e20c34859be911efc35951099b42c4d641de0a92a83e0bb712df013ac57c97f9bf63a9d0e56b40db089864f5e1574
   languageName: node
   linkType: hard
 
@@ -1342,6 +1342,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     eslint-plugin-jsdoc: ^27.0.0
     events: ^3.3.0
+    google-protobuf: ^3.12.2
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
@@ -1413,6 +1414,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
+    google-protobuf: ^3.12.2
     jayson: ^3.3.4
     lodash: ^4.17.19
     lru-cache: ^5.1.1
@@ -1659,7 +1661,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashpay/js-abci#2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"
+    "@dashevo/abci": "github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
@@ -1690,6 +1692,7 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     find-my-way: ^2.2.2
+    google-protobuf: ^3.12.2
     js-merkle: ^0.1.5
     levelup: ^4.4.0
     lodash.clonedeep: ^4.5.0
@@ -1954,29 +1957,19 @@ __metadata:
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
-    "@babel/core": ^7.15.5
-    "@babel/preset-env": ^7.15.4
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
-    "@dashevo/feature-flags-contract": "workspace:*"
-    "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
     "@dashevo/wasm-re2": ~1.0.2
-    acorn: ^8.5.0
+    "@types/node": ^14.6.0
     ajv: ^8.6.0
-    ajv-formats: ^2.1.1
     assert: ^2.0.0
-    babel-loader: ^8.2.2
-    bignumber.js: ^9.0.1
-    bls-signatures: ^0.2.5
     bs58: ^4.0.1
     buffer: ^6.0.3
-    cbor: ^8.0.0
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
     chai-exclude: ^2.1.0
     chai-string: ^1.5.0
-    core-js: ^3.17.2
     crypto-browserify: ^3.12.0
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1986,7 +1979,6 @@ __metadata:
     fast-json-patch: ^3.1.0
     https-browserify: ^1.0.0
     json-schema-diff-validator: ^0.4.1
-    json-schema-traverse: ^1.0.0
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
@@ -1995,13 +1987,8 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
     lodash.clonedeep: ^4.5.0
-    lodash.clonedeepwith: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.set: ^4.3.2
     long: ^5.2.0
     mocha: ^9.1.2
-    node-inspect-extracted: ^1.0.8
-    nyc: ^15.1.0
     path-browserify: ^1.0.1
     process: ^0.11.10
     sinon: ^11.1.2
@@ -2009,6 +1996,8 @@ __metadata:
     stream-browserify: ^3.0.0
     stream-http: ^3.2.0
     string_decoder: ^1.3.0
+    ts-loader: ^8.0.2
+    typescript: ^3.9.5
     url: ^0.11.0
     util: ^0.12.4
     webpack: ^5.59.1
@@ -2022,6 +2011,22 @@ __metadata:
   checksum: 3d54788e4e133e0677e60c125550a1f81cc5d9ed742e7dfec936e4da7653bb17a43054db3fc1287074efdb05ebbef7625d19f1f3286662f135218fadc27e6818
   languageName: node
   linkType: hard
+
+"@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
+  dependencies:
+    "@dashevo/dpp": "workspace:*"
+    chai: ^4.3.4
+    dirty-chai: ^2.0.1
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    mocha: ^9.1.2
+    sinon: ^11.1.2
+    sinon-chai: ^3.7.0
+  languageName: unknown
+  linkType: soft
 
 "@dashevo/x11-hash-js@npm:^1.0.2":
   version: 1.0.2

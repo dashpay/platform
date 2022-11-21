@@ -1,8 +1,8 @@
-const Identifier = require('../../../lib/identifier/Identifier');
-const Metadata = require('../../../lib/Metadata');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const Metadata = require('@dashevo/dpp/lib/Metadata');
 
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 describe('Document', () => {
   let document;

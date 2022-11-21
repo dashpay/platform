@@ -1,6 +1,6 @@
-const InvalidStateTransitionError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionError');
-const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 describe('InvalidStateTransitionError', () => {
   let rawStateTransition;

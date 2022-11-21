@@ -131,7 +131,11 @@ function prepareProposalHandlerFactory(
       validatorSetUpdate,
       appHash,
     } = await endBlock({
-      height, round, processingFees: processingFeesTotal, storageFees: storageFeesTotal,
+      height,
+      round,
+      processingFees: processingFeesTotal,
+      storageFees: storageFeesTotal,
+      coreChainLockedHeight,
     }, consensusLogger);
 
     consensusLogger.info(

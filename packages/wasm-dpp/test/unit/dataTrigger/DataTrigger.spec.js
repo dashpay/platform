@@ -1,12 +1,12 @@
 const bs58 = require('bs58');
-const AbstractDocumentTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
-const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
-const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTriggerExecutionContext');
-const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
-const DataTriggerExecutionResult = require('../../../lib/dataTrigger/DataTriggerExecutionResult');
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const DataTriggerExecutionError = require('../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
-const DataTriggerInvalidResultError = require('../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerInvalidResultError');
+const AbstractDocumentTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
+const DataTrigger = require('@dashevo/dpp/lib/dataTrigger/DataTrigger');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const DataTriggerExecutionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
+const DataTriggerInvalidResultError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerInvalidResultError');
 
 describe('DataTrigger', () => {
   let dataContractMock;

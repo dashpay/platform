@@ -1,19 +1,19 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
 const DashCoreLib = require('@dashevo/dashcore-lib');
-const validateAssetLockTransactionFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/validateAssetLockTransactionFactory');
-const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const validateAssetLockTransactionFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/validateAssetLockTransactionFactory');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const ValidationResult = require('../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const { expectValidationError } = require('../../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const InvalidIdentityAssetLockTransactionError = require('../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
-const IdentityAssetLockTransactionOutputNotFoundError = require('../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutputNotFoundError');
-const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
-const InvalidIdentityAssetLockTransactionOutputError = require('../../../../../lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
-const InvalidAssetLockTransactionOutputReturnSizeError = require('../../../../../lib/errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSizeError');
-const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const InvalidIdentityAssetLockTransactionError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
+const IdentityAssetLockTransactionOutputNotFoundError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutputNotFoundError');
+const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
+const InvalidIdentityAssetLockTransactionOutputError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
+const InvalidAssetLockTransactionOutputReturnSizeError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSizeError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateAssetLockTransactionFactory', () => {
   let stateRepositoryMock;

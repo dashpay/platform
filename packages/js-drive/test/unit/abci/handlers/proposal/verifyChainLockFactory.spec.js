@@ -1,8 +1,6 @@
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const verifyChainLockFactory = require('../../../../../lib/abci/handlers/proposal/verifyChainLockFactory');
 
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
-const ChainlockVerificationFailedError = require('../../../../../lib/abci/errors/ChainlockVerificationFailedError');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('verifyChainLockFactory', () => {
@@ -15,12 +13,12 @@ describe('verifyChainLockFactory', () => {
   beforeEach(function beforeEach() {
     latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     latestBlockExecutionContextMock.getCoreChainLockedHeight.returns(41);
+
     chainLockMock = {
-      toJSON: this.sinon.stub(),
+      coreBlockHash: Buffer.alloc(1, 1).toString(),
+      signature: Buffer.alloc(1, 2).toString(),
+      coreBlockHeight: 42,
     };
-    chainLockMock.coreBlockHash = Buffer.alloc(0);
-    chainLockMock.signature = Buffer.alloc(0);
-    chainLockMock.coreBlockHeight = 42;
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -37,75 +35,56 @@ describe('verifyChainLockFactory', () => {
   });
 
   it('should verify chain lock though Core', async () => {
-    await verifyChainLock(chainLockMock);
+    const result = await verifyChainLock(chainLockMock);
 
+    expect(result).to.be.true();
     expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
-      chainLockMock.coreBlockHash.toString('hex'),
-      chainLockMock.signature.toString('hex'),
+      Buffer.from(chainLockMock.coreBlockHash).toString('hex'),
+      Buffer.from(chainLockMock.signature).toString('hex'),
       chainLockMock.coreBlockHeight,
     );
 
     expect(latestBlockExecutionContextMock.getCoreChainLockedHeight).to.be.calledOnce();
   });
 
-  it('should throw ChainlockVerificationFailedError if chainLock is not valid', async () => {
-    coreRpcClientMock.verifyChainLock.returns(false);
+  it('should return false if chainLock is not valid', async () => {
+    coreRpcClientMock.verifyChainLock.resolves({ result: false });
 
-    try {
-      await verifyChainLock(chainLockMock);
+    const result = await verifyChainLock(chainLockMock);
 
-      expect.fail('should throw InvalidArgumentAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(ChainlockVerificationFailedError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.INTERNAL);
-      expect(e.message).to.equal('ChainLock verification failed: ChainLock is not valid');
-    }
+    expect(result).to.be.false();
   });
 
-  it('should throw ChainlockVerificationFailedError if Core returns parse error', async () => {
+  it('should return false if Core returns parse error', async () => {
     const error = new Error('parse error');
     error.code = -32700;
 
     coreRpcClientMock.verifyChainLock.throws(error);
 
-    try {
-      await verifyChainLock(chainLockMock);
+    const result = await verifyChainLock(chainLockMock);
 
-      expect.fail('should throw ChainlockVerificationFailedError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(ChainlockVerificationFailedError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.INTERNAL);
-      expect(e.message).to.equal(`ChainLock verification failed: ${error.message}`);
-
-      expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
-        chainLockMock.coreBlockHash.toString('hex'),
-        chainLockMock.signature.toString('hex'),
-        chainLockMock.coreBlockHeight,
-      );
-    }
+    expect(result).to.be.false();
+    expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
+      Buffer.from(chainLockMock.coreBlockHash).toString('hex'),
+      Buffer.from(chainLockMock.signature).toString('hex'),
+      chainLockMock.coreBlockHeight,
+    );
   });
 
-  it('should throw ChainlockVerificationFailedError if Core returns invalid signature format error', async () => {
+  it('should return false if Core returns invalid signature format error', async () => {
     const error = new Error('invalid signature format');
     error.code = -8;
 
     coreRpcClientMock.verifyChainLock.throws(error);
 
-    try {
-      await verifyChainLock(chainLockMock);
+    const result = await verifyChainLock(chainLockMock);
 
-      expect.fail('should throw ChainlockVerificationFailedError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(ChainlockVerificationFailedError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.INTERNAL);
-      expect(e.message).to.equal(`ChainLock verification failed: ${error.message}`);
-
-      expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
-        chainLockMock.coreBlockHash.toString('hex'),
-        chainLockMock.signature.toString('hex'),
-        chainLockMock.coreBlockHeight,
-      );
-    }
+    expect(result).to.be.false();
+    expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
+      Buffer.from(chainLockMock.coreBlockHash).toString('hex'),
+      Buffer.from(chainLockMock.signature).toString('hex'),
+      chainLockMock.coreBlockHeight,
+    );
   });
 
   it('should throw an error if Core throws error', async () => {
@@ -122,25 +101,17 @@ describe('verifyChainLockFactory', () => {
     }
 
     expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
-      chainLockMock.coreBlockHash.toString('hex'),
-      chainLockMock.signature.toString('hex'),
+      Buffer.from(chainLockMock.coreBlockHash).toString('hex'),
+      Buffer.from(chainLockMock.signature).toString('hex'),
       chainLockMock.coreBlockHeight,
     );
   });
 
-  it('should throw ChainlockVerificationFailedError if coreBlockHeight >= lastCoreChainLockedHeight', async () => {
+  it('should return false if coreBlockHeight >= lastCoreChainLockedHeight', async () => {
     latestBlockExecutionContextMock.getCoreChainLockedHeight.returns(42);
+    const result = await verifyChainLock(chainLockMock);
 
-    try {
-      await verifyChainLock(chainLockMock);
-
-      expect.fail('error was not thrown');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(ChainlockVerificationFailedError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.INTERNAL);
-      expect(e.message).to.equal('ChainLock verification failed: coreBlockHeight is bigger than lastCoreChainLockedHeight');
-
-      expect(coreRpcClientMock.verifyChainLock).to.not.be.called();
-    }
+    expect(result).to.be.false();
+    expect(coreRpcClientMock.verifyChainLock).to.not.be.called();
   });
 });

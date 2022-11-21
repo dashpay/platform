@@ -1,5 +1,5 @@
-const InvalidDataContractError = require('../../../../lib/dataContract/errors/InvalidDataContractError');
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+const InvalidDataContractError = require('@dashevo/dpp/lib/dataContract/errors/InvalidDataContractError');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 describe('InvalidDataContractError', () => {
   let rawDataContract;

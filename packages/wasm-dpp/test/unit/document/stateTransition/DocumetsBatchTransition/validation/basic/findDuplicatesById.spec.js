@@ -1,6 +1,6 @@
-const findDuplicateDocuments = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesById');
+const findDuplicateDocuments = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesById');
 
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
 describe('findDuplicatesById', () => {
   let rawDocumentTransitions;

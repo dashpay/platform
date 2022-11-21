@@ -1,12 +1,12 @@
-const Document = require('../../../../../../../lib/document/Document');
+const Document = require('@dashevo/dpp/lib/document/Document');
 
-const findDuplicateDocumentsByIndices = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesByIndices');
+const findDuplicateDocumentsByIndices = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesByIndices');
 
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { generate: generateEntropy } = require('../../../../../../../lib/util/entropyGenerator');
+const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGenerator');
 
 describe('findDuplicatesByIndices', () => {
   let documents;

@@ -1,41 +1,42 @@
 const bs58 = require('bs58');
 
-const Identifier = require('../../../lib/identifier/Identifier');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const JsDataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
-
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
-const Metadata = require('../../../lib/Metadata');
-const DataContract = require('../../../lib/dataContract/DataContract');
-
-const hash = require('../../../lib/util/hash');
-const serializer = require('../../../lib/util/serializer');
-const getBinaryPropertiesFromSchema = require('../../../lib/dataContract/getBinaryPropertiesFromSchema');
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('DataContract', () => {
-  let hashMock;
-  let encodeMock;
   let documentType;
   let documentSchema;
   let documents;
-  let dataContract;
+  let jsDataContract;
   let ownerId;
   let entropy;
   let contractId;
-  let getBinaryPropertiesFromSchemaMock;
-  let metadataFixture;
+  let dataContract;
 
-  beforeEach(function beforeEach() {
-    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
-    hashMock = this.sinonSandbox.stub(hash, 'hash');
-    getBinaryPropertiesFromSchemaMock = this.sinonSandbox.stub(getBinaryPropertiesFromSchema, 'getBinaryPropertiesFromSchema');
+  let DataContract;
+  let DataContractDefaults;
+  let Identifier;
+  let Metadata;
 
+  before(async () => {
+    ({
+      DataContract, DataContractDefaults, Identifier, Metadata,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(() => {
     documentType = 'niceDocument';
 
     documentSchema = {
       properties: {
         nice: {
           type: 'boolean',
+        },
+        aBinaryProperty: {
+          type: 'object',
+          byteArray: true,
         },
       },
     };
@@ -44,36 +45,29 @@ describe('DataContract', () => {
       [documentType]: documentSchema,
     };
 
-    getBinaryPropertiesFromSchemaMock.withArgs(documentSchema)
-      .returns({
-        'firstLevel.secondLevel': {
-          type: 'array',
-          byteArray: true,
-        },
-      });
-
     ownerId = generateRandomIdentifier();
-    entropy = Buffer.alloc(32);
+    entropy = Buffer.alloc(32, 420);
     contractId = generateRandomIdentifier();
 
-    dataContract = new DataContract({
-      $schema: DataContract.DEFAULTS.SCHEMA,
+    jsDataContract = new JsDataContract({
+      $schema: JsDataContract.DEFAULTS.SCHEMA,
       $id: contractId,
       version: 1,
+      protocolVersion: 1,
       ownerId,
       documents,
       $defs: {},
     });
 
-    metadataFixture = new Metadata(42, 0);
-
-    dataContract.setMetadata(metadataFixture);
-  });
-
-  afterEach(() => {
-    encodeMock.restore();
-    hashMock.restore();
-    getBinaryPropertiesFromSchemaMock.restore();
+    dataContract = new DataContract({
+      $schema: DataContractDefaults.SCHEMA,
+      $id: contractId,
+      version: 1,
+      protocolVersion: 1,
+      ownerId,
+      documents,
+      $defs: {},
+    });
   });
 
   describe('constructor', () => {
@@ -81,18 +75,20 @@ describe('DataContract', () => {
       const id = generateRandomIdentifier();
 
       dataContract = new DataContract({
-        $schema: DataContract.DEFAULTS.SCHEMA,
+        $schema: DataContractDefaults.SCHEMA,
         $id: id,
         ownerId,
+        protocolVersion: 1,
+        version: 1,
         documents,
         $defs: {},
       });
 
-      expect(dataContract.id).to.deep.equal(id);
-      expect(dataContract.ownerId).to.deep.equal(ownerId);
-      expect(dataContract.schema).to.equal(DataContract.DEFAULTS.SCHEMA);
-      expect(dataContract.documents).to.equal(documents);
-      expect(dataContract.$defs).to.deep.equal({});
+      expect(dataContract.getId().toBuffer()).to.deep.equal(id.toBuffer());
+      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId.toBuffer());
+      expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
+      expect(dataContract.getDocuments()).to.deep.equal(documents);
+      expect(dataContract.getDefinitions()).to.deep.equal({});
     });
   });
 
@@ -100,7 +96,7 @@ describe('DataContract', () => {
     it('should return DataContract Identifier', () => {
       const result = dataContract.getId();
 
-      expect(result).to.deep.equal(contractId);
+      expect(result.toBuffer()).to.deep.equal(contractId.toBuffer());
       expect(result).to.be.instanceof(Identifier);
     });
   });
@@ -117,10 +113,9 @@ describe('DataContract', () => {
     it('should set meta schema', () => {
       const metaSchema = 'http://test.com/schema';
 
-      const result = dataContract.setJsonMetaSchema(metaSchema);
+      dataContract.setJsonMetaSchema(metaSchema);
 
-      expect(result).to.equal(dataContract);
-      expect(dataContract.schema).to.equal(metaSchema);
+      expect(dataContract.getJsonMetaSchema()).to.deep.equal(metaSchema);
     });
   });
 
@@ -128,7 +123,22 @@ describe('DataContract', () => {
     it('should return meta schema', () => {
       const result = dataContract.getJsonMetaSchema();
 
-      expect(result).to.equal(dataContract.schema);
+      expect(result).to.deep.equal(DataContractDefaults.SCHEMA);
+    });
+  });
+
+  describe('#getDocuments', () => {
+    it('should get Documents definition', () => {
+      const anotherDocuments = {
+        anotherDocument: {
+          properties: {
+            name: { type: 'string' },
+          },
+        },
+      };
+
+      dataContract.setDocuments(anotherDocuments);
+      expect(dataContract.getDocuments()).to.deep.equal(anotherDocuments);
     });
   });
 
@@ -142,18 +152,8 @@ describe('DataContract', () => {
         },
       };
 
-      const result = dataContract.setDocuments(anotherDocuments);
-
-      expect(result).to.equal(dataContract);
-      expect(dataContract.documents).to.equal(anotherDocuments);
-    });
-  });
-
-  describe('#getDocuments', () => {
-    it('should return Documents definition', () => {
-      const result = dataContract.getDocuments();
-
-      expect(result).to.equal(dataContract.documents);
+      dataContract.setDocuments(anotherDocuments);
+      expect(dataContract.getDocuments()).to.deep.equal(anotherDocuments);
     });
   });
 
@@ -180,12 +180,12 @@ describe('DataContract', () => {
         },
       };
 
-      const result = dataContract.setDocumentSchema(anotherType, anotherDefinition);
+      dataContract.setDocumentSchema(anotherType, anotherDefinition);
 
-      expect(result).to.equal(dataContract);
+      const anotherDocuments = dataContract.getDocuments();
 
-      expect(dataContract.documents).to.have.property(anotherType);
-      expect(dataContract.documents[anotherType]).to.equal(anotherDefinition);
+      expect(anotherDocuments).to.have.property(anotherType);
+      expect(anotherDocuments[anotherType]).to.deep.equal(anotherDefinition);
     });
   });
 
@@ -197,14 +197,13 @@ describe('DataContract', () => {
       } catch (e) {
         error = e;
       }
-
-      expect(error).to.be.an.instanceOf(InvalidDocumentTypeError);
+      expect(error.getDocType()).to.equal('undefinedObject');
     });
 
     it('should return Document Schema', () => {
       const result = dataContract.getDocumentSchema(documentType);
 
-      expect(result).to.equal(documentSchema);
+      expect(result).to.deep.equal(documentSchema);
     });
   });
 
@@ -216,30 +215,25 @@ describe('DataContract', () => {
       } catch (e) {
         error = e;
       }
-
-      expect(error).to.be.an.instanceOf(InvalidDocumentTypeError);
+      expect(error.getDocType()).to.equal('undefinedObject');
     });
 
-    it('should return schema with $ref to Document schema', () => {
-      const hashed = Buffer.from(ownerId + entropy);
-      hashMock.returns(hashed);
-
+    it('should return schema ref', () => {
       const result = dataContract.getDocumentSchemaRef(documentType);
 
-      expect(result).to.deep.equal({
-        $ref: `${dataContract.getJsonSchemaId()}#/documents/niceDocument`,
-      });
+      expect(result).to.equal(`${dataContract.getJsonSchemaId()}#/documents/niceDocument`);
     });
   });
 
   describe('#setDefinitions', () => {
     it('should set $defs', () => {
-      const $defs = {};
+      const $defs = {
+        subSchema: { type: 'object' },
+      };
 
-      const result = dataContract.setDefinitions($defs);
+      dataContract.setDefinitions($defs);
 
-      expect(result).to.equal(dataContract);
-      expect(dataContract.$defs).to.equal($defs);
+      expect(dataContract.getDefinitions()).to.deep.equal($defs);
     });
   });
 
@@ -247,21 +241,22 @@ describe('DataContract', () => {
     it('should return $defs', () => {
       const result = dataContract.getDefinitions();
 
-      expect(result).to.equal(dataContract.$defs);
+      expect(result).to.deep.equal({});
     });
   });
 
   describe('#toJSON', () => {
-    it('should return DataContract as plain object', () => {
+    it('should return JataContract as plain object', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
         protocolVersion: dataContract.getProtocolVersion(),
         $id: bs58.encode(contractId),
-        $schema: DataContract.DEFAULTS.SCHEMA,
+        $schema: DataContractDefaults.SCHEMA,
         version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
+        $defs: {},
       });
     });
 
@@ -276,7 +271,7 @@ describe('DataContract', () => {
 
       expect(result).to.deep.equal({
         protocolVersion: dataContract.getProtocolVersion(),
-        $schema: DataContract.DEFAULTS.SCHEMA,
+        $schema: DataContractDefaults.SCHEMA,
         $id: bs58.encode(contractId),
         version: 1,
         ownerId: bs58.encode(ownerId),
@@ -288,68 +283,29 @@ describe('DataContract', () => {
 
   describe('#toBuffer', () => {
     it('should return DataContract as a Buffer', () => {
-      const serializedDataContract = Buffer.from('123');
+      expect(jsDataContract.getProtocolVersion()).to.deep.equal(dataContract.getProtocolVersion());
 
-      encodeMock.returns(serializedDataContract);
+      const jsResult = jsDataContract.toBuffer();
+      const wasmResult = dataContract.toBuffer();
 
-      const result = dataContract.toBuffer();
-
-      const dataContractToEncode = dataContract.toObject();
-      delete dataContractToEncode.protocolVersion;
-
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(dataContract.getProtocolVersion(), 0);
-
-      expect(encodeMock).to.have.been.calledOnceWith(dataContractToEncode);
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDataContract]));
+      expect(wasmResult).to.deep.equal(jsResult);
     });
   });
 
   describe('#hash', () => {
-    let toBufferMock;
-
-    beforeEach(function beforeEach() {
-      toBufferMock = this.sinonSandbox.stub(DataContract.prototype, 'toBuffer');
-    });
-
-    afterEach(() => {
-      toBufferMock.restore();
-    });
-
     it('should return DataContract hash', () => {
-      const serializedDataContract = '123';
-      const hashedDocument = '456';
+      const jsResult = jsDataContract.hash();
+      const wasmResult = dataContract.hash();
 
-      toBufferMock.returns(serializedDataContract);
-
-      hashMock.returns(hashedDocument);
-
-      const result = dataContract.hash();
-
-      expect(result).to.equal(hashedDocument);
-
-      expect(toBufferMock).to.have.been.calledOnce();
-
-      expect(hashMock).to.have.been.calledOnceWith(serializedDataContract);
+      expect(wasmResult).to.deep.equal(jsResult);
     });
   });
 
   describe('#setEntropy', () => {
     it('should set entropy', () => {
-      const result = dataContract.setEntropy(entropy);
+      dataContract.setEntropy(entropy);
 
-      expect(result).to.equal(dataContract);
-      expect(dataContract.entropy).to.deep.equal(entropy);
-    });
-  });
-
-  describe('#getEntropy', () => {
-    it('should return entropy', () => {
-      dataContract.entropy = entropy;
-
-      const result = dataContract.getEntropy();
-
-      expect(result).to.equal(dataContract.entropy);
+      expect(dataContract.getEntropy()).to.deep.equal(entropy);
     });
   });
 
@@ -357,51 +313,33 @@ describe('DataContract', () => {
     it('should return flat map of properties with `contentEncoding` keywords', () => {
       const result = dataContract.getBinaryProperties(documentType);
       expect(result).to.deep.equal({
-        'firstLevel.secondLevel': {
-          type: 'array',
+        aBinaryProperty: {
+          type: 'object',
           byteArray: true,
         },
       });
-    });
-
-    it('should return cached flat map of properties with `contentEncoding` keywords', () => {
-      dataContract.getBinaryProperties(documentType);
-
-      const result = dataContract.getBinaryProperties(documentType);
-
-      expect(result).to.deep.equal({
-        'firstLevel.secondLevel': {
-          type: 'array',
-          byteArray: true,
-        },
-      });
-
-      expect(getBinaryPropertiesFromSchemaMock).to.have.been.calledOnceWith(documentSchema);
     });
 
     it('should throw an error if document type is not found', () => {
+      let error;
       try {
         dataContract.getBinaryProperties('unknown');
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentTypeError);
+        error = e;
       }
+      expect(error.getDocType()).to.equal('unknown');
     });
   });
 
   describe('#setMetadata', () => {
     it('should set metadata', () => {
       const otherMetadata = new Metadata(43, 1);
+      const otherMetadataToObject = otherMetadata.toObject();
 
       dataContract.setMetadata(otherMetadata);
 
-      expect(dataContract.metadata).to.deep.equal(otherMetadata);
-    });
-  });
-
-  describe('#getMetadata', () => {
-    it('should get metadata', () => {
-      expect(dataContract.getMetadata()).to.deep.equal(metadataFixture);
+      expect(dataContract.getMetadata().toObject()).to.deep.equal(otherMetadataToObject);
     });
   });
 });

@@ -1,6 +1,6 @@
 const ProposalBlockExecutionContextCollection = require('../../../lib/blockExecution/ProposalBlockExecutionContextCollection');
+const BlockExecutionContextNotFoundError = require('../../../lib/blockExecution/errors/BlockExecutionContextNotFoundError');
 const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
-const BlockExecutionContextNotFoundError = require('../../../lib/abci/errors/BlockExecutionContextNotFoundError');
 
 describe('ProposalBlockExecutionContextCollection', () => {
   let proposalBlockExecutionContextCollection;

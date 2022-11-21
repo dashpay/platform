@@ -73,6 +73,9 @@ class WsClient extends EventEmitter {
 
     const onErrorListener = (e) => {
       switch (e.code) {
+        case 'ENOTFOUND':
+          reconnect();
+          break;
         case 'EAI_AGAIN':
           reconnect();
           break;

@@ -1,11 +1,11 @@
-const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
-const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 
-const Identifier = require('../../../../../lib/identifier/Identifier');
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const DataContractCreateTransition = require('../../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-const hash = require('../../../../../lib/util/hash');
-const serializer = require('../../../../../lib/util/serializer');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const hash = require('@dashevo/dpp/lib/util/hash');
+const serializer = require('@dashevo/dpp/lib/util/serializer');
 
 describe('DataContractCreateTransition', () => {
   let stateTransition;

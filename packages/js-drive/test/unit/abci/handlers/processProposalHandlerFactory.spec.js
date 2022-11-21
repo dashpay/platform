@@ -6,7 +6,6 @@ const {
     },
     types: {
       ConsensusParams,
-      CoreChainLock,
     },
   },
 } = require('@dashevo/abci/types');
@@ -68,7 +67,7 @@ describe('processProposalHandlerFactory', () => {
       storageFees: 2,
     });
     beginBlockMock = this.sinon.stub();
-    verifyChainLockMock = this.sinon.stub();
+    verifyChainLockMock = this.sinon.stub().resolves(true);
 
     proposalBlockExecutionContextCollectionMock = {
       get: this.sinon.stub().returns(blockExecutionContextMock),
@@ -97,11 +96,11 @@ describe('processProposalHandlerFactory', () => {
     const coreChainLockedHeight = 10;
     const proposedLastCommit = {};
 
-    coreChainLockUpdate = new CoreChainLock({
+    coreChainLockUpdate = {
       coreBlockHeight: 42,
       coreBlockHash: '1528e523f4c20fa84ba70dd96372d34e00ce260f357d53ad1a8bc892ebf20e2d',
       signature: '1897ce8f54d2070f44ca5c29983b68b391e8137c25e44f67416e579f3e3bdfef7b4fd22db7818399147e52907998857b0fbc8edfdc40a64f2c7df0e88544d31d12ca8c15e73d50dda25ca23f754ed3f789ed4bcb392161995f464017c10df404',
-    });
+    };
 
     request = {
       round,
@@ -143,20 +142,26 @@ describe('processProposalHandlerFactory', () => {
 
     expect(deliverTxMock).to.be.calledThrice();
 
-    const coreChainLock = new CoreChainLock({
-      coreBlockHeight: coreChainLockUpdate.coreBlockHeight,
-      coreBlockHash: Buffer.from(coreChainLockUpdate.coreBlockHash),
-      signature: Buffer.from(coreChainLockUpdate.signature),
-    });
-
-    expect(verifyChainLockMock).to.be.calledOnceWithExactly(coreChainLock);
+    expect(verifyChainLockMock).to.be.calledOnceWithExactly(
+      coreChainLockUpdate,
+    );
 
     expect(endBlockMock).to.be.calledOnceWithExactly({
       height: request.height,
       round,
       processingFees: 3,
       storageFees: 6,
+      coreChainLockedHeight: request.coreChainLockedHeight,
     },
     loggerMock);
+  });
+
+  it('should return rejected ResponseProcessProposal if chainlock can\'t be verified', async () => {
+    verifyChainLockMock.resolves(false);
+
+    const result = await processProposalHandler(request);
+
+    expect(result).to.be.an.instanceOf(ResponseProcessProposal);
+    expect(result.status).to.equal(2);
   });
 });

@@ -1,5 +1,3 @@
-const ChainlockVerificationFailedError = require('../../errors/ChainlockVerificationFailedError');
-
 /**
  *
  * @param {RpcClient} coreRpcClient
@@ -14,21 +12,35 @@ function verifyChainLockFactory(
 ) {
   /**
    * @typedef verifyChainLock
-   * @param {ChainLock} coreChainLock
-   * @return {Promise<void>}
+   * @param {ChainLockUpdate} coreChainLock
+   * @return {Promise<boolean>}
    */
   async function verifyChainLock(coreChainLock) {
+    const serializedCoreChainLock = {
+      height: coreChainLock.coreBlockHeight,
+      signature: Buffer.from(coreChainLock.signature).toString('hex'),
+      blockHash: Buffer.from(coreChainLock.coreBlockHash).toString('hex'),
+    };
+
     const lastCoreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
     if (coreChainLock.coreBlockHeight <= lastCoreChainLockedHeight) {
-      throw new ChainlockVerificationFailedError('coreBlockHeight is bigger than lastCoreChainLockedHeight', { chainlock: coreChainLock.toJSON(), lastCoreChainLockedHeight });
+      logger.debug(
+        {
+          chainLock: serializedCoreChainLock,
+          lastCoreChainLockedHeight,
+        },
+        'Chainlock verification failed: coreBlockHeight must be bigger than the latest core chain locked height',
+      );
+
+      return false;
     }
 
     let isVerified;
     try {
       ({ result: isVerified } = await coreRpcClient.verifyChainLock(
-        coreChainLock.coreBlockHash.toString('hex'),
-        coreChainLock.signature.toString('hex'),
-        coreChainLock.coreBlockHeight,
+        serializedCoreChainLock.blockHash,
+        serializedCoreChainLock.signature,
+        serializedCoreChainLock.height,
       ));
     } catch (e) {
       // Invalid signature format
@@ -37,14 +49,12 @@ function verifyChainLockFactory(
         logger.debug(
           {
             err: e,
-            chainLock: coreChainLock.toJSON(),
+            chainLock: serializedCoreChainLock,
           },
           `Chainlock verification failed using verifyChainLock method: ${e.message} ${e.code}`,
         );
 
-        throw new ChainlockVerificationFailedError(e.message, {
-          chainlock: coreChainLock.toJSON(),
-        });
+        return false;
       }
 
       throw e;
@@ -52,13 +62,11 @@ function verifyChainLockFactory(
 
     if (!isVerified) {
       logger.debug(`Invalid chainLock for height ${coreChainLock.coreBlockHeight}`);
-
-      throw new ChainlockVerificationFailedError(
-        'ChainLock is not valid', { chainlock: coreChainLock.toJSON() },
-      );
+    } else {
+      logger.debug(`ChainLock is valid for height ${coreChainLock.coreBlockHeight}`);
     }
 
-    logger.debug(`ChainLock is valid for height ${coreChainLock.coreBlockHeight}`);
+    return isVerified;
   }
 
   return verifyChainLock;

@@ -95,7 +95,7 @@ const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExt
 const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
 const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
 const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
-const rotateValidatorSetUpdateFactory = require('./abci/handlers/proposal/rotateValidatorSetUpdateFactory');
+const rotateAndCreateValidatorSetUpdateFactory = require('./abci/handlers/proposal/rotateAndCreateValidatorSetUpdateFactory');
 const createConsensusParamUpdateFactory = require('./abci/handlers/proposal/createConsensusParamUpdateFactory');
 const createCoreChainLockUpdateFactory = require('./abci/handlers/proposal/createCoreChainLockUpdateFactory');
 const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
@@ -743,11 +743,13 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       verifyChainLockHandler,
     ) => enrichErrorWithConsensusError(verifyChainLockHandler)).singleton(),
-    rotateValidatorSetUpdateHandler: asFunction(rotateValidatorSetUpdateFactory).singleton(),
-    rotateValidatorSetUpdate: asFunction((
+    rotateAndCreateValidatorSetUpdateHandler: asFunction(
+      rotateAndCreateValidatorSetUpdateFactory,
+    ).singleton(),
+    rotateAndCreateValidatorSetUpdate: asFunction((
       enrichErrorWithConsensusError,
-      rotateValidatorSetUpdateHandler,
-    ) => enrichErrorWithConsensusError(rotateValidatorSetUpdateHandler)).singleton(),
+      rotateAndCreateValidatorSetUpdateHandler,
+    ) => enrichErrorWithConsensusError(rotateAndCreateValidatorSetUpdateHandler)).singleton(),
     createConsensusParamUpdateHandler: asFunction(createConsensusParamUpdateFactory).singleton(),
     createConsensusParamUpdate: asFunction((
       enrichErrorWithConsensusError,

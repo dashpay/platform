@@ -3,9 +3,6 @@ const {
     abci: {
       ResponseProcessProposal,
     },
-    types: {
-      CoreChainLock,
-    },
   },
 } = require('@dashevo/abci/types');
 
@@ -63,6 +60,16 @@ function processProposalHandlerFactory(
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
+    if (coreChainLockUpdate) {
+      const chainLockIsValid = await verifyChainLock(coreChainLockUpdate);
+
+      if (!chainLockIsValid) {
+        return new ResponseProcessProposal({
+          status: proposalStatus.REJECT,
+        });
+      }
+    }
+
     await beginBlock(
       {
         lastCommitInfo,
@@ -117,18 +124,12 @@ function processProposalHandlerFactory(
       validatorSetUpdate,
       appHash,
     } = await endBlock({
-      height, round, processingFees: processingFeesTotal, storageFees: storageFeesTotal,
+      height,
+      round,
+      processingFees: processingFeesTotal,
+      storageFees: storageFeesTotal,
+      coreChainLockedHeight,
     }, consensusLogger);
-
-    if (coreChainLockUpdate) {
-      const coreChainLock = new CoreChainLock({
-        coreBlockHeight: coreChainLockUpdate.coreBlockHeight,
-        coreBlockHash: Buffer.from(coreChainLockUpdate.coreBlockHash),
-        signature: Buffer.from(coreChainLockUpdate.signature),
-      });
-
-      await verifyChainLock(coreChainLock);
-    }
 
     consensusLogger.info(
       {
