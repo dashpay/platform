@@ -1,8 +1,6 @@
 /// Epoch key constants module
 pub mod epoch_key_constants;
-/// Operations factory module
 pub mod operations_factory;
-/// Paths module
 pub mod paths;
 
 use serde::{Deserialize, Serialize};

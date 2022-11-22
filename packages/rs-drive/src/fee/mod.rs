@@ -27,9 +27,6 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fees Mod File.
-//!
-
 use costs::storage_cost::removal::Identifier;
 use enum_map::EnumMap;
 use intmap::IntMap;
@@ -43,7 +40,6 @@ use crate::fee_pools::epochs::Epoch;
 
 /// Default costs module
 pub mod default_costs;
-/// Op module
 pub mod op;
 mod removed_bytes_from_epochs_by_identities;
 

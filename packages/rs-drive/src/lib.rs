@@ -10,7 +10,6 @@
 
 extern crate core;
 
-/// Common module
 pub mod common;
 /// Contract module
 pub mod contract;

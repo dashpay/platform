@@ -27,12 +27,11 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Common functions.
+//! Common functions
 //!
 //! This module defines general, commonly used functions in Drive.
 //!
 
-/// Encode module
 pub mod encode;
 /// Helpers module
 pub mod helpers;
