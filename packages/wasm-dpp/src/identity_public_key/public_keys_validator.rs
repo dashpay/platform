@@ -1,9 +1,9 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
+
 use crate::utils::{to_vec_of_serde_values, ToSerdeJSONExt};
 use crate::validation_result::ValidationResultWasm;
 use dpp::identity::validation::{PublicKeysValidator, TPublicKeysValidator};
-use dpp::validation::ValidationResult;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = PublicKeysValidator)]

@@ -1,5 +1,5 @@
-use dpp::{BlsModule, PublicKeyValidationError};
 use dpp::dashcore::anyhow::anyhow;
+use dpp::{BlsModule, PublicKeyValidationError};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

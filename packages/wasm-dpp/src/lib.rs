@@ -22,6 +22,6 @@ pub mod mocks;
 
 mod utils;
 
-mod buffer;
 mod bls_adapter;
+mod buffer;
 pub mod validation_result;

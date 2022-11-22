@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use wasm_bindgen::prelude::*;
 
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
 use dpp::version::ProtocolVersionValidator;
-use crate::bls_adapter::{JsBlsAdapter, BlsAdapter};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocol(IdentityFacade<BlsAdapter>);

@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
-use dpp::validation::ValidationResult;
+
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::validation_result::ValidationResultWasm;
 use dpp::version::ProtocolVersionValidator;
 use dpp::NonConsensusError;
-use crate::bls_adapter::{JsBlsAdapter, BlsAdapter};
-use crate::validation_result::ValidationResultWasm;
 
 #[wasm_bindgen(js_name=IdentityFacade)]
 pub struct IdentityFacadeWasm(IdentityFacade<BlsAdapter>);
