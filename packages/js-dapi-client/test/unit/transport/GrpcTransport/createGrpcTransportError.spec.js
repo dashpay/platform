@@ -1,3 +1,4 @@
+const { grpc: { Metadata: MetadataGrpcWeb } } = require('@improbable-eng/grpc-web');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const cbor = require('cbor');
@@ -68,14 +69,17 @@ describe('createGrpcTransportError', () => {
   });
 
   it('should get code from metadata in browser environment', () => {
-    metadata.code = GrpcErrorCodes.INVALID_ARGUMENT;
+    const browserMetadata = new MetadataGrpcWeb();
+
+    browserMetadata.set('code', GrpcErrorCodes.INVALID_ARGUMENT);
+    browserMetadata.set('drive-error-data-bin', metadata['drive-error-data-bin'].toString('base64'));
 
     const grpcError = new Error(
       'Not found',
     );
 
     grpcError.code = GrpcErrorCodes.NOT_FOUND;
-    grpcError.metadata = metadata;
+    grpcError.metadata = browserMetadata;
 
     const error = createGrpcTransportError(
       grpcError,

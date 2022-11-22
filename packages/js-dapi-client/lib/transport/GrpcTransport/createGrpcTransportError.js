@@ -56,9 +56,10 @@ function createGrpcTransportError(grpcError, dapiAddress) {
     // In cases of gRPC-Web client we get plain map instead of Metadata instance
     metadata = grpcError.metadata;
     if (grpcError.metadata instanceof Metadata) {
+      // Handle grpc-js metadata
       metadata = grpcError.metadata.getMap();
     } else if (grpcError.metadata.headersMap) {
-      // Handle @improbable-eng/grpc-web case
+      // Handle @improbable-eng/grpc-web metadata
       metadata = {};
       grpcError.metadata.forEach((key, values) => {
         metadata[key] = values.join();
