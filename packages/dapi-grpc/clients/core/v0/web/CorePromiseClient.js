@@ -41,7 +41,8 @@ const rewireStream = (stream) => {
   });
 
   // Assign an empty function to `once` method
-  // because @imporbable-eng/grpc-web doesn't support it
+  // because @imporbable-eng/grpc-web doesn't expose it
+  // stream cancellation detaches all handlers internally
   stream.removeListener = () => {}
 }
 

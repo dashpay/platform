@@ -15,12 +15,12 @@ const baseConfig = {
     ],
   },
   optimization: {
-    minimize: false,
-    // minimizer: [new TerserPlugin({
-    //   terserOptions: {
-    //     keep_classnames: true // fixes empty string in `object.constructor.name`
-    //   }
-    // })],
+    minimize: true,
+    minimizer: [new TerserPlugin({
+      terserOptions: {
+        keep_classnames: true // fixes empty string in `object.constructor.name`
+      }
+    })],
   },
   resolve: {
     extensions: ['.ts', '.js', '.json'],
