@@ -4,11 +4,6 @@ const {
       ResponseQuery,
     },
   },
-  google: {
-    protobuf: {
-      Timestamp,
-    },
-  },
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
@@ -34,6 +29,7 @@ describe('getProofsQueryHandlerFactory', () => {
   let signedIdentityRepositoryMock;
   let signedDataContractRepositoryMock;
   let signedDocumentRepository;
+  let timeMs;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -44,16 +40,13 @@ describe('getProofsQueryHandlerFactory', () => {
       app: Long.fromInt(1),
     };
 
-    const time = new Timestamp({
-      seconds: 86400,
-      nanos: 0,
-    });
+    timeMs = Date.now();
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getHeight.returns(new Long(42));
     blockExecutionContextMock.getCoreChainLockedHeight.returns(41);
-    blockExecutionContextMock.getTime.returns(time);
+    blockExecutionContextMock.getTimeMs.returns(timeMs);
     blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getRound.returns(42);
     blockExecutionContextMock.getLastCommitInfo.returns({
@@ -100,10 +93,6 @@ describe('getProofsQueryHandlerFactory', () => {
       signature: Buffer.alloc(32, 1),
       merkleProof: Buffer.from([1]),
       round: 42,
-      // rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
-      // 'hex'),
-      // storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210',
-      // 'hex'),
     };
 
     const result = await getProofsQueryHandler({}, {
@@ -121,7 +110,7 @@ describe('getProofsQueryHandlerFactory', () => {
           metadata: {
             height: 42,
             coreChainLockedHeight: 41,
-            timeMs: 86400000,
+            timeMs,
             protocolVersion: 1,
           },
         },

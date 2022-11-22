@@ -34,10 +34,7 @@ describe('endBlockFactory', () => {
   beforeEach(function beforeEach() {
     round = 42;
     coreChainLockedHeight = 41;
-    time = {
-      seconds: Math.ceil(new Date().getTime() / 1000),
-      nanos: 0,
-    };
+    time = Date.now();
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -48,7 +45,12 @@ describe('endBlockFactory', () => {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.hasDataContract.returns(true);
-    blockExecutionContextMock.getTime.returns(time);
+    blockExecutionContextMock.getTimeMs.returns(time);
+
+    blockExecutionContextMock.getEpochInfo.returns({
+      currentEpochIndex: 42,
+      isEpochChange: true,
+    });
 
     loggerMock = new LoggerMock(this.sinon);
 

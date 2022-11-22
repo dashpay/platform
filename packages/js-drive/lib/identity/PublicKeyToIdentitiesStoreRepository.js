@@ -25,6 +25,10 @@ class PublicKeyToIdentitiesStoreRepository {
    * @return {Promise<StorageResult<void>>}
    */
   async store(publicKeyHash, identityId, options = {}) {
+    if (options.dryRun) {
+      return new StorageResult(undefined, []);
+    }
+
     const treeResult = await this.storage.createTree(
       PublicKeyToIdentitiesStoreRepository.TREE_PATH,
       publicKeyHash,
@@ -60,6 +64,10 @@ class PublicKeyToIdentitiesStoreRepository {
    * @return {Promise<StorageResult<Identity[]>>}
    */
   async fetch(publicKeyHash, options = {}) {
+    if (options.dryRun) {
+      return new StorageResult([], []);
+    }
+
     const result = await this.storage.query({
       path: PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
       query: {
@@ -98,6 +106,10 @@ class PublicKeyToIdentitiesStoreRepository {
    * @return {Promise<StorageResult<Identity[]>>}
    */
   async fetchMany(publicKeyHashes, options = {}) {
+    if (options.dryRun) {
+      return new StorageResult([], []);
+    }
+
     const result = await this.fetchManyBuffers(publicKeyHashes, options);
 
     return new StorageResult(
@@ -125,6 +137,10 @@ class PublicKeyToIdentitiesStoreRepository {
    * @return {Promise<StorageResult<Buffer[]>>}
    */
   async fetchManyBuffers(publicKeyHashes, options = {}) {
+    if (options.dryRun) {
+      return new StorageResult([], []);
+    }
+
     const items = publicKeyHashes.map((publicKeyHash) => ({
       type: 'key',
       key: publicKeyHash,
@@ -145,22 +161,6 @@ class PublicKeyToIdentitiesStoreRepository {
         },
       },
     }, options);
-  }
-
-  /**
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<void>>}
-   */
-  async createTree(options = {}) {
-    return this.storage.createTree(
-      [],
-      PublicKeyToIdentitiesStoreRepository.TREE_PATH[0],
-      options,
-    );
   }
 
   /**

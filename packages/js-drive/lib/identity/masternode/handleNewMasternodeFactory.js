@@ -8,7 +8,6 @@ const createVotingIdentifier = require('./createVotingIdentifier');
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {createRewardShareDocument} createRewardShareDocument
  * @param {fetchTransaction} fetchTransaction
@@ -16,7 +15,6 @@ const createVotingIdentifier = require('./createVotingIdentifier');
  */
 function handleNewMasternodeFactory(
   transactionalDpp,
-  transactionalStateRepository,
   createMasternodeIdentity,
   createRewardShareDocument,
   fetchTransaction,
@@ -25,9 +23,10 @@ function handleNewMasternodeFactory(
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
    * @return Promise<Array<Identity|Document>>
    */
-  async function handleNewMasternode(masternodeEntry, dataContract) {
+  async function handleNewMasternode(masternodeEntry, dataContract, blockInfo) {
     const result = [];
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
@@ -85,6 +84,7 @@ function handleNewMasternodeFactory(
         masternodeIdentifier,
         operatorIdentifier,
         proRegTxPayload.operatorReward,
+        blockInfo,
       );
 
       if (rewardShareDocument) {

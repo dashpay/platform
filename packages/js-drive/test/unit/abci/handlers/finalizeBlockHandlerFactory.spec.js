@@ -26,7 +26,6 @@ describe('finalizeBlockHandlerFactory', () => {
   let appHash;
   let groveDBStoreMock;
   let coreRpcClientMock;
-  let dataContractCacheMock;
   let blockExecutionContextRepositoryMock;
   let dataContract;
   let proposalBlockExecutionContextCollectionMock;
@@ -67,12 +66,6 @@ describe('finalizeBlockHandlerFactory', () => {
     blockExecutionContextMock.getHeight.returns(42);
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
 
-    dataContractCacheMock = {
-      set: this.sinon.stub(),
-      get: this.sinon.stub(),
-      has: this.sinon.stub(),
-    };
-
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
 
@@ -93,7 +86,6 @@ describe('finalizeBlockHandlerFactory', () => {
       groveDBStoreMock,
       blockExecutionContextRepositoryMock,
       proposalBlockExecutionContextCollectionMock,
-      dataContractCacheMock,
       coreRpcClientMock,
       loggerMock,
       executionTimerMock,
@@ -120,7 +112,6 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
     expect(latestBlockExecutionContextMock.populate).to.be.calledOnce();
   });
 

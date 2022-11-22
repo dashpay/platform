@@ -34,11 +34,9 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
-    blockTime = new Date().getTime() / 1000;
+    blockTime = Date.now();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
-      seconds: blockTime,
-    });
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
 
     validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       stateRepositoryMock,
@@ -104,20 +102,17 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should return invalid result if disabledAt has violated time window', async () => {
     stateTransition.setPublicKeyIdsToDisable([1]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
+    // blockTime - 10 minutes
+    stateTransition.setPublicKeysDisabledAt(new Date(blockTime - 1000 * 60 * 60 * 10));
 
-    const timeWindowStart = new Date(blockTime * 1000);
+    const timeWindowStart = new Date(blockTime);
     timeWindowStart.setMinutes(
       timeWindowStart.getMinutes() - 5,
     );
 
-    const timeWindowEnd = new Date(blockTime * 1000);
+    const timeWindowEnd = new Date(blockTime);
     timeWindowEnd.setMinutes(
       timeWindowEnd.getMinutes() + 5,
-    );
-
-    stateTransition.publicKeysDisabledAt.setMinutes(
-      stateTransition.publicKeysDisabledAt.getMinutes() - 6,
     );
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -198,9 +193,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         stateTransition.getIdentityId(),
         executionContext,
       );
-
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-      .to.be.calledOnce();
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();

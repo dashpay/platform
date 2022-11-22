@@ -1,3 +1,19 @@
+## [0.23.0-alpha.9](https://github.com/dashpay/platform/compare/v0.23.0-alpha.8...v0.23.0-alpha.9) (2022-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* precise storage fees (#619)
+
+### Features
+
+* precise storage fees ([#619](https://github.com/dashpay/platform/issues/619))
+
+
+### Bug Fixes
+
+* **dapi:** Cannot read properties of undefined (reading 'PoSePenalty') ([#612](https://github.com/dashpay/platform/issues/612))
+
 ## [0.24.0-dev.8](https://github.com/dashpay/platform/compare/v0.24.0-dev.7...v0.24.0-dev.8) (2022-11-18)
 
 

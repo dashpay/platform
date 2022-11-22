@@ -40,7 +40,7 @@ describe('applyDataContractCreateTransitionFactory', () => {
   it('should store a data contract from state transition in the repository', async () => {
     await applyDataContractCreateTransition(stateTransition);
 
-    expect(stateRepositoryMock.storeDataContract).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMock.createDataContract).to.have.been.calledOnceWithExactly(
       stateTransition.getDataContract(),
       executionContext,
     );

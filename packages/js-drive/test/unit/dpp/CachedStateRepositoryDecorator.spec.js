@@ -4,12 +4,10 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const CachedStateRepositoryDecorator = require('../../../lib/dpp/CachedStateRepositoryDecorator');
-const DataContractCacheItem = require('../../../lib/dataContract/DataContractCacheItem');
 
 describe('CachedStateRepositoryDecorator', () => {
   let stateRepositoryMock;
   let cachedStateRepository;
-  let dataContractCacheMock;
   let id;
   let identity;
   let documents;
@@ -21,16 +19,10 @@ describe('CachedStateRepositoryDecorator', () => {
     documents = getDocumentsFixture();
     dataContract = getDataContractFixture();
 
-    dataContractCacheMock = {
-      set: this.sinon.stub(),
-      get: this.sinon.stub(),
-    };
-
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     cachedStateRepository = new CachedStateRepositoryDecorator(
       stateRepositoryMock,
-      dataContractCacheMock,
     );
   });
 
@@ -156,41 +148,12 @@ describe('CachedStateRepositoryDecorator', () => {
   });
 
   describe('#fetchDataContract', () => {
-    it('should fetch data contract from cache', async () => {
-      const cacheItem = new DataContractCacheItem(dataContract, []);
-
-      dataContractCacheMock.get.returns(cacheItem);
-
-      const result = await cachedStateRepository.fetchDataContract(id);
-
-      expect(result).to.equal(dataContract);
-      expect(stateRepositoryMock.fetchDataContract).to.be.not.called();
-      expect(dataContractCacheMock.get).to.be.calledOnceWith(id);
-    });
-
     it('should fetch data contract from state repository if it is not present in cache', async () => {
-      dataContractCacheMock.get.returns(undefined);
       stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
       const result = await cachedStateRepository.fetchDataContract(id);
 
-      const cacheItem = new DataContractCacheItem(dataContract, []);
-
       expect(result).to.equal(dataContract);
-      expect(dataContractCacheMock.get).to.be.calledOnceWith(id);
-      expect(dataContractCacheMock.set).to.be.calledOnceWith(id, cacheItem);
-      expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
-    });
-
-    it('should not store null in cache if data contract is not present in state repository', async () => {
-      stateRepositoryMock.fetchDataContract.resolves(null);
-
-      const result = await cachedStateRepository.fetchDataContract(id);
-
-      expect(result).to.be.null();
-
-      expect(dataContractCacheMock.get).to.be.calledOnceWith(id);
-      expect(dataContractCacheMock.set).to.not.be.called();
       expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
     });
   });
@@ -208,15 +171,13 @@ describe('CachedStateRepositoryDecorator', () => {
 
   describe('#fetchLatestPlatformBlockTime', () => {
     it('should fetch latest platform block time from state repository', async () => {
-      const time = {
-        seconds: Math.ceil(new Date().getTime() / 1000),
-      };
+      const timeMs = Date.now();
 
-      stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(time);
+      stateRepositoryMock.fetchLatestPlatformBlockTime.returns(timeMs);
 
-      const result = await cachedStateRepository.fetchLatestPlatformBlockTime(id);
+      const result = await cachedStateRepository.fetchLatestPlatformBlockTime();
 
-      expect(result).to.deep.equal(time);
+      expect(result).to.deep.equal(timeMs);
       expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.be.calledOnce();
     });
   });

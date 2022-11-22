@@ -31,6 +31,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   let stateRepositoryMock;
   let fetchDocumentsMock;
   let executionContext;
+  let blockTimeMs;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -42,6 +43,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ...documentsFixture[1].toObject(),
       lastName: 'NotSoShiny',
     }, dataContract);
+
+    blockTimeMs = Date.now();
 
     documents = [replaceDocument, documentsFixture[2]];
 
@@ -63,9 +66,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
-      seconds: 86400,
-    });
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTimeMs);
 
     fetchDocumentsMock = this.sinonSandbox.stub();
     fetchDocumentsMock.resolves([
@@ -153,7 +154,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       $type: documentTransition.getType(),
       $dataContractId: documentTransition.getDataContractId(),
       $ownerId: stateTransition.getOwnerId(),
-      $createdAt: 86400 * 1000,
+      $createdAt: blockTimeMs,
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());
 
