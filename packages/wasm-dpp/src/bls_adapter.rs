@@ -1,20 +1,6 @@
-// extern "C" {
-//     #[wasm_bindgen(js_name = "default")]
-//     type Web3;
-//
-//     #[wasm_bindgen(constructor, js_class = "default")]
-//     fn new(_: &Provider) -> Web3;
-//
-//     #[wasm_bindgen(static_method_of = Web3, getter, js_class = "default")]
-//     fn givenProvider() -> Provider;
-//
-//     type Provider;
-// }
-
-// use wasm_bindgen::prelude::wasm_bindgen;
-
+use dpp::{BlsModule, PublicKeyValidationError};
+use dpp::dashcore::anyhow::anyhow;
 use wasm_bindgen::prelude::*;
-use dpp::{BlsValidator, PublicKeyValidationError};
 
 #[wasm_bindgen]
 extern "C" {
@@ -23,26 +9,63 @@ extern "C" {
     #[wasm_bindgen(method)]
     pub fn validatePublicKey(this: &JsBlsAdapter, pk: &[u8]) -> bool;
 
-    // #[wasm_bindgen(constructor)]
-    // pub fn new() -> Buffer;
+    #[wasm_bindgen(method, catch)]
+    pub fn verifySignature(
+        this: &JsBlsAdapter,
+        signature: &[u8],
+        data: &[u8],
+        public_key: &[u8],
+    ) -> Result<bool, JsValue>;
 
-    // #[wasm_bindgen(constructor, js_name = "from")]
-    // pub fn from_bytes(js_sys: &[u8]) -> Buffer;
-    //
-    // #[wasm_bindgen(constructor, js_name = "from")]
-    // pub fn from_string(js_sys: String) -> Buffer;
+    #[wasm_bindgen(method, catch)]
+    pub fn privateKeyToPublicKey(
+        this: &JsBlsAdapter,
+        private_key: &[u8],
+    ) -> Result<js_sys::Uint8Array, JsValue>;
+
+    #[wasm_bindgen(method, catch)]
+    pub fn sign(
+        this: &JsBlsAdapter,
+        data: &[u8],
+        private_key: &[u8],
+    ) -> Result<js_sys::Uint8Array, JsValue>;
 }
 
 pub struct BlsAdapter(pub JsBlsAdapter);
 
-impl BlsValidator for BlsAdapter {
+impl BlsModule for BlsAdapter {
     fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError> {
         let is_valid = self.0.validatePublicKey(pk);
 
         if !is_valid {
-            return Err(PublicKeyValidationError::new("Failed"))
+            return Err(PublicKeyValidationError::new("Failed"));
         }
 
         Ok(())
+    }
+
+    fn verify_signature(
+        &self,
+        signature: &[u8],
+        data: &[u8],
+        public_key: &[u8],
+    ) -> Result<bool, dpp::ProtocolError> {
+        self.0
+            .verifySignature(signature, data, public_key)
+            .map_err(|_v| anyhow!("Can't verify signature").into())
+    }
+
+    fn private_key_to_public_key(&self, private_key: &[u8]) -> Result<Vec<u8>, dpp::ProtocolError> {
+        self.0
+            .privateKeyToPublicKey(private_key)
+            .map(|arr| arr.to_vec())
+            .map_err(|_v| anyhow!("Can't convert private key to public key").into())
+    }
+
+    fn sign(&self, data: &[u8], private_key: &[u8]) -> Result<Vec<u8>, dpp::ProtocolError> {
+        self.0
+            .sign(data, private_key)
+            .map(|arr| arr.to_vec())
+            .map_err(|_v| anyhow!("Can't sign").into())
     }
 }
