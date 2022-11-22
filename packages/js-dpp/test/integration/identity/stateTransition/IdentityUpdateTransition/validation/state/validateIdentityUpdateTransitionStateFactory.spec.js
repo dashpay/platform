@@ -146,14 +146,12 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
       executionContext,
     );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-      .to.be.calledOnce();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.be.calledOnce();
   });
 
   it('should pass when adding public key', async () => {
@@ -164,14 +162,12 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
       executionContext,
     );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-      .to.not.be.called();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.not.be.called();
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
       [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()].map(
@@ -188,14 +184,12 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
       executionContext,
     );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-      .to.be.calledOnce();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.be.calledOnce();
   });
 
   it('should validate purpose and security level', async () => {
@@ -272,13 +266,11 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(validatePublicKeysMock).to.not.be.called();
     expect(validateRequiredPurposeAndSecurityLevelMock).to.not.be.called();
-    expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
       executionContext,
     );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
-      .to.not.be.called();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.not.be.called();
   });
 });
