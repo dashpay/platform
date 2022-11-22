@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde_json::Value;
@@ -11,7 +10,9 @@ use crate::errors::consensus::basic::identity::{
 };
 use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
-use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
+use crate::{
+    BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
+};
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
@@ -33,11 +34,12 @@ pub trait TPublicKeysValidator {
     ) -> Result<ValidationResult<()>, NonConsensusError>;
 }
 
-pub struct PublicKeysValidator {
+pub struct PublicKeysValidator<T: BlsModule> {
     public_key_schema_validator: JsonSchemaValidator,
+    bls_validator: T,
 }
 
-impl TPublicKeysValidator for PublicKeysValidator {
+impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
@@ -86,10 +88,12 @@ impl TPublicKeysValidator for PublicKeysValidator {
                         Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                     }
                 }
-                KeyType::BLS12_381 => match BlsPublicKey::from_bytes(&public_key.data) {
-                    Ok(_) => None,
-                    Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
-                },
+                KeyType::BLS12_381 => {
+                    match self.bls_validator.validate_public_key(&public_key.data) {
+                        Ok(_) => None,
+                        Err(e) => Some(e),
+                    }
+                }
                 // Do nothing
                 KeyType::ECDSA_HASH160 => None,
                 // Do nothing
@@ -137,22 +141,27 @@ impl TPublicKeysValidator for PublicKeysValidator {
     }
 }
 
-impl PublicKeysValidator {
-    pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
+impl<T: BlsModule> PublicKeysValidator<T> {
+    pub fn new(bls_validator: T) -> Result<Self, DashPlatformProtocolInitError> {
         let public_key_schema_validator = JsonSchemaValidator::new(PUBLIC_KEY_SCHEMA.clone())?;
 
         let public_keys_validator = Self {
             public_key_schema_validator,
+            bls_validator,
         };
 
         Ok(public_keys_validator)
     }
 
-    pub fn new_with_schema(schema: Value) -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new_with_schema(
+        schema: Value,
+        bls_validator: T,
+    ) -> Result<Self, DashPlatformProtocolInitError> {
         let public_key_schema_validator = JsonSchemaValidator::new(schema)?;
 
         let public_keys_validator = Self {
             public_key_schema_validator,
+            bls_validator,
         };
 
         Ok(public_keys_validator)

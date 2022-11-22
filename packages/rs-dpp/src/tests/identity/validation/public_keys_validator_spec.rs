@@ -1,14 +1,14 @@
 use serde_json::{json, Value};
 
-use crate::assert_consensus_errors;
 use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
 use crate::tests::utils::serde_set_ref;
+use crate::{assert_consensus_errors, NativeBlsModule};
 
-fn setup_test() -> (Vec<Value>, PublicKeysValidator) {
+fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
     (
         crate::tests::fixtures::identity_fixture_raw_object()
             .as_object()

@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
@@ -12,7 +11,7 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 
 lazy_static! {
     static ref INDENTITY_CREATE_TRANSITION_SCHEMA: Value = serde_json::from_str(include_str!(
@@ -23,13 +22,15 @@ lazy_static! {
 
 const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";
 
-pub struct IdentityCreateTransitionBasicValidator<T, S, SR: StateRepositoryLike, SV> {
+pub struct IdentityCreateTransitionBasicValidator<T, S, SR: StateRepositoryLike, SV, BLS: BlsModule>
+{
     protocol_version_validator: Arc<ProtocolVersionValidator>,
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<T>,
     public_keys_in_identity_transition_validator: Arc<S>,
     asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
-    _public_keys_signatures_validator: PhantomData<SV>,
+    public_keys_signatures_validator: SV,
+    bls_adapter: BLS,
 }
 
 impl<
@@ -37,13 +38,16 @@ impl<
         S: TPublicKeysValidator,
         SR: StateRepositoryLike,
         SV: TPublicKeysSignaturesValidator,
-    > IdentityCreateTransitionBasicValidator<T, S, SR, SV>
+        BLS: BlsModule,
+    > IdentityCreateTransitionBasicValidator<T, S, SR, SV, BLS>
 {
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
         public_keys_validator: Arc<T>,
         public_keys_in_identity_transition_validator: Arc<S>,
         asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
+        bls_adapter: BLS,
+        public_keys_signatures_validator: SV,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
             JsonSchemaValidator::new(INDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;
@@ -54,7 +58,8 @@ impl<
             public_keys_validator,
             public_keys_in_identity_transition_validator,
             asset_lock_proof_validator,
-            _public_keys_signatures_validator: PhantomData,
+            public_keys_signatures_validator,
+            bls_adapter,
         };
 
         Ok(identity_validator)
@@ -89,10 +94,10 @@ impl<
             return Ok(result);
         }
 
-        result.merge(SV::validate_public_key_signatures(
-            raw_transition,
-            public_keys,
-        )?);
+        result.merge(
+            self.public_keys_signatures_validator
+                .validate_public_key_signatures(raw_transition, public_keys)?,
+        );
         if !result.is_valid() {
             return Ok(result);
         }

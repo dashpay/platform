@@ -37,8 +37,10 @@ mod dash_platform_protocol;
 pub mod block_time_window;
 pub mod mocks;
 
+mod bls;
 #[cfg(test)]
 mod tests;
+pub use bls::*;
 
 pub mod prelude {
     pub use crate::data_contract::DataContract;

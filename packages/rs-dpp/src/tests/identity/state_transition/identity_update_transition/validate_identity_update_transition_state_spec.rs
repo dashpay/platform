@@ -22,7 +22,7 @@ use crate::{
         utils::{get_state_error_from_result, new_block_header},
     },
     validation::SimpleValidationResult,
-    StateError,
+    NativeBlsModule, StateError,
 };
 
 struct TestData {
@@ -34,6 +34,7 @@ struct TestData {
 }
 
 fn setup_test() -> TestData {
+    let bls = NativeBlsModule::default();
     let identity = identity_fixture();
     let block_header = new_block_header(Some(Utc::now().timestamp() as u32));
 
@@ -60,7 +61,11 @@ fn setup_test() -> TestData {
     let private_key =
         hex::decode("9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2").unwrap();
     state_transition
-        .sign_by_private_key(&private_key, crate::identity::KeyType::ECDSA_SECP256K1)
+        .sign_by_private_key(
+            &private_key,
+            crate::identity::KeyType::ECDSA_SECP256K1,
+            &bls,
+        )
         .expect("transition should be signed");
 
     TestData {

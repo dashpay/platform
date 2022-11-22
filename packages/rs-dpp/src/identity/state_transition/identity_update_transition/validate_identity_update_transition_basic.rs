@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     identity::{
@@ -28,7 +28,7 @@ pub struct ValidateIdentityUpdateTransitionBasic<KV, SV> {
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<KV>,
 
-    _public_keys_signatures_validator: PhantomData<SV>,
+    public_keys_signatures_validator: SV,
 }
 
 impl<KV, SV> ValidateIdentityUpdateTransitionBasic<KV, SV>
@@ -39,6 +39,7 @@ where
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
         public_keys_validator: Arc<KV>,
+        public_keys_signatures_validator: SV,
     ) -> Result<Self, ProtocolError> {
         let json_schema_validator = JsonSchemaValidator::new(IDENTITY_UPDATE_SCHEMA.clone())
             .map_err(|e| {
@@ -51,7 +52,7 @@ where
             protocol_version_validator,
             public_keys_validator,
             json_schema_validator,
-            _public_keys_signatures_validator: PhantomData,
+            public_keys_signatures_validator,
         })
     }
 
@@ -92,8 +93,9 @@ where
                     return Ok(result);
                 }
 
-                let result =
-                    SV::validate_public_key_signatures(raw_state_transition, raw_public_keys_list)?;
+                let result = self
+                    .public_keys_signatures_validator
+                    .validate_public_key_signatures(raw_state_transition, raw_public_keys_list)?;
                 if !result.is_valid() {
                     return Ok(result);
                 }

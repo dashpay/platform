@@ -156,6 +156,7 @@ mod test {
             },
             utils::get_signature_error_from_result,
         },
+        NativeBlsModule,
     };
 
     use super::validate_state_transition_key_signature;
@@ -163,6 +164,7 @@ mod test {
     struct TestData {
         state_repository: MockStateRepositoryLike,
         asset_lock_public_key_hash_fetcher: AssetLockPublicKeyHashFetcher<MockStateRepositoryLike>,
+        bls: NativeBlsModule,
     }
     fn setup_test() -> TestData {
         let state_repository_mock = MockStateRepositoryLike::new();
@@ -178,6 +180,7 @@ mod test {
         TestData {
             state_repository: MockStateRepositoryLike::new(),
             asset_lock_public_key_hash_fetcher,
+            bls: NativeBlsModule::default(),
         }
     }
 
@@ -186,6 +189,7 @@ mod test {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
+            bls,
         } = setup_test();
         let state_transition: StateTransition = DocumentsBatchTransition::default().into();
 
@@ -204,6 +208,7 @@ mod test {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
+            bls,
         } = setup_test();
         let private_key_hex = "af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837";
         let secret_key = SecretKey::from_slice(&hex::decode(private_key_hex).unwrap())
@@ -220,6 +225,7 @@ mod test {
             .sign_by_private_key(
                 &hex::decode(private_key_hex).unwrap(),
                 KeyType::ECDSA_SECP256K1,
+                &bls,
             )
             .expect("state transition should be signed");
 
@@ -239,6 +245,7 @@ mod test {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
+            bls,
         } = setup_test();
         let private_key_hex = "af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837";
         let secret_key = SecretKey::from_slice(&hex::decode(private_key_hex).unwrap())
@@ -255,6 +262,7 @@ mod test {
             .sign_by_private_key(
                 &hex::decode(private_key_hex).unwrap(),
                 KeyType::ECDSA_SECP256K1,
+                &bls,
             )
             .expect("state transition should be signed");
 
@@ -281,6 +289,7 @@ mod test {
         let TestData {
             mut state_repository,
             asset_lock_public_key_hash_fetcher,
+            bls,
         } = setup_test();
         let private_key_hex = "af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837";
         let secret_key = SecretKey::from_slice(&hex::decode(private_key_hex).unwrap())

@@ -91,6 +91,7 @@ mod test {
         util::json_value::JsonValueExt,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
+        NativeBlsModule,
     };
 
     use super::{validate_state_transition_basic, MockValidatorByStateTransitionType};
@@ -99,9 +100,11 @@ mod test {
         data_contract: DataContract,
         state_transition: DataContractCreateTransition,
         raw_state_transition: JsonValue,
+        bls: NativeBlsModule,
     }
 
     fn setup_test() -> TestData {
+        let bls = NativeBlsModule::default();
         let data_contract = get_data_contract_fixture(None);
         let private_key_bytes =
             hex::decode("9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2")
@@ -124,6 +127,7 @@ mod test {
             .sign_by_private_key(
                 &private_key_bytes,
                 crate::identity::KeyType::ECDSA_SECP256K1,
+                &bls,
             )
             .expect("the state transition should be signed");
 
@@ -133,6 +137,7 @@ mod test {
             data_contract,
             state_transition,
             raw_state_transition,
+            bls,
         }
     }
 
