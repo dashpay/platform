@@ -1,5 +1,4 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
@@ -15,8 +14,8 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
  * @param {handleUpdatedVotingAddress} handleUpdatedVotingAddress
  * @param {number} smlMaxListsLimit
- * @param {RpcClient} coreRpcClient
  * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
+ * @param {fetchSimplifiedMNList} fetchSimplifiedMNList
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
@@ -29,14 +28,15 @@ function synchronizeMasternodeIdentitiesFactory(
   handleUpdatedScriptPayout,
   handleUpdatedVotingAddress,
   smlMaxListsLimit,
-  coreRpcClient,
   lastSyncedCoreHeightRepository,
+  fetchSimplifiedMNList,
 ) {
   let lastSyncedCoreHeight = 0;
 
   /**
    * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
+   * @param {BlockInfo} blockInfo
    * @return {Promise<{
    *  created: Array<Identity|Document>,
    *  updated: Array<Identity|Document>,
@@ -45,7 +45,8 @@ function synchronizeMasternodeIdentitiesFactory(
    *  toHeight: number,
    * }>}
    */
-  async function synchronizeMasternodeIdentities(coreHeight) {
+  async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
+    // TODO: We should either pass block info and transaction or just use state repository (?)
     if (!lastSyncedCoreHeight) {
       const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
         useTransaction: true,
@@ -54,7 +55,7 @@ function synchronizeMasternodeIdentitiesFactory(
       lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
     }
 
-    let newMasternodes = [];
+    let newMasternodes;
 
     let previousMNList = [];
 
@@ -80,9 +81,7 @@ function synchronizeMasternodeIdentitiesFactory(
       // simplifiedMasternodeList contains sml only for the last `smlMaxListsLimit` number of blocks
       if (coreHeight - lastSyncedCoreHeight >= smlMaxListsLimit) {
         // get diff directly from core
-        const { result: rawDiff } = await coreRpcClient.protx('diff', 1, lastSyncedCoreHeight, true);
-
-        previousMNList = new SimplifiedMNList(rawDiff).mnList;
+        ({ mnList: previousMNList } = await fetchSimplifiedMNList(1, lastSyncedCoreHeight));
       } else {
         previousMNList = simplifiedMasternodeList.getStore()
           .getSMLbyHeight(lastSyncedCoreHeight)
@@ -109,6 +108,7 @@ function synchronizeMasternodeIdentitiesFactory(
               mnEntry,
               previousMnEntry,
               dataContract,
+              blockInfo,
             ),
           );
         }
@@ -141,6 +141,7 @@ function synchronizeMasternodeIdentitiesFactory(
             await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
+              blockInfo,
               previousPayoutScript,
             );
           }
@@ -165,6 +166,7 @@ function synchronizeMasternodeIdentitiesFactory(
             await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
+              blockInfo,
               previousOperatorPayoutScript,
             );
           }
@@ -177,7 +179,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     for (const newMasternodeEntry of newMasternodes) {
       createdEntities = createdEntities.concat(
-        await handleNewMasternode(newMasternodeEntry, dataContract),
+        await handleNewMasternode(newMasternodeEntry, dataContract, blockInfo),
       );
     }
 
@@ -200,6 +202,7 @@ function synchronizeMasternodeIdentitiesFactory(
         await handleRemovedMasternode(
           masternodeIdentifier,
           dataContract,
+          blockInfo,
         ),
       );
     }

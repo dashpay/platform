@@ -6,9 +6,12 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
+const Long = require('long');
+
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
@@ -29,7 +32,10 @@ describe('DriveStateRepository', () => {
   let repositoryOptions;
   let executionContext;
   let operations;
+  let blockInfo;
   let rsDriveMock;
+  let blockHeight;
+  let timeMs;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -44,7 +50,8 @@ describe('DriveStateRepository', () => {
 
     dataContractRepositoryMock = {
       fetch: this.sinon.stub(),
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
     };
 
     identityRepositoryMock = {
@@ -74,6 +81,18 @@ describe('DriveStateRepository', () => {
     };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    timeMs = Date.now();
+
+    blockHeight = Long.fromNumber(1);
+
+    blockInfo = new BlockInfo(blockHeight.toNumber(), 0, timeMs);
+
+    blockExecutionContextMock.getEpochInfo.returns({
+      currentEpochIndex: blockInfo.epoch,
+    });
+    blockExecutionContextMock.getHeight.returns(blockHeight);
+    blockExecutionContextMock.getTimeMs.returns(timeMs);
 
     simplifiedMasternodeListMock = {
       getStore: this.sinon.stub(),
@@ -283,6 +302,7 @@ describe('DriveStateRepository', () => {
       expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
         id,
         {
+          blockInfo,
           dryRun: false,
           useTransaction: false,
         },
@@ -292,16 +312,38 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#storeDataContract', () => {
-    it('should store data contract to repository', async () => {
-      dataContractRepositoryMock.store.resolves(
+  describe('#createDataContract', () => {
+    it('should create data contract to repository', async () => {
+      dataContractRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
-      await stateRepository.storeDataContract(dataContract, executionContext);
+      await stateRepository.createDataContract(dataContract, executionContext);
 
-      expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
+      expect(dataContractRepositoryMock.create).to.be.calledOnceWith(
         dataContract,
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateDataContract', () => {
+    it('should store data contract to repository', async () => {
+      dataContractRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.updateDataContract(dataContract, executionContext);
+
+      expect(dataContractRepositoryMock.update).to.be.calledOnceWith(
+        dataContract,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -333,6 +375,7 @@ describe('DriveStateRepository', () => {
         id,
         type,
         {
+          blockInfo,
           ...options,
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -355,6 +398,7 @@ describe('DriveStateRepository', () => {
 
       expect(documentsRepositoryMock.create).to.be.calledOnceWith(
         document,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -377,6 +421,7 @@ describe('DriveStateRepository', () => {
 
       expect(documentsRepositoryMock.update).to.be.calledOnceWith(
         document,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -401,6 +446,7 @@ describe('DriveStateRepository', () => {
         dataContract,
         type,
         id,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -490,16 +536,10 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchLatestPlatformBlockTime', () => {
     it('should fetch latest platform block time', async () => {
-      const time = {
-        seconds: 42,
-      };
-
-      blockExecutionContextMock.getTime.resolves(time);
-
       const result = await stateRepository.fetchLatestPlatformBlockTime();
 
-      expect(result).to.deep.equal(time);
-      expect(blockExecutionContextMock.getTime).to.be.calledOnce();
+      expect(result).to.deep.equal(timeMs);
+      expect(blockExecutionContextMock.getTimeMs).to.be.calledOnce();
     });
   });
 

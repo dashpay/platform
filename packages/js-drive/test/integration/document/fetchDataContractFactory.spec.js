@@ -5,6 +5,7 @@ const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryErro
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('fetchDataContractFactory', () => {
   let fetchDataContract;
@@ -12,6 +13,7 @@ describe('fetchDataContractFactory', () => {
   let dataContractRepository;
   let dataContract;
   let container;
+  let blockInfo;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
@@ -22,13 +24,15 @@ describe('fetchDataContractFactory', () => {
 
     contractId = dataContract.getId();
 
+    blockInfo = new BlockInfo(1, 1, Date.now());
+
     /**
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
-    await dataContractRepository.store(dataContract);
+    await dataContractRepository.create(dataContract, blockInfo);
 
     fetchDataContract = container.resolve('fetchDataContract');
   });
@@ -43,7 +47,8 @@ describe('fetchDataContractFactory', () => {
     const result = await fetchDataContract(contractId);
 
     expect(result).to.be.instanceOf(StorageResult);
-    expect(result.getOperations().length).to.be.greaterThan(0);
+    // TODO: Processing fees are ignored for v0.23
+    expect(result.getOperations().length).to.equals(0);
 
     const foundDataContract = result.getValue();
 

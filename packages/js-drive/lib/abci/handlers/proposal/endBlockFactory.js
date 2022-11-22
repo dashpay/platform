@@ -1,5 +1,3 @@
-const timeToMillis = require('../../../util/timeToMillis');
-
 /**
  * Begin block ABCI
  *
@@ -55,6 +53,7 @@ function endBlockFactory(
     } = request;
 
     consensusLogger.debug('EndBlock ABCI method requested');
+
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     // Call RS ABCI
@@ -72,22 +71,7 @@ function endBlockFactory(
 
     consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
-    const { currentEpochIndex, isEpochChange } = rsResponse;
-
-    if (isEpochChange) {
-      const time = proposalBlockExecutionContext.getTime();
-
-      const blockTime = timeToMillis(time.seconds, time.nanos);
-
-      const debugData = {
-        currentEpochIndex,
-        blockTime,
-      };
-
-      const blockTimeFormatted = new Date(blockTime).toUTCString();
-
-      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
-    }
+    const { currentEpochIndex } = proposalBlockExecutionContext.getEpochInfo();
 
     if (processingFees > 0 || storageFees > 0) {
       consensusLogger.debug({

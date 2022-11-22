@@ -9,11 +9,6 @@ const {
       Consensus,
     },
   },
-  google: {
-    protobuf: {
-      Timestamp,
-    },
-  },
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
@@ -111,22 +106,17 @@ class BlockExecutionContext {
   }
 
   /**
-   *
-   * @param {ITimestamp} time
-   * @return {BlockExecutionContext}
+   * @param {number} timeMs
    */
-  setTime(time) {
-    this.time = time;
-
-    return this;
+  setTimeMs(timeMs) {
+    this.timeMs = timeMs;
   }
 
   /**
-   *
-   * @return {ITimestamp}
+   * @returns {number}
    */
-  getTime() {
-    return this.time;
+  getTimeMs() {
+    return this.timeMs;
   }
 
   /**
@@ -169,6 +159,20 @@ class BlockExecutionContext {
     }
 
     return this.consensusLogger;
+  }
+
+  /**
+   * @param {EpochInfo} epochInfo
+   */
+  setEpochInfo(epochInfo) {
+    this.epochInfo = epochInfo;
+  }
+
+  /**
+   * @returns {EpochInfo}
+   */
+  getEpochInfo() {
+    return this.epochInfo;
   }
 
   /**
@@ -228,6 +232,8 @@ class BlockExecutionContext {
     this.consensusLogger = null;
     this.withdrawalTransactionsMap = {};
     this.round = null;
+    this.epochInfo = null;
+    this.timeMs = null;
   }
 
   /**
@@ -254,6 +260,8 @@ class BlockExecutionContext {
     this.consensusLogger = blockExecutionContext.consensusLogger;
     this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
     this.round = blockExecutionContext.round;
+    this.epochInfo = blockExecutionContext.epochInfo;
+    this.timeMs = blockExecutionContext.timeMs;
   }
 
   /**
@@ -266,13 +274,8 @@ class BlockExecutionContext {
       .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
     this.consensusLogger = object.consensusLogger;
-
-    if (object.time) {
-      this.time = new Timestamp({
-        seconds: Long.fromNumber(object.time.seconds),
-      });
-    }
-
+    this.epochInfo = object.epochInfo;
+    this.timeMs = object.timeMs;
     this.height = Long.fromNumber(object.height);
     this.coreChainLockedHeight = object.coreChainLockedHeight;
     this.version = Consensus.fromObject(object.version);
@@ -287,12 +290,10 @@ class BlockExecutionContext {
    *  dataContracts: Object[],
    *  height: number,
    *  version: Object,
-   *  time: Object,
+   *  timeMs: number,
    *  coreChainLockedHeight: number,
    *  lastCommitInfo: number,
-   *  previousBlockTime: number,
-   *  previousHeight: number,
-   *  previousCoreChainLockedHeight: number,
+   *  epochInfo: EpochInfo,
    *  withdrawalTransactionsMap: Object,
    *  round: number,
    * }}
@@ -307,13 +308,14 @@ class BlockExecutionContext {
 
     const object = {
       dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
-      time,
+      timeMs: this.timeMs,
       height: this.height ? this.height.toNumber() : null,
       version: this.version ? this.version.toJSON() : null,
       coreChainLockedHeight: this.coreChainLockedHeight,
       lastCommitInfo: this.lastCommitInfo ? CommitInfo.toObject(this.lastCommitInfo) : null,
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
       round: this.round,
+      epochInfo: this.epochInfo,
     };
 
     if (!options.skipConsensusLogger) {

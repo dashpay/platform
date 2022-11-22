@@ -5,8 +5,6 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
  *
@@ -24,7 +22,6 @@ function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
   proposalBlockExecutionContextCollection,
-  dataContractCache,
   coreRpcClient,
   logger,
   executionTimer,
@@ -66,18 +63,6 @@ function finalizeBlockHandlerFactory(
     await groveDBStore.commitTransaction();
 
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
-
-    // Update data contract cache with new version of
-    // committed data contract
-    for (const dataContract of proposalBlockExecutionContext.getDataContracts()) {
-      const operations = [new ReadOperation(dataContract.toBuffer().length)];
-
-      const cacheItem = new DataContractCacheItem(dataContract, operations);
-
-      if (dataContractCache.has(cacheItem.getKey())) {
-        dataContractCache.set(cacheItem.getKey(), cacheItem);
-      }
-    }
 
     // Send withdrawal transactions to Core
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext

@@ -12,6 +12,9 @@ const {
 const initChainHandlerFactory = require('../../../../lib/abci/handlers/initChainHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
+const protoTimestampToMillis = require('../../../../lib/util/protoTimestampToMillis');
+const millisToProtoTimestamp = require('../../../../lib/util/millisToProtoTimestamp');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 describe('initChainHandlerFactory', () => {
   let initChainHandler;
@@ -80,10 +83,10 @@ describe('initChainHandlerFactory', () => {
     const request = {
       initialHeight: Long.fromInt(1),
       chainId: 'test',
-      time: {
-        seconds: Long.fromInt((new Date()).getTime() / 1000),
-      },
+      time: millisToProtoTimestamp(Date.now()),
     };
+
+    const blockInfo = new BlockInfo(0, 0, protoTimestampToMillis(request.time));
 
     const response = await initChainHandler(request);
 
@@ -107,10 +110,11 @@ describe('initChainHandlerFactory', () => {
 
     expect(rsAbciMock.initChain).to.be.calledOnceWithExactly({}, true);
 
-    expect(registerSystemDataContractsMock).to.be.calledOnceWithExactly(loggerMock, request.time);
+    expect(registerSystemDataContractsMock).to.be.calledOnceWithExactly(loggerMock, blockInfo);
 
     expect(synchronizeMasternodeIdentitiesMock).to.be.calledOnceWithExactly(
       initialCoreChainLockedHeight,
+      blockInfo,
     );
 
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnce();
