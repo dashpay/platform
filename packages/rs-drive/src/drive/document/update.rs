@@ -2299,7 +2299,7 @@ mod tests {
         // Update the document in a second
 
         document
-            .set_value("name", Value::String("Ivaaaaaaaaaan!".to_string()))
+            .set("name", Value::String("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
         let document_cbor = document.to_cbor().expect("should encode to cbor");

@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, convert::TryInto};
 use anyhow::{anyhow, bail};
 use log::trace;
 use serde::de::DeserializeOwned;
-use serde_json::{Number, Value as JsonValue};
+use serde_json::{json, Number, Value as JsonValue};
 
 use crate::util::deserializer;
 use crate::{
@@ -15,6 +15,9 @@ use super::{
     json_path::{JsonPath, JsonPathLiteral, JsonPathStep},
     string_encoding::Encoding,
 };
+
+mod insert_with_path;
+use insert_with_path::*;
 
 const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -76,6 +79,10 @@ pub trait JsonValueExt {
         property_name: &str,
         protocol_bytes: &[u8],
     ) -> Result<(), ProtocolError>;
+
+    /// Insert value under the path. Path is dot-separated string. i.e `properties[0].id`. If parents don't
+    /// exists they will be created
+    fn insert_with_path(&mut self, path: &str, value: JsonValue) -> Result<(), anyhow::Error>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -271,14 +278,16 @@ impl JsonValueExt for JsonValue {
         for raw_path in paths {
             let mut to_replace = get_value_mut(raw_path, self);
             match to_replace {
-                Some(ref mut v) => replace_identifier(v, with).map_err(|err| {
-                    anyhow!(
-                        "unable replace the {:?} with {:?}: '{}'",
-                        raw_path,
-                        with,
-                        err
-                    )
-                })?,
+                Some(ref mut v) => {
+                    replace_identifier(v, with).map_err(|err| {
+                        anyhow!(
+                            "unable replace the {:?} with {:?}: '{}'",
+                            raw_path,
+                            with,
+                            err
+                        )
+                    })?;
+                }
                 None => {
                     trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
                 }
@@ -346,6 +355,17 @@ impl JsonValueExt for JsonValue {
             },
             _ => bail!("the Json Value isn't a map: {:?}", self),
         }
+    }
+
+    /// Insert value under the path. Path is dot-separated string. i.e `properties[0].id`
+    fn insert_with_path(
+        &mut self,
+        string_path: &str,
+        value: JsonValue,
+    ) -> Result<(), anyhow::Error> {
+        let path_literal: JsonPathLiteral = string_path.into();
+        let path: JsonPath = path_literal.try_into().unwrap();
+        insert_with_path(self, &path, value)
     }
 }
 
@@ -562,5 +582,32 @@ mod test {
         );
         let result = identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes);
         assert_error_contains!(result, "Identifier must be 32 bytes long");
+    }
+
+    #[test]
+    fn insert_with_parents() {
+        let mut document = json!({
+            "root" :  {
+                "from" : {
+                    "id": "123",
+                    "message": "text_message",
+                },
+            }
+        });
+
+        document
+            .insert_with_path("root.to.new_field", json!("new_value"))
+            .expect("no errors");
+        document
+            .insert_with_path("root.array[0].new_field", json!("new_value"))
+            .expect("no errors");
+
+        assert_eq!(document["root"]["from"]["id"], json!("123"));
+        assert_eq!(document["root"]["from"]["message"], json!("text_message"));
+        assert_eq!(document["root"]["to"]["new_field"], json!("new_value"));
+        assert_eq!(
+            document["root"]["array"][0]["new_field"],
+            json!("new_value")
+        );
     }
 }
