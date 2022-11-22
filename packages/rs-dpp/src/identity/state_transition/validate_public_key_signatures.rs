@@ -8,7 +8,7 @@ use crate::{
         try_get_transition_type, StateTransition, StateTransitionLike, StateTransitionType,
     },
     validation::SimpleValidationResult,
-    NonConsensusError, ProtocolError,
+    BlsModule, NonConsensusError, ProtocolError,
 };
 
 use super::{
@@ -18,25 +18,36 @@ use super::{
 
 pub trait TPublicKeysSignaturesValidator {
     fn validate_public_key_signatures<'a>(
+        &self,
         raw_state_transition: &Value,
         raw_public_keys: impl IntoIterator<Item = &'a Value>,
     ) -> Result<SimpleValidationResult, NonConsensusError>;
 }
 
-pub struct PublicKeysSignaturesValidator {}
+pub struct PublicKeysSignaturesValidator<T: BlsModule> {
+    bls: T,
+}
 
-impl TPublicKeysSignaturesValidator for PublicKeysSignaturesValidator {
-    fn validate_public_key_signatures<'a>(
-        raw_state_transition: &Value,
-        raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        validate_public_key_signatures(raw_state_transition, raw_public_keys)
+impl<T: BlsModule> PublicKeysSignaturesValidator<T> {
+    pub fn new(bls: T) -> Self {
+        Self { bls }
     }
 }
 
-pub fn validate_public_key_signatures<'a>(
+impl<T: BlsModule> TPublicKeysSignaturesValidator for PublicKeysSignaturesValidator<T> {
+    fn validate_public_key_signatures<'a>(
+        &self,
+        raw_state_transition: &Value,
+        raw_public_keys: impl IntoIterator<Item = &'a Value>,
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        validate_public_key_signatures(raw_state_transition, raw_public_keys, &self.bls)
+    }
+}
+
+pub fn validate_public_key_signatures<'a, T: BlsModule>(
     raw_state_transition: &Value,
     raw_public_keys: impl IntoIterator<Item = &'a Value>,
+    bls: &T,
 ) -> Result<SimpleValidationResult, NonConsensusError> {
     let mut validation_result = SimpleValidationResult::default();
 
@@ -81,7 +92,7 @@ pub fn validate_public_key_signatures<'a>(
         .collect::<Result<_, _>>()?;
 
     let maybe_invalid_public_key =
-        find_invalid_public_key(&mut state_transition, identity_public_keys);
+        find_invalid_public_key(&mut state_transition, identity_public_keys, bls);
     if let Some(invalid_key) = maybe_invalid_public_key {
         validation_result.add_error(BasicError::InvalidIdentityPublicKeySignatureError {
             public_key_id: invalid_key.get_id(),
@@ -97,14 +108,15 @@ fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
     ))))
 }
 
-fn find_invalid_public_key(
+fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
     public_keys: impl IntoIterator<Item = IdentityPublicKey>,
+    bls: &T,
 ) -> Option<IdentityPublicKey> {
     for public_key in public_keys {
         state_transition.set_signature(public_key.get_signature().to_owned());
         if state_transition
-            .verify_by_public_key(public_key.get_data(), public_key.get_type())
+            .verify_by_public_key(public_key.get_data(), public_key.get_type(), bls)
             .is_err()
         {
             return Some(public_key);

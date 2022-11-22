@@ -1,11 +1,5 @@
-use std::convert::TryInto;
 use std::fmt::Debug;
 
-use anyhow::anyhow;
-use bls_signatures::{
-    verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
-    Serialize as BLSSerialize,
-};
 use dashcore::signer;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -18,6 +12,7 @@ use crate::{
         json_value::{JsonValueExt, ReplaceWith},
         serializer,
     },
+    BlsModule,
 };
 
 use super::{
@@ -65,16 +60,11 @@ pub trait StateTransitionLike:
         &mut self,
         private_key: &[u8],
         key_type: KeyType,
+        bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
         let data = self.to_buffer(true)?;
         match key_type {
-            KeyType::BLS12_381 => {
-                let fixed_len_key: [u8; 32] = private_key
-                    .try_into()
-                    .map_err(|_| anyhow!("the BLS private key must be 32 bytes long"))?;
-                let pk = BLSPrivateKey::from_bytes(&fixed_len_key).map_err(anyhow::Error::msg)?;
-                self.set_signature(pk.sign(data).as_bytes())
-            }
+            KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?),
 
             // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
@@ -94,17 +84,18 @@ pub trait StateTransitionLike:
         Ok(())
     }
 
-    fn verify_by_public_key(
+    fn verify_by_public_key<T: BlsModule>(
         &self,
         public_key: &[u8],
         public_key_type: KeyType,
+        bls: &T,
     ) -> Result<(), ProtocolError> {
         match public_key_type {
             KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key),
             KeyType::ECDSA_HASH160 => {
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
             }
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key),
+            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
             KeyType::BIP13_SCRIPT_HASH => {
                 Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type })
             }
@@ -144,7 +135,11 @@ pub trait StateTransitionLike:
     }
 
     /// Verifies a BLS signature with the public key
-    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
+    fn verify_bls_signature_by_public_key<T: BlsModule>(
+        &self,
+        public_key: &[u8],
+        bls: &T,
+    ) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotIsSignedError {
                 state_transition: self.clone().into(),
@@ -152,14 +147,9 @@ pub trait StateTransitionLike:
         }
 
         let data = self.to_buffer(true)?;
-        let pk = BLSPublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
-        let signature = bls_signatures::Signature::from_bytes(self.get_signature())
-            .map_err(anyhow::Error::msg)?;
-        match verify_messages(&signature, &[&data], &[pk]) {
-            true => Ok(()),
-            // TODO change to specific error type
-            false => Err(anyhow!("Verification failed").into()),
-        }
+
+        bls.verify_signature(self.get_signature(), &data, public_key)
+            .map(|_| ())
     }
 
     /// returns true if state transition is a document state transition

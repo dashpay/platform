@@ -2,21 +2,26 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::bls::NativeBlsModule;
 use crate::identity::state_transition::asset_lock_proof::{
     AssetLockProofValidator, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,
     InstantAssetLockProofStructureValidator,
 };
 use crate::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
-use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
+use crate::identity::state_transition::validate_public_key_signatures::{
+    PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
+};
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::MockStateRepositoryLike;
 use crate::validation::SimpleValidationResult;
 use crate::version::ProtocolVersionValidator;
 
+#[derive(Default)]
 pub struct SignaturesValidatorMock {}
 
 impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
     fn validate_public_key_signatures<'a>(
+        &self,
         _raw_state_transition: &Value,
         _raw_public_keys: impl IntoIterator<Item = &'a Value>,
     ) -> Result<crate::validation::SimpleValidationResult, crate::NonConsensusError> {
@@ -35,6 +40,7 @@ pub fn setup_test(
         impl TPublicKeysValidator,
         MockStateRepositoryLike,
         SignaturesValidatorMock,
+        NativeBlsModule,
     >,
 ) {
     let state_repository = Arc::new(state_repository_mock);
@@ -66,6 +72,8 @@ pub fn setup_test(
             public_keys_validator,
             public_keys_transition_validator,
             asset_lock_proof_validator,
+            NativeBlsModule::default(),
+            SignaturesValidatorMock::default(),
         )
         .unwrap(),
     )
