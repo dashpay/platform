@@ -32,7 +32,6 @@
 //! This module defines functions relevant to the chain's genesis time.
 //!
 
-/// Operations module
 pub mod operations;
 
 use crate::drive::genesis_time::operations::update_genesis_time_operation;

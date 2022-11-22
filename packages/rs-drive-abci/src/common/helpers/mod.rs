@@ -1,6 +1,4 @@
-/// Fee pools module
 pub mod fee_pools;
-/// Setup module
 pub mod setup;
 
 #[cfg(test)]

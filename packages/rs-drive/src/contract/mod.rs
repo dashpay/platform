@@ -1,7 +1,4 @@
-/// Document module
 pub mod document;
-
-/// Random document module
 pub mod random_document;
 
 use ciborium::value::Value;

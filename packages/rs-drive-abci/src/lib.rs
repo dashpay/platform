@@ -28,7 +28,6 @@ pub mod error;
 /// Execution module
 pub mod execution;
 
-/// Platform module
 pub mod platform;
 
 /// Functions related to IdentityCreditWithdrawalTransaction  

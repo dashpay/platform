@@ -27,11 +27,6 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Drive Query Mod File
-//!
-//!
-//!
-
 use std::collections::BTreeMap;
 use std::ops::BitXor;
 
@@ -71,10 +66,8 @@ use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use dpp::data_contract::extra::DocumentType;
 
-/// Conditions module
 pub mod conditions;
 mod defaults;
-/// Ordering module
 pub mod ordering;
 mod test_index;
 

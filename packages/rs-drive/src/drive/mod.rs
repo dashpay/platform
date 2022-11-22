@@ -27,9 +27,6 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Drive Mod File
-//!
-
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -51,29 +48,22 @@ pub mod batch;
 pub mod block_info;
 /// Drive Cache
 pub mod cache;
-/// Config module
 pub mod config;
 /// Contract module
 pub mod contract;
-/// Defaults module
 pub mod defaults;
 /// Document module
 pub mod document;
 /// Fee pools module
 pub mod fee_pools;
-/// Flags module
 pub mod flags;
 /// Genesis time module
 pub mod genesis_time;
-/// Grove operations module
 mod grove_operations;
 /// Identity module
 pub mod identity;
-/// Initialization module
 pub mod initialization;
-/// Object size info module
 pub mod object_size_info;
-/// Query module
 pub mod query;
 
 use crate::drive::block_info::BlockInfo;
