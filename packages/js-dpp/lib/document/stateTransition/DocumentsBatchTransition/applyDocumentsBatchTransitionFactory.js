@@ -79,11 +79,7 @@ function applyDocumentsBatchTransitionFactory(
           case AbstractDocumentTransition.ACTIONS.REPLACE: {
             let document;
             if (executionContext.isDryRun()) {
-              const {
-                seconds: lastBlockHeaderTimeSeconds,
-              } = await stateRepository.fetchLatestPlatformBlockTime();
-
-              const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
+              const lastBlockHeaderTime = stateRepository.fetchLatestPlatformBlockTime();
 
               document = new Document({
                 $protocolVersion: stateTransition.getProtocolVersion(),

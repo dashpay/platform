@@ -1,315 +1,325 @@
-const DataTriggerExecutionContext = require('../../../../../dataTrigger/DataTriggerExecutionContext');
-
 const ValidationResult = require('../../../../../validation/ValidationResult');
-
-const DocumentAlreadyPresentError = require('../../../../../errors/consensus/state/document/DocumentAlreadyPresentError');
-const DocumentNotFoundError = require('../../../../../errors/consensus/state/document/DocumentNotFoundError');
-const DocumentOwnerIdMismatchError = require('../../../../../errors/consensus/state/document/DocumentOwnerIdMismatchError');
-const InvalidDocumentRevisionError = require('../../../../../errors/consensus/state/document/InvalidDocumentRevisionError');
-const InvalidDocumentActionError = require('../../../../errors/InvalidDocumentActionError');
-const DataContractNotPresentError = require('../../../../../errors/DataContractNotPresentError');
-const DocumentTimestampWindowViolationError = require(
-  '../../../../../errors/consensus/state/document/DocumentTimestampWindowViolationError',
-);
-const DocumentTimestampsMismatchError = require(
-  '../../../../../errors/consensus/state/document/DocumentTimestampsMismatchError',
-);
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
-const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
-const StateTransitionExecutionContext = require('../../../../../stateTransition/StateTransitionExecutionContext');
+const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
+const InvalidDocumentTransitionIdError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTransitionIdError');
+const DuplicateDocumentTransitionsWithIdsError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsWithIdsError');
+const MissingDocumentTransitionTypeError = require('../../../../../errors/consensus/basic/document/MissingDocumentTransitionTypeError');
+const InvalidDocumentTypeError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTypeError');
+const InvalidDocumentTransitionActionError = require('../../../../../errors/consensus/basic/document/InvalidDocumentTransitionActionError');
+const MissingDocumentTransitionActionError = require('../../../../../errors/consensus/basic/document/MissingDocumentTransitionActionError');
+const MissingDataContractIdError = require('../../../../../errors/consensus/basic/document/MissingDataContractIdError');
+const Identifier = require('../../../../../identifier/Identifier');
+
+const baseTransitionSchema = require('../../../../../../schema/document/stateTransition/documentTransition/base.json');
+const createTransitionSchema = require('../../../../../../schema/document/stateTransition/documentTransition/create.json');
+const replaceTransitionSchema = require('../../../../../../schema/document/stateTransition/documentTransition/replace.json');
+
+const generateDocumentId = require('../../../../generateDocumentId');
+const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
+
+const documentsBatchTransitionSchema = require('../../../../../../schema/document/stateTransition/documentsBatch.json');
+const createAndValidateIdentifier = require('../../../../../identifier/createAndValidateIdentifier');
+const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
 
 /**
- *
+ * @param {findDuplicatesById} findDuplicatesById
+ * @param {findDuplicatesByIndices} findDuplicatesByIndices
  * @param {StateRepository} stateRepository
- * @param {fetchDocuments} fetchDocuments
- * @param {validateDocumentsUniquenessByIndices} validateDocumentsUniquenessByIndices
- * @param {executeDataTriggers} executeDataTriggers
- * @return {validateDocumentsBatchTransitionState}
+ * @param {JsonSchemaValidator} jsonSchemaValidator
+ * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
+ * @param {validatePartialCompoundIndices} validatePartialCompoundIndices
+ * @param {validateProtocolVersion} validateProtocolVersion
+ *
+ * @return {validateDocumentsBatchTransitionBasic}
  */
-function validateDocumentsBatchTransitionStateFactory(
+function validateDocumentsBatchTransitionBasicFactory(
+  findDuplicatesById,
+  findDuplicatesByIndices,
   stateRepository,
-  fetchDocuments,
-  validateDocumentsUniquenessByIndices,
-  executeDataTriggers,
+  jsonSchemaValidator,
+  enrichDataContractWithBaseSchema,
+  validatePartialCompoundIndices,
+  validateProtocolVersion,
 ) {
+  const { ACTIONS } = AbstractDocumentTransition;
+
   /**
    *
-   * @param {Identifier} dataContractId
-   * @param {Identifier} ownerId
-   * @param {DocumentCreateTransition[]
-   *        |DocumentReplaceTransition[]
-   *        |DocumentDeleteTransition[]} documentTransitions
-   * @param {StateTransitionExecutionContext} executionContext
+   * @param {DataContract} dataContract
+   * @param {Buffer} ownerId
+   * @param {Array<
+   *      RawDocumentCreateTransition|
+   *      RawDocumentDeleteTransition|
+   *      DocumentReplaceTransition
+   *      >} rawDocumentTransitions
    * @return {Promise<ValidationResult>}
    */
-  async function validateDocumentTransitions(
-    dataContractId,
-    ownerId,
-    documentTransitions,
-    executionContext,
-  ) {
+  async function validateDocumentTransitions(dataContract, ownerId, rawDocumentTransitions) {
     const result = new ValidationResult();
-
-    // We use temporary execution context without dry run,
-    // because despite the dryRun, we need to get the
-    // data contract to proceed with following logic
-    const tmpExecutionContext = new StateTransitionExecutionContext();
-
-    // Data contract must exist
-    const dataContract = await stateRepository.fetchDataContract(
-      dataContractId,
-      tmpExecutionContext,
-    );
-
-    // Collect operations back from temporary context
-    executionContext.addOperation(...tmpExecutionContext.getOperations());
-
-    if (!dataContract) {
-      throw new DataContractNotPresentError(dataContractId);
-    }
 
     if (!result.isValid()) {
       return result;
     }
 
-    const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
-
-    if (!executionContext.isDryRun()) {
-      // Calculate time window for timestamps
-      const {
-        seconds: lastBlockHeaderTimeSeconds,
-      } = await stateRepository.fetchLatestPlatformBlockTime();
-
-      // Get last block header time in milliseconds
-      const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
-
-      // Validate document action, ownerId, revision and timestamps
-      documentTransitions
-        .forEach((documentTransition) => {
-          const fetchedDocument = fetchedDocuments
-            .find((d) => documentTransition.getId()
-              .equals(d.getId()));
-
-          switch (documentTransition.getAction()) {
-            case AbstractDocumentTransition.ACTIONS.CREATE:
-              // createdAt and updatedAt should be equal
-              if (documentTransition.getCreatedAt() !== undefined
-                && documentTransition.getUpdatedAt() !== undefined) {
-                const createdAtTime = documentTransition.getCreatedAt()
-                  .getTime();
-                const updatedAtTime = documentTransition.getUpdatedAt()
-                  .getTime();
-
-                if (createdAtTime !== updatedAtTime) {
-                  result.addError(
-                    new DocumentTimestampsMismatchError(
-                      documentTransition.getId()
-                        .toBuffer(),
-                    ),
-                  );
-                }
-              }
-
-              // Check createdAt is within a block time window
-              if (documentTransition.getCreatedAt() !== undefined) {
-                const createdAtTime = documentTransition.getCreatedAt()
-                  .getTime();
-
-                const validateTimeWindowResult = validateTimeInBlockTimeWindow(
-                  lastBlockHeaderTime,
-                  createdAtTime,
-                );
-                if (!validateTimeWindowResult.isValid()) {
-                  result.addError(
-                    new DocumentTimestampWindowViolationError(
-                      'createdAt',
-                      documentTransition.getId()
-                        .toBuffer(),
-                      documentTransition.getCreatedAt(),
-                      validateTimeWindowResult.getTimeWindowStart(),
-                      validateTimeWindowResult.getTimeWindowEnd(),
-                    ),
-                  );
-                }
-              }
-
-              // Check updatedAt is within a block time window
-              if (documentTransition.getUpdatedAt() !== undefined) {
-                const updatedAtTime = documentTransition.getUpdatedAt()
-                  .getTime();
-                const validateTimeWindowResult = validateTimeInBlockTimeWindow(
-                  lastBlockHeaderTime,
-                  updatedAtTime,
-                );
-
-                if (!validateTimeWindowResult.isValid()) {
-                  result.addError(
-                    new DocumentTimestampWindowViolationError(
-                      'updatedAt',
-                      documentTransition.getId()
-                        .toBuffer(),
-                      documentTransition.getUpdatedAt(),
-                      validateTimeWindowResult.getTimeWindowStart(),
-                      validateTimeWindowResult.getTimeWindowEnd(),
-                    ),
-                  );
-                }
-              }
-
-              if (fetchedDocument) {
-                result.addError(
-                  new DocumentAlreadyPresentError(documentTransition.getId()
-                    .toBuffer()),
-                );
-              }
-              break;
-            case AbstractDocumentTransition.ACTIONS.REPLACE: {
-              // Check updatedAt is within a block time window
-              if (documentTransition.getUpdatedAt() !== undefined) {
-                const updatedAtTime = documentTransition.getUpdatedAt()
-                  .getTime();
-
-                const validateTimeWindowResult = validateTimeInBlockTimeWindow(
-                  lastBlockHeaderTime,
-                  updatedAtTime,
-                );
-
-                if (!validateTimeWindowResult.isValid()) {
-                  result.addError(
-                    new DocumentTimestampWindowViolationError(
-                      'updatedAt',
-                      documentTransition.getId()
-                        .toBuffer(),
-                      documentTransition.getUpdatedAt(),
-                      validateTimeWindowResult.getTimeWindowStart(),
-                      validateTimeWindowResult.getTimeWindowEnd(),
-                    ),
-                  );
-                }
-              }
-
-              if (
-                fetchedDocument
-                && documentTransition.getRevision() !== fetchedDocument.getRevision() + 1
-              ) {
-                result.addError(
-                  new InvalidDocumentRevisionError(
-                    documentTransition.getId()
-                      .toBuffer(),
-                    fetchedDocument.getRevision(),
-                  ),
-                );
-              }
-            }
-            // eslint-disable-next-line no-fallthrough
-            case AbstractDocumentTransition.ACTIONS.DELETE: {
-              if (!fetchedDocument) {
-                result.addError(
-                  new DocumentNotFoundError(documentTransition.getId()
-                    .toBuffer()),
-                );
-
-                break;
-              }
-
-              if (!fetchedDocument.getOwnerId()
-                .equals(ownerId)) {
-                result.addError(
-                  new DocumentOwnerIdMismatchError(
-                    documentTransition.getId()
-                      .toBuffer(),
-                    ownerId.toBuffer(),
-                    fetchedDocument.getOwnerId()
-                      .toBuffer(),
-                  ),
-                );
-              }
-
-              break;
-            }
-            default:
-              throw new InvalidDocumentActionError(documentTransition);
-          }
-        });
-
-      if (!result.isValid()) {
-        return result;
-      }
-    }
-
-    // Validate unique indices
-    const nonDeleteDocumentTransitions = documentTransitions
-      .filter((d) => d.getAction() !== AbstractDocumentTransition.ACTIONS.DELETE);
-
-    if (nonDeleteDocumentTransitions.length > 0) {
-      result.merge(
-        await validateDocumentsUniquenessByIndices(
-          ownerId,
-          nonDeleteDocumentTransitions,
-          dataContract,
-          executionContext,
-        ),
-      );
-
-      if (!result.isValid()) {
-        return result;
-      }
-    }
-
-    // Run Data Triggers
-    const dataTriggersExecutionContext = new DataTriggerExecutionContext(
-      stateRepository,
-      ownerId,
+    const enrichedBaseDataContract = enrichDataContractWithBaseSchema(
       dataContract,
-      executionContext,
+      baseTransitionSchema,
+      enrichDataContractWithBaseSchema.PREFIX_BYTE_1,
     );
 
-    const dataTriggersExecutionResults = await executeDataTriggers(
-      documentTransitions,
-      dataTriggersExecutionContext,
-    );
+    const enrichedDataContractsByActions = {
+      [ACTIONS.CREATE]: enrichDataContractWithBaseSchema(
+        enrichedBaseDataContract,
+        createTransitionSchema,
+        enrichDataContractWithBaseSchema.PREFIX_BYTE_2,
+      ),
+      [ACTIONS.REPLACE]: enrichDataContractWithBaseSchema(
+        enrichedBaseDataContract,
+        replaceTransitionSchema,
+        enrichDataContractWithBaseSchema.PREFIX_BYTE_3,
+        ['$createdAt'],
+      ),
+    };
 
-    dataTriggersExecutionResults.forEach((dataTriggerExecutionResult) => {
-      if (!dataTriggerExecutionResult.isOk()) {
-        result.addError(...dataTriggerExecutionResult.getErrors());
+    rawDocumentTransitions.forEach((rawDocumentTransition) => {
+      // Validate $type
+      if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$type')) {
+        result.addError(
+          new MissingDocumentTransitionTypeError(),
+        );
+
+        return;
+      }
+
+      if (!dataContract.isDocumentDefined(rawDocumentTransition.$type)) {
+        result.addError(
+          new InvalidDocumentTypeError(
+            rawDocumentTransition.$type,
+            dataContract.getId().toBuffer(),
+          ),
+        );
+
+        return;
+      }
+
+      // Validate $action
+      if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$action')) {
+        result.addError(
+          new MissingDocumentTransitionActionError(),
+        );
+
+        return;
+      }
+
+      // Validate document schema
+      switch (rawDocumentTransition.$action) {
+        case ACTIONS.CREATE:
+        case ACTIONS.REPLACE: {
+          // eslint-disable-next-line max-len
+          const enrichedDataContract = enrichedDataContractsByActions[rawDocumentTransition.$action];
+
+          const documentSchemaRef = enrichedDataContract.getDocumentSchemaRef(
+            rawDocumentTransition.$type,
+          );
+
+          const additionalSchemas = {
+            [enrichedDataContract.getJsonSchemaId()]:
+              enrichedDataContract.toJSON(),
+          };
+
+          const schemaResult = jsonSchemaValidator.validate(
+            documentSchemaRef,
+            convertBuffersToArrays(rawDocumentTransition),
+            additionalSchemas,
+          );
+
+          if (!schemaResult.isValid()) {
+            result.merge(schemaResult);
+
+            break;
+          }
+
+          // Additional checks for CREATE transitions
+          if (ACTIONS.CREATE === rawDocumentTransition.$action) {
+            // validate id generation
+            const documentId = generateDocumentId(
+              dataContract.getId(),
+              ownerId,
+              rawDocumentTransition.$type,
+              rawDocumentTransition.$entropy,
+            );
+
+            if (!rawDocumentTransition.$id.equals(documentId)) {
+              result.addError(
+                new InvalidDocumentTransitionIdError(
+                  documentId,
+                  rawDocumentTransition.$id,
+                ),
+              );
+            }
+          }
+
+          break;
+        }
+        case ACTIONS.DELETE:
+          result.merge(
+            jsonSchemaValidator.validate(
+              baseTransitionSchema,
+              convertBuffersToArrays(rawDocumentTransition),
+            ),
+          );
+
+          break;
+        default:
+          result.addError(
+            new InvalidDocumentTransitionActionError(
+              rawDocumentTransition.$action,
+            ),
+          );
       }
     });
 
+    if (!result.isValid()) {
+      return result;
+    }
+
+    // Find duplicate documents by type and ID
+    const duplicateTransitions = findDuplicatesById(rawDocumentTransitions);
+    if (duplicateTransitions.length > 0) {
+      result.addError(
+        new DuplicateDocumentTransitionsWithIdsError(
+          duplicateTransitions.map(
+            (documentTransition) => [documentTransition.$type, documentTransition.$id],
+          ),
+        ),
+      );
+    }
+
+    // Find duplicate transitions by unique indices
+    const duplicateTransitionsByIndices = findDuplicatesByIndices(
+      rawDocumentTransitions,
+      dataContract,
+    );
+
+    if (duplicateTransitionsByIndices.length > 0) {
+      result.addError(
+        new DuplicateDocumentTransitionsWithIndicesError(
+          duplicateTransitionsByIndices.map(
+            (documentTransition) => [documentTransition.$type, documentTransition.$id],
+          ),
+        ),
+      );
+    }
+
+    // Validate partial compound indices
+    const nonDeleteDocumentTransitions = rawDocumentTransitions
+      .filter((d) => d.$action !== AbstractDocumentTransition.ACTIONS.DELETE);
+
+    if (nonDeleteDocumentTransitions.length > 0) {
+      result.merge(
+        validatePartialCompoundIndices(
+          ownerId,
+          nonDeleteDocumentTransitions,
+          dataContract,
+        ),
+      );
+    }
+
     return result;
   }
+
   /**
-   * @typedef validateDocumentsBatchTransitionState
-   * @param {DocumentsBatchTransition} stateTransition
+   * @typedef validateDocumentsBatchTransitionBasic
+   * @param {RawDocumentsBatchTransition} rawStateTransition
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {ValidationResult}
    */
-  async function validateDocumentsBatchTransitionState(stateTransition) {
-    const result = new ValidationResult();
+  async function validateDocumentsBatchTransitionBasic(rawStateTransition, executionContext) {
+    const result = jsonSchemaValidator.validate(
+      documentsBatchTransitionSchema,
+      convertBuffersToArrays(rawStateTransition),
+    );
 
-    const executionContext = stateTransition.getExecutionContext();
-    const ownerId = stateTransition.getOwnerId();
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      validateProtocolVersion(rawStateTransition.protocolVersion),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     // Group document transitions by data contracts
-    const documentTransitionsByContracts = stateTransition.getTransitions()
-      .reduce((obj, documentTransition) => {
-        if (!obj[documentTransition.getDataContractId()]) {
-          // eslint-disable-next-line no-param-reassign
-          obj[documentTransition.getDataContractId()] = {
-            dataContractId: documentTransition.getDataContractId(),
-            documentTransitions: [],
-          };
+    const documentTransitionsByContracts = rawStateTransition.transitions
+      .reduce((obj, rawDocumentTransition) => {
+        if (!Object.prototype.hasOwnProperty.call(rawDocumentTransition, '$dataContractId')) {
+          result.addError(
+            new MissingDataContractIdError(),
+          );
+
+          return obj;
         }
 
-        obj[documentTransition.getDataContractId()].documentTransitions.push(documentTransition);
+        const dataContractId = createAndValidateIdentifier(
+          '$dataContractId',
+          rawDocumentTransition.$dataContractId,
+          result,
+        );
+
+        if (!dataContractId) {
+          return obj;
+        }
+
+        if (!obj[dataContractId]) {
+          // eslint-disable-next-line no-param-reassign
+          obj[dataContractId] = [];
+        }
+
+        obj[dataContractId].push(rawDocumentTransition);
 
         return obj;
       }, {});
 
     const documentTransitionResultsPromises = Object.entries(documentTransitionsByContracts)
-      .map(([, { dataContractId, documentTransitions }]) => (
-        validateDocumentTransitions(dataContractId, ownerId, documentTransitions, executionContext)
-      ));
+      .map(async ([dataContractIdString, documentTransitions]) => {
+        const perDocumentResult = new ValidationResult();
+
+        const dataContractId = Identifier.from(dataContractIdString);
+
+        const dataContract = await stateRepository.fetchDataContract(
+          dataContractId,
+          executionContext,
+        );
+
+        if (executionContext.isDryRun()) {
+          return perDocumentResult;
+        }
+
+        if (!dataContract) {
+          perDocumentResult.addError(
+            new DataContractNotPresentError(dataContractId.toBuffer()),
+          );
+        }
+
+        if (!perDocumentResult.isValid()) {
+          return perDocumentResult;
+        }
+
+        perDocumentResult.merge(
+          await validateDocumentTransitions(
+            dataContract,
+            rawStateTransition.ownerId,
+            documentTransitions,
+          ),
+        );
+
+        return perDocumentResult;
+      });
 
     const documentTransitionResults = await Promise.all(documentTransitionResultsPromises);
     documentTransitionResults.forEach(result.merge.bind(result));
@@ -317,7 +327,7 @@ function validateDocumentsBatchTransitionStateFactory(
     return result;
   }
 
-  return validateDocumentsBatchTransitionState;
+  return validateDocumentsBatchTransitionBasic;
 }
 
-module.exports = validateDocumentsBatchTransitionStateFactory;
+module.exports = validateDocumentsBatchTransitionBasicFactory;

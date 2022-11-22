@@ -6,7 +6,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const UnavailableAbciError = require('../../../errors/UnavailableAbciError');
-const timeToMillis = require('../../../../util/timeToMillis');
 
 /**
  * @param {BlockExecutionContext} latestBlockExecutionContext
@@ -27,7 +26,7 @@ function createQueryResponseFactory(
 
     const blockHeight = latestBlockExecutionContext.getHeight();
     const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
-    const time = latestBlockExecutionContext.getTime();
+    const timeMs = latestBlockExecutionContext.getTimeMs();
     const version = latestBlockExecutionContext.getVersion();
 
     const response = new ResponseClass();
@@ -35,7 +34,7 @@ function createQueryResponseFactory(
     const metadata = new ResponseMetadata();
     metadata.setHeight(blockHeight);
     metadata.setCoreChainLockedHeight(coreChainLockedHeight);
-    metadata.setTimeMs(timeToMillis(time.seconds, time.nanos));
+    metadata.setTimeMs(timeMs);
     metadata.setProtocolVersion(version.app);
 
     response.setMetadata(metadata);

@@ -3,15 +3,15 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 
 /**
  *
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
- * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {IdentityStoreRepository} identityRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
-  transactionalStateRepository,
-  latestBlockExecutionContext,
+  identityRepository,
+  publicKeyToIdentitiesRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -19,16 +19,22 @@ function handleUpdatedScriptPayoutFactory(
    * @typedef handleUpdatedScriptPayout
    * @param {Identifier} identityId
    * @param {Script} newPayoutScript
+   * @param {BlockInfo} blockInfo
    * @param {Script} [previousPayoutScript]
    * @returns {Promise<void>}
    */
   async function handleUpdatedScriptPayout(
     identityId,
     newPayoutScript,
+    blockInfo,
     previousPayoutScript,
   ) {
-    const identity = await transactionalStateRepository.fetchIdentity(identityId);
+    const identityResult = await identityRepository.fetch(identityId, { useTransaction: true });
+
+    const identity = identityResult.getValue();
+
     identity.setRevision(identity.getRevision() + 1);
+
     let identityPublicKeys = identity
       .getPublicKeys();
 
@@ -44,12 +50,11 @@ function handleUpdatedScriptPayoutFactory(
         previousPayoutScript,
         previousPubKeyType,
       );
-      const time = latestBlockExecutionContext.getTime();
 
       identityPublicKeys = identityPublicKeys.map((pk) => {
         if (pk.getData().equals(previousPubKeyData)) {
           pk.setDisabledAt(
-            time.seconds * 1000,
+            blockInfo.timeMs,
           );
         }
 
@@ -74,13 +79,14 @@ function handleUpdatedScriptPayoutFactory(
 
     identity.setPublicKeys(identityPublicKeys);
 
-    await transactionalStateRepository.updateIdentity(identity);
+    await identityRepository.update(identity, { useTransaction: true });
 
     const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
 
-    await transactionalStateRepository.storeIdentityPublicKeyHashes(
+    await publicKeyToIdentitiesRepository.store(
+      publicKeyHash,
       identity.getId(),
-      [publicKeyHash],
+      { useTransaction: true },
     );
   }
 
