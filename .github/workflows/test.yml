@@ -26,10 +26,6 @@ jobs:
   test:
     name: Test package
     runs-on: ubuntu-22.04
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
     timeout-minutes: 60
     steps:
       - name: Cancel previous runs
@@ -44,12 +40,7 @@ jobs:
           firefox-version: 'latest'
 
       - name: Check out repo
-        uses: actions/checkout@v3
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: javascript
+        uses: actions/checkout@v2
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -138,11 +129,6 @@ jobs:
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"
         if: ${{ !inputs.skip-tests }}
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
-        with:
-          category: "/language:javascript"
 
       - name: Show Docker logs
         if: ${{ failure() }}
