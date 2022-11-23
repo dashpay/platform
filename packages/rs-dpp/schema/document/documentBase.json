@@ -1,0 +1,55 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"$protocolVersion": {
+			"type": "integer",
+			"$comment": "Maximum is the latest protocol version"
+		},
+		"$id": {
+			"type": "array",
+			"byteArray": true,
+			"minItems": 32,
+			"maxItems": 32,
+			"contentMediaType": "application/x.dash.dpp.identifier"
+		},
+		"$type": {
+			"type": "string"
+		},
+		"$revision": {
+			"type": "integer",
+			"minimum": 1
+		},
+		"$dataContractId": {
+			"type": "array",
+			"byteArray": true,
+			"minItems": 32,
+			"maxItems": 32,
+			"contentMediaType": "application/x.dash.dpp.identifier"
+		},
+		"$ownerId": {
+			"type": "array",
+			"byteArray": true,
+			"minItems": 32,
+			"maxItems": 32,
+			"contentMediaType": "application/x.dash.dpp.identifier"
+		},
+		"$createdAt": {
+			"type": "integer",
+			"minimum": 0
+		},
+		"$updatedAt": {
+			"type": "integer",
+			"minimum": 0
+		}
+	},
+	"required": [
+		"$protocolVersion",
+		"$id",
+		"$type",
+		"$revision",
+		"$dataContractId",
+		"$ownerId"
+	],
+	"additionalProperties": false
+}

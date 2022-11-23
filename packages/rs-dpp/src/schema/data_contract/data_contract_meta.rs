@@ -1,0 +1,459 @@
+// use jsonschema::{JSONSchema, ValidationError};
+// use serde_json::json;
+//
+// pub fn data_contract_meta_schema() -> Result<JSONSchema, ValidationError<'static>> {
+//   let data = r#"
+//         {
+//       "$schema": "https://json-schema.org/draft/2020-12/schema",
+//       "$id": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+//       "type": "object",
+//       "$defs": {
+//         "documentProperties": {
+//           "type": "object",
+//           "patternProperties": {
+//             "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
+//               "type": "object",
+//               "allOf": [
+//                 {
+//                   "$ref": "\#/$defs/documentSchema"
+//                 }
+//               ],
+//               "unevaluatedProperties": false
+//             }
+//           },
+//           "propertyNames": {
+//             "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+//           },
+//           "minProperties": 1,
+//           "maxProperties": 100
+//         },
+//         "documentSchemaArray": {
+//           "type": "array",
+//           "minItems": 1,
+//           "items": {
+//             "type": "object",
+//             "allOf": [
+//               {
+//                 "$ref": "\#/$defs/documentSchema"
+//               }
+//             ],
+//             "unevaluatedProperties": false
+//           }
+//         },
+//         "documentSchema": {
+//           "type": "object",
+//           "properties": {
+//             "$id": {
+//               "type": "string",
+//               "pattern": "^#",
+//               "minLength": 1
+//             },
+//             "$ref": {
+//               "type": "string",
+//               "pattern": "^#",
+//               "minLength": 1
+//             },
+//             "$comment": {
+//               "$ref": "https://json-schema.org/draft/2020-12/meta/core#/properties/$comment"
+// },
+// "description": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/description"
+// },
+// "examples": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/examples"
+// },
+// "multipleOf": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/multipleOf"
+// },
+// "maximum": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maximum"
+// },
+// "exclusiveMaximum": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMaximum"
+// },
+// "minimum": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minimum"
+// },
+// "exclusiveMinimum": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMinimum"
+// },
+// "maxLength": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxLength"
+// },
+// "minLength": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minLength"
+// },
+// "pattern": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/pattern"
+// },
+// "maxItems": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxItems"
+// },
+// "minItems": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minItems"
+// },
+// "uniqueItems": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/uniqueItems"
+// },
+// "contains": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
+// },
+// "maxProperties": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxProperties"
+// },
+// "minProperties": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minProperties"
+// },
+// "required": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/required"
+// },
+// "additionalProperties": {
+// "type": "boolean",
+// "const": false
+// },
+// "properties": {
+// "$ref": "\#/$defs/documentProperties"
+// },
+// "dependentSchemas": {
+// "type": "object",
+// "minProperties": 1,
+// "additionalProperties": {
+// "$ref": "\#/$defs/documentSchema"
+// }
+// },
+// "dependentRequired": {
+// "type": "object",
+// "minProperties": 1,
+// "additionalProperties": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray"
+// }
+// },
+// "const": true,
+// "enum": {
+// "type": "array",
+// "items": true,
+// "minItems": 1,
+// "uniqueItems": true
+// },
+// "type": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/type"
+// },
+// "format": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/format-annotation#/properties/format"
+// },
+// "contentMediaType": {
+// "$ref": "https://json-schema.org/draft/2020-12/meta/content#/properties/contentMediaType"
+// },
+// "byteArray": {
+// "type": "boolean",
+// "const": true
+// },
+// "prefixItems": {
+// "$ref": "\#/$defs/documentSchemaArray"
+// },
+// "items": true
+// },
+// "dependentSchemas": {
+// "byteArray": {
+// "description": "should be used only with array type",
+// "properties": {
+// "type": {
+// "type": "string",
+// "const": "array"
+// }
+// },
+// "not": {
+// "properties": {
+// "items": {
+// "type": "array"
+// }
+// },
+// "required": ["items"]
+// }
+// },
+// "contentMediaType": {
+// "if": {
+// "properties": {
+// "contentMediaType": {
+// "const": "application/x.dash.dpp.identifier"
+// }
+// }
+// },
+// "then": {
+// "properties": {
+// "byteArray": {
+// "const": true
+// },
+// "minItems": {
+// "const": 32
+// },
+// "maxItems": {
+// "const": 32
+// }
+// },
+// "required": ["byteArray", "minItems", "maxItems"]
+// }
+// },
+// "uniqueItems": {
+// "description": "prevent slow validation of large non-scalar arrays",
+// "if": {
+// "properties": {
+// "uniqueItems": {
+// "const": true
+// },
+// "items": {
+// "type": "object",
+// "properties": {
+// "type": {
+// "anyOf": [
+// {
+// "type": "string",
+// "enum": ["object", "array"]
+// },
+// {
+// "type": "array",
+// "contains": {
+// "enum": ["object", "array"]
+// }
+// }
+// ]
+// }
+// }
+// }
+// }
+// },
+// "then": {
+// "properties": {
+// "maxItems": {
+// "type": "number",
+// "maximum": 100000
+// }
+// },
+// "required": ["maxItems"]
+// }
+// },
+// "pattern": {
+// "description": "prevent slow pattern matching of large strings",
+// "properties": {
+// "maxLength": {
+// "type": "integer",
+// "minimum": 0,
+// "maximum": 50000
+// }
+// },
+// "required": [
+// "maxLength"
+// ]
+// },
+// "format": {
+// "description": "prevent slow format validation of large strings",
+// "properties": {
+// "maxLength": {
+// "type": "integer",
+// "minimum": 0,
+// "maximum": 50000
+// }
+// },
+// "required": ["maxLength"]
+// },
+// "prefixItems": {
+// "$comment": "array must not contain undefined item sub schemas",
+// "properties": {
+// "items": {
+// "type": "boolean",
+// "const": false
+// }
+// },
+// "required": ["items"]
+// }
+// },
+// "allOf": [
+// {
+// "$comment": "array must contain items",
+// "if": {
+// "properties": {
+// "type": {
+// "const": "array"
+// }
+// },
+// "required": ["type"],
+// "not": {
+// "properties": {
+// "byteArray": true
+// },
+// "required": ["byteArray"]
+// }
+// },
+// "then": {
+// "properties": {
+// "items": true
+// },
+// "required": ["items"]
+// }
+// },
+// {
+// "$comment": "array without prefixItems must contain items sub schema",
+// "if": {
+// "not": {
+// "properties": {
+// "prefixItems": true
+// },
+// "required": ["prefixItems"]
+// }
+// },
+// "then": {
+// "properties": {
+// "items": {
+// "$ref": "\#/$defs/documentSchema"
+// }
+// }
+// }
+// },
+// {
+// "$comment": "all object properties must be defined",
+// "if": {
+// "properties": {
+// "type": {
+// "const": "object"
+// }
+// },
+// "not": {
+// "properties": {
+// "$ref": true
+// },
+// "required": ["$ref"]
+// }
+// },
+// "then": {
+// "properties": {
+// "properties": {
+// "$ref": "\#/$defs/documentProperties"
+// },
+// "additionalProperties": {
+// "$ref": "\#/$defs/documentSchema/properties/additionalProperties"
+// }
+// },
+// "required": ["properties", "additionalProperties"]
+// }
+// }
+// ]
+// }
+// },
+// "properties": {
+// "protocolVersion": {
+// "type": "integer",
+// "$comment": "Maximum is the latest protocol version"
+// },
+// "$schema": {
+// "type": "string",
+// "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
+// },
+// "$id":{
+// "type": "array",
+// "byteArray": true,
+// "minItems": 32,
+// "maxItems": 32,
+// "contentMediaType": "application/x.dash.dpp.identifier"
+// },
+// "version": {
+// "type": "integer",
+// "minimum": 1
+// },
+// "ownerId":{
+// "type": "array",
+// "byteArray": true,
+// "minItems": 32,
+// "maxItems": 32,
+// "contentMediaType": "application/x.dash.dpp.identifier"
+// },
+// "documents": {
+// "type": "object",
+// "propertyNames": {
+// "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+// },
+// "additionalProperties": {
+// "type": "object",
+// "allOf": [
+// {
+// "properties": {
+// "indices": {
+// "type": "array",
+// "items": {
+// "type": "object",
+// "properties": {
+// "name": {
+// "type": "string",
+// "minLength": 1,
+// "maxLength": 32
+// },
+// "properties": {
+// "type": "array",
+// "items": {
+// "type": "object",
+// "propertyNames": {
+// "pattern": "^[a-zA-Z$][a-zA-Z0-9-_.]{1,62}[a-zA-Z0-9]$"
+// },
+// "additionalProperties": {
+// "type": "string",
+// "enum": ["asc", "desc"]
+// },
+// "minProperties": 1,
+// "maxProperties": 1
+// },
+// "minItems": 1,
+// "maxItems": 10
+// },
+// "unique": {
+// "type": "boolean"
+// }
+// },
+// "required": ["properties", "name"],
+// "additionalProperties": false
+// },
+// "minItems": 1,
+// "maxItems": 10
+// },
+// "type": {
+// "const": "object"
+// },
+// "signatureSecurityLevelRequirement": {
+// "type": "integer",
+// "enum": [
+// 0,
+// 1,
+// 2,
+// 3
+// ],
+// "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
+// }
+// }
+// },
+// {
+// "$ref": "\#/$defs/documentSchema"
+// }
+// ],
+// "unevaluatedProperties": false
+// },
+// "minProperties": 1,
+// "maxProperties": 100
+// },
+// "$defs": {
+// "$ref": "\#/$defs/documentProperties"
+// }
+// },
+// "required": [
+// "protocolVersion",
+// "$schema",
+// "$id",
+// "version",
+// "ownerId",
+// "documents"
+// ],
+// "additionalProperties": false
+// }"#;
+//
+//   let json_schema = serde_json::from_str(data)?;
+//   let kek = json!({ "string": "yes" });
+//
+//   JSONSchema::compile(&kek)
+// }
