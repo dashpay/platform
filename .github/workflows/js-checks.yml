@@ -23,10 +23,6 @@ on:
         default: false
         required: false
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   lint:
     name: Linting
@@ -111,6 +107,7 @@ jobs:
         run: yarn build --filter "+${{ inputs.package }}"
         if: ${{ !inputs.start-local-network }}
 
+      # We probably don't need to build all packages
       - name: Build all packages
         run: yarn build
         if: ${{ inputs.start-local-network }}
