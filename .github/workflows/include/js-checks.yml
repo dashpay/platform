@@ -1,4 +1,4 @@
-name: Package Tests
+name: Package JS Tests
 
 on:
   workflow_call:
@@ -22,17 +22,51 @@ on:
         type: boolean
         default: false
         required: false
+
+concurrency:
+  group: ${{ github.head_ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Test package
+  lint:
+    name: Linting
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - name: Cancel previous runs
-        uses: styfle/cancel-workflow-action@0.11.0
-        with:
-          access_token: ${{ github.token }}
+      - name: Check out repo
+        uses: actions/checkout@v2
 
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Run ESLinter
+        run: yarn workspace "${{ inputs.package }}" lint
+
+  test:
+    name: Tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    if: ${{ !inputs.skip-tests }}
+    steps:
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@latest
         if: ${{ inputs.install-browsers }}
@@ -50,13 +84,10 @@ jobs:
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
-          components: clippy
-          override: true
 
-      - name: Setup wasm-bindgen
-        run: cargo install -f wasm-bindgen-cli
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -82,9 +113,6 @@ jobs:
       - name: Build all packages
         run: yarn build
         if: ${{ inputs.start-local-network }}
-
-      - name: Run ESLinter
-        run: yarn workspace "${{ inputs.package }}" lint
 
       - name: Create necessary dotenv files
         run: |
@@ -128,7 +156,6 @@ jobs:
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"
-        if: ${{ !inputs.skip-tests }}
 
       - name: Show Docker logs
         if: ${{ failure() }}

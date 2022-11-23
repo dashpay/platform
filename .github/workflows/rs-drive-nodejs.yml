@@ -1,4 +1,4 @@
-name: JS Drive
+name: RS Drive Node.JS
 
 on:
   workflow_dispatch:
@@ -7,23 +7,28 @@ on:
       - master
       - v[0-9]+\.[0-9]+-dev
     paths:
-      - .github/workflows/js-drive.yml
-      - .github/workflows/include/js-checks.yml
-      - packages/js-drive/**
+      - .github/workflows/rs-drive-nodejs.yml
+      - .github/workflows/include/rs-checks.yml
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
-      - packages/js-dpp/**
       - packages/masternode-reward-shares-contract/**
-      - packages/dapi-grpc/**
-      - packages/js-grpc-common/**
-      - packages/withdrawals-contract/**
+      - packages/js-dpp/**
+      - packages/rs-dpp/**
+      - packages/rs-drive/**
+      - packages/rs-drive-abci/**
   schedule:
     - cron: '30 4 * * *'
 
 jobs:
+  rs-checks:
+    name: Rust checks
+    uses: ./.github/workflows/include/rs-checks.yml
+    with:
+      package: 'drive-abci'
+
   js-checks:
     name: JS checks
     uses: ./.github/workflows/include/js-checks.yml
     with:
-      package: '@dashevo/drive'
+      package: '@dashevo/rs-drive'
