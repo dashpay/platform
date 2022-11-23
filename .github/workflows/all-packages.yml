@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   deps-versions:
-    name: JS dependency version
+    name: JS dependency versions check
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo

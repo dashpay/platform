@@ -37,7 +37,7 @@
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@3.2.2",
+  "packageManager": "yarn@3.3.0",
   "ultra": {
     "concurrent": [
       "clean"
