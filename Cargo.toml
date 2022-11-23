@@ -1,9 +1,9 @@
 [workspace]
 
 members = [
+    "packages/js-dpp",
     "packages/wasm-dpp",
+    "packages/rs-drive",
+    "packages/rs-drive-abci",
+    "packages/rs-drive-nodejs",
 ]
-
-[profile.release]
-lto = true
-opt-level = 's'
