@@ -35,7 +35,7 @@ use std::option::Option::None;
 use grovedb::{Element, Transaction, TransactionArg};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
-use rs_drive::common;
+use drive::common;
 use rs_drive::common::setup_contract;
 use rs_drive::contract::document::Document;
 use rs_drive::contract::Contract;

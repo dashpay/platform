@@ -37,11 +37,11 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::fee_pools::constants;
 use crate::platform::Platform;
-use rs_drive::drive::batch::GroveDbOpBatch;
-use rs_drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
-use rs_drive::fee_pools::epochs::Epoch;
-use rs_drive::grovedb::TransactionArg;
-use rs_drive::{error, grovedb};
+use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
+use drive::fee_pools::epochs::Epoch;
+use drive::grovedb::TransactionArg;
+use drive::{error, grovedb};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 
@@ -134,11 +134,11 @@ mod tests {
 
     mod distribute_storage_fee_distribution_pool {
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use rs_drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::error::drive::DriveError;
-        use rs_drive::fee_pools::epochs::Epoch;
-        use rs_drive::fee_pools::update_storage_fee_distribution_pool_operation;
+        use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::error::drive::DriveError;
+        use drive::fee_pools::epochs::Epoch;
+        use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 
         #[test]
         fn test_nothing_to_distribute() {
@@ -165,7 +165,7 @@ mod tests {
             {
                 Ok(()) => assert!(false, "should return BatchIsEmpty error"),
                 Err(e) => match e {
-                    rs_drive::error::Error::Drive(DriveError::BatchIsEmpty()) => assert!(true),
+                    drive::error::Error::Drive(DriveError::BatchIsEmpty()) => assert!(true),
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -399,10 +399,10 @@ mod tests {
         use crate::common::helpers::setup::{
             setup_platform, setup_platform_with_initial_state_structure,
         };
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::error::Error as DriveError;
-        use rs_drive::fee_pools::update_storage_fee_distribution_pool_operation;
-        use rs_drive::grovedb;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::error::Error as DriveError;
+        use drive::fee_pools::update_storage_fee_distribution_pool_operation;
+        use drive::grovedb;
 
         #[test]
         fn test_error_if_pool_is_not_initiated() {
