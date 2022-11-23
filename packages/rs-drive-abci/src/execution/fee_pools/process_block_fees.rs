@@ -42,9 +42,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::{
-    GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
-};
+use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use std::option::Option::None;
