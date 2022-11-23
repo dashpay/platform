@@ -24,9 +24,3 @@ impl DashPlatformProtocol {
         DashPlatformProtocol(identity_facade)
     }
 }
-
-// impl Default for DashPlatformProtocol {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
