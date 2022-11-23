@@ -216,6 +216,7 @@ jobs:
         uses: github/codeql-action/init@v2
         with:
           languages: javascript
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
@@ -257,4 +258,3 @@ jobs:
         uses: github/codeql-action/analyze@v2
         with:
           category: "/language:javascript"
-          config-file: ./.github/codeql/codeql-config.yml
