@@ -8363,7 +8363,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["cors", "npm:2.8.5"],\
             ["debug", "virtual:c2bff3e67180802999655a22d390062982690e911b9d9225c258f3b25e7409f3867b2682c16232b77415f560a09d05a95042dc512a5b8c566c42bbbed88b0bbc#npm:4.3.4"],\
             ["engine.io-parser", "npm:5.0.4"],\
-            ["ws", "virtual:a0c0d83e66563f51d601c822567e6d79b2ed7475481445e29115ee78d98a1ad5241e9e0cbf0e0eb707d80a4db444175061b5c5627b6aa1262f0868dc9ad1e7a1#npm:8.2.3"]\
+            ["ws", "virtual:1486b58c4b8c6780e2e50ac9b79e052d8eb0d6108410e8d54adb5463b16ceb52bfda224eaf345a0f4abe6cb7db3e97713519d259e40d09a148b5ed396f1db9c8#npm:8.2.3"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:6.2.1", {\
+          "packageLocation": "./.yarn/cache/engine.io-npm-6.2.1-1486b58c4b-626d7a77f2.zip/node_modules/engine.io/",\
+          "packageDependencies": [\
+            ["engine.io", "npm:6.2.1"],\
+            ["@types/cookie", "npm:0.4.1"],\
+            ["@types/cors", "npm:2.8.12"],\
+            ["@types/node", "npm:17.0.21"],\
+            ["accepts", "npm:1.3.7"],\
+            ["base64id", "npm:2.0.0"],\
+            ["cookie", "npm:0.4.1"],\
+            ["cors", "npm:2.8.5"],\
+            ["debug", "virtual:c2bff3e67180802999655a22d390062982690e911b9d9225c258f3b25e7409f3867b2682c16232b77415f560a09d05a95042dc512a5b8c566c42bbbed88b0bbc#npm:4.3.4"],\
+            ["engine.io-parser", "npm:5.0.4"],\
+            ["ws", "virtual:1486b58c4b8c6780e2e50ac9b79e052d8eb0d6108410e8d54adb5463b16ceb52bfda224eaf345a0f4abe6cb7db3e97713519d259e40d09a148b5ed396f1db9c8#npm:8.2.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -11576,6 +11593,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["connect", "npm:3.7.0"],\
             ["di", "npm:0.0.1"],\
             ["dom-serialize", "npm:2.2.1"],\
+            ["engine.io", "npm:6.2.1"],\
             ["glob", "npm:7.2.0"],\
             ["graceful-fs", "npm:4.2.10"],\
             ["http-proxy", "npm:1.18.1"],\
@@ -18572,10 +18590,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "HARD"\
         }],\
-        ["virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5", {\
-          "packageLocation": "./.yarn/__virtual__/ws-virtual-fca14c3640/0/cache/ws-npm-7.5.5-8f4a2a84a8-bd2b437256.zip/node_modules/ws/",\
+        ["virtual:1486b58c4b8c6780e2e50ac9b79e052d8eb0d6108410e8d54adb5463b16ceb52bfda224eaf345a0f4abe6cb7db3e97713519d259e40d09a148b5ed396f1db9c8#npm:8.2.3", {\
+          "packageLocation": "./.yarn/__virtual__/ws-virtual-57b635f8ed/0/cache/ws-npm-8.2.3-03a35b8ad7-c869296ccb.zip/node_modules/ws/",\
           "packageDependencies": [\
-            ["ws", "virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5"],\
+            ["ws", "virtual:1486b58c4b8c6780e2e50ac9b79e052d8eb0d6108410e8d54adb5463b16ceb52bfda224eaf345a0f4abe6cb7db3e97713519d259e40d09a148b5ed396f1db9c8#npm:8.2.3"],\
             ["@types/bufferutil", null],\
             ["@types/utf-8-validate", null],\
             ["bufferutil", null],\
@@ -18589,10 +18607,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "HARD"\
         }],\
-        ["virtual:a0c0d83e66563f51d601c822567e6d79b2ed7475481445e29115ee78d98a1ad5241e9e0cbf0e0eb707d80a4db444175061b5c5627b6aa1262f0868dc9ad1e7a1#npm:8.2.3", {\
-          "packageLocation": "./.yarn/__virtual__/ws-virtual-d4fe871b31/0/cache/ws-npm-8.2.3-03a35b8ad7-c869296ccb.zip/node_modules/ws/",\
+        ["virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5", {\
+          "packageLocation": "./.yarn/__virtual__/ws-virtual-fca14c3640/0/cache/ws-npm-7.5.5-8f4a2a84a8-bd2b437256.zip/node_modules/ws/",\
           "packageDependencies": [\
-            ["ws", "virtual:a0c0d83e66563f51d601c822567e6d79b2ed7475481445e29115ee78d98a1ad5241e9e0cbf0e0eb707d80a4db444175061b5c5627b6aa1262f0868dc9ad1e7a1#npm:8.2.3"],\
+            ["ws", "virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5"],\
             ["@types/bufferutil", null],\
             ["@types/utf-8-validate", null],\
             ["bufferutil", null],\

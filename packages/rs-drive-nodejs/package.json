@@ -11,10 +11,10 @@
   },
   "files": [
     "prebuilds",
-    "packages/rs-drive-nodejs/Drive.js",
-    "packages/rs-drive-nodejs/GroveDB.js",
-    "packages/rs-drive-nodejs/appendStack.js",
-    "packages/rs-drive-nodejs/src"
+    "Drive.js",
+    "GroveDB.js",
+    "appendStack.js",
+    "src"
   ],
   "license": "MIT",
   "devDependencies": {

@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/platform-test-suite.yml
-      - .github/workflows/test.yml
+      - .github/workflows/include/js-checks.yml
       - packages/platform-test-suite/**
       - packages/js-dash-sdk/**
       - packages/wallet-lib/**
@@ -21,11 +21,13 @@ on:
       - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
       - packages/dash-spv/**
+  schedule:
+    - cron: '30 4 * * *'
 
 jobs:
-  platform-test-suite-tests:
-    name: Run Test Suite
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS checks
+    uses: ./.github/workflows/include/js-checks.yml
     with:
       package: '@dashevo/platform-test-suite'
       skip-tests: true

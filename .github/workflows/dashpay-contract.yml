@@ -11,12 +11,16 @@ on:
       - .github/workflows/test.yml
       - packages/dashpay-contract/**
       - packages/js-dpp/**
+      - packages/wasm-dpp/**
+      - packages/rs-dpp/**
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
+  schedule:
+    - cron: '30 4 * * *'
 
 jobs:
-  dapi-tests:
-    name: Run DAPI gRPC tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS checks
+    uses: ./.github/workflows/include/js-checks.yml
     with:
       package: '@dashevo/dashpay-contract'
