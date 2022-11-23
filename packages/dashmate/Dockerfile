@@ -8,7 +8,10 @@ RUN apk update && \
     apk add --no-cache git \
                        openssh-client \
                        python3 \
-                       alpine-sdk
+                       alpine-sdk \
+                       make \
+                       cmake \
+                       g++
 
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
