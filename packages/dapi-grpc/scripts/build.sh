@@ -18,7 +18,7 @@ PLATFORM_OBJ_C_OUT_PATH="$PLATFORM_CLIENTS_PATH/objective-c"
 CORE_PYTHON_OUT_PATH="$CORE_CLIENTS_PATH/python"
 PLATFORM_PYTHON_OUT_PATH="$PLATFORM_CLIENTS_PATH/python"
 
-PROTOC_IMAGE="strophy/protoc:4.0.0"
+PROTOC_IMAGE="igor/protoc"
 
 #################################################
 # Generate JavaScript client for `Core` service #
@@ -26,26 +26,14 @@ PROTOC_IMAGE="strophy/protoc:4.0.0"
 
 rm -rf "$CORE_WEB_OUT_PATH/*"
 
-PROTOC_GEN_TS_PATH="$PWD/scripts/ts-protoc-gen.sh"
-
-protoc \
-  --plugin="protoc-gen-ts=${PROTOC_GEN_TS_PATH}" \
-  --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
-  --ts_out="service=grpc-web:$CORE_WEB_OUT_PATH" \
-  -I="$CORE_PROTO_PATH" \
-   "core.proto"
-
-#exit
-#docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
-#           -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
-#           -v "$PROTOC_GEN_TS_PATH:$PROTOC_GEN_TS_PATH" \
-#           --rm \
-#           "$PROTOC_IMAGE" \
-#           --plugin="protoc-gen-ts=${PROTOC_GEN_TS_PATH}" \
-#           --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
-#           --ts_out="service=grpc-web:$CORE_WEB_OUT_PATH/core_grpc_web_pb.js" \
-#           -I="$CORE_PROTO_PATH" \
-#           "core.proto"
+docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
+           -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
+           --rm \
+           "$PROTOC_IMAGE" \
+           --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
+           --ts_out="service=grpc-web:$CORE_WEB_OUT_PATH" \
+           -I="$CORE_PROTO_PATH" \
+           "core.proto"
 
 # Clean node message classes
 
@@ -70,21 +58,14 @@ pbjs \
 
 rm -rf "$PLATFORM_WEB_OUT_PATH/*"
 
-protoc \
-  --plugin="protoc-gen-ts=${PROTOC_GEN_TS_PATH}" \
-  --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
-  --ts_out="service=grpc-web:$PLATFORM_WEB_OUT_PATH" \
-  -I="$PLATFORM_PROTO_PATH" \
-  "platform.proto"
-
-#docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
-#           -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
-#           --rm \
-#           "$PROTOC_IMAGE" \
-#           --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
-#           --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$PLATFORM_WEB_OUT_PATH" \
-#           -I="$PLATFORM_PROTO_PATH" \
-#           "platform.proto"
+docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
+           -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
+           --rm \
+           "$PROTOC_IMAGE" \
+           --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
+           --ts_out="service=grpc-web:$PLATFORM_WEB_OUT_PATH" \
+           -I="$PLATFORM_PROTO_PATH" \
+           "platform.proto"
 
 # Clean node message classes
 
