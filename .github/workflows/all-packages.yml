@@ -257,3 +257,4 @@ jobs:
         uses: github/codeql-action/analyze@v2
         with:
           category: "/language:javascript"
+          config-file: ./.github/codeql/codeql-config.yml
