@@ -7,21 +7,6 @@ on:
         description: The package name to run tests for
         type: string
         required: true
-      start-local-network:
-        description: Does the specified package require local network to run tests
-        type: boolean
-        default: false
-        required: false
-      skip-tests:
-        description: Skip running tests
-        type: boolean
-        default: false
-        required: false
-      install-browsers:
-        description: Install browsers
-        type: boolean
-        default: false
-        required: false
 
 jobs:
   lint:
@@ -83,7 +68,6 @@ jobs:
     name: Tests
     runs-on: ubuntu-22.04
     timeout-minutes: 60
-    if: ${{ !inputs.skip-tests }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v2

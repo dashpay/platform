@@ -52,6 +52,7 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
+      # We probably don't need to build all packages
       - name: Build packages
         run: yarn build
 
