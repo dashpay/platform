@@ -65,6 +65,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
+          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Enable Rust cache
@@ -142,6 +143,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
+          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Enable Rust cache

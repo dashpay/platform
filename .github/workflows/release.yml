@@ -703,6 +703,7 @@ jobs:
         if: ${{ matrix.os == 'macos-11' }}
         uses: actions-rs/toolchain@v1
         with:
+          toolchain: stable
           target: ${{ steps.set-target.outputs.result }}
 
       - name: Enable Rust cache

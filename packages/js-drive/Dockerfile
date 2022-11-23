@@ -23,7 +23,7 @@ RUN apk update && \
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=nightly
+    RUST_VERSION=stable
 
 RUN set -eux; \
     apkArch="$(apk --print-arch)"; \
