@@ -36,8 +36,11 @@ jobs:
     name: Crates security audit
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/audit-check@v1
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Audit crates
+        uses: actions-rs/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,9 +48,15 @@ jobs:
     name: NPM security audit
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
-      - run: corepack enable
-      - run: yarn npm audit --environment production --all --recursive
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Audit NPM
+        run: yarn npm audit --environment production --all --recursive --ignore 1080920
+        # ignore "got"
 
   test-suite:
     name: Run Platform Test Suite

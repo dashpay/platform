@@ -76,6 +76,7 @@
   "resolutions": {
     "elliptic": "^6.5.4",
     "bn.js": "4.12.0",
-    "ejs": "^3.1.7"
+    "ejs": "^3.1.7",
+    "engine.io": "^6.2.1"
   }
 }

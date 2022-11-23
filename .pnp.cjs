@@ -8345,23 +8345,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["engine.io", [\
-        ["npm:6.2.0", {\
-          "packageLocation": "./.yarn/cache/engine.io-npm-6.2.0-a0c0d83e66-cc485c5ba2.zip/node_modules/engine.io/",\
-          "packageDependencies": [\
-            ["engine.io", "npm:6.2.0"],\
-            ["@types/cookie", "npm:0.4.1"],\
-            ["@types/cors", "npm:2.8.12"],\
-            ["@types/node", "npm:17.0.21"],\
-            ["accepts", "npm:1.3.7"],\
-            ["base64id", "npm:2.0.0"],\
-            ["cookie", "npm:0.4.1"],\
-            ["cors", "npm:2.8.5"],\
-            ["debug", "virtual:c2bff3e67180802999655a22d390062982690e911b9d9225c258f3b25e7409f3867b2682c16232b77415f560a09d05a95042dc512a5b8c566c42bbbed88b0bbc#npm:4.3.4"],\
-            ["engine.io-parser", "npm:5.0.4"],\
-            ["ws", "virtual:1486b58c4b8c6780e2e50ac9b79e052d8eb0d6108410e8d54adb5463b16ceb52bfda224eaf345a0f4abe6cb7db3e97713519d259e40d09a148b5ed396f1db9c8#npm:8.2.3"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:6.2.1", {\
           "packageLocation": "./.yarn/cache/engine.io-npm-6.2.1-1486b58c4b-626d7a77f2.zip/node_modules/engine.io/",\
           "packageDependencies": [\
@@ -11588,7 +11571,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["connect", "npm:3.7.0"],\
             ["di", "npm:0.0.1"],\
             ["dom-serialize", "npm:2.2.1"],\
-            ["engine.io", "npm:6.2.1"],\
             ["glob", "npm:7.2.0"],\
             ["graceful-fs", "npm:4.2.10"],\
             ["http-proxy", "npm:1.18.1"],\
@@ -11625,7 +11607,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/chai", null],\
             ["@types/karma", null],\
             ["chai", "npm:4.3.4"],\
-            ["engine.io", "npm:6.2.1"],\
             ["karma", "npm:6.4.1"]\
           ],\
           "packagePeers": [\
@@ -11643,7 +11624,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/chai", "npm:4.2.22"],\
             ["@types/karma", null],\
             ["chai", "npm:4.3.4"],\
-            ["engine.io", "npm:6.2.1"],\
             ["karma", "npm:6.4.1"]\
           ],\
           "packagePeers": [\
@@ -15886,7 +15866,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["accepts", "npm:1.3.7"],\
             ["base64id", "npm:2.0.0"],\
             ["debug", "virtual:c2bff3e67180802999655a22d390062982690e911b9d9225c258f3b25e7409f3867b2682c16232b77415f560a09d05a95042dc512a5b8c566c42bbbed88b0bbc#npm:4.3.4"],\
-            ["engine.io", "npm:6.2.0"],\
+            ["engine.io", "npm:6.2.1"],\
             ["socket.io-adapter", "npm:2.4.0"],\
             ["socket.io-parser", "npm:4.2.1"]\
           ],\
