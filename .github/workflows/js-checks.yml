@@ -27,7 +27,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -36,6 +36,15 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '16'
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -54,13 +63,16 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
+      - name: Build package and dependencies
+        run: yarn build --filter "+${{ inputs.package }}"
+
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
 
   test:
     name: Tests
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     if: ${{ !inputs.skip-tests }}
     steps:
       - name: Setup Firefox
