@@ -4,12 +4,6 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
-use drive_abci::abci::handlers::TenderdashAbci;
-use drive_abci::abci::messages::{
-    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest, Serializable,
-};
-use drive_abci::platform::Platform;
-use neon::prelude::*;
 use drive::dpp::identity::Identity;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -18,6 +12,12 @@ use drive::error::drive::DriveError;
 use drive::error::Error;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
+use drive_abci::abci::handlers::TenderdashAbci;
+use drive_abci::abci::messages::{
+    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest, Serializable,
+};
+use drive_abci::platform::Platform;
+use neon::prelude::*;
 
 type TransactionPointerAddress = usize;
 
