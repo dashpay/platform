@@ -1,5 +1,5 @@
 const { getBinaryPropertiesFromSchema } = require(
-  '../../../lib/dataContract/getBinaryPropertiesFromSchema',
+  '@dashevo/dpp/lib/dataContract/getBinaryPropertiesFromSchema',
 );
 
 describe('getBinaryPropertiesFromSchema', () => {

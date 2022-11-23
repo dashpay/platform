@@ -1,17 +1,17 @@
 const bs58 = require('bs58');
-const rejectDataTrigger = require('../../../lib/dataTrigger/rejectDataTrigger');
+const rejectDataTrigger = require('@dashevo/dpp/lib/dataTrigger/rejectDataTrigger');
 
-const DataTriggerExecutionContext = require('../../../lib/dataTrigger/DataTriggerExecutionContext');
+const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
 
-const { getChildDocumentFixture } = require('../../../lib/test/fixtures/getDpnsDocumentFixture');
+const { getChildDocumentFixture } = require('@dashevo/dpp/lib/test/fixtures/getDpnsDocumentFixture');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const getDpnsContractFixture = require('../../../lib/test/fixtures/getDpnsContractFixture');
-const getDocumentTransitionFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
+const getDocumentTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const DataTriggerExecutionResult = require('../../../lib/dataTrigger/DataTriggerExecutionResult');
-const StateTransitionExecutionContext = require('../../../lib/stateTransition/StateTransitionExecutionContext');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('rejectDataTrigger', () => {
   let documentTransition;

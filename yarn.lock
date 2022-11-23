@@ -1281,14 +1281,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@npm:~0.24.0-dev.1":
+"@dashevo/abci@github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f":
   version: 0.24.0-dev.1
-  resolution: "@dashevo/abci@npm:0.24.0-dev.1"
+  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
     protocol-buffers-encodings: ^1.1.0
-  checksum: 7365398a18a46a805663a2144125f9684610b3d165f0d9d3ccfb49fe0c7cfa0c4f3fc9ab28c038dffb38918882efb982549413dfcd24b8fcfdd37c980196daae
+  checksum: 86504da08f35d618a19ce99b3e2500580d6e20c34859be911efc35951099b42c4d641de0a92a83e0bb712df013ac57c97f9bf63a9d0e56b40db089864f5e1574
   languageName: node
   linkType: hard
 
@@ -1313,15 +1313,6 @@ __metadata:
     mocha: ^9.1.2
   languageName: unknown
   linkType: soft
-
-"@dashevo/bls@npm:~1.0.0-beta.2":
-  version: 1.0.0-beta.2
-  resolution: "@dashevo/bls@npm:1.0.0-beta.2"
-  dependencies:
-    binascii: 0.0.2
-  checksum: d1c329bedc6a6af3ce34e2e631c9d6aafc6cef014220a170edd3491e69fb9cb026bed37f22c6ddcb6ff9d3c4e00f8b241f2ece1360a281ecfdbc876a1c028923
-  languageName: node
-  linkType: hard
 
 "@dashevo/dapi-client@workspace:*, @dashevo/dapi-client@workspace:packages/js-dapi-client":
   version: 0.0.0-use.local
@@ -1351,6 +1342,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     eslint-plugin-jsdoc: ^27.0.0
     events: ^3.3.0
+    google-protobuf: ^3.12.2
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
@@ -1422,6 +1414,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
+    google-protobuf: ^3.12.2
     jayson: ^3.3.4
     lodash: ^4.17.19
     lru-cache: ^5.1.1
@@ -1604,7 +1597,6 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/bls": ~1.0.0-beta.2
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
@@ -1617,6 +1609,7 @@ __metadata:
     assert: ^2.0.0
     babel-loader: ^8.2.2
     bignumber.js: ^9.0.1
+    bls-signatures: ^0.2.5
     bs58: ^4.0.1
     buffer: ^6.0.3
     cbor: ^8.0.0
@@ -1668,7 +1661,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": ~0.24.0-dev.1
+    "@dashevo/abci": "github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
@@ -1679,7 +1672,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/rs-drive": 0.23.0-dev.9
+    "@dashevo/rs-drive": 0.23.0-beta.1
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1699,13 +1692,13 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     find-my-way: ^2.2.2
+    google-protobuf: ^3.12.2
     js-merkle: ^0.1.5
     levelup: ^4.4.0
     lodash.clonedeep: ^4.5.0
     lodash.get: ^4.4.2
     lodash.set: ^4.3.2
     long: ^5.2.0
-    lru-cache: ^5.1.1
     memdown: ^5.1.0
     mocha: ^9.1.2
     moment: ^2.29.4
@@ -1894,16 +1887,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/rs-drive@npm:0.23.0-dev.9":
-  version: 0.23.0-dev.9
-  resolution: "@dashevo/rs-drive@npm:0.23.0-dev.9"
+"@dashevo/rs-drive@npm:0.23.0-beta.1":
+  version: 0.23.0-beta.1
+  resolution: "@dashevo/rs-drive@npm:0.23.0-beta.1"
   dependencies:
     "@dashevo/dpp": ~0.22.0-dev.7
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.1.0
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: 3c7676bae10f900ae1ca3f7787edc34768d4d6d0af470e108b8b86a4a250978ab8ebc8eb53a8e9cf8509f4840f6e1bb78dbd1e96b5e942d1089b11d4b4034b5e
+  checksum: 771ab1e0409ac03c9fc15bbfcefa6985c4db88264e2d179dd49fe9f67cfdfd5eb640027a0b477bbf2a7b4b27e16eb6e4ef7ec202f0479c0992d5e1ad248444ba
   languageName: node
   linkType: hard
 
@@ -1963,29 +1956,19 @@ __metadata:
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
-    "@babel/core": ^7.15.5
-    "@babel/preset-env": ^7.15.4
-    "@dashevo/bls": ~1.0.0-beta.2
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
-    "@dashevo/feature-flags-contract": "workspace:*"
-    "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/dpp": "workspace:*"
     "@dashevo/wasm-re2": ~1.0.2
-    acorn: ^8.5.0
+    "@types/node": ^14.6.0
     ajv: ^8.6.0
-    ajv-formats: ^2.1.1
     assert: ^2.0.0
-    babel-loader: ^8.2.2
-    bignumber.js: ^9.0.1
     bs58: ^4.0.1
     buffer: ^6.0.3
-    cbor: ^8.0.0
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
     chai-exclude: ^2.1.0
     chai-string: ^1.5.0
-    core-js: ^3.17.2
     crypto-browserify: ^3.12.0
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1995,7 +1978,6 @@ __metadata:
     fast-json-patch: ^3.1.0
     https-browserify: ^1.0.0
     json-schema-diff-validator: ^0.4.1
-    json-schema-traverse: ^1.0.0
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
@@ -2004,13 +1986,8 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
     lodash.clonedeep: ^4.5.0
-    lodash.clonedeepwith: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.set: ^4.3.2
     long: ^5.2.0
     mocha: ^9.1.2
-    node-inspect-extracted: ^1.0.8
-    nyc: ^15.1.0
     path-browserify: ^1.0.1
     process: ^0.11.10
     sinon: ^11.1.2
@@ -2018,6 +1995,8 @@ __metadata:
     stream-browserify: ^3.0.0
     stream-http: ^3.2.0
     string_decoder: ^1.3.0
+    ts-loader: ^8.0.2
+    typescript: ^3.9.5
     url: ^0.11.0
     util: ^0.12.4
     webpack: ^5.59.1
@@ -2031,6 +2010,22 @@ __metadata:
   checksum: 3d54788e4e133e0677e60c125550a1f81cc5d9ed742e7dfec936e4da7653bb17a43054db3fc1287074efdb05ebbef7625d19f1f3286662f135218fadc27e6818
   languageName: node
   linkType: hard
+
+"@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
+  dependencies:
+    "@dashevo/dpp": "workspace:*"
+    chai: ^4.3.4
+    dirty-chai: ^2.0.1
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    mocha: ^9.1.2
+    sinon: ^11.1.2
+    sinon-chai: ^3.7.0
+  languageName: unknown
+  linkType: soft
 
 "@dashevo/x11-hash-js@npm:^1.0.2":
   version: 1.0.2
@@ -4182,13 +4177,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"binascii@npm:0.0.2":
-  version: 0.0.2
-  resolution: "binascii@npm:0.0.2"
-  checksum: d27d4e7942994eb03152fe1ae828cd68cfe69e3a9aadcf7b1d5433761839ee0009c8139305c596d010236c912d65c1889d062784b2514869c61995410ae4ca9a
-  languageName: node
-  linkType: hard
-
 "bl@npm:^1.2.3":
   version: 1.2.3
   resolution: "bl@npm:1.2.3"
@@ -4622,9 +4610,9 @@ __metadata:
   linkType: hard
 
 "caniuse-lite@npm:^1.0.30001280":
-  version: 1.0.30001282
-  resolution: "caniuse-lite@npm:1.0.30001282"
-  checksum: 62797fd756e88bfa01f0f983bea9de7814293b209456e8f0b20596b03d2880246f63dc90f947a1fa63f92806ebefbb86fc7811dbecb7839927886d07996938be
+  version: 1.0.30001431
+  resolution: "caniuse-lite@npm:1.0.30001431"
+  checksum: bc8ab55cd194e240152946b54bfaff7456180cc018674fc7ed134f4f502192405f6643f422feaa0a5e7cc02b5bac564cfac7771ac6d29f5d129482fcfe335ba1
   languageName: node
   linkType: hard
 
@@ -5656,7 +5644,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/bls": ~1.0.0-beta.2
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
     "@dashevo/dashpay-contract": "workspace:*"
@@ -5672,6 +5659,7 @@ __metadata:
     ajv-formats: ^2.1.1
     awilix: ^4.2.6
     axios: ^0.27.2
+    bls-signatures: ^0.2.5
     chalk: ^4.1.0
     cron: ^2.1.0
     dash: "workspace:*"

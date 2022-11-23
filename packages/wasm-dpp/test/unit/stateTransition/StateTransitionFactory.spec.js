@@ -1,16 +1,16 @@
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const InvalidStateTransitionError = require('../../../lib/stateTransition/errors/InvalidStateTransitionError');
+const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
 
-const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
+const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const StateTransitionFactory = require('../../../lib/stateTransition/StateTransitionFactory');
-const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const StateTransitionFactory = require('@dashevo/dpp/lib/stateTransition/StateTransitionFactory');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('StateTransitionFactory', () => {
   let validateStateTransitionBasicMock;

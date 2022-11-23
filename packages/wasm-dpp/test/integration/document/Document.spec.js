@@ -1,8 +1,8 @@
-const Identifier = require('../../../lib/identifier/Identifier');
-const Metadata = require('../../../lib/Metadata');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const Metadata = require('@dashevo/dpp/lib/Metadata');
 
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 describe('Document', () => {
   let document;
@@ -13,7 +13,12 @@ describe('Document', () => {
     dataContract = getDataContractFixture();
     [document] = getDocumentsFixture(dataContract).slice(8);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: new Date().getTime(),
+      protocolVersion: 1,
+    });
 
     document.setMetadata(metadataFixture);
   });

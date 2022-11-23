@@ -87,6 +87,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       {\
         "name": "@dashevo/wasm-dpp",\
         "reference": "workspace:packages/wasm-dpp"\
+      },\
+      {\
+        "name": "@dashevo/withdrawals-contract",\
+        "reference": "workspace:packages/withdrawals-contract"\
       }\
     ],\
     "enableTopLevelFallback": true,\
@@ -108,6 +112,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
       ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
+      ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
       ["dash", ["workspace:packages/js-dash-sdk"]],\
       ["dashmate", ["workspace:packages/dashmate"]]\
     ],\
@@ -2274,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["npm:0.24.0-dev.1", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-npm-0.24.0-dev.1-10e782bbd8-7365398a18.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7acd001b9d-86504da08f.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "npm:0.24.0-dev.1"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2309,16 +2314,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
-      ["@dashevo/bls", [\
-        ["npm:1.0.0-beta.2", {\
-          "packageLocation": "./.yarn/cache/@dashevo-bls-npm-1.0.0-beta.2-a499c2ec55-d1c329bedc.zip/node_modules/@dashevo/bls/",\
-          "packageDependencies": [\
-            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
-            ["binascii", "npm:0.0.2"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["@dashevo/dapi", [\
         ["workspace:packages/dapi", {\
           "packageLocation": "./packages/dapi/",\
@@ -2344,6 +2339,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["jayson", "npm:3.6.5"],\
             ["lodash", "npm:4.17.21"],\
             ["lru-cache", "npm:5.1.1"],\
@@ -2389,6 +2385,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["eslint-plugin-jsdoc", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:27.1.2"],\
             ["events", "npm:3.3.0"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
@@ -2619,7 +2616,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
-            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -2632,6 +2628,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["assert", "npm:2.0.0"],\
             ["babel-loader", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:8.2.3"],\
             ["bignumber.js", "npm:9.0.1"],\
+            ["bls-signatures", "npm:0.2.5"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
@@ -2685,7 +2682,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "npm:0.24.0-dev.1"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
@@ -2696,7 +2693,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-beta.1"],\
             ["@types/pino", "npm:6.3.12"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],\
@@ -2716,13 +2713,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["find-my-way", "npm:2.2.5"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["js-merkle", "npm:0.1.5"],\
             ["levelup", "npm:4.4.0"],\
             ["lodash.clonedeep", "npm:4.5.0"],\
             ["lodash.get", "npm:4.4.2"],\
             ["lodash.set", "npm:4.3.2"],\
             ["long", "npm:5.2.0"],\
-            ["lru-cache", "npm:5.1.1"],\
             ["memdown", "npm:5.1.0"],\
             ["mocha", "npm:9.2.2"],\
             ["moment", "npm:2.29.4"],\
@@ -2927,10 +2924,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/rs-drive", [\
-        ["npm:0.23.0-dev.9", {\
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-dev.9-4a3180ad04/node_modules/@dashevo/rs-drive/",\
+        ["npm:0.23.0-beta.1", {\
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-beta.1-597f3103bf/node_modules/@dashevo/rs-drive/",\
           "packageDependencies": [\
-            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-beta.1"],\
             ["@dashevo/dpp", "npm:0.22.1"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
@@ -2999,29 +2996,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
-            ["@babel/core", "npm:7.16.0"],\
-            ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
-            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
-            ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-            ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
-            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wasm-re2", "npm:1.0.2"],\
-            ["acorn", "npm:8.6.0"],\
+            ["@types/node", "npm:14.17.34"],\
             ["ajv", "npm:8.8.1"],\
-            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["assert", "npm:2.0.0"],\
-            ["babel-loader", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.2.3"],\
-            ["bignumber.js", "npm:9.0.1"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
-            ["cbor", "npm:8.1.0"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chai-exclude", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.0"],\
             ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],\
-            ["core-js", "npm:3.19.1"],\
             ["crypto-browserify", "npm:3.12.0"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
@@ -3031,7 +3018,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["fast-json-patch", "npm:3.1.0"],\
             ["https-browserify", "npm:1.0.0"],\
             ["json-schema-diff-validator", "npm:0.4.1"],\
-            ["json-schema-traverse", "npm:1.0.0"],\
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
@@ -3040,13 +3026,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],\
             ["karma-webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.0.0"],\
             ["lodash.clonedeep", "npm:4.5.0"],\
-            ["lodash.clonedeepwith", "npm:4.5.0"],\
-            ["lodash.get", "npm:4.4.2"],\
-            ["lodash.set", "npm:4.3.2"],\
             ["long", "npm:5.2.0"],\
             ["mocha", "npm:9.2.2"],\
-            ["node-inspect-extracted", "npm:1.0.8"],\
-            ["nyc", "npm:15.1.0"],\
             ["path-browserify", "npm:1.0.1"],\
             ["process", "npm:0.11.10"],\
             ["sinon", "npm:11.1.2"],\
@@ -3054,6 +3035,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["stream-browserify", "npm:3.0.0"],\
             ["stream-http", "npm:3.2.0"],\
             ["string_decoder", "npm:1.3.0"],\
+            ["ts-loader", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.3.0"],\
+            ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=f456af"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
             ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.64.1"],\
@@ -3069,6 +3052,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wasm-re2", "npm:1.0.2"]\
           ],\
           "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@dashevo/withdrawals-contract", [\
+        ["workspace:packages/withdrawals-contract", {\
+          "packageLocation": "./packages/withdrawals-contract/",\
+          "packageDependencies": [\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["chai", "npm:4.3.4"],\
+            ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
+            ["eslint", "npm:7.32.0"],\
+            ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
+            ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["mocha", "npm:9.2.2"],\
+            ["sinon", "npm:11.1.2"],\
+            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"]\
+          ],\
+          "linkType": "SOFT"\
         }]\
       ]],\
       ["@dashevo/x11-hash-js", [\
@@ -5720,27 +5721,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             "webpack"\
           ],\
           "linkType": "HARD"\
-        }],\
-        ["virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.2.3", {\
-          "packageLocation": "./.yarn/__virtual__/babel-loader-virtual-4cdd306ee1/0/cache/babel-loader-npm-8.2.3-855681b984-78e1e1a919.zip/node_modules/babel-loader/",\
-          "packageDependencies": [\
-            ["babel-loader", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.2.3"],\
-            ["@babel/core", "npm:7.16.0"],\
-            ["@types/babel__core", null],\
-            ["@types/webpack", null],\
-            ["find-cache-dir", "npm:3.3.2"],\
-            ["loader-utils", "npm:1.4.0"],\
-            ["make-dir", "npm:3.1.0"],\
-            ["schema-utils", "npm:2.7.1"],\
-            ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.64.1"]\
-          ],\
-          "packagePeers": [\
-            "@babel/core",\
-            "@types/babel__core",\
-            "@types/webpack",\
-            "webpack"\
-          ],\
-          "linkType": "HARD"\
         }]\
       ]],\
       ["babel-plugin-dynamic-import-node", [\
@@ -5928,15 +5908,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/binaryextensions-npm-4.18.0-af6f83841f-6fe92a9004.zip/node_modules/binaryextensions/",\
           "packageDependencies": [\
             ["binaryextensions", "npm:4.18.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["binascii", [\
-        ["npm:0.0.2", {\
-          "packageLocation": "./.yarn/cache/binascii-npm-0.0.2-3bd8971b5f-d27d4e7942.zip/node_modules/binascii/",\
-          "packageDependencies": [\
-            ["binascii", "npm:0.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -6166,7 +6137,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/browserslist-npm-4.18.1-38eb8a64b9-ae58322dee.zip/node_modules/browserslist/",\
           "packageDependencies": [\
             ["browserslist", "npm:4.18.1"],\
-            ["caniuse-lite", "npm:1.0.30001282"],\
+            ["caniuse-lite", "npm:1.0.30001431"],\
             ["electron-to-chromium", "npm:1.3.903"],\
             ["escalade", "npm:3.1.1"],\
             ["node-releases", "npm:2.0.1"],\
@@ -6421,10 +6392,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["caniuse-lite", [\
-        ["npm:1.0.30001282", {\
-          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001282-49173a42dd-62797fd756.zip/node_modules/caniuse-lite/",\
+        ["npm:1.0.30001431", {\
+          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001431-6d607db8ef-bc8ab55cd1.zip/node_modules/caniuse-lite/",\
           "packageDependencies": [\
-            ["caniuse-lite", "npm:1.0.30001282"]\
+            ["caniuse-lite", "npm:1.0.30001431"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -7594,7 +7565,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",\
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
-            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
@@ -7610,6 +7580,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
             ["axios", "npm:0.27.2"],\
+            ["bls-signatures", "npm:0.2.5"],\
             ["chalk", "npm:4.1.2"],\
             ["cron", "npm:2.1.0"],\
             ["dash", "workspace:packages/js-dash-sdk"],\
@@ -16951,6 +16922,28 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["semver", "npm:7.3.7"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=f456af"],\
             ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.64.1"]\
+          ],\
+          "packagePeers": [\
+            "@types/typescript",\
+            "@types/webpack",\
+            "typescript",\
+            "webpack"\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.3.0", {\
+          "packageLocation": "./.yarn/__virtual__/ts-loader-virtual-932ebb3484/0/cache/ts-loader-npm-8.3.0-2a35793883-93dd15b553.zip/node_modules/ts-loader/",\
+          "packageDependencies": [\
+            ["ts-loader", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.3.0"],\
+            ["@types/typescript", null],\
+            ["@types/webpack", null],\
+            ["chalk", "npm:4.1.2"],\
+            ["enhanced-resolve", "npm:4.5.0"],\
+            ["loader-utils", "npm:2.0.2"],\
+            ["micromatch", "npm:4.0.4"],\
+            ["semver", "npm:7.3.7"],\
+            ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=f456af"],\
+            ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.64.1"]\
           ],\
           "packagePeers": [\
             "@types/typescript",\

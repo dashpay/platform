@@ -3,17 +3,17 @@ const {
   ownerId: dpnsOwnerId,
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
-const AbstractDocumentTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
+const AbstractDocumentTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 
-const getDataTriggersFactory = require('../../../lib/dataTrigger/getDataTriggersFactory');
+const getDataTriggersFactory = require('@dashevo/dpp/lib/dataTrigger/getDataTriggersFactory');
 
-const getDpnsDocumentFixture = require('../../../lib/test/fixtures/getDpnsDocumentFixture');
+const getDpnsDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsDocumentFixture');
 
-const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
+const DataTrigger = require('@dashevo/dpp/lib/dataTrigger/DataTrigger');
 
-const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const rejectDataTrigger = require('../../../lib/dataTrigger/rejectDataTrigger');
-const Identifier = require('../../../lib/identifier/Identifier');
+const createDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
+const rejectDataTrigger = require('@dashevo/dpp/lib/dataTrigger/rejectDataTrigger');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 describe('getDataTriggers', () => {
   let getDataTriggers;

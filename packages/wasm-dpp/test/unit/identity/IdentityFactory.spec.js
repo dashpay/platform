@@ -1,24 +1,24 @@
 const { PublicKey } = require('@dashevo/dashcore-lib');
-const Identity = require('../../../lib/identity/Identity');
-const IdentityCreateTransition = require('../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
-const IdentityTopUpTransition = require('../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
+const IdentityTopUpTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
-const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
-const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const InvalidIdentityError = require(
-  '../../../lib/identity/errors/InvalidIdentityError',
+  '@dashevo/dpp/lib/identity/errors/InvalidIdentityError',
 );
-const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
-const InstantAssetLockProof = require('../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
-const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
-const IdentityFactory = require('../../../lib/identity/IdentityFactory');
-const IdentityUpdateTransition = require('../../../lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const IdentityFactory = require('@dashevo/dpp/lib/identity/IdentityFactory');
+const IdentityUpdateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 describe('IdentityFactory', () => {
   let factory;

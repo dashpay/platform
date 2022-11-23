@@ -8,7 +8,10 @@ RUN apk update && \
     apk add --no-cache git \
                        openssh-client \
                        python3 \
-                       alpine-sdk
+                       alpine-sdk \
+                       make \
+                       cmake \
+                       g++
 
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
@@ -53,7 +56,7 @@ RUN apk update && \
     apk add --no-cache docker-cli
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="DAPI Helper Node.JS"
+LABEL description="Dashmate Helper Node.JS"
 
 
 WORKDIR /platform

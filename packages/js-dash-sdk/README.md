@@ -1,13 +1,13 @@
 # Dash SDK
 
 [![NPM Version](https://img.shields.io/npm/v/dash)](https://www.npmjs.org/package/dash)
-[![Release Packages](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
+[![Release Packages](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
 Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
-Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/explanation-dapi) to use both the Dash Core network and Dash Platform on [supported networks](https://github.com/dashevo/platform/#supported-networks). The Dash Core network can be used to broadcast and receive payments. Dash Platform can be used to manage identities, register data contracts for applications, and submit or retrieve application data via documents.
+Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/explanation-dapi) to use both the Dash Core network and Dash Platform on [supported networks](https://github.com/dashpay/platform/#supported-networks). The Dash Core network can be used to broadcast and receive payments. Dash Platform can be used to manage identities, register data contracts for applications, and submit or retrieve application data via documents.
 
 ## Table of Contents
 - [Install](#install)
@@ -120,10 +120,10 @@ const {
 ## Dependencies 
 
 The Dash SDK works using multiple dependencies that might interest you:
-- [Wallet-Lib](https://github.com/dashevo/platform/tree/master/packages/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (BIP-44 HD).
-- [Dashcore-Lib](https://github.com/dashevo/dashcore-lib) - Provides the main L1 blockchain primitives (Block, Transaction,...).
-- [DAPI-Client](https://github.com/dashevo/platform/tree/master/packages/js-dapi-client) - Client library for accessing DAPI endpoints.
-- [DPP](https://github.com/dashevo/platform/tree/master/packages/js-dpp) - Implementation (JS) of Dash Platform Protocol.
+- [Wallet-Lib](https://github.com/dashpay/platform/tree/master/packages/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (BIP-44 HD).
+- [Dashcore-Lib](https://github.com/dashpay/dashcore-lib) - Provides the main L1 blockchain primitives (Block, Transaction,...).
+- [DAPI-Client](https://github.com/dashpay/platform/tree/master/packages/js-dapi-client) - Client library for accessing DAPI endpoints.
+- [DPP](https://github.com/dashpay/platform/tree/master/packages/js-dpp) - Implementation (JS) of Dash Platform Protocol.
 
 Some features might be more extensive in those libs, as Dash SDK only wraps around them to provide a single interface that is easy to use (and thus has less features).
 
@@ -133,7 +133,7 @@ More extensive documentation available at https://dashpay.github.io/platform/SDK
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
 
 ## License
 

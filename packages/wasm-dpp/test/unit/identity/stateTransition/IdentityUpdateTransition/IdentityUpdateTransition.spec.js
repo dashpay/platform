@@ -1,14 +1,14 @@
-const IdentityPublicKey = require('../../../../../lib/identity/IdentityPublicKey');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const stateTransitionTypes = require(
-  '../../../../../lib/stateTransition/stateTransitionTypes',
+  '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
 );
 
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const Identifier = require('../../../../../lib/identifier/Identifier');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const generateRandomIdentifier = require('../../../../../lib/test/utils/generateRandomIdentifier');
+const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 describe('IdentityUpdateTransition', () => {
   let rawStateTransition;

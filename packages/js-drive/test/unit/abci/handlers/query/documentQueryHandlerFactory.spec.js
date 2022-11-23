@@ -81,7 +81,11 @@ describe('documentQueryHandlerFactory', () => {
     const result = await documentQueryHandler(params, data, {});
 
     expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, undefined);
-    expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(fetchSignedDocumentsMock).to.be.calledOnceWith(
+      data.contractId,
+      data.type,
+      options,
+    );
     expect(proveSignedDocumentsMock).to.not.be.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);

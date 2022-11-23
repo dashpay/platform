@@ -22,11 +22,11 @@ describe('Masternode Reward Shares', () => {
     await dpp.initialize();
 
     client = await createClientWithFundedWallet(
+      2000000,
       process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
-      200000,
     );
 
-    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 50000);
+    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 500000);
 
     const masternodeRewardSharesContract = await client.platform.contracts.get(
       masternodeRewardSharesContractId,
@@ -94,7 +94,7 @@ describe('Masternode Reward Shares', () => {
       // Masternode identity should exist
       expect(masternodeIdentity).to.exist();
 
-      await client.platform.identities.topUp(masternodeIdentity.getId(), 50000);
+      await client.platform.identities.topUp(masternodeIdentity.getId(), 500000);
 
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
@@ -289,6 +289,8 @@ describe('Masternode Reward Shares', () => {
     it('should not be able to share more than 100% of rewards', async () => {
       anotherIdentity = await client.platform.identities.register(7000);
 
+      await waitForSTPropagated();
+
       anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
         masternodeIdentity,
@@ -353,6 +355,8 @@ describe('Masternode Reward Shares', () => {
 
     before(async () => {
       identity = await client.platform.identities.register(40000);
+
+      await waitForSTPropagated();
     });
 
     it('should not be able to share rewards', async () => {

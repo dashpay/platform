@@ -24,7 +24,7 @@ const { Transaction } = Dash.Core;
 const tx = new Transaction(txProps)
 ```
 
-Access the [Transaction documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/transaction.md)
+Access the [Transaction documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/transaction.md)
 
 ## Address
 
@@ -35,7 +35,7 @@ Pay-to-script-hash (P2SH) multi-signature addresses from an array of PublicKeys 
 const { Address } = Dash.Core;
 ```
 
-Access the [Address documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/address.md)
+Access the [Address documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/address.md)
 
 ## Block
 
@@ -45,7 +45,7 @@ The block's transactions can also be explored by iterating over elements in arra
 
 `const { Block } = Dash.Core;`
 
-Access the [Block documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/block.md)
+Access the [Block documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/block.md)
 
 ## UnspentOutput
 
@@ -54,7 +54,7 @@ Mostly useful in association with a Transaction and for Scripts.
 
 `const { UnspentOutput } = Dash.Core.Transaction;`
 
-Access the [UnspentOutput documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/unspentoutput.md)
+Access the [UnspentOutput documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/unspentoutput.md)
 
 ## HDPublicKey
 
@@ -63,7 +63,7 @@ Used internally by Wallet-lib and for exchange between peers (DashPay)
 
 const { HDPublicKey } = Dash.Core;`
 
-Access the [HDKeys documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/hierarchical.md#hdpublickey)
+Access the [HDKeys documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/hierarchical.md#hdpublickey)
 
 ## HDPrivateKey
 
@@ -72,19 +72,19 @@ Used internally by Wallet-lib.
 
 `const { HDPrivateKey } = Dash.Core;`
 
-Access the [HDKeys documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/hierarchical.md#hdprivatekey)
+Access the [HDKeys documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/hierarchical.md#hdprivatekey)
 
 ## PublicKey
 
 `const { PublicKey } = Dash.Core;`
 
-Access the [PublicKey documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/publickey.md)
+Access the [PublicKey documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/publickey.md)
 
 ## PrivateKey
 
 `const { PrivateKey } = Dash.Core;`
 
-Access the [PrivateKey documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/privatekey.md)
+Access the [PrivateKey documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/privatekey.md)
 
 ## Mnemonic
 
@@ -93,7 +93,7 @@ Generates a random mnemonic with the chosen language, validates a mnemonic or re
 
 `const { Mnemonic } = Dash.Core;`
 
-Access the [Mnemonic documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/mnemonic.md)
+Access the [Mnemonic documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/mnemonic.md)
 
 ## Network
 
@@ -102,24 +102,24 @@ A representation of the internal parameters relative to the selected network. By
 `const { Network } = Dash.Core;`
 
 
-Access the [Network documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/networks.md)
+Access the [Network documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/networks.md)
 
 ## Script
 
 `const { Script } = Dash.Core.Transaction;`
 
-Access the [Script documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/script.md)
+Access the [Script documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/script.md)
 
 
 ## Input
 
 `const { Input } = Dash.Core.Transaction;`
 
-Access the [Transaction documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/transaction.md#adding-inputs)
+Access the [Transaction documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/transaction.md#adding-inputs)
 
 
 ## Output
 
 `const { Output } = Dash.Core.Transaction;`
 
-Access the [Transaction documentation on dashevo/dashcore-lib](https://github.com/dashevo/dashcore-lib/blob/master/docs/core-concepts/transaction.md#handling-outputs)
+Access the [Transaction documentation on dashpay/dashcore-lib](https://github.com/dashpay/dashcore-lib/blob/master/docs/core-concepts/transaction.md#handling-outputs)

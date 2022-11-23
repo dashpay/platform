@@ -1,10 +1,6 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
-const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
-
 const StorageResult = require('../storage/StorageResult');
-
-const MAX_IDENTITY_SIZE = getBiggestPossibleIdentity().toBuffer().length;
 
 class IdentityStoreRepository {
   /**
@@ -27,6 +23,10 @@ class IdentityStoreRepository {
    * @return {Promise<StorageResult<void>>}
    */
   async create(identity, options = {}) {
+    if (options.dryRun) {
+      return new StorageResult(undefined, []);
+    }
+
     const key = identity.getId().toBuffer();
     const value = identity.toBuffer();
 
@@ -59,6 +59,10 @@ class IdentityStoreRepository {
    * @return {Promise<StorageResult<void>>}
    */
   async update(identity, options = {}) {
+    if (options.dryRun) {
+      return new StorageResult(undefined, []);
+    }
+
     const key = identity.getId().toBuffer();
     const value = identity.toBuffer();
 
@@ -84,14 +88,27 @@ class IdentityStoreRepository {
    * @return {Promise<StorageResult<null|Identity>>}
    */
   async fetch(id, options = { }) {
-    const encodedIdentityResult = await this.storage.get(
-      IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      IdentityStoreRepository.IDENTITY_KEY,
-      {
-        ...options,
-        predictedValueSize: MAX_IDENTITY_SIZE,
-      },
-    );
+    if (options.dryRun) {
+      return new StorageResult(null, []);
+    }
+
+    let encodedIdentityResult;
+    try {
+      encodedIdentityResult = await this.storage.get(
+        IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        options,
+      );
+    } catch (e) {
+      if (!e.message.startsWith('path parent layer not found')) {
+        throw e;
+      }
+
+      encodedIdentityResult = new StorageResult(
+        null,
+        [],
+      );
+    }
 
     if (encodedIdentityResult.isNull()) {
       return encodedIdentityResult;
@@ -106,22 +123,6 @@ class IdentityStoreRepository {
     return new StorageResult(
       new Identity(rawIdentity),
       encodedIdentityResult.getOperations(),
-    );
-  }
-
-  /**
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<void>>}
-   */
-  async createTree(options = {}) {
-    return this.storage.createTree(
-      [],
-      IdentityStoreRepository.TREE_PATH[0],
-      options,
     );
   }
 

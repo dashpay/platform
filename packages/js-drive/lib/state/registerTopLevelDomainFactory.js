@@ -19,11 +19,11 @@ function registerTopLevelDomainFactory(
    * @param {string} name
    * @param {DataContract} dataContract
    * @param {Identifier} ownerId
-   * @param {Date} genesisDate
+   * @param {BlockInfo} blockInfo
    *
    * @return {Promise<void>}
    */
-  async function registerTopLevelDomain(name, dataContract, ownerId, genesisDate) {
+  async function registerTopLevelDomain(name, dataContract, ownerId, blockInfo) {
     const normalizedParentDomainName = '';
     const normalizedLabel = name.toLowerCase();
 
@@ -46,9 +46,9 @@ function registerTopLevelDomainFactory(
     );
 
     domainDocument.id = dashDomainDocumentId;
-    domainDocument.createdAt = genesisDate;
+    domainDocument.createdAt = new Date(blockInfo.timeMs);
 
-    await documentRepository.create(domainDocument, {
+    await documentRepository.create(domainDocument, blockInfo, {
       useTransaction: true,
     });
   }

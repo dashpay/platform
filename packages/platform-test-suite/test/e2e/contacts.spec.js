@@ -90,9 +90,9 @@ describe('e2e', () => {
     describe('Bob', () => {
       it('should create user wallet and identity', async () => {
         // Create Bob wallet
-        bobClient = await createClientWithFundedWallet();
+        bobClient = await createClientWithFundedWallet(200000);
 
-        bobIdentity = await bobClient.platform.identities.register(40000);
+        bobIdentity = await bobClient.platform.identities.register(190000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -151,14 +151,14 @@ describe('e2e', () => {
     describe('Alice', () => {
       it('should create user wallet and identity', async () => {
         // Create Alice wallet
-        aliceClient = await createClientWithFundedWallet();
+        aliceClient = await createClientWithFundedWallet(200000);
 
         aliceClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
           contract: dataContract,
         });
 
-        aliceIdentity = await aliceClient.platform.identities.register(40000);
+        aliceIdentity = await aliceClient.platform.identities.register(190000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();

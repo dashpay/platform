@@ -1,24 +1,24 @@
-const validateStateTransitionFeeFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionFeeFactory');
+const validateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionFeeFactory');
 
-const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
-const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
-const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
-const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const DataContractCreateTransition = require('../../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-const DocumentsBatchTransition = require('../../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const IdentityBalanceIsNotEnoughError = require('../../../../lib/errors/consensus/fee/BalanceIsNotEnoughError');
-const InvalidStateTransitionTypeError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionTypeError');
+const IdentityBalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
+const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionTypeError');
 
-const { RATIO } = require('../../../../lib/identity/creditsConverter');
-const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const { RATIO } = require('@dashevo/dpp/lib/identity/creditsConverter');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateStateTransitionFeeFactory', () => {
   let stateRepositoryMock;

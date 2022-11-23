@@ -1,12 +1,12 @@
 const validatePublicKeys = require(
-  '../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState',
 );
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
-const DuplicatedIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError');
-const DuplicatedIdentityPublicKeyError = require('../../../../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyError');
-const identitySchema = require('../../../../../../../schema/identity/identity.json');
-const MaxIdentityPublicKeyLimitReachedError = require('../../../../../../../lib/errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
-const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const DuplicatedIdentityPublicKeyIdError = require('@dashevo/dpp/lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError');
+const DuplicatedIdentityPublicKeyError = require('@dashevo/dpp/lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyError');
+const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
+const MaxIdentityPublicKeyLimitReachedError = require('@dashevo/dpp/lib/errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 describe('validatePublicKeysState', () => {
   let rawPublicKeys;

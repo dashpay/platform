@@ -1,8 +1,8 @@
-const decodeProtocolEntityFactory = require('../../lib/decodeProtocolEntityFactory');
-const ProtocolVersionParsingError = require('../../lib/errors/consensus/basic/decode/ProtocolVersionParsingError');
-const SerializedObjectParsingError = require('../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const ProtocolVersionParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/ProtocolVersionParsingError');
+const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
-const { encode } = require('../../lib/util/serializer');
+const { encode } = require('@dashevo/dpp/lib/util/serializer');
 
 describe('decodeProtocolEntityFactory', () => {
   let decodeProtocolEntity;

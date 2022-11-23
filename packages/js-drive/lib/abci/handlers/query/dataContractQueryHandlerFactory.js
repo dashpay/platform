@@ -20,12 +20,12 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {DataContractStoreRepository} signedDataContractRepository
+ * @param {DataContractStoreRepository} dataContractRepository
  * @param {createQueryResponse} createQueryResponse
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(
-  signedDataContractRepository,
+  dataContractRepository,
   createQueryResponse,
 ) {
   /**
@@ -51,11 +51,11 @@ function dataContractQueryHandlerFactory(
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
     if (request.prove) {
-      const proof = await signedDataContractRepository.prove(contractIdIdentifier);
+      const proof = await dataContractRepository.prove(contractIdIdentifier);
 
       response.getProof().setMerkleProof(proof.getValue());
     } else {
-      const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
+      const dataContract = await dataContractRepository.fetch(contractIdIdentifier);
       if (dataContract.isNull()) {
         throw new NotFoundAbciError('Data Contract not found');
       }

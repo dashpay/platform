@@ -27,9 +27,9 @@ describe('Platform', () => {
     let identity;
 
     before(async () => {
-      client = await createClientWithFundedWallet();
+      client = await createClientWithFundedWallet(260000);
 
-      identity = await client.platform.identities.register(90000);
+      identity = await client.platform.identities.register(250000);
     });
 
     after(async () => {
