@@ -32,8 +32,8 @@
 
 use crate::block::BlockExecutionContext;
 use crate::error::Error;
-use rs_drive::drive::config::DriveConfig;
-use rs_drive::drive::Drive;
+use drive::drive::config::DriveConfig;
+use drive::drive::Drive;
 use std::cell::RefCell;
 use std::path::Path;
 

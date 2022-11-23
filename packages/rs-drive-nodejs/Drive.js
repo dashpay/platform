@@ -1,5 +1,4 @@
 const { promisify } = require('util');
-const { join: pathJoin } = require('path');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
@@ -26,7 +25,7 @@ const {
   abciBlockEnd,
   abciAfterFinalizeBlock,
 } = require('neon-load-or-build')({
-  dir: pathJoin(__dirname, '..'),
+  dir: __dirname,
 });
 
 const GroveDB = require('./GroveDB');

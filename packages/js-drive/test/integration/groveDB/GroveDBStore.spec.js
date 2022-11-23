@@ -1,6 +1,6 @@
 const rimraf = require('rimraf');
 
-const Drive = require('@dashevo/rs-drive/node/Drive');
+const Drive = require('@dashevo/rs-drive');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
 const StorageResult = require('../../../lib/storage/StorageResult');

@@ -41,12 +41,12 @@ use crate::execution::fee_pools::distribute_storage_pool::StorageDistributionLef
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
-use rs_drive::drive::batch::GroveDbOpBatch;
-use rs_drive::drive::fee_pools::epochs::constants::{
+use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::fee_pools::epochs::constants::{
     GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
 };
-use rs_drive::fee_pools::epochs::Epoch;
-use rs_drive::grovedb::TransactionArg;
+use drive::fee_pools::epochs::Epoch;
+use drive::grovedb::TransactionArg;
 use std::option::Option::None;
 
 /// From the Dash Improvement Proposal:
@@ -201,7 +201,7 @@ mod tests {
     mod add_process_epoch_change_operations {
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use chrono::Utc;
-        use rs_drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
         use rust_decimal::prelude::ToPrimitive;
 
         mod helpers {
@@ -209,10 +209,10 @@ mod tests {
             use crate::block::BlockInfo;
             use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
             use crate::platform::Platform;
-            use rs_drive::drive::batch::GroveDbOpBatch;
-            use rs_drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_EPOCHS;
-            use rs_drive::fee_pools::epochs::Epoch;
-            use rs_drive::grovedb::TransactionArg;
+            use drive::drive::batch::GroveDbOpBatch;
+            use drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_EPOCHS;
+            use drive::fee_pools::epochs::Epoch;
+            use drive::grovedb::TransactionArg;
 
             /// Process and validate an epoch change
             pub fn process_and_validate_epoch_change(
@@ -395,8 +395,8 @@ mod tests {
     mod process_block_fees {
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use chrono::Utc;
-        use rs_drive::common::helpers::identities::create_test_masternode_identities;
-        use rs_drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+        use drive::common::helpers::identities::create_test_masternode_identities;
+        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
         use rust_decimal::prelude::ToPrimitive;
 
         mod helpers {
@@ -404,9 +404,9 @@ mod tests {
             use crate::block::BlockInfo;
             use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
             use crate::platform::Platform;
-            use rs_drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-            use rs_drive::fee_pools::epochs::Epoch;
-            use rs_drive::grovedb::TransactionArg;
+            use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+            use drive::fee_pools::epochs::Epoch;
+            use drive::grovedb::TransactionArg;
 
             /// Process and validate block fees
             pub fn process_and_validate_block_fees(

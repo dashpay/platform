@@ -1,12 +1,12 @@
 use neon::prelude::*;
 use neon::types::buffer::TypedArray;
 use num::FromPrimitive;
-use rs_drive::drive::block_info::BlockInfo;
-use rs_drive::drive::flags::StorageFlags;
-use rs_drive::fee::FeeResult;
-use rs_drive::fee_pools::epochs::Epoch;
-use rs_drive::grovedb::reference_path::ReferencePathType;
-use rs_drive::grovedb::{Element, PathQuery, Query, SizedQuery};
+use drive::drive::block_info::BlockInfo;
+use drive::drive::flags::StorageFlags;
+use drive::fee::FeeResult;
+use drive::fee_pools::epochs::Epoch;
+use drive::grovedb::reference_path::ReferencePathType;
+use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
 use std::borrow::Borrow;
 
 fn element_to_string(element: &Element) -> &'static str {

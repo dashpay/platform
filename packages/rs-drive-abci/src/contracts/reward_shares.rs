@@ -39,13 +39,13 @@
 
 use crate::error::Error;
 use crate::platform::Platform;
-use rs_drive::common::value_to_cbor;
-use rs_drive::contract::document::Document;
-use rs_drive::contract::Contract;
-use rs_drive::dpp::data_contract::extra::DriveContractExt;
-use rs_drive::drive::block_info::BlockInfo;
-use rs_drive::drive::flags::StorageFlags;
-use rs_drive::grovedb::TransactionArg;
+use drive::common::value_to_cbor;
+use drive::contract::document::Document;
+use drive::contract::Contract;
+use drive::dpp::data_contract::extra::DriveContractExt;
+use drive::drive::block_info::BlockInfo;
+use drive::drive::flags::StorageFlags;
+use drive::grovedb::TransactionArg;
 use serde_json::json;
 
 /// Masternode reward shares contract ID

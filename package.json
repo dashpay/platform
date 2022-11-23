@@ -70,7 +70,8 @@
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
     "packages/wasm-dpp",
-    "packages/withdrawals-contract"
+    "packages/withdrawals-contract",
+    "packages/rs-drive-nodejs"
   ],
   "resolutions": {
     "elliptic": "^6.5.4",

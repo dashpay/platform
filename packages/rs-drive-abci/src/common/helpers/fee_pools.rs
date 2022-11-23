@@ -35,18 +35,18 @@
 use std::collections::BTreeMap;
 
 use ciborium::value::Value;
-use rs_drive::dpp::identity::Identity;
+use drive::dpp::identity::Identity;
 
-use rs_drive::common::helpers::identities::create_test_identity;
-use rs_drive::contract::document::Document;
-use rs_drive::contract::Contract;
-use rs_drive::dpp::data_contract::extra::DriveContractExt;
-use rs_drive::drive::block_info::BlockInfo;
-use rs_drive::drive::flags::StorageFlags;
-use rs_drive::drive::object_size_info::DocumentAndContractInfo;
-use rs_drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-use rs_drive::drive::Drive;
-use rs_drive::grovedb::TransactionArg;
+use drive::common::helpers::identities::create_test_identity;
+use drive::contract::document::Document;
+use drive::contract::Contract;
+use drive::dpp::data_contract::extra::DriveContractExt;
+use drive::drive::block_info::BlockInfo;
+use drive::drive::flags::StorageFlags;
+use drive::drive::object_size_info::DocumentAndContractInfo;
+use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::Drive;
+use drive::grovedb::TransactionArg;
 
 use crate::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
 use crate::error::Error;

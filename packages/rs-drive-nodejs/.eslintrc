@@ -2,8 +2,7 @@
   "extends": "airbnb-base",
   "env": {
     "es2021": true,
-    "node": true,
-    "mocha": true
+    "node": true
   },
   "rules": {
     "no-plusplus": 0,

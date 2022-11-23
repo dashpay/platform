@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "packages/js-dpp",
+    "packages/rs-dpp",
     "packages/wasm-dpp",
     "packages/rs-drive",
     "packages/rs-drive-abci",

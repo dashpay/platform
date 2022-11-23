@@ -38,7 +38,7 @@ use crate::abci::messages::{
 };
 use crate::block::{BlockExecutionContext, BlockInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
-use rs_drive::grovedb::TransactionArg;
+use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -183,8 +183,8 @@ mod tests {
         use crate::abci::handlers::TenderdashAbci;
         use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use chrono::{Duration, Utc};
-        use rs_drive::common::helpers::identities::create_test_masternode_identities;
-        use rs_drive::drive::batch::GroveDbOpBatch;
+        use drive::common::helpers::identities::create_test_masternode_identities;
+        use drive::drive::batch::GroveDbOpBatch;
         use rust_decimal::prelude::ToPrimitive;
         use std::ops::Div;
 

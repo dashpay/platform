@@ -32,7 +32,7 @@
 //! This module defines constants related to fee distribution pools.
 //!
 
-use rs_drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_YEARS;
+use drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_YEARS;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 

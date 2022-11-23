@@ -37,15 +37,15 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::platform::Platform;
-use rs_drive::drive::batch::GroveDbOpBatch;
-use rs_drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-use rs_drive::error::fee::FeeError;
-use rs_drive::fee_pools::epochs::Epoch;
-use rs_drive::fee_pools::{
+use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+use drive::error::fee::FeeError;
+use drive::fee_pools::epochs::Epoch;
+use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
 };
-use rs_drive::grovedb::TransactionArg;
-use rs_drive::{error, grovedb};
+use drive::grovedb::TransactionArg;
+use drive::{error, grovedb};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -430,12 +430,12 @@ impl Platform {
 mod tests {
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use rs_drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use rs_drive::error::Error;
-        use rs_drive::fee_pools::epochs::Epoch;
-        use rs_drive::grovedb;
+        use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+        use drive::error::Error;
+        use drive::fee_pools::epochs::Epoch;
+        use drive::grovedb;
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
@@ -915,10 +915,10 @@ mod tests {
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use crate::error::execution::ExecutionError;
         use crate::error::Error;
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use rs_drive::fee_pools::epochs::Epoch;
-        use rs_drive::fee_pools::update_unpaid_epoch_index_operation;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+        use drive::fee_pools::epochs::Epoch;
+        use drive::fee_pools::update_unpaid_epoch_index_operation;
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
@@ -1170,9 +1170,9 @@ mod tests {
         };
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use crate::execution::fee_pools::fee_distribution::UnpaidEpoch;
-        use rs_drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::fee_pools::epochs::Epoch;
+        use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee_pools::epochs::Epoch;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 
@@ -1305,8 +1305,8 @@ mod tests {
     mod add_distribute_block_fees_into_pools_operations {
         use crate::abci::messages::FeesAggregate;
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::fee_pools::epochs::Epoch;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee_pools::epochs::Epoch;
 
         #[test]
         fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
