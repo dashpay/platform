@@ -261,13 +261,33 @@ class LoggedStateRepositoryDecorator {
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
+  async createDataContract(dataContract, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeDataContract(dataContract, executionContext);
+      response = await this.stateRepository.createDataContract(dataContract, executionContext);
     } finally {
-      this.log('storeDataContract', { dataContract }, response);
+      this.log('createDataContract', { dataContract }, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Store Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateDataContract(dataContract, executionContext);
+    } finally {
+      this.log('updateDataContract', { dataContract }, response);
     }
 
     return response;
@@ -439,23 +459,6 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch the latest platform block time
-   *
-   * @return {Promise<protobuf.Timestamp>}
-   */
-  async fetchLatestPlatformBlockTime() {
-    let response;
-
-    try {
-      response = await this.stateRepository.fetchLatestPlatformBlockTime();
-    } finally {
-      this.log('fetchLatestPlatformBlockTime', {}, response);
-    }
-
-    return response;
-  }
-
-  /**
    * Fetch the latest platform core chainlocked height
    *
    * @return {Promise<number>}
@@ -493,6 +496,23 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
+   * Returns block time
+   *
+   * @returns {number}
+   */
+  fetchLatestPlatformBlockTime() {
+    let response;
+
+    try {
+      response = this.stateRepository.fetchLatestPlatformBlockTime();
+    } finally {
+      this.log('fetchLatestPlatformBlockTime', { }, response);
+    }
+
+    return response;
+  }
+
+  /**
    * Fetch latest withdrawal transaction index
    *
    * @returns {Promise<number>}
@@ -518,13 +538,15 @@ class LoggedStateRepositoryDecorator {
    * @returns {Promise<void>}
    */
   async enqueueWithdrawalTransaction(index, transactionBytes) {
+    let response;
+
     try {
-      await this.stateRepository.enqueueWithdrawalTransaction(
+      response = await this.stateRepository.enqueueWithdrawalTransaction(
         index,
         transactionBytes,
       );
     } finally {
-      this.log('enqueueWithdrawalTransaction', { index, transactionBytes });
+      this.log('enqueueWithdrawalTransaction', { index, transactionBytes }, response);
     }
   }
 }

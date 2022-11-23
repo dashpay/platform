@@ -124,17 +124,20 @@ function deliverTxFactory(
     //   );
     // }
 
-    // const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-    //   stateTransition.getOwnerId(),
-    // );
+    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
+      stateTransition.getOwnerId(),
+    );
 
-    // const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
+    // TODO: We should increment identity balance debt in case if it goes negative
+    let updatedBalance = identity.getBalance() - actualStateTransitionFee;
 
-    // if (updatedBalance < 0) {
-    //   throw new NegativeBalanceError(identity);
-    // }
+    if (updatedBalance < 0) {
+      updatedBalance = 0;
+    }
 
-    // await transactionalDpp.getStateRepository().updateIdentity(identity);
+    identity.setBalance(updatedBalance);
+
+    await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
     /* istanbul ignore next */

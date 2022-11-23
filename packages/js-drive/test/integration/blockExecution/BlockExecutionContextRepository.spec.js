@@ -25,7 +25,11 @@ describe('BlockExecutionContextRepository', () => {
     blockExecutionContext = new BlockExecutionContext();
     blockExecutionContext.fromObject(plainObject);
 
-    rsDrive = new Drive('./db/grovedb_test');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsTransactionalCacheSize: 500,
+    });
+
     store = new GroveDBStore(rsDrive, noopLogger);
 
     blockExecutionContextRepository = new BlockExecutionContextRepository(store);
