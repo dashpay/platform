@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/js-dash-sdk.yml
-      - .github/workflows/include/js-checks.yml
+      - .github/workflows/js-checks.yml
       - packages/js-dash-sdk/**
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
@@ -30,7 +30,7 @@ concurrency:
 jobs:
   js-checks:
     name: JS checks
-    uses: ./.github/workflows/include/js-checks.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: 'dash'
       start-local-network: true

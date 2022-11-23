@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/rs-drive-nodejs.yml
-      - .github/workflows/include/rs-checks.yml
+      - .github/workflows/rs-checks.yml
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
@@ -27,12 +27,12 @@ concurrency:
 jobs:
   rs-checks:
     name: Rust checks
-    uses: ./.github/workflows/include/rs-checks.yml
+    uses: ./.github/workflows/rs-checks.yml
     with:
       package: 'drive-abci'
 
   js-checks:
     name: JS checks
-    uses: ./.github/workflows/include/js-checks.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/rs-drive'

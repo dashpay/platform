@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/js-dpp.yml
-      - .github/workflows/include/js-checks.yml
+      - .github/workflows/js-checks.yml
       - packages/js-dpp/**
       - packages/feature-flags-contract/**
       - packages/masternode-reward-shares-contract/**
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   js-dpp-tests:
     name: JS checks
-    uses: ./.github/workflows/include/js-checks.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dpp'
       install-browsers: true
