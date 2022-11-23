@@ -1387,7 +1387,6 @@ __metadata:
     mocha-sinon: ^2.1.2
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
-    ts-protoc-gen: ^0.15.0
   languageName: unknown
   linkType: soft
 
@@ -7534,13 +7533,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"google-protobuf@npm:^3.15.5":
-  version: 3.21.2
-  resolution: "google-protobuf@npm:3.21.2"
-  checksum: 3caa2e1e2654714cc1a201ac5e5faabcaa48f5fba3d8ff9b64ca66fe19e4e0506b94053f32eddc77bf3a7a47ac1660315c6744185c1e2bb27654fd76fe91b988
-  languageName: node
-  linkType: hard
-
 "got@npm:^9.6.0":
   version: 9.6.0
   resolution: "got@npm:9.6.0"
@@ -13621,17 +13613,6 @@ fsevents@~2.3.2:
     ts-node-transpile-only: dist/bin-transpile.js
     ts-script: dist/bin-script-deprecated.js
   checksum: 3933ac0a937d33c45e04a6750fcdd3e765eb2897d1da1307cd97ac52af093bcfb632ec0453a75000a65c8b5b7bdb32b1077050a186dcc556e62657cb592e6d49
-  languageName: node
-  linkType: hard
-
-"ts-protoc-gen@npm:^0.15.0":
-  version: 0.15.0
-  resolution: "ts-protoc-gen@npm:0.15.0"
-  dependencies:
-    google-protobuf: ^3.15.5
-  bin:
-    protoc-gen-ts: bin/protoc-gen-ts
-  checksum: 612799180832786ee28dfb3510015f840ff8acd480ec1159599535878cc77a4f6ad4d6993d1fa546bbb4523de5fb60f4987e1ea810c2e56d91be0448d30f29ad
   languageName: node
   linkType: hard
 

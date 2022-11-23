@@ -2420,8 +2420,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["mocha", "npm:9.2.2"],\
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
             ["sinon", "npm:11.1.2"],\
-            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
-            ["ts-protoc-gen", "npm:0.15.0"]\
+            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -9784,13 +9783,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["google-protobuf", "npm:3.19.1"]\
           ],\
           "linkType": "HARD"\
-        }],\
-        ["npm:3.21.2", {\
-          "packageLocation": "./.yarn/cache/google-protobuf-npm-3.21.2-7c82de39ab-3caa2e1e26.zip/node_modules/google-protobuf/",\
-          "packageDependencies": [\
-            ["google-protobuf", "npm:3.21.2"]\
-          ],\
-          "linkType": "HARD"\
         }]\
       ]],\
       ["got", [\
@@ -16866,16 +16858,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             "@types/swc__wasm",\
             "@types/typescript",\
             "typescript"\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["ts-protoc-gen", [\
-        ["npm:0.15.0", {\
-          "packageLocation": "./.yarn/cache/ts-protoc-gen-npm-0.15.0-4bb1076a19-6127991808.zip/node_modules/ts-protoc-gen/",\
-          "packageDependencies": [\
-            ["ts-protoc-gen", "npm:0.15.0"],\
-            ["google-protobuf", "npm:3.21.2"]\
           ],\
           "linkType": "HARD"\
         }]\
