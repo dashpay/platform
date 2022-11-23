@@ -19,6 +19,10 @@ on:
   schedule:
     - cron: '30 4 * * *'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rs-checks:
     name: Rust checks
