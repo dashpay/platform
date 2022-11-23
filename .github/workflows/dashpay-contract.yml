@@ -25,6 +25,6 @@ concurrency:
 jobs:
   js-checks:
     name: JS checks
-    uses: ./.github/workflows/include/js-checks.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dashpay-contract'

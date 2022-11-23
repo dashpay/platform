@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/wallet-lib.yml
-      - .github/workflows/include/js-checks.yml
+      - .github/workflows/js-checks.yml
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
       - packages/dapi-grpc/**
@@ -29,7 +29,7 @@ concurrency:
 jobs:
   js-checks:
     name: JS checks
-    uses: ./.github/workflows/include/js-checks.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/wallet-lib'
       start-local-network: true

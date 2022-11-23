@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/dapi.yml
-      - .github/workflows/include/js-checks.yml
+      - .github/workflows/js-checks.yml
       - packages/dapi/**
       - packages/dapi-grpc/**
       - packages/js-dpp/**
@@ -31,6 +31,6 @@ concurrency:
 jobs:
   js-checks:
     name: JS checks
-    uses: ./.github/workflows/include/js-checks.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dapi'
