@@ -2314,6 +2314,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
+      ["@dashevo/bls", [\
+        ["npm:1.0.0-beta.2", {\
+          "packageLocation": "./.yarn/cache/@dashevo-bls-npm-1.0.0-beta.2-a499c2ec55-d1c329bedc.zip/node_modules/@dashevo/bls/",\
+          "packageDependencies": [\
+            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
+            ["binascii", "npm:0.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["@dashevo/dapi", [\
         ["workspace:packages/dapi", {\
           "packageLocation": "./packages/dapi/",\
@@ -2693,7 +2703,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-beta.1"],\
             ["@types/pino", "npm:6.3.12"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],\
@@ -2719,7 +2729,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash.get", "npm:4.4.2"],\
             ["lodash.set", "npm:4.3.2"],\
             ["long", "npm:5.2.0"],\
-            ["lru-cache", "npm:5.1.1"],\
             ["memdown", "npm:5.1.0"],\
             ["mocha", "npm:9.2.2"],\
             ["moment", "npm:2.29.4"],\
@@ -2924,10 +2933,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/rs-drive", [\
-        ["npm:0.23.0-dev.9", {\
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-dev.9-4a3180ad04/node_modules/@dashevo/rs-drive/",\
+        ["npm:0.23.0-beta.1", {\
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-beta.1-597f3103bf/node_modules/@dashevo/rs-drive/",\
           "packageDependencies": [\
-            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-beta.1"],\
             ["@dashevo/dpp", "npm:0.22.1"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
@@ -2996,6 +3005,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
+            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -5912,6 +5922,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["binascii", [\
+        ["npm:0.0.2", {\
+          "packageLocation": "./.yarn/cache/binascii-npm-0.0.2-3bd8971b5f-d27d4e7942.zip/node_modules/binascii/",\
+          "packageDependencies": [\
+            ["binascii", "npm:0.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["bl", [\
         ["npm:1.2.3", {\
           "packageLocation": "./.yarn/cache/bl-npm-1.2.3-49c4213ca5-123f097989.zip/node_modules/bl/",\
@@ -6137,7 +6156,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/browserslist-npm-4.18.1-38eb8a64b9-ae58322dee.zip/node_modules/browserslist/",\
           "packageDependencies": [\
             ["browserslist", "npm:4.18.1"],\
-            ["caniuse-lite", "npm:1.0.30001282"],\
+            ["caniuse-lite", "npm:1.0.30001431"],\
             ["electron-to-chromium", "npm:1.3.903"],\
             ["escalade", "npm:3.1.1"],\
             ["node-releases", "npm:2.0.1"],\
@@ -6392,10 +6411,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["caniuse-lite", [\
-        ["npm:1.0.30001282", {\
-          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001282-49173a42dd-62797fd756.zip/node_modules/caniuse-lite/",\
+        ["npm:1.0.30001431", {\
+          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001431-6d607db8ef-bc8ab55cd1.zip/node_modules/caniuse-lite/",\
           "packageDependencies": [\
-            ["caniuse-lite", "npm:1.0.30001282"]\
+            ["caniuse-lite", "npm:1.0.30001431"]\
           ],\
           "linkType": "HARD"\
         }]\

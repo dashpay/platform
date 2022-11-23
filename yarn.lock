@@ -1314,6 +1314,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/bls@npm:~1.0.0-beta.2":
+  version: 1.0.0-beta.2
+  resolution: "@dashevo/bls@npm:1.0.0-beta.2"
+  dependencies:
+    binascii: 0.0.2
+  checksum: d1c329bedc6a6af3ce34e2e631c9d6aafc6cef014220a170edd3491e69fb9cb026bed37f22c6ddcb6ff9d3c4e00f8b241f2ece1360a281ecfdbc876a1c028923
+  languageName: node
+  linkType: hard
+
 "@dashevo/dapi-client@workspace:*, @dashevo/dapi-client@workspace:packages/js-dapi-client":
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi-client@workspace:packages/js-dapi-client"
@@ -1672,7 +1681,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/rs-drive": 0.23.0-dev.9
+    "@dashevo/rs-drive": 0.23.0-beta.1
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1698,7 +1707,6 @@ __metadata:
     lodash.get: ^4.4.2
     lodash.set: ^4.3.2
     long: ^5.2.0
-    lru-cache: ^5.1.1
     memdown: ^5.1.0
     mocha: ^9.1.2
     moment: ^2.29.4
@@ -1887,16 +1895,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/rs-drive@npm:0.23.0-dev.9":
-  version: 0.23.0-dev.9
-  resolution: "@dashevo/rs-drive@npm:0.23.0-dev.9"
+"@dashevo/rs-drive@npm:0.23.0-beta.1":
+  version: 0.23.0-beta.1
+  resolution: "@dashevo/rs-drive@npm:0.23.0-beta.1"
   dependencies:
     "@dashevo/dpp": ~0.22.0-dev.7
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.1.0
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: 3c7676bae10f900ae1ca3f7787edc34768d4d6d0af470e108b8b86a4a250978ab8ebc8eb53a8e9cf8509f4840f6e1bb78dbd1e96b5e942d1089b11d4b4034b5e
+  checksum: 771ab1e0409ac03c9fc15bbfcefa6985c4db88264e2d179dd49fe9f67cfdfd5eb640027a0b477bbf2a7b4b27e16eb6e4ef7ec202f0479c0992d5e1ad248444ba
   languageName: node
   linkType: hard
 
@@ -1956,6 +1964,7 @@ __metadata:
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
+    "@dashevo/bls": ~1.0.0-beta.2
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
@@ -4177,6 +4186,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"binascii@npm:0.0.2":
+  version: 0.0.2
+  resolution: "binascii@npm:0.0.2"
+  checksum: d27d4e7942994eb03152fe1ae828cd68cfe69e3a9aadcf7b1d5433761839ee0009c8139305c596d010236c912d65c1889d062784b2514869c61995410ae4ca9a
+  languageName: node
+  linkType: hard
+
 "bl@npm:^1.2.3":
   version: 1.2.3
   resolution: "bl@npm:1.2.3"
@@ -4610,9 +4626,9 @@ __metadata:
   linkType: hard
 
 "caniuse-lite@npm:^1.0.30001280":
-  version: 1.0.30001282
-  resolution: "caniuse-lite@npm:1.0.30001282"
-  checksum: 62797fd756e88bfa01f0f983bea9de7814293b209456e8f0b20596b03d2880246f63dc90f947a1fa63f92806ebefbb86fc7811dbecb7839927886d07996938be
+  version: 1.0.30001431
+  resolution: "caniuse-lite@npm:1.0.30001431"
+  checksum: bc8ab55cd194e240152946b54bfaff7456180cc018674fc7ed134f4f502192405f6643f422feaa0a5e7cc02b5bac564cfac7771ac6d29f5d129482fcfe335ba1
   languageName: node
   linkType: hard
 

@@ -4,13 +4,13 @@ const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
+ * @param {IdentityStoreRepository} identityRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {fetchTransaction} fetchTransaction
  * @return {handleUpdatedVotingAddress}
  */
 function handleUpdatedVotingAddressFactory(
-  transactionalStateRepository,
+  identityRepository,
   createMasternodeIdentity,
   fetchTransaction,
 ) {
@@ -38,10 +38,13 @@ function handleUpdatedVotingAddressFactory(
     // Create a voting identity if there is no identity exist with the same ID
     const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
-    const votingIdentity = await transactionalStateRepository.fetchIdentity(votingIdentifier);
+    const votingIdentityResult = await identityRepository.fetch(
+      votingIdentifier,
+      { useTransaction: true },
+    );
 
     //  Create an identity for operator if there is no identity exist with the same ID
-    if (votingIdentity === null) {
+    if (votingIdentityResult.isNull()) {
       const votingAddress = Address.fromString(masternodeEntry.votingAddress);
       const votingPublicKeyHash = votingAddress.hashBuffer;
 

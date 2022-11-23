@@ -67,13 +67,11 @@ describe('StateTransitionFacade', () => {
       getBalance,
     };
 
-    const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
+    const blockTime = Date.now();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
-      seconds: timeInSeconds,
-    });
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
 
     dpp = new DashPlatformProtocol({
       stateRepository: stateRepositoryMock,

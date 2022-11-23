@@ -29,6 +29,9 @@
     }
   ],
   "license": "MIT",
+  "dependencies": {
+    "@dashevo/bls": "~1.0.0-beta.2"
+  },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/dashcore-lib": "~0.19.44",

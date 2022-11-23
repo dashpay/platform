@@ -1,5 +1,4 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
@@ -12,14 +11,15 @@ const InvalidMasternodeIdentityError = require('../../../../lib/identity/mastern
 describe('createMasternodeIdentityFactory', () => {
   let createMasternodeIdentity;
   let dppMock;
-  let stateRepositoryMock;
   let validationResult;
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
   let getPublicKeyFromPayoutScriptMock;
+  let identityRepositoryMock;
+  let publicKeyToIdentitiesRepositoryMock;
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
-    stateRepositoryMock = createStateRepositoryMock(this.sinon);
+
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
       IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
     );
@@ -32,9 +32,18 @@ describe('createMasternodeIdentityFactory', () => {
 
     dppMock.identity.validate.resolves(validationResult);
 
+    identityRepositoryMock = {
+      create: this.sinon.stub(),
+    };
+
+    publicKeyToIdentitiesRepositoryMock = {
+      store: this.sinon.stub(),
+    };
+
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
-      stateRepositoryMock,
+      identityRepositoryMock,
+      publicKeyToIdentitiesRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
     );
@@ -65,7 +74,10 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(result).to.deep.equal(identity);
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
+    expect(identityRepositoryMock.create).to.have.been.calledOnceWithExactly(
+      identity,
+      { useTransaction: true },
+    );
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.not.be.called();
     expect(getPublicKeyFromPayoutScriptMock).to.not.be.called();
 
@@ -73,9 +85,10 @@ describe('createMasternodeIdentityFactory', () => {
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
+    expect(publicKeyToIdentitiesRepositoryMock.store).to.have.been.calledOnceWithExactly(
+      publicKeyHashes[0],
       identity.getId(),
-      publicKeyHashes,
+      { useTransaction: true },
     );
 
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
@@ -106,15 +119,19 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(result).to.deep.equal(identity);
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
+    expect(identityRepositoryMock.create).to.have.been.calledOnceWithExactly(
+      identity,
+      { useTransaction: true },
+    );
 
     const publicKeyHashes = identity
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
+    expect(publicKeyToIdentitiesRepositoryMock.store).to.have.been.calledOnceWithExactly(
+      publicKeyHashes[0],
       identity.getId(),
-      publicKeyHashes,
+      { useTransaction: true },
     );
 
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
@@ -172,7 +189,10 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(result).to.deep.equal(identity);
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
+    expect(identityRepositoryMock.create).to.have.been.calledOnceWithExactly(
+      identity,
+      { useTransaction: true },
+    );
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.be.calledOnce();
     expect(getPublicKeyFromPayoutScriptMock).to.be.calledOnce();
 
@@ -180,9 +200,18 @@ describe('createMasternodeIdentityFactory', () => {
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
+    expect(publicKeyToIdentitiesRepositoryMock.store).to.have.been.calledTwice();
+
+    expect(publicKeyToIdentitiesRepositoryMock.store.getCall(0)).to.have.been.calledWithExactly(
+      publicKeyHashes[0],
       identity.getId(),
-      publicKeyHashes,
+      { useTransaction: true },
+    );
+
+    expect(publicKeyToIdentitiesRepositoryMock.store.getCall(1)).to.have.been.calledWithExactly(
+      publicKeyHashes[1],
+      identity.getId(),
+      { useTransaction: true },
     );
 
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
