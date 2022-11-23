@@ -5,8 +5,6 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
  *
@@ -24,7 +22,6 @@ function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
   proposalBlockExecutionContextCollection,
-  dataContractCache,
   coreRpcClient,
   logger,
   executionTimer,
@@ -38,7 +35,7 @@ function finalizeBlockHandlerFactory(
    */
   async function finalizeBlockHandler(request) {
     const {
-      decidedLastCommit: lastCommitInfo,
+      commit: commitInfo,
       height,
       round,
     } = request;
@@ -52,6 +49,7 @@ function finalizeBlockHandlerFactory(
     consensusLogger.trace({ abciRequest: request });
 
     const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
     // Store block execution context
     await blockExecutionContextRepository.store(
@@ -66,23 +64,11 @@ function finalizeBlockHandlerFactory(
 
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
 
-    // Update data contract cache with new version of
-    // committed data contract
-    for (const dataContract of proposalBlockExecutionContext.getDataContracts()) {
-      const operations = [new ReadOperation(dataContract.toBuffer().length)];
-
-      const cacheItem = new DataContractCacheItem(dataContract, operations);
-
-      if (dataContractCache.has(cacheItem.getKey())) {
-        dataContractCache.set(cacheItem.getKey(), cacheItem);
-      }
-    }
-
     // Send withdrawal transactions to Core
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
 
-    const { thresholdVoteExtensions } = lastCommitInfo;
+    const { thresholdVoteExtensions } = commitInfo;
 
     for (const { extension, signature } of (thresholdVoteExtensions || [])) {
       const withdrawalTransactionHash = extension.toString('hex');

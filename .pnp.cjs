@@ -87,6 +87,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       {\
         "name": "@dashevo/wasm-dpp",\
         "reference": "workspace:packages/wasm-dpp"\
+      },\
+      {\
+        "name": "@dashevo/withdrawals-contract",\
+        "reference": "workspace:packages/withdrawals-contract"\
       }\
     ],\
     "enableTopLevelFallback": true,\
@@ -108,6 +112,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
       ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
+      ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
       ["dash", ["workspace:packages/js-dash-sdk"]],\
       ["dashmate", ["workspace:packages/dashmate"]]\
     ],\
@@ -2274,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7f2fbb7ea7-456b70a1b9.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7acd001b9d-86504da08f.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2344,6 +2349,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["jayson", "npm:3.6.5"],\
             ["lodash", "npm:4.17.21"],\
             ["lru-cache", "npm:5.1.1"],\
@@ -2389,6 +2395,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["eslint-plugin-jsdoc", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:27.1.2"],\
             ["events", "npm:3.3.0"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
@@ -2685,7 +2692,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=2c7fbc12815fc47022ec5f082fa8c6db7d0d72bc"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
@@ -2696,7 +2703,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-beta.1"],\
             ["@types/pino", "npm:6.3.12"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],\
@@ -2716,13 +2723,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["find-my-way", "npm:2.2.5"],\
+            ["google-protobuf", "npm:3.19.1"],\
             ["js-merkle", "npm:0.1.5"],\
             ["levelup", "npm:4.4.0"],\
             ["lodash.clonedeep", "npm:4.5.0"],\
             ["lodash.get", "npm:4.4.2"],\
             ["lodash.set", "npm:4.3.2"],\
             ["long", "npm:5.2.0"],\
-            ["lru-cache", "npm:5.1.1"],\
             ["memdown", "npm:5.1.0"],\
             ["mocha", "npm:9.2.2"],\
             ["moment", "npm:2.29.4"],\
@@ -2927,10 +2934,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/rs-drive", [\
-        ["npm:0.23.0-dev.9", {\
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-dev.9-4a3180ad04/node_modules/@dashevo/rs-drive/",\
+        ["npm:0.23.0-beta.1", {\
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-beta.1-597f3103bf/node_modules/@dashevo/rs-drive/",\
           "packageDependencies": [\
-            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-beta.1"],\
             ["@dashevo/dpp", "npm:0.22.1"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
@@ -3056,6 +3063,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wasm-re2", "npm:1.0.2"]\
           ],\
           "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@dashevo/withdrawals-contract", [\
+        ["workspace:packages/withdrawals-contract", {\
+          "packageLocation": "./packages/withdrawals-contract/",\
+          "packageDependencies": [\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["chai", "npm:4.3.4"],\
+            ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
+            ["eslint", "npm:7.32.0"],\
+            ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
+            ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["mocha", "npm:9.2.2"],\
+            ["sinon", "npm:11.1.2"],\
+            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"]\
+          ],\
+          "linkType": "SOFT"\
         }]\
       ]],\
       ["@dashevo/x11-hash-js", [\
@@ -6132,7 +6157,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/browserslist-npm-4.18.1-38eb8a64b9-ae58322dee.zip/node_modules/browserslist/",\
           "packageDependencies": [\
             ["browserslist", "npm:4.18.1"],\
-            ["caniuse-lite", "npm:1.0.30001282"],\
+            ["caniuse-lite", "npm:1.0.30001431"],\
             ["electron-to-chromium", "npm:1.3.903"],\
             ["escalade", "npm:3.1.1"],\
             ["node-releases", "npm:2.0.1"],\
@@ -6387,10 +6412,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["caniuse-lite", [\
-        ["npm:1.0.30001282", {\
-          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001282-49173a42dd-62797fd756.zip/node_modules/caniuse-lite/",\
+        ["npm:1.0.30001431", {\
+          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001431-6d607db8ef-bc8ab55cd1.zip/node_modules/caniuse-lite/",\
           "packageDependencies": [\
-            ["caniuse-lite", "npm:1.0.30001282"]\
+            ["caniuse-lite", "npm:1.0.30001431"]\
           ],\
           "linkType": "HARD"\
         }]\

@@ -17,6 +17,7 @@ on:
       - packages/masternode-reward-shares-contract/**
       - packages/dapi-grpc/**
       - packages/js-grpc-common/**
+      - packages/withdrawals-contract/**
 
 jobs:
   js-dpp-tests:

@@ -163,7 +163,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     let obtainedFreshBlock = false;
 
-    sdkClient = await createClientWithFundedWallet();
+    sdkClient = await createClientWithFundedWallet(200000);
     const account = await sdkClient.getWalletAccount();
     // Connect to the stream
     const stream = createRetryableStream(dapiClient);

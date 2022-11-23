@@ -34,7 +34,7 @@ describe('Platform', () => {
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 
-      dashClient = await createClientWithFundedWallet();
+      dashClient = await createClientWithFundedWallet(200000);
 
       await dashClient.platform.initialize();
 

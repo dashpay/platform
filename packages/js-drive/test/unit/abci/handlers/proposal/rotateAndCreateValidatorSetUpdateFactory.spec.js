@@ -27,7 +27,7 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
     coreChainLockedHeight = 1;
 
     lastCommitInfoMock = {
-      stateSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
+      blockSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
     };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
@@ -74,7 +74,7 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
       coreChainLockedHeight,
-      Buffer.from(lastCommitInfoMock.stateSignature),
+      Buffer.from(lastCommitInfoMock.blockSignature),
     );
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
@@ -99,7 +99,7 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
       height,
       coreChainLockedHeight,
-      Buffer.from(lastCommitInfoMock.stateSignature),
+      Buffer.from(lastCommitInfoMock.blockSignature),
     );
 
     expect(createValidatorSetUpdateMock).to.not.be.called();

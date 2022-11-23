@@ -179,9 +179,9 @@ describe('Dash - Client', function suite() {
   describe('#platform.identities.topUp', async () => {
     it('should top up an identity', async () => {
       // Registering an identity we're going to top up
-      const identity = await client.platform.identities.register();
+      const identity = await client.platform.identities.register(1000);
       // Topping up the identity
-      await client.platform.identities.topUp(identity.getId(), 10000);
+      await client.platform.identities.topUp(identity.getId(), 1000);
 
       expect(identity).to.be.not.null;
 
@@ -200,7 +200,7 @@ describe('Dash - Client', function suite() {
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
       // Registering an identity we're going to top up
-      const identity = await client.platform.identities.register();
+      const identity = await client.platform.identities.register(10000);
 
       const errorResponse = {
         error: {
