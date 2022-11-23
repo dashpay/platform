@@ -9,8 +9,8 @@ on:
     paths:
       - .github/workflows/wasm-dpp.yml
       - .github/workflows/js-dpp.yml
-      - .github/workflows/js-test.yml
-      - .github/workflows/rs-test.yml
+      - .github/workflows/js-checks.yml
+      - .github/workflows/rs-checks.yml
       - packages/js-dpp/**
       - packages/feature-flags-contract/**
       - packages/masternode-reward-shares-contract/**
@@ -27,14 +27,14 @@ concurrency:
 jobs:
   js-checks:
     name: JS checks
-    uses: ./.github/workflows/js-test.yml
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/wasm-dpp'
       install-browsers: true
 
   rs-checks:
     name: Rust checks
-    uses: ./.github/workflows/rs-test.yml
+    uses: ./.github/workflows/rs-checks.yml
     with:
       package: 'wasm-dpp'
 
