@@ -1,0 +1,3 @@
+[advisories]
+# TODO
+ignore = [ "RUSTSEC-2020-0071"] # advisory IDs to ignore e.g. ["RUSTSEC-2019-0001", ...]
