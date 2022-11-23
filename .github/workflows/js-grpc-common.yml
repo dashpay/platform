@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: '30 4 * * *'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   js-checks:
     name: JS checks
