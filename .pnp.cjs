@@ -2309,6 +2309,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
+      ["@dashevo/bls", [\
+        ["npm:1.0.0-beta.2", {\
+          "packageLocation": "./.yarn/cache/@dashevo-bls-npm-1.0.0-beta.2-a499c2ec55-d1c329bedc.zip/node_modules/@dashevo/bls/",\
+          "packageDependencies": [\
+            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
+            ["binascii", "npm:0.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["@dashevo/dapi", [\
         ["workspace:packages/dapi", {\
           "packageLocation": "./packages/dapi/",\
@@ -2989,6 +2999,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
+            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -5883,6 +5894,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/binaryextensions-npm-4.18.0-af6f83841f-6fe92a9004.zip/node_modules/binaryextensions/",\
           "packageDependencies": [\
             ["binaryextensions", "npm:4.18.0"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["binascii", [\
+        ["npm:0.0.2", {\
+          "packageLocation": "./.yarn/cache/binascii-npm-0.0.2-3bd8971b5f-d27d4e7942.zip/node_modules/binascii/",\
+          "packageDependencies": [\
+            ["binascii", "npm:0.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\

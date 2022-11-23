@@ -63,7 +63,15 @@ describe('validatePublicKeysFactory', () => {
 
     const blsAdapter = {
       validatePublicKey(publicKeyBuffer) {
-        return true;
+        let pk;
+
+        try {
+          pk = bls.PublicKey.fromBytes(publicKeyBuffer);
+        } catch (e) {
+          return false;
+        }
+
+        return Boolean(pk);
       },
     };
 
