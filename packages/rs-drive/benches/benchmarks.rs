@@ -37,7 +37,7 @@ use dpp::data_contract::extra::DriveContractExt;
 use drive::common::json_document_to_cbor;
 use drive::contract::document::Document;
 use drive::contract::Contract;
-use rs_drive::contract::CreateRandomDocument;
+use drive::contract::CreateRandomDocument;
 use serde::Serialize;
 
 criterion_main!(serialization, deserialization);

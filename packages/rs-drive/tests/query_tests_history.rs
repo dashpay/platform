@@ -47,13 +47,13 @@ use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentAndContractInfo;
-use rs_drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-use rs_drive::drive::Drive;
-use rs_drive::error::{query::QueryError, Error};
-use rs_drive::query::DriveQuery;
+use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::Drive;
+use drive::error::{query::QueryError, Error};
+use drive::query::DriveQuery;
 
 use dpp::data_contract::extra::DriveContractExt;
-use rs_drive::drive::block_info::BlockInfo;
+use drive::drive::block_info::BlockInfo;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,7 +194,7 @@ pub fn setup(
             }
             let value = serde_json::to_value(person).expect("serialized person");
             let document_cbor =
-                common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+                common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
             let document = Document::from_cbor(document_cbor.as_slice(), None, None)
                 .expect("document should be properly deserialized");
             let document_type = contract
@@ -1014,7 +1014,7 @@ fn test_query_historical() {
     let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
     let person_cbor = common::value_to_cbor(
         serialized_person,
-        Some(rs_drive::drive::defaults::PROTOCOL_VERSION),
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
@@ -1062,7 +1062,7 @@ fn test_query_historical() {
     let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
     let person_cbor = common::value_to_cbor(
         serialized_person,
-        Some(rs_drive::drive::defaults::PROTOCOL_VERSION),
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");

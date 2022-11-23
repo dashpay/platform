@@ -53,17 +53,17 @@ use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentAndContractInfo;
-use rs_drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-use rs_drive::drive::Drive;
-use rs_drive::error::{query::QueryError, Error};
-use rs_drive::query::DriveQuery;
+use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::Drive;
+use drive::error::{query::QueryError, Error};
+use drive::query::DriveQuery;
 
 use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 
 use dpp::prelude::DataContract;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
-use rs_drive::drive::block_info::BlockInfo;
+use drive::drive::block_info::BlockInfo;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,7 +189,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+            common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
@@ -264,7 +264,7 @@ pub fn setup_family_tests_with_nulls(
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+            common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
@@ -338,7 +338,7 @@ pub fn setup_family_tests_only_first_name_index(
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+            common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
@@ -443,7 +443,7 @@ pub fn add_domains_to_contract(
     for domain in domains {
         let value = serde_json::to_value(&domain).expect("serialized domain");
         let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+            common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
@@ -535,10 +535,8 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
             let domain_json: serde_json::Value =
                 serde_json::from_str(&domain_json).expect("should parse json");
 
-            let domain_cbor = common::value_to_cbor(
-                domain_json,
-                Some(rs_drive::drive::defaults::PROTOCOL_VERSION),
-            );
+            let domain_cbor =
+                common::value_to_cbor(domain_json, Some(drive::drive::defaults::PROTOCOL_VERSION));
 
             let domain = Document::from_cbor(&domain_cbor, None, None)
                 .expect("expected to deserialize the document");
@@ -588,7 +586,7 @@ fn test_query_many() {
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+            common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
@@ -1497,7 +1495,7 @@ fn test_family_basic_queries() {
     let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
     let person_cbor = common::value_to_cbor(
         serialized_person,
-        Some(rs_drive::drive::defaults::PROTOCOL_VERSION),
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
@@ -1544,7 +1542,7 @@ fn test_family_basic_queries() {
     let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
     let person_cbor = common::value_to_cbor(
         serialized_person,
-        Some(rs_drive::drive::defaults::PROTOCOL_VERSION),
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
@@ -3377,7 +3375,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
     let document_cbor0 =
-        common::value_to_cbor(value0, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+        common::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION));
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3419,7 +3417,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
     let document_cbor1 =
-        common::value_to_cbor(value1, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+        common::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION));
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3569,7 +3567,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
     let document_cbor0 =
-        common::value_to_cbor(value0, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+        common::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION));
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3611,7 +3609,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
     let document_cbor1 =
-        common::value_to_cbor(value1, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+        common::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION));
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3764,7 +3762,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
     let document_cbor0 =
-        common::value_to_cbor(value0, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+        common::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION));
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3806,7 +3804,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
     let document_cbor1 =
-        common::value_to_cbor(value1, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+        common::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION));
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
