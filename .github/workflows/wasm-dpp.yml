@@ -38,7 +38,6 @@ jobs:
     with:
       package: 'wasm-dpp'
 
-  # TODO Do we really need this?
   wasm-errors:
     name: WASM compilation
     runs-on: ubuntu-22.04
@@ -56,4 +55,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Compile WASM
-        run: cargo check --lib --release --target wasm32-unknown-unknown --package=wasm-dpp
+        run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp

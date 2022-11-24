@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 
-if [ -z "$CARGO_BUILD_PROFILE" ]; then
-    CARGO_BUILD_PROFILE="debug"
+PROFILE_ARG=""
+
+if [ -n "$CARGO_BUILD_PROFILE" ]; then
+    if [ "$CARGO_BUILD_PROFILE" == "release" ]; then
+      PROFILE_ARG="--release"
+    else
+      PROFILE_ARG="--profile $CARGO_BUILD_PROFILE"
+    fi
 fi
 
 cargo-cp-artifact -ac drive-nodejs native/index.node -- \
-  cargo build --message-format=json-render-diagnostics --profile $CARGO_BUILD_PROFILE \
+  cargo build --message-format=json-render-diagnostics $PROFILE_ARG \
   && neon-tag-prebuild \
   && rm -rf native
