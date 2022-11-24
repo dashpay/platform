@@ -20,7 +20,7 @@ describe('GroveDB', () => {
   beforeEach(() => {
     drive = new Drive(TEST_DATA_PATH, {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     groveDb = drive.getGroveDB();
@@ -157,6 +157,43 @@ describe('GroveDB', () => {
     });
   });
 
+  describe('#startTransaction', () => {
+    it('should not allow to read transactional data from main database until it\'s committed', async () => {
+      // Making a subtree to insert items into
+      await groveDb.insert(
+        rootTreePath,
+        treeKey,
+        { type: 'tree' },
+      );
+
+      await groveDb.startTransaction();
+
+      // Inserting an item into the subtree
+      await groveDb.insert(
+        itemTreePath,
+        itemKey,
+        { type: 'item', epoch: 0, value: itemValue },
+        true,
+      );
+
+      // Inserted value is not yet commited, but can be retrieved by `get`
+      // with `useTransaction` flag.
+      const elementInTransaction = await groveDb.get(itemTreePath, itemKey, true);
+
+      expect(elementInTransaction.type).to.be.equal('item');
+      expect(elementInTransaction.value).to.deep.equal(itemValue);
+
+      // ... and using `get` without the flag should return no value
+      try {
+        await groveDb.get(itemTreePath, itemKey);
+
+        expect.fail('Expected to throw an error');
+      } catch (e) {
+        expect(e.message).to.be.equal('grovedb: path key not found: key not found in Merk for get: 746573745f6b6579');
+      }
+    });
+  });
+
   describe('#commitTransaction', () => {
     it('should commit transactional data to main database', async () => {
       // Making a subtree to insert items into
@@ -166,14 +203,14 @@ describe('GroveDB', () => {
         { type: 'tree', epoch: 0 },
       );
 
-      const transaction = await groveDb.startTransaction();
+      await groveDb.startTransaction();
 
       // Inserting an item into the subtree
       await groveDb.insert(
         itemTreePath,
         itemKey,
         { type: 'item', epoch: 0, value: itemValue },
-        transaction,
+        true,
       );
 
       // ... and using `get` without the flag should return no value
@@ -185,7 +222,7 @@ describe('GroveDB', () => {
         expect(e.message).to.be.equal('grovedb: path key not found: key not found in Merk for get: 746573745f6b6579');
       }
 
-      await groveDb.commitTransaction(transaction);
+      await groveDb.commitTransaction();
 
       // When committed, the value should be accessible without running transaction
       const element = await groveDb.get(itemTreePath, itemKey);
@@ -203,18 +240,18 @@ describe('GroveDB', () => {
         { type: 'tree', epoch: 0 },
       );
 
-      const transaction = await groveDb.startTransaction();
+      await groveDb.startTransaction();
 
       // Inserting an item into the subtree
       await groveDb.insert(
         itemTreePath,
         itemKey,
         { type: 'item', epoch: 0, value: itemValue },
-        transaction,
+        true,
       );
 
       // Should rollback inserted item
-      await groveDb.rollbackTransaction(transaction);
+      await groveDb.rollbackTransaction();
 
       try {
         await groveDb.get(itemTreePath, itemKey);
@@ -223,6 +260,31 @@ describe('GroveDB', () => {
       } catch (e) {
         expect(e.message).to.be.equal('grovedb: path key not found: key not found in Merk for get: 746573745f6b6579');
       }
+    });
+  });
+
+  describe('#isTransactionStarted', () => {
+    it('should return true if transaction is started', async () => {
+      // Making a subtree to insert items into
+      await groveDb.insert(
+        rootTreePath,
+        treeKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      await groveDb.startTransaction();
+
+      const result = await groveDb.isTransactionStarted();
+
+      // eslint-disable-next-line no-unused-expressions
+      expect(result).to.be.true;
+    });
+
+    it('should return false if transaction is not started', async () => {
+      const result = await groveDb.isTransactionStarted();
+
+      // eslint-disable-next-line no-unused-expressions
+      expect(result).to.be.false;
     });
   });
 
@@ -235,18 +297,23 @@ describe('GroveDB', () => {
         { type: 'tree', epoch: 0 },
       );
 
-      const transaction = await groveDb.startTransaction();
+      await groveDb.startTransaction();
 
       // Inserting an item into the subtree
       await groveDb.insert(
         itemTreePath,
         itemKey,
         { type: 'item', epoch: 0, value: itemValue },
-        transaction,
+        true,
       );
 
       // Should abort inserted item
-      await groveDb.abortTransaction(transaction);
+      await groveDb.abortTransaction();
+
+      const isTransactionStarted = await groveDb.isTransactionStarted();
+
+      // eslint-disable-next-line no-unused-expressions
+      expect(isTransactionStarted).to.be.false;
 
       try {
         await groveDb.get(itemTreePath, itemKey);
@@ -1103,9 +1170,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const transacton = await groveDb.startTransaction();
-
-      const result = await groveDb.proveQueryMany([query1, query2], transacton);
+      const result = await groveDb.proveQueryMany([query1, query2]);
 
       expect(result).to.exist();
 
@@ -1133,9 +1198,9 @@ describe('GroveDB', () => {
       expect(result).to.deep.equal(Buffer.alloc(32));
 
       // Get root hash for transaction too
-      const transaction = await groveDb.startTransaction();
+      await groveDb.startTransaction();
 
-      const transactionalResult = await groveDb.getRootHash(transaction);
+      const transactionalResult = await groveDb.getRootHash(true);
 
       expect(transactionalResult).to.deep.equal(Buffer.alloc(32));
     });
@@ -1155,18 +1220,18 @@ describe('GroveDB', () => {
         { type: 'item', epoch: 0, value: itemValue },
       );
 
-      const transaction = await groveDb.startTransaction();
+      await groveDb.startTransaction();
 
       // Inserting an item into the subtree
       await groveDb.insert(
         itemTreePath,
         Buffer.from('transactional_test_key'),
         { type: 'item', epoch: 0, value: itemValue },
-        transaction,
+        true,
       );
 
       const result = await groveDb.getRootHash();
-      const transactionalResult = await groveDb.getRootHash(transaction);
+      const transactionalResult = await groveDb.getRootHash(true);
 
       // Hashes shouldn't be equal
       expect(result).to.not.deep.equal(transactionalResult);

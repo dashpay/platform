@@ -9,7 +9,7 @@ if [ -n "$CARGO_BUILD_PROFILE" ]; then
     if [ "$CARGO_BUILD_PROFILE" == "release" ]; then
       PROFILE_ARG="--release"
       PROFILE="release"
-    else
+    elif [ "$CARGO_BUILD_PROFILE" != "debug" ]; then
       PROFILE_ARG="--profile $CARGO_BUILD_PROFILE"
       PROFILE="$CARGO_BUILD_PROFILE"
     fi

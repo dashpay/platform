@@ -876,7 +876,7 @@ describe('DocumentRepository', function main() {
 
         expect.fail('should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
 
       await documentRepository.storage.commitTransaction();
@@ -919,7 +919,7 @@ describe('DocumentRepository', function main() {
 
         expect.fail('should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
     });
   });

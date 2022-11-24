@@ -10,6 +10,7 @@ const {
   groveDbCommitTransaction,
   groveDbRollbackTransaction,
   groveDbAbortTransaction,
+  groveDbIsTransactionStarted,
   groveDbDelete,
   groveDbInsertIfNotExists,
   groveDbPutAux,
@@ -33,6 +34,7 @@ const groveDbFlushAsync = appendStack(promisify(groveDbFlush));
 const groveDbStartTransactionAsync = appendStack(promisify(groveDbStartTransaction));
 const groveDbCommitTransactionAsync = appendStack(promisify(groveDbCommitTransaction));
 const groveDbRollbackTransactionAsync = appendStack(promisify(groveDbRollbackTransaction));
+const groveDbIsTransactionStartedAsync = appendStack(promisify(groveDbIsTransactionStarted));
 const groveDbAbortTransactionAsync = appendStack(promisify(groveDbAbortTransaction));
 const groveDbPutAuxAsync = appendStack(promisify(groveDbPutAux));
 const groveDbDeleteAuxAsync = appendStack(promisify(groveDbDeleteAux));
@@ -54,44 +56,44 @@ class GroveDB {
   /**
    * @param {Buffer[]} path
    * @param {Buffer} key
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @returns {Promise<Element>}
    */
-  async get(path, key, transaction = undefined) {
-    return groveDbGetAsync.call(this.db, path, key, transaction);
+  async get(path, key, useTransaction = false) {
+    return groveDbGetAsync.call(this.db, path, key, useTransaction);
   }
 
   /**
    * @param {Buffer[]} path
    * @param {Buffer} key
    * @param {Element} value
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @returns {Promise<*>}
    */
-  async insert(path, key, value, transaction = undefined) {
-    return groveDbInsertAsync.call(this.db, path, key, value, transaction);
+  async insert(path, key, value, useTransaction = false) {
+    return groveDbInsertAsync.call(this.db, path, key, value, useTransaction);
   }
 
   /**
    * @param {Buffer[]} path
    * @param {Buffer} key
    * @param {Element} value
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async insertIfNotExists(path, key, value, transaction = undefined) {
-    return groveDbInsertIfNotExistsAsync.call(this.db, path, key, value, transaction);
+  async insertIfNotExists(path, key, value, useTransaction = false) {
+    return groveDbInsertIfNotExistsAsync.call(this.db, path, key, value, useTransaction);
   }
 
   /**
    *
    * @param {Buffer[]} path
    * @param {Buffer} key
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async delete(path, key, transaction = undefined) {
-    return groveDbDeleteAsync.call(this.db, path, key, transaction);
+  async delete(path, key, useTransaction = false) {
+    return groveDbDeleteAsync.call(this.db, path, key, useTransaction);
   }
 
   /**
@@ -109,7 +111,7 @@ class GroveDB {
    * Write operations will be allowed only for the transaction
    * until it's committed
    *
-   * @return {Promise<GroveDBTransaction>}
+   * @return {Promise<void>}
    */
   async startTransaction() {
     return groveDbStartTransactionAsync.call(this.db);
@@ -120,34 +122,37 @@ class GroveDB {
    *
    * Transaction should be started before
    *
-   * @param {GroveDBTransaction} [transaction=undefined]
-   *
    * @return {Promise<void>}
    */
-  async commitTransaction(transaction = undefined) {
-    return groveDbCommitTransactionAsync.call(this.db, transaction);
+  async commitTransaction() {
+    return groveDbCommitTransactionAsync.call(this.db);
   }
 
   /**
    * Rollback transaction to this initial state when it was created
    *
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @returns {Promise<void>}
+   */
+  async rollbackTransaction() {
+    return groveDbRollbackTransactionAsync.call(this.db);
+  }
+
+  /**
+   * Returns true if transaction started
    *
    * @returns {Promise<void>}
    */
-  async rollbackTransaction(transaction = undefined) {
-    return groveDbRollbackTransactionAsync.call(this.db, transaction);
+  async isTransactionStarted() {
+    return groveDbIsTransactionStartedAsync.call(this.db);
   }
 
   /**
    * Aborts transaction
    *
-   * @param {GroveDBTransaction} [transaction=undefined]
-   *
    * @returns {Promise<void>}
    */
-  async abortTransaction(transaction = undefined) {
-    return groveDbAbortTransactionAsync.call(this.db, transaction);
+  async abortTransaction() {
+    return groveDbAbortTransactionAsync.call(this.db);
   }
 
   /**
@@ -155,82 +160,78 @@ class GroveDB {
    *
    * @param {Buffer} key
    * @param {Buffer} value
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async putAux(key, value, transaction = undefined) {
-    return groveDbPutAuxAsync.call(this.db, key, value, transaction);
+  async putAux(key, value, useTransaction = false) {
+    return groveDbPutAuxAsync.call(this.db, key, value, useTransaction);
   }
 
   /**
    * Delete auxiliary data
    *
    * @param {Buffer} key
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async deleteAux(key, transaction = undefined) {
-    return groveDbDeleteAuxAsync.call(this.db, key, transaction);
+  async deleteAux(key, useTransaction = false) {
+    return groveDbDeleteAuxAsync.call(this.db, key, useTransaction);
   }
 
   /**
    * Get auxiliary data
    *
    * @param {Buffer} key
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<Buffer>}
    */
-  async getAux(key, transaction = undefined) {
-    return groveDbGetAuxAsync.call(this.db, key, transaction);
+  async getAux(key, useTransaction = false) {
+    return groveDbGetAuxAsync.call(this.db, key, useTransaction);
   }
 
   /**
    * Get data using query.
    *
    * @param {PathQuery} query
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async query(query, transaction = undefined) {
-    return groveDbQueryAsync.call(this.db, query, transaction);
+  async query(query, useTransaction = false) {
+    return groveDbQueryAsync.call(this.db, query, useTransaction);
   }
 
   /**
    * Get proof using query.
    *
    * @param {PathQuery} query
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async proveQuery(query, transaction = undefined) {
-    return groveDbProveQueryAsync.call(this.db, query, transaction);
+  async proveQuery(query, useTransaction = false) {
+    return groveDbProveQueryAsync.call(this.db, query, useTransaction);
   }
 
   /**
    * Get proof using query.
    *
    * @param {PathQuery[]} queries
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<Buffer>}
    */
-  async proveQueryMany(queries, transaction = undefined) {
-    return groveDbProveQueryManyAsync.call(this.db, queries, transaction);
+  async proveQueryMany(queries, useTransaction = false) {
+    return groveDbProveQueryManyAsync.call(this.db, queries, useTransaction);
   }
 
   /**
    * Get root hash
    *
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @returns {Promise<void>}
    */
-  async getRootHash(transaction = undefined) {
-    return groveDbRootHashAsync.call(this.db, transaction);
+  async getRootHash(useTransaction = false) {
+    return groveDbRootHashAsync.call(this.db, useTransaction);
   }
 }
-
-/**
- * @typedef GroveDBTransaction
- */
 
 /**
  * @typedef Element

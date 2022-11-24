@@ -49,8 +49,12 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
     container = await createTestDIContainer(dashCore);
 
     // Create initial state
+    const groveDBStore = container.resolve('groveDBStore');
+    await groveDBStore.startTransaction();
+
     const rsDrive = container.resolve('rsDrive');
-    await rsDrive.createInitialStateStructure(false);
+    await rsDrive.getGroveDB();
+    await rsDrive.createInitialStateStructure(true);
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
     const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');
