@@ -1,13 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 TARGET=wasm32-unknown-unknown
-PROFILE=release
+
+if [ -z "$CARGO_BUILD_PROFILE" ]; then
+    CARGO_BUILD_PROFILE="debug"
+fi
 
 OUTPUT_DIR="$PWD/wasm"
 OUTPUT_FILE="$OUTPUT_DIR/wasm_dpp_bg.wasm"
 OUTPUT_FILE_JS="$OUTPUT_DIR/wasm_dpp_bg.js"
-BUILD_COMMAND="cargo build --target=$TARGET --$PROFILE"
-BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$PROFILE/wasm_dpp.wasm"
+BUILD_COMMAND="cargo build --target=$TARGET --$CARGO_BUILD_PROFILE"
+BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$CARGO_BUILD_PROFILE/wasm_dpp.wasm"
 
 
 if ! [[ -d $OUTPUT_DIR ]];  then

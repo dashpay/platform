@@ -54,6 +54,8 @@ jobs:
 
       - name: Build packages
         run: yarn build
+        env:
+          - CARGO_BUILD_PROFILE: release
 
       - name: Download prebuild artifacts
         uses: actions/download-artifact@v2
@@ -501,7 +503,7 @@ jobs:
             latest=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image for Envoy
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
@@ -510,6 +512,8 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            CARGO_BUILD_PROFILE=release
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
@@ -743,10 +747,11 @@ jobs:
 
       - name: Build for Mac OS
         if: ${{ matrix.os == 'macos-11' }}
-        run: yarn workspace @dashevo/rs-drive run build:release
+        run: yarn workspace @dashevo/rs-drive run build
         env:
           ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
           CARGO_BUILD_TARGET: ${{ steps.set-target.outputs.result }}
+          CARGO_BUILD_PROFILE: release
 
       - name: Upload prebuild artifacts
         uses: actions/upload-artifact@v2

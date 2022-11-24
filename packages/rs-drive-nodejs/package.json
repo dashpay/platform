@@ -4,8 +4,7 @@
   "description": "Node.JS binding for Rust Drive",
   "main": "Drive.js",
   "scripts": {
-    "build": "cargo-cp-artifact -ac drive-nodejs native/index.node -- cargo build --message-format=json-render-diagnostics && neon-tag-prebuild && rm -rf native",
-    "build:release": "cargo-cp-artifact -ac drive-nodejs native/index.node -- cargo build --message-format=json-render-diagnostics --release && neon-tag-prebuild && rm -rf native",
+    "build": "yarn exec scripts/build.sh",
     "test": "ultra --build && mocha test",
     "lint": "eslint ."
   },
