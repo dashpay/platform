@@ -2279,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7acd001b9d-86504da08f.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-68c73a1420-9f404e8177.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2692,7 +2692,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
@@ -2703,7 +2703,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/rs-drive", "npm:0.24.0-dev.2"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
             ["@types/pino", "npm:6.3.12"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],\
@@ -2933,10 +2933,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/rs-drive", [\
-        ["npm:0.24.0-dev.2", {\
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.24.0-dev.2-29583da4fe/node_modules/@dashevo/rs-drive/",\
+        ["npm:0.23.0-dev.9", {\
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.23.0-dev.9-4a3180ad04/node_modules/@dashevo/rs-drive/",\
           "packageDependencies": [\
-            ["@dashevo/rs-drive", "npm:0.24.0-dev.2"],\
+            ["@dashevo/rs-drive", "npm:0.23.0-dev.9"],\
             ["@dashevo/dpp", "npm:0.22.1"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\

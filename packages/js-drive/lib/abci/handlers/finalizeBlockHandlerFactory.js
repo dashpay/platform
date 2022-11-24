@@ -40,6 +40,12 @@ function finalizeBlockHandlerFactory(
       commit: commitInfo,
       height,
       round,
+      txs,
+      time,
+      coreChainLockedHeight,
+      version,
+      proposerProTxHash,
+
     } = request;
 
     const consensusLogger = logger.child({
@@ -50,20 +56,22 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    if (proposalBlockExecutionContext.getHeight() !== height || proposalBlockExecutionContext.getRound() !== round) {
+    if (
+      proposalBlockExecutionContext.getHeight() !== height
+      || proposalBlockExecutionContext.getRound() !== round
+    ) {
       consensusLogger.warn('Height or round in execution context do not equal request values.');
 
-      // await processProposalHandler({
-      //   height,
-      //   txs,
-      //   coreChainLockedHeight,
-      //   version,
-      //   proposedLastCommit: commitInfo,
-      //   time,
-      //   proposerProTxHash,
-      //   coreChainLockUpdate,
-      //   round,
-      // });
+      await processProposalHandler({
+        height,
+        txs,
+        coreChainLockedHeight,
+        version,
+        proposedLastCommit: commitInfo,
+        time,
+        proposerProTxHash,
+        round,
+      });
     }
 
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
