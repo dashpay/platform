@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   rs-checks:
-    name: Rust checks
+    name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
       package: 'dpp'

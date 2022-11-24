@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   js-checks:
-    name: JS checks
+    name: JS
     uses: ./.github/workflows/js-checks.yml
     with:
       package: 'dash'

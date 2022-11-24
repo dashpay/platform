@@ -26,14 +26,14 @@ concurrency:
 
 jobs:
   js-checks:
-    name: JS checks
+    name: JS
     uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/wasm-dpp'
       install-browsers: true
 
   rs-checks:
-    name: Rust checks
+    name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
       package: 'wasm-dpp'
