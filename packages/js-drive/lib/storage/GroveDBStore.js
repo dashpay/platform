@@ -50,7 +50,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(value)
             .digest('hex'),
-          transaction: options.useTransaction || false,
+          useTransaction: options.useTransaction || false,
           type: 'item',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -109,7 +109,7 @@ class GroveDBStore {
               ), Buffer.alloc(0)),
             )
             .digest('hex'),
-          transaction: options.useTransaction || false,
+          useTransaction: options.useTransaction || false,
           type: 'reference',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -158,7 +158,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(Buffer.alloc(32))
             .digest('hex'),
-          transaction: options.useTransaction || false,
+          useTransaction: options.useTransaction || false,
           type: 'tree',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -327,7 +327,7 @@ class GroveDBStore {
               path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
             ).digest('hex'),
           key: key.toString('hex'),
-          transaction: options.transaction,
+          useTransaction: options.useTransaction || false,
           method: 'delete',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'delete');
@@ -389,7 +389,7 @@ class GroveDBStore {
       await this.db.putAux(
         key,
         value,
-        options.transaction || undefined,
+        options.useTransaction || false,
       );
     } finally {
       if (this.logger) {
@@ -399,7 +399,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(value)
             .digest('hex'),
-          transaction: options.transaction,
+          useTransaction: options.useTransaction || false,
           method: 'putAux',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'putAux');
@@ -431,7 +431,7 @@ class GroveDBStore {
       if (this.logger) {
         this.logger.info({
           key: key.toString('hex'),
-          transaction: options.useTransaction || false,
+          useTransaction: options.useTransaction || false,
           method: 'deleteAux',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'deleteAux');

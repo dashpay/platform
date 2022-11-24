@@ -54,7 +54,7 @@ class DataContractStoreRepository {
             .update(
               dataContract.toBuffer(),
             ).digest('hex'),
-          transaction: Boolean(options.useTransaction),
+          useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'createContract');
       }
@@ -98,7 +98,7 @@ class DataContractStoreRepository {
             .update(
               dataContract.toBuffer(),
             ).digest('hex'),
-          transaction: Boolean(options.useTransaction),
+          useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'updateContract');
       }

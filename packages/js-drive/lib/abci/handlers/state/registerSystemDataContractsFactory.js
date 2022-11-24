@@ -94,7 +94,7 @@ function registerSystemDataContractsFactory(
       blockInfo,
     );
 
-    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, blockInfo, transaction);
+    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, blockInfo);
 
     contextLogger.debug('Registering Masternode Rewards data contract');
     contextLogger.trace({

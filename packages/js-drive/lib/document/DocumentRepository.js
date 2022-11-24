@@ -52,7 +52,7 @@ class DocumentRepository {
             .update(
               document.toBuffer(),
             ).digest('hex'),
-          transaction: Boolean(options.useTransaction),
+          useTransaction: Boolean(options.useTransaction),
           dryRun: Boolean(options.dryRun),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'createDocument');
@@ -98,7 +98,7 @@ class DocumentRepository {
             .update(
               document.toBuffer(),
             ).digest('hex'),
-          transaction: Boolean(options.useTransaction),
+          useTransaction: Boolean(options.useTransaction),
           dryRun: Boolean(options.dryRun),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'updateDocument');
@@ -209,7 +209,7 @@ class DocumentRepository {
           documentType,
           id,
           blockInfo,
-          options.transaction,
+          Boolean(options.useTransaction),
           Boolean(options.dryRun),
         );
 
@@ -225,7 +225,7 @@ class DocumentRepository {
           dataContractId: dataContract.getId().toString(),
           documentType,
           id: id.toString(),
-          transaction: options.transaction,
+          useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'deleteDocument');
       }
