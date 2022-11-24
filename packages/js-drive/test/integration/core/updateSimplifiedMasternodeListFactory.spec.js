@@ -53,7 +53,6 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
     await groveDBStore.startTransaction();
 
     const rsDrive = container.resolve('rsDrive');
-    await rsDrive.getGroveDB();
     await rsDrive.createInitialStateStructure(true);
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
