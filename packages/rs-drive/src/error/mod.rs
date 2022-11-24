@@ -1,7 +1,7 @@
+use self::drive::DriveError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
 use dpp::data_contract::extra::ContractError;
-use drive::DriveError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
