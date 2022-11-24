@@ -50,7 +50,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(value)
             .digest('hex'),
-          useTransaction: options.useTransaction || false,
+          useTransaction: Boolean(options.useTransaction),
           type: 'item',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -109,7 +109,7 @@ class GroveDBStore {
               ), Buffer.alloc(0)),
             )
             .digest('hex'),
-          useTransaction: options.useTransaction || false,
+          useTransaction: Boolean(options.useTransaction),
           type: 'reference',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -158,7 +158,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(Buffer.alloc(32))
             .digest('hex'),
-          useTransaction: options.useTransaction || false,
+          useTransaction: Boolean(options.useTransaction),
           type: 'tree',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -327,7 +327,7 @@ class GroveDBStore {
               path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
             ).digest('hex'),
           key: key.toString('hex'),
-          useTransaction: options.useTransaction || false,
+          useTransaction: Boolean(options.useTransaction),
           method: 'delete',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'delete');
@@ -399,7 +399,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(value)
             .digest('hex'),
-          useTransaction: options.useTransaction || false,
+          useTransaction: Boolean(options.useTransaction),
           method: 'putAux',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'putAux');
@@ -431,7 +431,7 @@ class GroveDBStore {
       if (this.logger) {
         this.logger.info({
           key: key.toString('hex'),
-          useTransaction: options.useTransaction || false,
+          useTransaction: Boolean(options.useTransaction),
           method: 'deleteAux',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'deleteAux');
