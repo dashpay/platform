@@ -12,7 +12,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -50,6 +50,7 @@ jobs:
   compile:
     name: Compilation errors
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -67,7 +68,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - name: Check out repo
         uses: actions/checkout@v2

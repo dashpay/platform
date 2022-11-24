@@ -61,7 +61,7 @@ jobs:
   test-suite:
     name: Run Platform Test Suite
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -140,7 +140,7 @@ jobs:
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
