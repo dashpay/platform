@@ -4,6 +4,9 @@ FROM node:16-alpine as builder
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
+ARG CARGO_BUILD_PROFILE=debug
+ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+
 RUN apk update && \
     apk --no-cache upgrade && \
     apk add --no-cache git \
@@ -75,7 +78,7 @@ COPY packages/dashpay-contract packages/dashpay-contract
 RUN --mount=type=cache,target=target \
     --mount=type=cache,target=$CARGO_HOME/git \
     --mount=type=cache,target=$CARGO_HOME/registry \
-    yarn workspace @dashevo/rs-drive build:release
+    yarn workspace @dashevo/rs-drive build
 
 # Install Drive-specific dependencies using previous
 # node_modules directory to reuse built binaries
