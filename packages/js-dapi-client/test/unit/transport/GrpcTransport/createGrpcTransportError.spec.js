@@ -1,4 +1,4 @@
-const { Metadata } = require('@dashevo/dapi-grpc');
+const { Metadata, parseMetadata } = require('@dashevo/dapi-grpc');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const cbor = require('cbor');
@@ -200,6 +200,26 @@ describe('createGrpcTransportError', () => {
     expect(error).to.be.an.instanceOf(ResponseError);
     expect(error.message).to.equal(grpcError.message);
     expect(error.getCode()).to.equal(grpcError.code);
+    expect(error.getDAPIAddress()).to.deep.equal(dapiAddress);
+    expect(error.getData()).to.deep.equal(errorData);
+  });
+
+  it('should handle plain object metadata', () => {
+    const objectMetadata = parseMetadata(metadata);
+    const grpcError = new GrpcError(
+      GrpcErrorCodes.NOT_FOUND,
+      'Not found',
+    );
+    grpcError.metadata = objectMetadata;
+
+    const error = createGrpcTransportError(
+      grpcError,
+      dapiAddress,
+    );
+
+    expect(error).to.be.an.instanceOf(NotFoundError);
+    expect(error.message).to.equal(grpcError.message);
+    expect(error.getCode()).to.equal(GrpcErrorCodes.NOT_FOUND);
     expect(error.getDAPIAddress()).to.deep.equal(dapiAddress);
     expect(error.getData()).to.deep.equal(errorData);
   });
