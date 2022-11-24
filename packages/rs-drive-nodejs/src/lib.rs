@@ -1,17 +1,15 @@
 mod converter;
 
-use std::collections::HashMap;
-use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use drive::dpp::identity::Identity;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
-use drive::error::drive::DriveError;
 use drive::error::Error;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
+use drive::query::TransactionArg;
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest, Serializable,
@@ -19,44 +17,11 @@ use drive_abci::abci::messages::{
 use drive_abci::platform::Platform;
 use neon::prelude::*;
 
-type TransactionPointerAddress = usize;
-
-struct PlatformWrapperTransactionAddress {
-    address: TransactionPointerAddress,
-    tx: mpsc::Sender<PlatformWrapperMessage>,
-}
-
-impl Finalize for PlatformWrapperTransactionAddress {
-    fn finalize<'a, C: Context<'a>>(self, _: &mut C) {
-        // Ignoring the result of the `send` function as
-        // it only fails if other side closed a connection
-        // that would mean there is no reason using `cx.throw`
-        // as thread is probably closed already
-        self.tx
-            .send(PlatformWrapperMessage::AbortTransaction(
-                self.address,
-                Box::new(|_, _| {}),
-            ))
-            .ok();
-    }
-}
-
-impl Deref for PlatformWrapperTransactionAddress {
-    type Target = TransactionPointerAddress;
-
-    fn deref(&self) -> &Self::Target {
-        &self.address
-    }
-}
-
-type PlatformCallback = Box<
-    dyn for<'a> FnOnce(&'a Platform, &HashMap<TransactionPointerAddress, Transaction>, &Channel)
-        + Send,
->;
+type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
 type UnitCallback = Box<dyn FnOnce(&Channel) + Send>;
 type ErrorCallback = Box<dyn FnOnce(&Channel, Result<(), String>) + Send>;
 type TransactionCallback =
-    Box<dyn FnOnce(mpsc::Sender<PlatformWrapperMessage>, usize, &Channel) + Send>;
+    Box<dyn FnOnce(mpsc::Sender<PlatformWrapperMessage>, Result<(), String>, &Channel) + Send>;
 
 // Messages sent on the drive channel
 enum PlatformWrapperMessage {
@@ -65,9 +30,9 @@ enum PlatformWrapperMessage {
     // Indicates that the thread should be stopped and connection closed
     Close(UnitCallback),
     StartTransaction(TransactionCallback),
-    CommitTransaction(TransactionPointerAddress, ErrorCallback),
-    RollbackTransaction(TransactionPointerAddress, ErrorCallback),
-    AbortTransaction(TransactionPointerAddress, ErrorCallback),
+    CommitTransaction(ErrorCallback),
+    RollbackTransaction(ErrorCallback),
+    AbortTransaction(ErrorCallback),
     Flush(UnitCallback),
 }
 
@@ -98,11 +63,11 @@ impl PlatformWrapper {
             })?;
 
         let js_data_contracts_transactional_cache_size: Handle<JsNumber> =
-            drive_config.get(cx, "dataContractsTransactionalCacheSize")?;
-        let data_contracts_transactional_cache_size =
-            u64::try_from(js_data_contracts_transactional_cache_size.value(cx) as i64).or_else(
-                |_| cx.throw_range_error("`dataContractsTransactionalCacheSize` must fit in u64"),
-            )?;
+            drive_config.get(cx, "dataContractsBlockCacheSize")?;
+        let data_contracts_block_cache_size = u64::try_from(
+            js_data_contracts_transactional_cache_size.value(cx) as i64,
+        )
+        .or_else(|_| cx.throw_range_error("`dataContractsBlockCacheSize` must fit in u64"))?;
 
         // Channel for sending callbacks to execute on the Drive connection thread
         let (tx, rx) = mpsc::channel::<PlatformWrapperMessage>();
@@ -124,14 +89,14 @@ impl PlatformWrapper {
 
             let drive_config = DriveConfig {
                 data_contracts_global_cache_size,
-                data_contracts_transactional_cache_size,
+                data_contracts_block_cache_size,
                 ..Default::default()
             };
 
             // TODO: think how to pass this error to JS
             let platform: Platform = Platform::open(path, Some(drive_config)).unwrap();
 
-            let mut transactions: HashMap<TransactionPointerAddress, Transaction> = HashMap::new();
+            let mut maybe_transaction: Option<Transaction> = None;
 
             // Blocks until a callback is available
             // When the instance of `Database` is dropped, the channel will be closed
@@ -143,11 +108,11 @@ impl PlatformWrapper {
                         // The connection and channel are owned by the thread, but _lent_ to
                         // the callback. The callback has exclusive access to the connection
                         // for the duration of the callback.
-                        callback(&platform, &transactions, &channel);
+                        callback(&platform, maybe_transaction.as_ref(), &channel);
                     }
                     // Immediately close the connection, even if there are pending messages
                     PlatformWrapperMessage::Close(callback) => {
-                        drop(transactions);
+                        drop(maybe_transaction);
                         drop(platform);
 
                         callback(&channel);
@@ -159,86 +124,66 @@ impl PlatformWrapper {
                         callback(&channel);
                     }
                     PlatformWrapperMessage::StartTransaction(callback) => {
-                        let transaction = platform.drive.grove.start_transaction();
+                        let result = if maybe_transaction.is_some() {
+                            Err("transaction is already started".to_string())
+                        } else {
+                            let transaction = platform.drive.grove.start_transaction();
 
-                        let transaction_ref = &transaction;
-                        let transaction_raw_pointer = transaction_ref as *const Transaction;
-                        let transaction_raw_pointer_address =
-                            transaction_raw_pointer as TransactionPointerAddress;
+                            maybe_transaction = Some(transaction);
 
-                        transactions.insert(transaction_raw_pointer_address, transaction);
+                            Ok(())
+                        };
 
-                        callback(sender.clone(), transaction_raw_pointer_address, &channel);
+                        callback(sender.clone(), result, &channel);
                     }
-                    PlatformWrapperMessage::CommitTransaction(
-                        transaction_raw_pointer_address,
-                        callback,
-                    ) => {
-                        let error = if let Some(transaction) =
-                            transactions.remove(&transaction_raw_pointer_address)
-                        {
+                    PlatformWrapperMessage::CommitTransaction(callback) => {
+                        let result = if maybe_transaction.is_some() {
                             let mut drive_cache = platform.drive.cache.borrow_mut();
 
-                            drive_cache
-                                .cached_contracts
-                                .merge_transactional_cache(&transaction);
+                            drive_cache.cached_contracts.merge_block_cache();
 
-                            drive_cache
-                                .cached_contracts
-                                .clear_transactional_cache(&transaction);
+                            drive_cache.cached_contracts.clear_block_cache();
 
-                            platform.drive.commit_transaction(transaction).unwrap();
+                            platform
+                                .drive
+                                .commit_transaction(maybe_transaction.take().unwrap())
+                                .map_err(|err| err.to_string())
+                        } else {
+                            Err("transaction is not started".to_string())
+                        };
+
+                        callback(&channel, result);
+                    }
+                    PlatformWrapperMessage::RollbackTransaction(callback) => {
+                        let result = if let Some(transaction) = &maybe_transaction {
+                            let mut drive_cache = platform.drive.cache.borrow_mut();
+
+                            drive_cache.cached_contracts.clear_block_cache();
+
+                            platform
+                                .drive
+                                .rollback_transaction(transaction)
+                                .map_err(|err| err.to_string())
+                        } else {
+                            Err("transaction is not started".to_string())
+                        };
+
+                        callback(&channel, result);
+                    }
+                    PlatformWrapperMessage::AbortTransaction(callback) => {
+                        let result = if maybe_transaction.is_some() {
+                            let mut drive_cache = platform.drive.cache.borrow_mut();
+
+                            drive_cache.cached_contracts.clear_block_cache();
+
+                            drop(maybe_transaction.take());
 
                             Ok(())
                         } else {
-                            Err("invalid transaction_raw_pointer_address, transaction was not found".to_string())
+                            Err("transaction is not started".to_string())
                         };
 
-                        callback(&channel, error);
-                    }
-                    PlatformWrapperMessage::RollbackTransaction(
-                        transaction_raw_pointer_address,
-                        callback,
-                    ) => {
-                        let error = if let Some(transaction) =
-                            transactions.remove(&transaction_raw_pointer_address)
-                        {
-                            let mut drive_cache = platform.drive.cache.borrow_mut();
-
-                            drive_cache
-                                .cached_contracts
-                                .clear_transactional_cache(&transaction);
-
-                            platform.drive.rollback_transaction(&transaction).unwrap();
-
-                            Ok(())
-                        } else {
-                            Err("invalid transaction_raw_pointer_address, transaction was not found".to_string())
-                        };
-
-                        callback(&channel, error);
-                    }
-                    PlatformWrapperMessage::AbortTransaction(
-                        transaction_raw_pointer_address,
-                        callback,
-                    ) => {
-                        let error = if let Some(transaction) =
-                            transactions.remove(&transaction_raw_pointer_address)
-                        {
-                            let mut drive_cache = platform.drive.cache.borrow_mut();
-
-                            drive_cache
-                                .cached_contracts
-                                .clear_transactional_cache(&transaction);
-
-                            drop(transaction);
-
-                            Ok(())
-                        } else {
-                            Err("invalid transaction_raw_pointer_address, transaction was not found".to_string())
-                        };
-
-                        callback(&channel, error);
+                        callback(&channel, result);
                     }
                 }
             }
@@ -260,9 +205,7 @@ impl PlatformWrapper {
 
     fn send_to_drive_thread(
         &self,
-        callback: impl for<'a> FnOnce(&'a Platform, &HashMap<TransactionPointerAddress, Transaction>, &Channel)
-            + Send
-            + 'static,
+        callback: impl for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send + 'static,
     ) -> Result<(), mpsc::SendError<PlatformWrapperMessage>> {
         self.tx
             .send(PlatformWrapperMessage::Callback(Box::new(callback)))
@@ -270,7 +213,9 @@ impl PlatformWrapper {
 
     fn start_transaction(
         &self,
-        callback: impl FnOnce(mpsc::Sender<PlatformWrapperMessage>, usize, &Channel) + Send + 'static,
+        callback: impl FnOnce(mpsc::Sender<PlatformWrapperMessage>, Result<(), String>, &Channel)
+            + Send
+            + 'static,
     ) -> Result<(), mpsc::SendError<PlatformWrapperMessage>> {
         self.tx
             .send(PlatformWrapperMessage::StartTransaction(Box::new(callback)))
@@ -278,35 +223,30 @@ impl PlatformWrapper {
 
     fn commit_transaction(
         &self,
-        transaction_raw_pointer_address: TransactionPointerAddress,
         callback: impl FnOnce(&Channel, Result<(), String>) + Send + 'static,
     ) -> Result<(), mpsc::SendError<PlatformWrapperMessage>> {
-        self.tx.send(PlatformWrapperMessage::CommitTransaction(
-            transaction_raw_pointer_address,
-            Box::new(callback),
-        ))
+        self.tx
+            .send(PlatformWrapperMessage::CommitTransaction(Box::new(
+                callback,
+            )))
     }
 
     fn rollback_transaction(
         &self,
-        transaction_raw_pointer_address: TransactionPointerAddress,
         callback: impl FnOnce(&Channel, Result<(), String>) + Send + 'static,
     ) -> Result<(), mpsc::SendError<PlatformWrapperMessage>> {
-        self.tx.send(PlatformWrapperMessage::RollbackTransaction(
-            transaction_raw_pointer_address,
-            Box::new(callback),
-        ))
+        self.tx
+            .send(PlatformWrapperMessage::RollbackTransaction(Box::new(
+                callback,
+            )))
     }
 
     fn abort_transaction(
         &self,
-        transaction_raw_pointer_address: TransactionPointerAddress,
         callback: impl FnOnce(&Channel, Result<(), String>) + Send + 'static,
     ) -> Result<(), mpsc::SendError<PlatformWrapperMessage>> {
-        self.tx.send(PlatformWrapperMessage::AbortTransaction(
-            transaction_raw_pointer_address,
-            Box::new(callback),
-        ))
+        self.tx
+            .send(PlatformWrapperMessage::AbortTransaction(Box::new(callback)))
     }
 
     // Idiomatic rust would take an owned `self` to prevent use after close
@@ -365,40 +305,32 @@ impl PlatformWrapper {
     }
 
     fn js_create_initial_state_structure(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_transaction = cx.argument::<JsValue>(0)?;
-
-        let maybe_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
         let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
 
         let drive = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let execution_result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
                         .create_initial_state_structure(transaction_arg)
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -406,7 +338,7 @@ impl PlatformWrapper {
                     let this = task_context.undefined();
                     let callback_arguments: Vec<Handle<JsValue>> = match execution_result {
                         Ok(_) => vec![task_context.null().upcast()],
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -422,7 +354,7 @@ impl PlatformWrapper {
     fn js_fetch_contract(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_contract_id = cx.argument::<JsBuffer>(0)?;
         let js_maybe_epoch_index = cx.argument::<JsValue>(1)?;
-        let js_transaction = cx.argument::<JsValue>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
         let drive = cx
@@ -444,34 +376,29 @@ impl PlatformWrapper {
             None
         };
 
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.get_contract_with_fetch_info(
-                        contract_id,
-                        maybe_epoch.as_ref(),
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .get_contract_with_fetch_info(
+                            contract_id,
+                            maybe_epoch.as_ref(),
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -508,7 +435,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -525,17 +452,7 @@ impl PlatformWrapper {
         let js_contract_cbor = cx.argument::<JsBuffer>(0)?;
         let js_block_info = cx.argument::<JsObject>(1)?;
         let js_apply = cx.argument::<JsBoolean>(2)?;
-        let js_transaction = cx.argument::<JsValue>(3)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
         let drive = cx
@@ -545,28 +462,31 @@ impl PlatformWrapper {
         let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
         let apply = js_apply.value(&mut cx);
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.insert_contract_cbor(
-                        contract_cbor,
-                        None,
-                        block_info,
-                        apply,
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .insert_contract_cbor(
+                            contract_cbor,
+                            None,
+                            block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -583,7 +503,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -600,7 +520,7 @@ impl PlatformWrapper {
         let js_contract_cbor = cx.argument::<JsBuffer>(0)?;
         let js_block_info = cx.argument::<JsObject>(1)?;
         let js_apply = cx.argument::<JsBoolean>(2)?;
-        let js_transaction = cx.argument::<JsValue>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
         let drive = cx
@@ -610,38 +530,33 @@ impl PlatformWrapper {
         let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
         let apply = js_apply.value(&mut cx);
 
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.update_contract_cbor(
-                        contract_cbor,
-                        None,
-                        block_info,
-                        apply,
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .update_contract_cbor(
+                            contract_cbor,
+                            None,
+                            block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -658,7 +573,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -679,17 +594,7 @@ impl PlatformWrapper {
         let js_override_document = cx.argument::<JsBoolean>(4)?;
         let js_block_info = cx.argument::<JsObject>(5)?;
         let js_apply = cx.argument::<JsBoolean>(6)?;
-        let js_transaction = cx.argument::<JsValue>(7)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(7)?;
         let js_callback = cx.argument::<JsFunction>(8)?.root(&mut cx);
 
         let drive = cx
@@ -703,35 +608,38 @@ impl PlatformWrapper {
         let override_document = js_override_document.value(&mut cx);
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
         let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let storage_flags =
                     StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.add_serialized_document_for_contract_id(
-                        &document_cbor,
-                        contract_id,
-                        &document_type_name,
-                        Some(owner_id),
-                        override_document,
-                        block_info,
-                        apply,
-                        Some(storage_flags).as_ref(),
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .add_serialized_document_for_contract_id(
+                            &document_cbor,
+                            contract_id,
+                            &document_type_name,
+                            Some(owner_id),
+                            override_document,
+                            block_info,
+                            apply,
+                            Some(storage_flags).as_ref(),
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -748,7 +656,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -768,17 +676,7 @@ impl PlatformWrapper {
         let js_owner_id = cx.argument::<JsBuffer>(3)?;
         let js_block_info = cx.argument::<JsObject>(4)?;
         let js_apply = cx.argument::<JsBoolean>(5)?;
-        let js_transaction = cx.argument::<JsValue>(6)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(6)?;
         let js_callback = cx.argument::<JsFunction>(7)?.root(&mut cx);
 
         let drive = cx
@@ -791,34 +689,37 @@ impl PlatformWrapper {
         let owner_id = converter::js_buffer_to_identifier(&mut cx, js_owner_id)?;
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
         let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let storage_flags =
                     StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.update_document_for_contract_id(
-                        &document_cbor,
-                        contract_id,
-                        &document_type_name,
-                        Some(owner_id),
-                        block_info,
-                        apply,
-                        Some(storage_flags).as_ref(),
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .update_document_for_contract_id(
+                            &document_cbor,
+                            contract_id,
+                            &document_type_name,
+                            Some(owner_id),
+                            block_info,
+                            apply,
+                            Some(storage_flags).as_ref(),
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -835,7 +736,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -854,17 +755,7 @@ impl PlatformWrapper {
         let js_document_type_name = cx.argument::<JsString>(2)?;
         let js_block_info = cx.argument::<JsObject>(3)?;
         let js_apply = cx.argument::<JsBoolean>(4)?;
-        let js_transaction = cx.argument::<JsValue>(5)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(5)?;
         let js_callback = cx.argument::<JsFunction>(6)?.root(&mut cx);
 
         let drive = cx
@@ -876,30 +767,33 @@ impl PlatformWrapper {
         let document_type_name = js_document_type_name.value(&mut cx);
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
         let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.delete_document_for_contract_id(
-                        document_id,
-                        contract_id,
-                        &document_type_name,
-                        None,
-                        block_info,
-                        apply,
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .delete_document_for_contract_id(
+                            document_id,
+                            contract_id,
+                            &document_type_name,
+                            None,
+                            block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -916,7 +810,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -933,17 +827,7 @@ impl PlatformWrapper {
         let js_identity_cbor = cx.argument::<JsBuffer>(0)?;
         let js_block_info = cx.argument::<JsObject>(1)?;
         let js_apply = cx.argument::<JsBoolean>(2)?;
-        let js_transaction = cx.argument::<JsValue>(3)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
         let drive = cx
@@ -953,22 +837,22 @@ impl PlatformWrapper {
         let identity_cbor = converter::js_buffer_to_vec_u8(js_identity_cbor, &mut cx);
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
         let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         let identity =
             Identity::from_buffer(identity_cbor).or_else(|e| cx.throw_error(e.to_string()))?;
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let storage_flags = StorageFlags::new_single_epoch(
                     block_info.epoch.index,
@@ -976,13 +860,16 @@ impl PlatformWrapper {
                 );
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.insert_identity(
-                        identity,
-                        block_info,
-                        apply,
-                        Some(storage_flags).as_ref(),
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .insert_identity(
+                            identity,
+                            block_info,
+                            apply,
+                            Some(storage_flags).as_ref(),
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -999,7 +886,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -1018,17 +905,7 @@ impl PlatformWrapper {
         let js_document_type_name = cx.argument::<JsString>(2)?;
         let js_maybe_epoch_index = cx.argument::<JsValue>(3)?;
         // TODO We need dry run for validation
-        let js_transaction = cx.argument::<JsValue>(4)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
         let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
 
         let drive = cx
@@ -1052,27 +929,31 @@ impl PlatformWrapper {
             None
         };
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.query_documents(
-                        &query_cbor,
-                        contract_id,
-                        document_type_name.as_str(),
-                        maybe_epoch.as_ref(),
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .query_documents(
+                            &query_cbor,
+                            contract_id,
+                            document_type_name.as_str(),
+                            maybe_epoch.as_ref(),
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -1093,7 +974,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -1110,16 +991,7 @@ impl PlatformWrapper {
         let js_query_cbor = cx.argument::<JsBuffer>(0)?;
         let js_contract_id = cx.argument::<JsBuffer>(1)?;
         let js_document_type_name = cx.argument::<JsString>(2)?;
-        let js_transaction = cx.argument::<JsValue>(3)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
@@ -1130,29 +1002,32 @@ impl PlatformWrapper {
         let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-                let transaction_result: Result<Option<&Transaction>, Error> =
-                    match maybe_boxed_transaction_address {
-                        Some(address) => transactions
-                            .get(&address)
-                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "invalid transaction pointer address",
-                            )))
-                            .map(Some),
-                        None => Ok(None),
-                    };
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
-                    platform.drive.query_documents_as_grove_proof(
-                        &query_cbor,
-                        contract_id,
-                        document_type_name.as_str(),
-                        None,
-                        None,
-                        transaction_arg,
-                    )
+                    platform
+                        .drive
+                        .query_documents_as_grove_proof(
+                            &query_cbor,
+                            contract_id,
+                            document_type_name.as_str(),
+                            None,
+                            None,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
                 });
 
                 channel.send(move |mut task_context| {
@@ -1171,7 +1046,7 @@ impl PlatformWrapper {
                         }
 
                         // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
                     };
 
                     callback.call(&mut task_context, this, callback_arguments)?;
@@ -1191,19 +1066,17 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.start_transaction(|tx, transaction_raw_pointer_address, channel| {
-            let transaction_address = PlatformWrapperTransactionAddress {
-                address: transaction_raw_pointer_address,
-                tx,
-            };
-
+        db.start_transaction(|_, result, channel| {
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = vec![
-                    task_context.null().upcast(),
-                    task_context.boxed(transaction_address).upcast(),
-                ];
+
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(_) => {
+                        vec![task_context.null().upcast()]
+                    }
+                    Err(err) => vec![task_context.error(err)?.upcast()],
+                };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
 
@@ -1216,31 +1089,17 @@ impl PlatformWrapper {
     }
 
     fn js_grove_db_commit_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_transaction = cx.argument::<JsValue>(0)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
-        let transaction_address =
-            maybe_boxed_transaction_address.expect("transaction address should be available");
-
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
 
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.commit_transaction(transaction_address, |channel, maybe_error| {
+        db.commit_transaction(|channel, result| {
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match maybe_error {
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
                     Ok(_) => vec![task_context.null().upcast()],
                     Err(err) => vec![task_context.error(err)?.upcast()],
                 };
@@ -1256,31 +1115,17 @@ impl PlatformWrapper {
     }
 
     fn js_grove_db_rollback_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_transaction = cx.argument::<JsValue>(0)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
-        let transaction_address =
-            maybe_boxed_transaction_address.expect("transaction address should be available");
-
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
 
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.rollback_transaction(transaction_address, |channel, maybe_error| {
+        db.rollback_transaction(|channel, result| {
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match maybe_error {
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
                     Ok(_) => vec![task_context.null().upcast()],
                     Err(err) => vec![task_context.error(err)?.upcast()],
                 };
@@ -1296,31 +1141,17 @@ impl PlatformWrapper {
     }
 
     fn js_grove_db_abort_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_transaction = cx.argument::<JsValue>(0)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
-        let transaction_address =
-            maybe_boxed_transaction_address.expect("transaction address should be available");
-
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
 
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.abort_transaction(transaction_address, |channel, maybe_error| {
+        db.abort_transaction(|channel, result| {
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match maybe_error {
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
                     Ok(_) => vec![task_context.null().upcast()],
                     Err(err) => vec![task_context.error(err)?.upcast()],
                 };
@@ -1335,41 +1166,63 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
+    fn js_grove_db_is_transaction_started(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        db.send_to_drive_thread(move |_platform: &Platform, transaction, channel| {
+            let result = transaction.is_some();
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+
+                // First parameter of JS callbacks is error, which is null in this case
+                let callback_arguments: Vec<Handle<JsValue>> = vec![
+                    task_context.null().upcast(),
+                    task_context.boolean(result).upcast(),
+                ];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+        .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
     fn js_grove_db_get(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path = cx.argument::<JsArray>(0)?;
         let js_key = cx.argument::<JsBuffer>(1)?;
-        let js_transaction = cx.argument::<JsValue>(2)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
         let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
         let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         // Get the `this` value as a `JsBox<Database>`
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
             let path_slice = path.iter().map(|fragment| fragment.as_slice());
@@ -1378,6 +1231,7 @@ impl PlatformWrapper {
                     .get(path_slice, &key, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1393,7 +1247,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1411,16 +1265,7 @@ impl PlatformWrapper {
         let js_path = cx.argument::<JsArray>(0)?;
         let js_key = cx.argument::<JsBuffer>(1)?;
         let js_element = cx.argument::<JsObject>(2)?;
-        let js_transaction = cx.argument::<JsValue>(3)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
@@ -1428,22 +1273,23 @@ impl PlatformWrapper {
         let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
         let element = converter::js_object_to_element(&mut cx, js_element)?;
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         // Get the `this` value as a `JsBox<Database>`
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
             let path_slice = path.iter().map(|fragment| fragment.as_slice());
@@ -1452,6 +1298,7 @@ impl PlatformWrapper {
                     .insert(path_slice, &key, element, None, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1460,7 +1307,7 @@ impl PlatformWrapper {
 
                 let callback_arguments: Vec<Handle<JsValue>> = match result {
                     Ok(_) => vec![task_context.null().upcast()],
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1476,16 +1323,7 @@ impl PlatformWrapper {
         let js_path = cx.argument::<JsArray>(0)?;
         let js_key = cx.argument::<JsBuffer>(1)?;
         let js_element = cx.argument::<JsObject>(2)?;
-        let js_transaction = cx.argument::<JsValue>(3)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
@@ -1493,22 +1331,23 @@ impl PlatformWrapper {
         let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
         let element = converter::js_object_to_element(&mut cx, js_element)?;
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         // Get the `this` value as a `JsBox<Database>`
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -1518,6 +1357,7 @@ impl PlatformWrapper {
                     .insert_if_not_exists(path_slice, key.as_slice(), element, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1530,7 +1370,7 @@ impl PlatformWrapper {
                             .boolean(is_inserted)
                             .as_value(&mut task_context),
                     ],
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1546,37 +1386,29 @@ impl PlatformWrapper {
     fn js_grove_db_put_aux(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_key = cx.argument::<JsBuffer>(0)?;
         let js_value = cx.argument::<JsBuffer>(1)?;
-        let js_transaction = cx.argument::<JsValue>(2)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
         let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
         let value = converter::js_buffer_to_vec_u8(js_value, &mut cx);
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -1585,6 +1417,7 @@ impl PlatformWrapper {
                     .put_aux(&key, &value, None, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1596,7 +1429,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1612,36 +1445,28 @@ impl PlatformWrapper {
 
     fn js_grove_db_delete_aux(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_key = cx.argument::<JsBuffer>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
         let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -1650,6 +1475,7 @@ impl PlatformWrapper {
                     .delete_aux(&key, None, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1661,7 +1487,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1677,16 +1503,7 @@ impl PlatformWrapper {
 
     fn js_grove_db_get_aux(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_key = cx.argument::<JsBuffer>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
@@ -1696,17 +1513,18 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -1715,6 +1533,7 @@ impl PlatformWrapper {
                     .get_aux(&key, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1733,7 +1552,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1749,36 +1568,28 @@ impl PlatformWrapper {
 
     fn js_grove_db_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path_query = cx.argument::<JsObject>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
         let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -1787,6 +1598,7 @@ impl PlatformWrapper {
                     .query(&path_query, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1804,7 +1616,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1820,36 +1632,28 @@ impl PlatformWrapper {
 
     fn js_grove_db_prove_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path_query = cx.argument::<JsObject>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
         let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -1858,6 +1662,7 @@ impl PlatformWrapper {
                     .get_proved_path_query(&path_query, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -1872,7 +1677,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -1888,19 +1693,10 @@ impl PlatformWrapper {
 
     fn js_grove_db_prove_query_many(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path_queries = cx.argument::<JsArray>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
-
-        if maybe_boxed_transaction_address.is_none() {
-            cx.throw_type_error("transaction address is undefined")?;
+        if js_using_transaction.value(&mut cx) {
+            cx.throw_type_error("transaction is not supported")?;
         }
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
@@ -1981,34 +1777,26 @@ impl PlatformWrapper {
 
     /// Returns root hash or empty buffer
     fn js_grove_db_root_hash(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_transaction = cx.argument::<JsValue>(0)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
 
         let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -2017,6 +1805,7 @@ impl PlatformWrapper {
                     .root_hash(transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -2028,7 +1817,7 @@ impl PlatformWrapper {
                         task_context.null().upcast(),
                         JsBuffer::external(&mut task_context, hash).upcast(),
                     ],
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -2046,37 +1835,29 @@ impl PlatformWrapper {
         let js_path = cx.argument::<JsArray>(0)?;
         let js_key = cx.argument::<JsBuffer>(1)?;
 
-        let js_transaction = cx.argument::<JsValue>(2)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
         let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
         let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
 
+        let using_transaction = js_using_transaction.value(&mut cx);
+
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let grove_db = &platform.drive.grove;
 
@@ -2086,6 +1867,7 @@ impl PlatformWrapper {
                     .delete(path_slice, key.as_slice(), None, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -2097,7 +1879,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -2113,18 +1895,11 @@ impl PlatformWrapper {
 
     fn js_abci_init_chain(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_request = cx.argument::<JsBuffer>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
             .this()
@@ -2132,27 +1907,23 @@ impl PlatformWrapper {
 
         let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
-            let result =
-                transaction_result
+            let result = transaction_result.and_then(|transaction_arg| {
+                InitChainRequest::from_bytes(&request_bytes)
+                    .and_then(|request| platform.init_chain(request, transaction_arg))
+                    .and_then(|response| response.to_bytes())
                     .map_err(|e| e.to_string())
-                    .and_then(|transaction_arg| {
-                        InitChainRequest::from_bytes(&request_bytes)
-                            .and_then(|request| platform.init_chain(request, transaction_arg))
-                            .and_then(|response| response.to_bytes())
-                            .map_err(|e| e.to_string())
-                    });
+            });
 
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
@@ -2182,18 +1953,11 @@ impl PlatformWrapper {
 
     fn js_abci_block_begin(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_request = cx.argument::<JsBuffer>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
             .this()
@@ -2201,27 +1965,23 @@ impl PlatformWrapper {
 
         let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
-            let result =
-                transaction_result
+            let result = transaction_result.and_then(|transaction_arg| {
+                BlockBeginRequest::from_bytes(&request_bytes)
+                    .and_then(|request| platform.block_begin(request, transaction_arg))
+                    .and_then(|response| response.to_bytes())
                     .map_err(|e| e.to_string())
-                    .and_then(|transaction_arg| {
-                        BlockBeginRequest::from_bytes(&request_bytes)
-                            .and_then(|request| platform.block_begin(request, transaction_arg))
-                            .and_then(|response| response.to_bytes())
-                            .map_err(|e| e.to_string())
-                    });
+            });
 
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
@@ -2251,18 +2011,11 @@ impl PlatformWrapper {
 
     fn js_abci_block_end(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_request = cx.argument::<JsBuffer>(0)?;
-        let js_transaction = cx.argument::<JsValue>(1)?;
-
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
             .this()
@@ -2270,27 +2023,23 @@ impl PlatformWrapper {
 
         let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
-            let result =
-                transaction_result
+            let result = transaction_result.and_then(|transaction_arg| {
+                BlockEndRequest::from_bytes(&request_bytes)
+                    .and_then(|request| platform.block_end(request, transaction_arg))
+                    .and_then(|response| response.to_bytes())
                     .map_err(|e| e.to_string())
-                    .and_then(|transaction_arg| {
-                        BlockEndRequest::from_bytes(&request_bytes)
-                            .and_then(|request| platform.block_end(request, transaction_arg))
-                            .and_then(|response| response.to_bytes())
-                            .map_err(|e| e.to_string())
-                    });
+            });
 
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
@@ -2362,38 +2111,31 @@ impl PlatformWrapper {
     fn js_fetch_latest_withdrawal_transaction_index(
         mut cx: FunctionContext,
     ) -> JsResult<JsUndefined> {
-        let js_transaction = cx.argument::<JsValue>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
         let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
 
-        let maybe_boxed_transaction_address = if !js_transaction.is_a::<JsUndefined, _>(&mut cx) {
-            let handle = js_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
+        let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let result = transaction_result.and_then(|transaction_arg| {
                 platform
                     .drive
                     .fetch_latest_withdrawal_transaction_index(transaction_arg)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -2415,7 +2157,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -2432,18 +2174,8 @@ impl PlatformWrapper {
     fn js_enqueue_withdrawal_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_index = cx.argument::<JsNumber>(0)?;
         let js_core_transaction = cx.argument::<JsBuffer>(1)?;
-        let js_db_transaction = cx.argument::<JsValue>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
-
-        let maybe_boxed_transaction_address = if !js_db_transaction.is_a::<JsUndefined, _>(&mut cx)
-        {
-            let handle = js_db_transaction
-                .downcast_or_throw::<JsBox<PlatformWrapperTransactionAddress>, _>(&mut cx)?;
-
-            Some(***handle)
-        } else {
-            None
-        };
 
         let db = cx
             .this()
@@ -2451,18 +2183,18 @@ impl PlatformWrapper {
 
         let index = js_index.value(&mut cx);
         let transaction_bytes = converter::js_buffer_to_vec_u8(js_core_transaction, &mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
 
-        db.send_to_drive_thread(move |platform: &Platform, transactions, channel| {
-            let transaction_result: Result<Option<&Transaction>, Error> =
-                match maybe_boxed_transaction_address {
-                    Some(address) => transactions
-                        .get(&address)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "invalid transaction pointer address",
-                        )))
-                        .map(Some),
-                    None => Ok(None),
-                };
+        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            let transaction_result = if using_transaction {
+                if transaction.is_none() {
+                    Err("transaction is not started".to_string())
+                } else {
+                    Ok(transaction)
+                }
+            } else {
+                Ok(None)
+            };
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -2482,6 +2214,7 @@ impl PlatformWrapper {
                 platform
                     .drive
                     .grove_apply_batch(batch, false, transaction_arg)
+                    .map_err(|err| err.to_string())
             });
 
             channel.send(move |mut task_context| {
@@ -2494,7 +2227,7 @@ impl PlatformWrapper {
                     }
 
                     // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    Err(err) => vec![task_context.error(err)?.upcast()],
                 };
 
                 callback.call(&mut task_context, this, callback_arguments)?;
@@ -2554,6 +2287,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "groveDbStartTransaction",
         PlatformWrapper::js_grove_db_start_transaction,
+    )?;
+    cx.export_function(
+        "groveDbIsTransactionStarted",
+        PlatformWrapper::js_grove_db_is_transaction_started,
     )?;
     cx.export_function(
         "groveDbCommitTransaction",

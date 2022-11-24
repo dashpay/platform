@@ -16,7 +16,7 @@ describe('GroveDBStore', () => {
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -65,7 +65,7 @@ describe('GroveDBStore', () => {
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
 
       // check we can't fetch data without transaction
@@ -242,7 +242,7 @@ describe('GroveDBStore', () => {
 
         expect.fail('should throw no value found for key error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
     });
 
@@ -382,7 +382,7 @@ describe('GroveDBStore', () => {
 
       rsDrive = new Drive('./db/grovedb_test', {
         dataContractsGlobalCacheSize: 500,
-        dataContractsTransactionalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
       });
 
       store = new GroveDBStore(rsDrive, logger);
