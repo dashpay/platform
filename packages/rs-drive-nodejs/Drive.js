@@ -65,7 +65,7 @@ class Drive {
    * @param {string} dbPath
    * @param {Object} config
    * @param {number} config.dataContractsGlobalCacheSize
-   * @param {number} config.dataContractsTransactionalCacheSize
+   * @param {number} config.dataContractsBlockCacheSize
    */
   constructor(dbPath, config) {
     this.drive = driveOpen(dbPath, config);
@@ -87,75 +87,75 @@ class Drive {
   }
 
   /**
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<[number, number]>}
    */
-  async createInitialStateStructure(transaction = undefined) {
-    return driveCreateInitialStateStructureAsync.call(this.drive, transaction);
+  async createInitialStateStructure(useTransaction = false) {
+    return driveCreateInitialStateStructureAsync.call(this.drive, useTransaction);
   }
 
   /**
    * @param {Buffer|Identifier} id
    * @param {number} epochIndex
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<[DataContract, FeeResult]>}
    */
-  async fetchContract(id, epochIndex = undefined, transaction = undefined) {
+  async fetchContract(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchContractAsync.call(
       this.drive,
       Buffer.from(id),
       epochIndex,
-      transaction,
+      useTransaction,
     );
   }
 
   /**
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<FeeResult>}
    */
-  async createContract(dataContract, blockInfo, transaction = undefined, dryRun = false) {
+  async createContract(dataContract, blockInfo, useTransaction = false, dryRun = false) {
     return driveCreateContractAsync.call(
       this.drive,
       dataContract.toBuffer(),
       blockInfo,
       !dryRun,
-      transaction,
+      useTransaction,
     );
   }
 
   /**
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<FeeResult>}
    */
-  async updateContract(dataContract, blockInfo, transaction = undefined, dryRun = false) {
+  async updateContract(dataContract, blockInfo, useTransaction = false, dryRun = false) {
     return driveUpdateContractAsync.call(
       this.drive,
       dataContract.toBuffer(),
       blockInfo,
       !dryRun,
-      transaction,
+      useTransaction,
     );
   }
 
   /**
    * @param {Document} document
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<FeeResult>}
    */
-  async createDocument(document, blockInfo, transaction = undefined, dryRun = false) {
+  async createDocument(document, blockInfo, useTransaction = false, dryRun = false) {
     return driveCreateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
@@ -165,19 +165,19 @@ class Drive {
       true,
       blockInfo,
       !dryRun,
-      transaction,
+      useTransaction,
     );
   }
 
   /**
    * @param {Document} document
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<FeeResult>}
    */
-  async updateDocument(document, blockInfo, transaction = undefined, dryRun = false) {
+  async updateDocument(document, blockInfo, useTransaction = false, dryRun = false) {
     return driveUpdateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
@@ -186,7 +186,7 @@ class Drive {
       document.getOwnerId().toBuffer(),
       blockInfo,
       !dryRun,
-      transaction,
+      useTransaction,
     );
   }
 
@@ -195,7 +195,7 @@ class Drive {
    * @param {string} documentType
    * @param {Identifier} documentId
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<FeeResult>}
@@ -205,7 +205,7 @@ class Drive {
     documentType,
     documentId,
     blockInfo,
-    transaction = undefined,
+    useTransaction = false,
     dryRun = false,
   ) {
     return driveDeleteDocumentAsync.call(
@@ -215,7 +215,7 @@ class Drive {
       documentType,
       blockInfo,
       !dryRun,
-      transaction,
+      useTransaction,
     );
   }
 
@@ -230,7 +230,7 @@ class Drive {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<[Document[], number]>}
    */
@@ -239,7 +239,7 @@ class Drive {
     documentType,
     epochIndex = undefined,
     query = {},
-    transaction = undefined,
+    useTransaction = false,
   ) {
     const encodedQuery = await cbor.encodeAsync(query);
 
@@ -249,7 +249,7 @@ class Drive {
       dataContract.getId().toBuffer(),
       documentType,
       epochIndex,
-      transaction,
+      useTransaction,
     );
 
     const documents = encodedDocuments.map((encodedDocument) => {
@@ -276,11 +276,11 @@ class Drive {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<[Document[], number]>}
    */
-  async proveDocumentsQuery(dataContract, documentType, query = {}, transaction = undefined) {
+  async proveDocumentsQuery(dataContract, documentType, query = {}, useTransaction = false) {
     const encodedQuery = await cbor.encodeAsync(query);
 
     // eslint-disable-next-line no-return-await
@@ -289,39 +289,39 @@ class Drive {
       encodedQuery,
       dataContract.getId().toBuffer(),
       documentType,
-      transaction,
+      useTransaction,
     );
   }
 
   /**
    * @param {Identity} identity
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<FeeResult>}
    */
-  async insertIdentity(identity, blockInfo, transaction = undefined, dryRun = false) {
+  async insertIdentity(identity, blockInfo, useTransaction = false, dryRun = false) {
     return driveInsertIdentityAsync.call(
       this.drive,
       identity.toBuffer(),
       blockInfo,
       !dryRun,
-      transaction,
+      useTransaction,
     );
   }
 
   /**
    * Fetch the latest index of the withdrawal transaction in a queue
    *
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<number>}
    */
-  async fetchLatestWithdrawalTransactionIndex(transaction = undefined) {
+  async fetchLatestWithdrawalTransactionIndex(useTransaction = false) {
     return driveFetchLatestWithdrawalTransactionIndexAsync.call(
       this.drive,
-      transaction,
+      useTransaction,
     );
   }
 
@@ -330,16 +330,16 @@ class Drive {
    *
    * @param {number} index
    * @param {Buffer} transactionBytes
-   * @param {GroveDBTransaction} [transaction=undefined]
+   * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<void>}
    */
-  async enqueueWithdrawalTransaction(index, transactionBytes, transaction = undefined) {
+  async enqueueWithdrawalTransaction(index, transactionBytes, useTransaction = false) {
     return driveEnqueueWithdrawalTransactionAsync.call(
       this.drive,
       index,
       transactionBytes,
-      transaction,
+      useTransaction,
     );
   }
 
@@ -358,17 +358,17 @@ class Drive {
        * ABCI init chain
        *
        * @param {InitChainRequest} request
-       * @param {GroveDBTransaction} [transaction=undefined]
+       * @param {boolean} [useTransaction=false]
        *
        * @returns {Promise<InitChainResponse>}
        */
-      async initChain(request, transaction = undefined) {
+      async initChain(request, useTransaction = false) {
         const requestBytes = cbor.encode(request);
 
         const responseBytes = await abciInitChainAsync.call(
           drive,
           requestBytes,
-          transaction,
+          useTransaction,
         );
 
         return cbor.decode(responseBytes);
@@ -378,11 +378,11 @@ class Drive {
        * ABCI block begin
        *
        * @param {BlockBeginRequest} request
-       * @param {GroveDBTransaction} [transaction=undefined]
+       * @param {boolean} [useTransaction=false]
        *
        * @returns {Promise<BlockBeginResponse>}
        */
-      async blockBegin(request, transaction = undefined) {
+      async blockBegin(request, useTransaction = false) {
         const requestBytes = cbor.encode({
           ...request,
           // cborium doesn't eat Buffers
@@ -393,7 +393,7 @@ class Drive {
         const responseBytes = await abciBlockBeginAsync.call(
           drive,
           requestBytes,
-          transaction,
+          useTransaction,
         );
 
         return cbor.decode(responseBytes);
@@ -403,17 +403,17 @@ class Drive {
        * ABCI block end
        *
        * @param {BlockEndRequest} request
-       * @param {GroveDBTransaction} [transaction=undefined]
+       * @param {boolean} [useTransaction=false]
        *
        * @returns {Promise<BlockEndResponse>}
        */
-      async blockEnd(request, transaction = undefined) {
+      async blockEnd(request, useTransaction = false) {
         const requestBytes = cbor.encode(request);
 
         const responseBytes = await abciBlockEndAsync.call(
           drive,
           requestBytes,
-          transaction,
+          useTransaction,
         );
 
         return cbor.decode(responseBytes);

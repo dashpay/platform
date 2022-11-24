@@ -28,7 +28,7 @@ describe('Drive', () => {
   beforeEach(async () => {
     drive = new Drive(TEST_DATA_PATH, {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     dataContract = getDataContractFixture();

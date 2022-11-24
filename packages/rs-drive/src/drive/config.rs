@@ -70,7 +70,7 @@ pub struct DriveConfig {
     pub data_contracts_global_cache_size: u64,
 
     /// Maximum number of contracts in block candidate cache
-    pub data_contracts_transactional_cache_size: u64,
+    pub data_contracts_block_cache_size: u64,
 }
 
 impl Default for DriveConfig {
@@ -83,7 +83,7 @@ impl Default for DriveConfig {
             default_genesis_time: None,
             encoding: DriveCbor,
             data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
-            data_contracts_transactional_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
+            data_contracts_block_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
         }
     }
 }
