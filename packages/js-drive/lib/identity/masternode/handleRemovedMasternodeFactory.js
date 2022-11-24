@@ -12,8 +12,9 @@ function handleRemovedMasternodeFactory(
    * @param {Identifier} masternodeIdentifier
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
+   * @param {GroveDBTransaction} transaction
    */
-  async function handleRemovedMasternode(masternodeIdentifier, dataContract, blockInfo) {
+  async function handleRemovedMasternode(masternodeIdentifier, dataContract, blockInfo, transaction) {
     //  Delete documents belongs to masternode identity (ownerId) from rewards contract
     // since max amount is 16, we can fetch all of them in one request
     const result = [];
@@ -25,7 +26,7 @@ function handleRemovedMasternodeFactory(
         where: [
           ['$ownerId', '==', masternodeIdentifier],
         ],
-        useTransaction: true,
+        transaction,
       },
     );
 
@@ -37,7 +38,7 @@ function handleRemovedMasternodeFactory(
         'rewardShare',
         document.getId(),
         blockInfo,
-        { useTransaction: true },
+        { transaction },
       );
 
       result.push(

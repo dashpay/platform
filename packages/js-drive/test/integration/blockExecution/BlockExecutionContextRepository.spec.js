@@ -58,6 +58,7 @@ describe('BlockExecutionContextRepository', () => {
 
     expect(rawBlockExecutionContext).to.deep.equal(blockExecutionContext.toObject({
       skipConsensusLogger: true,
+      skipTransaction: true,
     }));
   });
 

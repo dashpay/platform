@@ -220,6 +220,22 @@ class BlockExecutionContext {
   }
 
   /**
+   *
+   * @param {GroveDBTransaction} transaction
+   */
+  setTransaction(transaction) {
+    this.transaction = transaction;
+  }
+
+  /**
+   *
+   * @return {null|GroveDBTransaction}
+   */
+  getTransaction() {
+    return this.transaction;
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -234,6 +250,7 @@ class BlockExecutionContext {
     this.round = null;
     this.epochInfo = null;
     this.timeMs = null;
+    this.transaction = null;
   }
 
   /**
@@ -262,6 +279,7 @@ class BlockExecutionContext {
     this.round = blockExecutionContext.round;
     this.epochInfo = blockExecutionContext.epochInfo;
     this.timeMs = blockExecutionContext.timeMs;
+    this.transaction = blockExecutionContext.transaction;
   }
 
   /**
@@ -281,11 +299,13 @@ class BlockExecutionContext {
     this.version = Consensus.fromObject(object.version);
     this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
     this.round = object.round;
+    this.transaction = object.transaction;
   }
 
   /**
    * @param {Object} options
    * @param {boolean} [options.skipConsensusLogger=false]
+   * @param {boolean} [options.skipTransaction=false]
    * @return {{
    *  dataContracts: Object[],
    *  height: number,
@@ -320,6 +340,10 @@ class BlockExecutionContext {
 
     if (!options.skipConsensusLogger) {
       object.consensusLogger = this.consensusLogger;
+    }
+
+    if (!options.skipTransaction) {
+      object.transaction = this.transaction;
     }
 
     return object;

@@ -18,7 +18,7 @@ class IdentityStoreRepository {
    *
    * @param {Identity} identity
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -54,7 +54,7 @@ class IdentityStoreRepository {
    *
    * @param {Identity} identity
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -83,7 +83,7 @@ class IdentityStoreRepository {
    *
    * @param {Identifier} id
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<null|Identity>>}
    */
@@ -131,7 +131,7 @@ class IdentityStoreRepository {
    *
    * @param {Identifier} id
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    *
    * @return {Promise<StorageResult<Buffer|null>>}
    * */
@@ -144,7 +144,7 @@ class IdentityStoreRepository {
    *
    * @param {Identifier[]} ids
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    *
    * @return {Promise<StorageResult<Buffer>>}
    * */

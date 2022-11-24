@@ -64,7 +64,6 @@ const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const proveDocumentsFactory = require('./document/proveDocumentsFactory');
 const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const ProposalBlockExecutionContextCollection = require('./blockExecution/ProposalBlockExecutionContextCollection');
 
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
@@ -536,10 +535,8 @@ function createDIContainer(options) {
    */
   container.register({
     latestBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
+    proposalBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
     blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
-    proposalBlockExecutionContextCollection: asClass(
-      ProposalBlockExecutionContextCollection,
-    ).singleton(),
   });
 
   /**
@@ -559,6 +556,7 @@ function createDIContainer(options) {
       latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
+      proposalBlockExecutionContext,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -571,6 +569,7 @@ function createDIContainer(options) {
         latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
+        proposalBlockExecutionContext,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -590,6 +589,7 @@ function createDIContainer(options) {
       simplifiedMasternodeList,
       logStateRepository,
       rsDrive,
+      proposalBlockExecutionContext,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -602,6 +602,7 @@ function createDIContainer(options) {
         latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
+        proposalBlockExecutionContext,
         {
           useTransaction: true,
         },

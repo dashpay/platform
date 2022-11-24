@@ -22,6 +22,7 @@ function createMasternodeIdentityFactory(
    * @param {Identifier} identifier
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
+   * @param {GroveDBTransaction} transaction
    * @param {Script} [payoutScript]
    * @return {Promise<Identity>}
    */
@@ -29,6 +30,7 @@ function createMasternodeIdentityFactory(
     identifier,
     pubKeyData,
     pubKeyType,
+    transaction,
     payoutScript,
   ) {
     const publicKeys = [{
@@ -70,7 +72,7 @@ function createMasternodeIdentityFactory(
     }
 
     await identityRepository.create(identity, {
-      useTransaction: true,
+      transaction,
     });
 
     const publicKeyHashes = identity
@@ -81,7 +83,7 @@ function createMasternodeIdentityFactory(
       await publicKeyToIdentitiesRepository.store(
         hash,
         identity.getId(),
-        { useTransaction: true },
+        { transaction },
       );
     }
 

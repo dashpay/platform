@@ -19,7 +19,7 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Buffer} value
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.skipIfExists=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -35,7 +35,7 @@ class GroveDBStore {
           type: 'item',
           value,
         },
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } finally {
       if (this.logger) {
@@ -50,7 +50,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(value)
             .digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction ? 'yes' : 'no',
           type: 'item',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -71,7 +71,7 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Buffer[]} referencePath
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.skipIfExists=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -89,7 +89,7 @@ class GroveDBStore {
             path: referencePath,
           },
         },
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } finally {
       if (this.logger) {
@@ -109,7 +109,7 @@ class GroveDBStore {
               ), Buffer.alloc(0)),
             )
             .digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           type: 'reference',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -129,7 +129,7 @@ class GroveDBStore {
    * @param {Buffer[]} path
    * @param {Buffer} key
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.skipIfExists=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -143,7 +143,7 @@ class GroveDBStore {
         {
           type: 'tree',
         },
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } finally {
       if (this.logger) {
@@ -158,7 +158,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(Buffer.alloc(32))
             .digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction ? 'yes' : 'no',
           type: 'tree',
           method,
           appHash: (await this.getRootHash(options)).toString('hex'),
@@ -178,7 +178,7 @@ class GroveDBStore {
    * @param {Buffer[]} path
    * @param {Buffer} key
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {number} [options.predictedValueSize]
    * @return {Promise<StorageResult<Buffer|null>>}
    */
@@ -193,12 +193,12 @@ class GroveDBStore {
       } = await this.db.get(
         path,
         key,
-        options.useTransaction || false,
+        options.transaction || undefined,
       ));
     } catch (e) {
       if (
-        e.message.startsWith('path key not found')
-        || e.message.startsWith('path not found')
+        e.message.startsWith('grovedb: path key not found')
+        || e.message.startsWith('grovedb: path not found')
       ) {
         return new StorageResult(
           null,
@@ -231,7 +231,7 @@ class GroveDBStore {
    *
    * @param {PathQuery} query
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Promise<StorageResult<Buffer|null>>}
    */
   async query(query, options = { }) {
@@ -240,12 +240,12 @@ class GroveDBStore {
     try {
       [items] = await this.db.query(
         query,
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } catch (e) {
       if (
-        e.message.startsWith('path key not found')
-        || e.message.startsWith('path not found')
+        e.message.startsWith('grovedb: path key not found')
+        || e.message.startsWith('grovedb: path not found')
       ) {
         return new StorageResult(
           null,
@@ -267,13 +267,13 @@ class GroveDBStore {
    *
    * @param {PathQuery} query
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Promise<StorageResult<Buffer>>}
    * */
   async proveQuery(query, options = {}) {
     const proof = await this.db.proveQuery(
       query,
-      options.useTransaction || false,
+      options.transaction || undefined,
     );
 
     return new StorageResult(
@@ -287,13 +287,13 @@ class GroveDBStore {
    *
    * @param {PathQuery[]} queries
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Promise<StorageResult<Buffer>>}
    * */
   async proveQueryMany(queries, options = {}) {
     const proof = await this.db.proveQueryMany(
       queries,
-      options.useTransaction || false,
+      options.transaction || undefined,
     );
 
     return new StorageResult(
@@ -308,7 +308,7 @@ class GroveDBStore {
    * @param {Buffer[]} path
    * @param {Buffer} key
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Promise<StorageResult<void>>}
    */
   async delete(path, key, options = {}) {
@@ -316,7 +316,7 @@ class GroveDBStore {
       await this.db.delete(
         path,
         key,
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } finally {
       if (this.logger) {
@@ -327,7 +327,7 @@ class GroveDBStore {
               path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
             ).digest('hex'),
           key: key.toString('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           method: 'delete',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'delete');
@@ -345,7 +345,7 @@ class GroveDBStore {
    *
    * @param {Buffer} key
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.predictedValueSize]
    * @return {Promise<StorageResult<Buffer|null>>}
    */
@@ -355,10 +355,10 @@ class GroveDBStore {
     try {
       result = await this.db.getAux(
         key,
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } catch (e) {
-      if (e.message.startsWith('path key not found')) {
+      if (e.message.startsWith('grovedb: path key not found')) {
         return new StorageResult(
           null,
           [],
@@ -380,7 +380,7 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Buffer} value
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -389,7 +389,7 @@ class GroveDBStore {
       await this.db.putAux(
         key,
         value,
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } finally {
       if (this.logger) {
@@ -399,7 +399,7 @@ class GroveDBStore {
           valueHash: createHash('sha256')
             .update(value)
             .digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           method: 'putAux',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'putAux');
@@ -417,7 +417,7 @@ class GroveDBStore {
    *
    * @param {Buffer} key
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -425,13 +425,13 @@ class GroveDBStore {
     try {
       await this.db.deleteAux(
         key,
-        options.useTransaction || false,
+        options.transaction || undefined,
       );
     } finally {
       if (this.logger) {
         this.logger.info({
           key: key.toString('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           method: 'deleteAux',
           appHash: (await this.getRootHash(options)).toString('hex'),
         }, 'deleteAux');
@@ -448,48 +448,44 @@ class GroveDBStore {
    * Get tree root hash
    *
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Buffer}
    */
   async getRootHash(options = {}) {
-    return this.db.getRootHash(options.useTransaction || false);
+    return this.db.getRootHash(options.transaction || undefined);
   }
 
   /**
-   * @return {Promise<void>}
+   * @return {Promise<GroveDBTransaction>}
    */
   async startTransaction() {
     return this.db.startTransaction();
   }
 
   /**
-   * @return {Promise<void>}
-   */
-  async isTransactionStarted() {
-    return this.db.isTransactionStarted();
-  }
-
-  /**
    * Rollback transaction to this initial state when it was created
    *
+   * @param {GroveDBTransaction} transaction
    * @returns {Promise<void>}
    */
-  async rollbackTransaction() {
-    return this.db.rollbackTransaction();
+  async rollbackTransaction(transaction) {
+    return this.db.rollbackTransaction(transaction);
   }
 
   /**
+   * @param {GroveDBTransaction} transaction
    * @return {Promise<void>}
    */
-  async commitTransaction() {
-    return this.db.commitTransaction();
+  async commitTransaction(transaction) {
+    return this.db.commitTransaction(transaction);
   }
 
   /**
+   * @param {GroveDBTransaction} transaction
    * @return {Promise<void>}
    */
-  async abortTransaction() {
-    return this.db.abortTransaction();
+  async abortTransaction(transaction) {
+    return this.db.abortTransaction(transaction);
   }
 
   /**

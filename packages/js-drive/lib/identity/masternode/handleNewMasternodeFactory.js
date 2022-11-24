@@ -24,9 +24,10 @@ function handleNewMasternodeFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
+   * @param {GroveDBTransaction} transaction
    * @return Promise<Array<Identity|Document>>
    */
-  async function handleNewMasternode(masternodeEntry, dataContract, blockInfo) {
+  async function handleNewMasternode(masternodeEntry, dataContract, blockInfo, transaction) {
     const result = [];
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
@@ -52,6 +53,7 @@ function handleNewMasternodeFactory(
         masternodeIdentifier,
         ownerPublicKeyHash,
         IdentityPublicKey.TYPES.ECDSA_HASH160,
+        transaction,
         payoutScript,
       ),
     );
@@ -74,6 +76,7 @@ function handleNewMasternodeFactory(
           operatorIdentifier,
           operatorPubKey,
           IdentityPublicKey.TYPES.BLS12_381,
+          transaction,
           operatorPayoutScript,
         ),
       );
@@ -85,6 +88,7 @@ function handleNewMasternodeFactory(
         operatorIdentifier,
         proRegTxPayload.operatorReward,
         blockInfo,
+        transaction,
       );
 
       if (rewardShareDocument) {
@@ -104,6 +108,7 @@ function handleNewMasternodeFactory(
           votingIdentifier,
           votingPubKeyHash,
           IdentityPublicKey.TYPES.ECDSA_HASH160,
+          transaction,
         ),
       );
     }

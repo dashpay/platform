@@ -10,11 +10,11 @@ const {
 } = require('@dashevo/abci/types');
 
 /**
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  *
  * @return {extendVoteHandler}
  */
-function extendVoteHandlerFactory(proposalBlockExecutionContextCollection) {
+function extendVoteHandlerFactory(proposalBlockExecutionContext) {
   /**
    * @typedef extendVoteHandler
    * @param {Object} request
@@ -22,7 +22,6 @@ function extendVoteHandlerFactory(proposalBlockExecutionContextCollection) {
    * @return {Promise<abci.ResponseExtendVote>}
    */
   async function extendVoteHandler({ round }) {
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
 

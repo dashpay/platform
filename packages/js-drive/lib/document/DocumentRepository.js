@@ -27,7 +27,7 @@ class DocumentRepository {
    * @param {Document} document
    * @param {BlockInfo} blockInfo
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -41,7 +41,7 @@ class DocumentRepository {
         .createDocument(
           document,
           blockInfo,
-          Boolean(options.useTransaction),
+          options.transaction,
           Boolean(options.dryRun),
         ));
     } finally {
@@ -52,7 +52,7 @@ class DocumentRepository {
             .update(
               document.toBuffer(),
             ).digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           dryRun: Boolean(options.dryRun),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'createDocument');
@@ -73,7 +73,7 @@ class DocumentRepository {
    * @param {Document} document
    * @param {BlockInfo} blockInfo
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -87,7 +87,7 @@ class DocumentRepository {
         .updateDocument(
           document,
           blockInfo,
-          Boolean(options.useTransaction),
+          options.transaction,
           Boolean(options.dryRun),
         ));
     } finally {
@@ -98,7 +98,7 @@ class DocumentRepository {
             .update(
               document.toBuffer(),
             ).digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           dryRun: Boolean(options.dryRun),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'updateDocument');
@@ -124,7 +124,7 @@ class DocumentRepository {
    * @param {Buffer} [options.startAt]
    * @param {Buffer} [options.startAfter]
    * @param {Array} [options.orderBy]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @param {BlockInfo} [options.blockInfo]
    *
@@ -133,12 +133,13 @@ class DocumentRepository {
    * @returns {Promise<StorageResult<Document[]>>}
    */
   async find(dataContract, documentType, options = {}) {
+    const { transaction } = options;
+    // eslint-disable-next-line no-param-reassign
+    delete options.transaction;
+
     const query = lodashCloneDeep(options);
-    let useTransaction = false;
 
     if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
-      ({ useTransaction } = query);
-      delete query.useTransaction;
       delete query.dryRun;
       delete query.blockInfo;
 
@@ -165,7 +166,7 @@ class DocumentRepository {
           documentType,
           epochIndex,
           query,
-          useTransaction,
+          transaction,
         );
 
       return new StorageResult(
@@ -197,7 +198,7 @@ class DocumentRepository {
    * @param {Identifier} id
    * @param {BlockInfo} blockInfo
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -209,7 +210,7 @@ class DocumentRepository {
           documentType,
           id,
           blockInfo,
-          Boolean(options.useTransaction),
+          options.transaction,
           Boolean(options.dryRun),
         );
 
@@ -225,7 +226,7 @@ class DocumentRepository {
           dataContractId: dataContract.getId().toString(),
           documentType,
           id: id.toString(),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'deleteDocument');
       }
@@ -236,16 +237,16 @@ class DocumentRepository {
    * @param {DataContract} dataContract
    * @param {string} documentType
    * @param {Object} options
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Promise<StorageResult>}
    */
   async prove(dataContract, documentType, options = {}) {
+    const { transaction } = options;
+    // eslint-disable-next-line no-param-reassign
+    delete options.transaction;
     const query = lodashCloneDeep(options);
-    let useTransaction = false;
 
     if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
-      ({ useTransaction } = query);
-      delete query.useTransaction;
       delete query.dryRun;
 
       // Remove undefined options before we pass them to RS Drive
@@ -264,7 +265,7 @@ class DocumentRepository {
           dataContract,
           documentType,
           query,
-          useTransaction,
+          transaction,
         );
 
       return new StorageResult(

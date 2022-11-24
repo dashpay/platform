@@ -23,7 +23,7 @@ class DataContractStoreRepository {
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -33,7 +33,7 @@ class DataContractStoreRepository {
       const { storageFee, processingFee } = await this.storage.getDrive().createContract(
         dataContract,
         blockInfo,
-        Boolean(options.useTransaction),
+        options.transaction,
         Boolean(options.dryRun), // TODO rs-drive doesn't support this
       );
 
@@ -54,7 +54,7 @@ class DataContractStoreRepository {
             .update(
               dataContract.toBuffer(),
             ).digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'createContract');
       }
@@ -67,7 +67,7 @@ class DataContractStoreRepository {
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -77,7 +77,7 @@ class DataContractStoreRepository {
       const { storageFee, processingFee } = await this.storage.getDrive().updateContract(
         dataContract,
         blockInfo,
-        Boolean(options.useTransaction),
+        options.transaction,
         Boolean(options.dryRun), // TODO rs-drive doesn't support this
       );
 
@@ -98,7 +98,7 @@ class DataContractStoreRepository {
             .update(
               dataContract.toBuffer(),
             ).digest('hex'),
-          useTransaction: Boolean(options.useTransaction),
+          transaction: options.transaction,
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'updateContract');
       }
@@ -110,7 +110,7 @@ class DataContractStoreRepository {
    *
    * @param {Identifier} id
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    * @param {BlockInfo} [options.blockInfo]
    *
@@ -127,7 +127,7 @@ class DataContractStoreRepository {
     const result = await this.storage.getDrive().fetchContract(
       id,
       options && options.blockInfo ? options.blockInfo.epoch : undefined,
-      Boolean(options.useTransaction),
+      options.transaction,
     );
 
     if (result.length === 0) {
@@ -161,7 +161,7 @@ class DataContractStoreRepository {
  *
  * @param {Identifier} id
  * @param {Object} [options]
- * @param {boolean} [options.useTransaction=false]
+ * @param {GroveDBTransaction} [options.transaction]
  * @return {Promise<StorageResult<Buffer|null>>}
  * */
   async prove(id, options) {
@@ -173,7 +173,7 @@ class DataContractStoreRepository {
  *
  * @param {Identifier[]} ids
  * @param {Object} [options]
- * @param {boolean} [options.useTransaction=false]
+ * @param {GroveDBTransaction} [options.transaction]
  * @return {Promise<StorageResult<Buffer|null>>}
  * */
   async proveMany(ids, options) {

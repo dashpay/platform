@@ -13,11 +13,11 @@ function getFeatureFlagForHeightFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
-   * @param {boolean} [useTransaction=false]
+   * @param {GroveDBTransaction} transaction
    *
    * @return {Promise<Document|null>}
    */
-  async function getFeatureFlagForHeight(flagType, blockHeight, useTransaction = false) {
+  async function getFeatureFlagForHeight(flagType, blockHeight, transaction = undefined) {
     if (!featureFlagsContractId) {
       return null;
     }
@@ -33,7 +33,7 @@ function getFeatureFlagForHeightFactory(
       flagType,
       {
         ...query,
-        useTransaction,
+        transaction,
       },
     );
 

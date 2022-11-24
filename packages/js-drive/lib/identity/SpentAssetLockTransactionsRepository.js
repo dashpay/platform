@@ -13,7 +13,7 @@ class SpentAssetLockTransactionsRepository {
    *
    * @param {Buffer} outPointBuffer
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -43,7 +43,7 @@ class SpentAssetLockTransactionsRepository {
    *
    * @param {Buffer} outPointBuffer
    * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<null|Buffer>>}

@@ -37,6 +37,7 @@ function synchronizeMasternodeIdentitiesFactory(
    * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
    * @param {BlockInfo} blockInfo
+   * @param {GroveDBTransaction} transaction
    * @return {Promise<{
    *  created: Array<Identity|Document>,
    *  updated: Array<Identity|Document>,
@@ -45,11 +46,11 @@ function synchronizeMasternodeIdentitiesFactory(
    *  toHeight: number,
    * }>}
    */
-  async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
+  async function synchronizeMasternodeIdentities(coreHeight, blockInfo, transaction) {
     // TODO: We should either pass block info and transaction or just use state repository (?)
     if (!lastSyncedCoreHeight) {
       const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
-        useTransaction: true,
+        transaction,
       });
 
       lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
@@ -68,7 +69,7 @@ function synchronizeMasternodeIdentitiesFactory(
     const dataContractResult = await dataContractRepository.fetch(
       masternodeRewardSharesContractId,
       {
-        useTransaction: true,
+        transaction,
       },
     );
 
@@ -109,6 +110,7 @@ function synchronizeMasternodeIdentitiesFactory(
               previousMnEntry,
               dataContract,
               blockInfo,
+              transaction,
             ),
           );
         }
@@ -122,6 +124,7 @@ function synchronizeMasternodeIdentitiesFactory(
           updatedEntities = updatedEntities.concat(
             await handleUpdatedVotingAddress(
               mnEntry,
+              transaction,
             ),
           );
         }
@@ -142,6 +145,7 @@ function synchronizeMasternodeIdentitiesFactory(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
               blockInfo,
+              transaction,
               previousPayoutScript,
             );
           }
@@ -167,6 +171,7 @@ function synchronizeMasternodeIdentitiesFactory(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
               blockInfo,
+              transaction,
               previousOperatorPayoutScript,
             );
           }
@@ -179,7 +184,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     for (const newMasternodeEntry of newMasternodes) {
       createdEntities = createdEntities.concat(
-        await handleNewMasternode(newMasternodeEntry, dataContract, blockInfo),
+        await handleNewMasternode(newMasternodeEntry, dataContract, blockInfo, transaction),
       );
     }
 
@@ -203,6 +208,7 @@ function synchronizeMasternodeIdentitiesFactory(
           masternodeIdentifier,
           dataContract,
           blockInfo,
+          transaction,
         ),
       );
     }
@@ -212,7 +218,7 @@ function synchronizeMasternodeIdentitiesFactory(
     lastSyncedCoreHeight = coreHeight;
 
     await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight, {
-      useTransaction: true,
+      transaction,
     });
 
     return {

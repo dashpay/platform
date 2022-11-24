@@ -11,21 +11,23 @@ const {
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {processProposalHandler} processProposalHandler
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
+  processProposalHandler,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -48,19 +50,35 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-    proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
+    if (proposalBlockExecutionContext.getHeight() !== height || proposalBlockExecutionContext.getRound() !== round) {
+      consensusLogger.warn('Height or round in execution context do not equal request values.');
 
+      // await processProposalHandler({
+      //   height,
+      //   txs,
+      //   coreChainLockedHeight,
+      //   version,
+      //   proposedLastCommit: commitInfo,
+      //   time,
+      //   proposerProTxHash,
+      //   coreChainLockUpdate,
+      //   round,
+      // });
+    }
+
+    proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
+    const transaction = proposalBlockExecutionContext.getTransaction();
+    console.log('transac = ', transaction);
     // Store block execution context
     await blockExecutionContextRepository.store(
       proposalBlockExecutionContext,
       {
-        useTransaction: true,
+        transaction,
       },
     );
 
     // Commit the current block db transactions
-    await groveDBStore.commitTransaction();
+    await groveDBStore.commitTransaction(transaction);
 
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
 
@@ -88,7 +106,7 @@ function finalizeBlockHandlerFactory(
       }
     }
 
-    proposalBlockExecutionContextCollection.clear();
+    proposalBlockExecutionContext.reset();
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 

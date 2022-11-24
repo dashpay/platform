@@ -30,6 +30,7 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
+   * @param {GroveDBTransaction} transaction
    * @return Promise<Array<Identity|Document>>
    */
   async function handleUpdatedPubKeyOperator(
@@ -37,6 +38,7 @@ function handleUpdatedPubKeyOperatorFactory(
     previousMasternodeEntry,
     dataContract,
     blockInfo,
+    transaction,
   ) {
     const result = [];
 
@@ -54,7 +56,7 @@ function handleUpdatedPubKeyOperatorFactory(
 
     const operatorIdentityResult = await identityRepository.fetch(
       operatorIdentifier,
-      { useTransaction: true },
+      { transaction },
     );
 
     let operatorPayoutPubKey;
@@ -70,6 +72,7 @@ function handleUpdatedPubKeyOperatorFactory(
           operatorIdentifier,
           operatorPublicKey,
           IdentityPublicKey.TYPES.BLS12_381,
+          transaction,
           operatorPayoutPubKey,
         ),
       );
@@ -88,6 +91,7 @@ function handleUpdatedPubKeyOperatorFactory(
       operatorIdentifier,
       proRegTxPayload.operatorReward,
       blockInfo,
+      transaction,
     );
 
     if (rewardShareDocument) {
@@ -107,7 +111,7 @@ function handleUpdatedPubKeyOperatorFactory(
           ['$ownerId', '==', masternodeIdentifier],
           ['payToId', '==', previousOperatorIdentifier],
         ],
-        useTransaction: true,
+        transaction,
       },
     );
 
@@ -119,7 +123,7 @@ function handleUpdatedPubKeyOperatorFactory(
         'rewardShare',
         previousDocument.getId(),
         blockInfo,
-        { useTransaction: true },
+        { transaction },
       );
 
       result.push(previousDocument);

@@ -13,7 +13,7 @@ function proveDocumentsFactory(
    * @param {Buffer|Identifier} dataContractId
    * @param {string} type
    * @param {Object} [options] options
-   * @param {boolean} [options.useTransaction=false]
+   * @param {GroveDBTransaction} [options.transaction]
    * @returns {Promise<Document[]>}
    */
   async function proveDocuments(dataContractId, type, options) {

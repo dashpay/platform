@@ -21,6 +21,7 @@ class DriveStateRepository {
    * @param {BlockExecutionContext} latestBlockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
+   * @param {BlockExecutionContext} proposalBlockExecutionContext
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -35,6 +36,7 @@ class DriveStateRepository {
     latestBlockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
+    proposalBlockExecutionContext,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -47,6 +49,7 @@ class DriveStateRepository {
     this.blockExecutionContext = latestBlockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
+    this.proposalBlockExecutionContext = proposalBlockExecutionContext;
     this.#options = options;
   }
 
@@ -221,7 +224,7 @@ class DriveStateRepository {
         dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
-        useTransaction: false,
+        transaction: undefined,
       },
     );
 
@@ -519,7 +522,7 @@ class DriveStateRepository {
   async fetchLatestWithdrawalTransactionIndex() {
     // TODO: handle dry run via passing state transition execution context
     return this.rsDrive.fetchLatestWithdrawalTransactionIndex(
-      this.#options.useTransaction,
+      this.#getTransaction(),
     );
   }
 
@@ -536,20 +539,35 @@ class DriveStateRepository {
     return this.rsDrive.enqueueWithdrawalTransaction(
       index,
       transactionBytes,
-      this.#options.useTransaction,
+      this.#getTransaction(),
     );
   }
 
   /**
    * @private
    * @param {StateTransitionExecutionContext} [executionContext]
-   * @return {{dryRun: boolean, useTransaction: boolean}}
+   * @return {{dryRun: boolean, transaction: GroveDBTransaction|undefined}}
    */
   #createRepositoryOptions(executionContext) {
     return {
-      useTransaction: this.#options.useTransaction || false,
+      transaction: this.#getTransaction(),
       dryRun: executionContext ? executionContext.isDryRun() : false,
     };
+  }
+
+  /**
+   * @private
+   * @return {GroveDBTransaction|undefined}
+   */
+  #getTransaction() {
+    let transaction;
+    const useTransaction = this.#options.useTransaction || false;
+
+    if (useTransaction) {
+      transaction = this.proposalBlockExecutionContext.getTransaction();
+    }
+
+    return transaction;
   }
 }
 

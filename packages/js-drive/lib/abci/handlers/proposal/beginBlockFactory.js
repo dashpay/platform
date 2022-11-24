@@ -5,14 +5,13 @@ const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVe
 
 const BlockInfo = require('../../../blockExecution/BlockInfo');
 const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
-const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
 
 /**
  * Begin Block
  *
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} latestBlockExecutionContext
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
  * @param {DashPlatformProtocol} transactionalDpp
@@ -27,7 +26,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
 function beginBlockFactory(
   groveDBStore,
   latestBlockExecutionContext,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -61,7 +60,7 @@ function beginBlockFactory(
       round,
     } = request;
 
-    if (proposalBlockExecutionContextCollection.isEmpty()) {
+    if (proposalBlockExecutionContext.isEmpty()) {
       executionTimer.clearTimer('blockExecution');
       executionTimer.startTimer('blockExecution');
     }
@@ -86,11 +85,9 @@ function beginBlockFactory(
 
     await waitForChainLockedHeight(coreChainLockedHeight);
 
-    // Set block execution context
+    // Reset block execution context
 
-    const proposalBlockExecutionContext = new BlockExecutionContext();
-
-    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
+    // proposalBlockExecutionContext.reset();
 
     // Set block execution context params
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
@@ -105,12 +102,9 @@ function beginBlockFactory(
     dpp.setProtocolVersion(version.app.toNumber());
     transactionalDpp.setProtocolVersion(version.app.toNumber());
 
-    if (await groveDBStore.isTransactionStarted()) {
-      await groveDBStore.abortTransaction();
-    }
-
     // Start db transaction for the block
-    await groveDBStore.startTransaction();
+    const transaction = await groveDBStore.startTransaction();
+    proposalBlockExecutionContext.setTransaction(transaction);
 
     // Call RS ABCI
 
@@ -131,7 +125,7 @@ function beginBlockFactory(
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    const rsResponse = await rsAbci.blockBegin(rsRequest, true);
+    const rsResponse = await rsAbci.blockBegin(rsRequest, transaction);
 
     const withdrawalTransactionsMap = (rsResponse.unsignedWithdrawalTransactions || []).reduce(
       (map, transactionBytes) => ({
@@ -175,6 +169,7 @@ function beginBlockFactory(
       const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
         coreChainLockedHeight,
         blockInfo,
+        transaction,
       );
 
       const {

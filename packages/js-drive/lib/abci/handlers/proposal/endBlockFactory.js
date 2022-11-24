@@ -1,7 +1,7 @@
 /**
  * Begin block ABCI
  *
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
@@ -14,7 +14,7 @@
  * @return {endBlock}
  */
 function endBlockFactory(
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
@@ -54,8 +54,6 @@ function endBlockFactory(
 
     consensusLogger.debug('EndBlock ABCI method requested');
 
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-
     // Call RS ABCI
 
     const rsRequest = {
@@ -67,7 +65,9 @@ function endBlockFactory(
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
 
-    const rsResponse = await rsAbci.blockEnd(rsRequest, true);
+    const transaction = proposalBlockExecutionContext.getTransaction();
+
+    const rsResponse = await rsAbci.blockEnd(rsRequest, transaction);
 
     consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
@@ -96,7 +96,7 @@ function endBlockFactory(
       round,
       consensusLogger,
     );
-    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
+    const appHash = await groveDBStore.getRootHash({ transaction });
 
     const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
 

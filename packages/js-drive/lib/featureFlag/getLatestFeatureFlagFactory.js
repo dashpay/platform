@@ -13,11 +13,11 @@ function getLatestFeatureFlagFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
-   * @param {boolean} [useTransaction=false]
+   * @param {GroveDBTransaction} transaction
    *
    * @return {Promise<Document|null>}
    */
-  async function getLatestFeatureFlag(flagType, blockHeight, useTransaction = false) {
+  async function getLatestFeatureFlag(flagType, blockHeight, transaction = undefined) {
     if (!featureFlagsContractId) {
       return null;
     }
@@ -37,7 +37,7 @@ function getLatestFeatureFlagFactory(
       flagType,
       {
         ...query,
-        useTransaction,
+        transaction,
       },
     );
 
