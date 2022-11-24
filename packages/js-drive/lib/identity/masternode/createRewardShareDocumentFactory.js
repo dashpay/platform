@@ -19,7 +19,6 @@ function createRewardShareDocumentFactory(
    * @param {Identifier} operatorIdentifier
    * @param {number} percentage
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} transaction
    * @returns {Promise<Document|null>}
    */
   async function createRewardShareDocument(
@@ -28,7 +27,6 @@ function createRewardShareDocumentFactory(
     operatorIdentifier,
     percentage,
     blockInfo,
-    transaction,
   ) {
     const documentsResult = await documentRepository.find(
       dataContract,
@@ -37,7 +35,7 @@ function createRewardShareDocumentFactory(
         where: [
           ['$ownerId', '==', masternodeIdentifier.toBuffer()],
         ],
-        transaction,
+        useTransaction: true,
       },
     );
 
@@ -78,7 +76,7 @@ function createRewardShareDocumentFactory(
     rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
     await documentRepository.create(rewardShareDocument, blockInfo, {
-      transaction,
+      useTransaction: true,
     });
 
     return rewardShareDocument;

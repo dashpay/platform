@@ -24,7 +24,6 @@ function registerSystemDataContractFactory(
    * @param {PublicKey} secondPublicKey
    * @param {Object} documentDefinitions
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} transaction
    *
    * @returns {Promise<DataContract>}
    */
@@ -35,7 +34,6 @@ function registerSystemDataContractFactory(
     secondPublicKey,
     documentDefinitions,
     blockInfo,
-    transaction,
   ) {
     const ownerIdentity = dpp.identity.create(
       {
@@ -53,11 +51,11 @@ function registerSystemDataContractFactory(
     );
 
     await identityRepository.create(ownerIdentity, {
-      transaction,
+      useTransaction: true,
     });
 
     await publicKeyToIdentitiesRepository.store(masterPublicKey.hash, ownerId, {
-      transaction,
+      useTransaction: true,
     });
 
     const dataContract = dpp.dataContract.create(
@@ -68,7 +66,7 @@ function registerSystemDataContractFactory(
     dataContract.id = contractId;
 
     await dataContractRepository.create(dataContract, blockInfo, {
-      transaction,
+      useTransaction: true,
     });
 
     return dataContract;

@@ -20,7 +20,6 @@ function handleUpdatedScriptPayoutFactory(
    * @param {Identifier} identityId
    * @param {Script} newPayoutScript
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} transaction
    * @param {Script} [previousPayoutScript]
    * @returns {Promise<void>}
    */
@@ -28,10 +27,9 @@ function handleUpdatedScriptPayoutFactory(
     identityId,
     newPayoutScript,
     blockInfo,
-    transaction,
     previousPayoutScript,
   ) {
-    const identityResult = await identityRepository.fetch(identityId, { transaction });
+    const identityResult = await identityRepository.fetch(identityId, { useTransaction: true });
 
     const identity = identityResult.getValue();
 
@@ -81,14 +79,14 @@ function handleUpdatedScriptPayoutFactory(
 
     identity.setPublicKeys(identityPublicKeys);
 
-    await identityRepository.update(identity, { transaction });
+    await identityRepository.update(identity, { useTransaction: true });
 
     const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
 
     await publicKeyToIdentitiesRepository.store(
       publicKeyHash,
       identity.getId(),
-      { transaction },
+      { useTransaction: true },
     );
   }
 

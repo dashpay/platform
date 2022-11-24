@@ -67,18 +67,17 @@ function finalizeBlockHandlerFactory(
     }
 
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
-    const transaction = proposalBlockExecutionContext.getTransaction();
-    console.log('transac = ', transaction);
+
     // Store block execution context
     await blockExecutionContextRepository.store(
       proposalBlockExecutionContext,
       {
-        transaction,
+        useTransaction: true,
       },
     );
 
     // Commit the current block db transactions
-    await groveDBStore.commitTransaction(transaction);
+    await groveDBStore.commitTransaction();
 
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
 

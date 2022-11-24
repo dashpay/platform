@@ -19,7 +19,7 @@ class PublicKeyToIdentitiesStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
@@ -58,7 +58,7 @@ class PublicKeyToIdentitiesStoreRepository {
    *
    * @param {Buffer} publicKeyHash
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Identity[]>>}
@@ -100,7 +100,7 @@ class PublicKeyToIdentitiesStoreRepository {
    *
    * @param {Buffer[]} publicKeyHashes
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Identity[]>>}
@@ -131,7 +131,7 @@ class PublicKeyToIdentitiesStoreRepository {
    *
    * @param {Buffer[]} publicKeyHashes
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Buffer[]>>}
@@ -168,7 +168,7 @@ class PublicKeyToIdentitiesStoreRepository {
  *
  * @param {Buffer[]} publicKeyHashes
  * @param {Object} [options]
- * @param {GroveDBTransaction} [options.transaction]
+ * @param {boolean} [options.useTransaction=false]
  *
  * @return {Promise<StorageResult<Buffer>>}
  */

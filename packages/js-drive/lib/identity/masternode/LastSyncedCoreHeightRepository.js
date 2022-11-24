@@ -14,7 +14,7 @@ class LastSyncedCoreHeightRepository {
    *
    * @param {number} height
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
@@ -35,7 +35,7 @@ class LastSyncedCoreHeightRepository {
    * Fetch last synced core height
    *
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<number|null>>}
    */

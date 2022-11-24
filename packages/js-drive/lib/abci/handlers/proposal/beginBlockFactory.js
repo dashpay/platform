@@ -87,7 +87,7 @@ function beginBlockFactory(
 
     // Reset block execution context
 
-    // proposalBlockExecutionContext.reset();
+    proposalBlockExecutionContext.reset();
 
     // Set block execution context params
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
@@ -102,9 +102,12 @@ function beginBlockFactory(
     dpp.setProtocolVersion(version.app.toNumber());
     transactionalDpp.setProtocolVersion(version.app.toNumber());
 
+    if (await groveDBStore.isTransactionStarted()) {
+      await groveDBStore.abortTransaction();
+    }
+
     // Start db transaction for the block
-    const transaction = await groveDBStore.startTransaction();
-    proposalBlockExecutionContext.setTransaction(transaction);
+    await groveDBStore.startTransaction();
 
     // Call RS ABCI
 
@@ -125,7 +128,7 @@ function beginBlockFactory(
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    const rsResponse = await rsAbci.blockBegin(rsRequest, transaction);
+    const rsResponse = await rsAbci.blockBegin(rsRequest, true);
 
     const withdrawalTransactionsMap = (rsResponse.unsignedWithdrawalTransactions || []).reduce(
       (map, transactionBytes) => ({
@@ -169,7 +172,6 @@ function beginBlockFactory(
       const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
         coreChainLockedHeight,
         blockInfo,
-        transaction,
       );
 
       const {

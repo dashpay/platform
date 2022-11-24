@@ -16,7 +16,7 @@ class BlockExecutionContextRepository {
    *
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    * @return {this}
    */
   async store(blockExecutionContext, options = {}) {
@@ -24,7 +24,6 @@ class BlockExecutionContextRepository {
       BlockExecutionContextRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(blockExecutionContext.toObject({
         skipConsensusLogger: true,
-        skipTransaction: true,
       })),
       options,
     );
@@ -36,7 +35,7 @@ class BlockExecutionContextRepository {
    * Fetch block execution stack
    *
    * @param {Object} [options]
-   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.useTransaction=false]
    *
    * @return {BlockExecutionContext}
    */

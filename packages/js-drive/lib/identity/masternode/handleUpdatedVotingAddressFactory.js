@@ -17,12 +17,10 @@ function handleUpdatedVotingAddressFactory(
   /**
    * @typedef handleUpdatedVotingAddress
    * @param {SimplifiedMNListEntry} masternodeEntry
-   * @param {GroveDBTransaction} transaction
    * @return Promise<Array<Identity|Document>>
    */
   async function handleUpdatedVotingAddress(
     masternodeEntry,
-    transaction,
   ) {
     const result = [];
 
@@ -42,7 +40,7 @@ function handleUpdatedVotingAddressFactory(
 
     const votingIdentityResult = await identityRepository.fetch(
       votingIdentifier,
-      { transaction },
+      { useTransaction: true },
     );
 
     //  Create an identity for operator if there is no identity exist with the same ID
@@ -55,7 +53,6 @@ function handleUpdatedVotingAddressFactory(
           votingIdentifier,
           votingPublicKeyHash,
           IdentityPublicKey.TYPES.ECDSA_HASH160,
-          transaction,
         ),
       );
     }

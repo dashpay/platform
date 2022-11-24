@@ -21,7 +21,6 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {registerSystemDataContracts} registerSystemDataContracts
  * @param {GroveDBStore} groveDBStore
  * @param {RSAbci} rsAbci
- * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -34,7 +33,6 @@ function initChainHandlerFactory(
   registerSystemDataContracts,
   groveDBStore,
   rsAbci,
-  proposalBlockExecutionContext,
 ) {
   /**
    * @typedef initChainHandler
@@ -61,26 +59,23 @@ function initChainHandlerFactory(
 
     // Create initial state
 
-    const transaction = await groveDBStore.startTransaction();
-
-    proposalBlockExecutionContext.setTransaction(transaction);
+    await groveDBStore.startTransaction();
 
     // Call RS ABCI
 
     logger.debug('Request RS Drive\'s InitChain method');
 
-    await rsAbci.initChain({ }, transaction);
+    await rsAbci.initChain({ }, true);
 
     const blockInfo = new BlockInfo(
       0,
       0,
       protoTimestampToMillis(time),
     );
-    await registerSystemDataContracts(consensusLogger, blockInfo, transaction);
+    await registerSystemDataContracts(consensusLogger, blockInfo);
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
       initialCoreChainLockedHeight,
       blockInfo,
-      transaction,
     );
 
     const {
@@ -100,9 +95,8 @@ function initChainHandlerFactory(
       'Synchronized masternode identities',
     );
 
-    await groveDBStore.commitTransaction(transaction);
+    await groveDBStore.commitTransaction();
 
-    proposalBlockExecutionContext.reset();
     const appHash = await groveDBStore.getRootHash();
 
     // Set initial validator set

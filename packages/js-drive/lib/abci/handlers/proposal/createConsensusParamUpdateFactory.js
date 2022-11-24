@@ -26,14 +26,13 @@ function createConsensusParamUpdateFactory(
    */
   async function createConsensusParamUpdate(height, round, consensusLogger) {
     const contextVersion = proposalBlockExecutionContext.getVersion();
-    const transaction = proposalBlockExecutionContext.getTransaction();
 
     // Update consensus params feature flag
 
     const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
       featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
       height,
-      transaction,
+      true,
     );
 
     let consensusParamUpdates;

@@ -65,9 +65,7 @@ function endBlockFactory(
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
 
-    const transaction = proposalBlockExecutionContext.getTransaction();
-
-    const rsResponse = await rsAbci.blockEnd(rsRequest, transaction);
+    const rsResponse = await rsAbci.blockEnd(rsRequest, true);
 
     consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
@@ -96,7 +94,7 @@ function endBlockFactory(
       round,
       consensusLogger,
     );
-    const appHash = await groveDBStore.getRootHash({ transaction });
+    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
 
     const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
 

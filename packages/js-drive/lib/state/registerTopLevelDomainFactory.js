@@ -20,11 +20,10 @@ function registerTopLevelDomainFactory(
    * @param {DataContract} dataContract
    * @param {Identifier} ownerId
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} transaction
    *
    * @return {Promise<void>}
    */
-  async function registerTopLevelDomain(name, dataContract, ownerId, blockInfo, transaction) {
+  async function registerTopLevelDomain(name, dataContract, ownerId, blockInfo) {
     const normalizedParentDomainName = '';
     const normalizedLabel = name.toLowerCase();
 
@@ -50,7 +49,7 @@ function registerTopLevelDomainFactory(
     domainDocument.createdAt = new Date(blockInfo.timeMs);
 
     await documentRepository.create(domainDocument, blockInfo, {
-      transaction,
+      useTransaction: true,
     });
   }
 

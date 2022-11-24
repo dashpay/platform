@@ -224,7 +224,7 @@ class DriveStateRepository {
         dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
-        transaction: undefined,
+        useTransaction: false,
       },
     );
 
@@ -522,7 +522,7 @@ class DriveStateRepository {
   async fetchLatestWithdrawalTransactionIndex() {
     // TODO: handle dry run via passing state transition execution context
     return this.rsDrive.fetchLatestWithdrawalTransactionIndex(
-      this.#getTransaction(),
+      this.#options.useTransaction,
     );
   }
 
@@ -539,35 +539,20 @@ class DriveStateRepository {
     return this.rsDrive.enqueueWithdrawalTransaction(
       index,
       transactionBytes,
-      this.#getTransaction(),
+      this.#options.useTransaction,
     );
   }
 
   /**
    * @private
    * @param {StateTransitionExecutionContext} [executionContext]
-   * @return {{dryRun: boolean, transaction: GroveDBTransaction|undefined}}
+   * @return {{dryRun: boolean, useTransaction: boolean}}
    */
   #createRepositoryOptions(executionContext) {
     return {
-      transaction: this.#getTransaction(),
+      useTransaction: this.#options.useTransaction || false,
       dryRun: executionContext ? executionContext.isDryRun() : false,
     };
-  }
-
-  /**
-   * @private
-   * @return {GroveDBTransaction|undefined}
-   */
-  #getTransaction() {
-    let transaction;
-    const useTransaction = this.#options.useTransaction || false;
-
-    if (useTransaction) {
-      transaction = this.proposalBlockExecutionContext.getTransaction();
-    }
-
-    return transaction;
   }
 }
 

@@ -54,11 +54,10 @@ function registerSystemDataContractsFactory(
    *
    * @param {BaseLogger} contextLogger
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} transaction
    *
    * @return {Promise<void>}
    */
-  async function registerSystemDataContracts(contextLogger, blockInfo, transaction) {
+  async function registerSystemDataContracts(contextLogger, blockInfo) {
     contextLogger.debug('Registering Feature Flags data contract');
     contextLogger.trace({
       ownerId: featureFlagsOwnerId,
@@ -75,7 +74,6 @@ function registerSystemDataContractsFactory(
       featureFlagsOwnerSecondPublicKey,
       featureFlagsDocuments,
       blockInfo,
-      transaction,
     );
 
     contextLogger.debug('Registering DPNS data contract');
@@ -94,7 +92,6 @@ function registerSystemDataContractsFactory(
       dpnsOwnerSecondPublicKey,
       dpnsDocuments,
       blockInfo,
-      transaction,
     );
 
     await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, blockInfo, transaction);
@@ -115,7 +112,6 @@ function registerSystemDataContractsFactory(
       masternodeRewardSharesOwnerSecondPublicKey,
       masternodeRewardSharesDocuments,
       blockInfo,
-      transaction,
     );
 
     contextLogger.debug('Registering Dashpay data contract');
@@ -134,7 +130,6 @@ function registerSystemDataContractsFactory(
       dashpayOwnerSecondPublicKey,
       dashpayDocuments,
       blockInfo,
-      transaction,
     );
   }
 
