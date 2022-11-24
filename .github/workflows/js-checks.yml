@@ -117,11 +117,9 @@ jobs:
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
-        if: ${{ !inputs.start-local-network }}
 
-      # We probably don't need to build all packages
-      - name: Build all packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
         if: ${{ inputs.start-local-network }}
 
       - name: Create necessary dotenv files

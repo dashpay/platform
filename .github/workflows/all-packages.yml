@@ -97,9 +97,8 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      # We probably don't need to build all packages
-      - name: Build packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
@@ -176,9 +175,8 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      # We probably don't need to build all packages
-      - name: Build packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
