@@ -1,3 +1,4 @@
+const { Metadata } = require('@grpc/grpc-js/build/src/metadata');
 const CorePromiseClient = require('./clients/core/v0/nodejs/CorePromiseClient');
 const PlatformPromiseClient = require('./clients/platform/v0/nodejs/PlatformPromiseClient');
 
@@ -31,6 +32,14 @@ const {
   },
 } = require('./clients/platform/v0/nodejs/platform_pbjs');
 
+const parseMetadata = (metadata) => {
+  if (metadata instanceof Metadata) {
+    return metadata.getMap();
+  }
+
+  return metadata;
+};
+
 module.exports = {
   getCoreDefinition,
   getPlatformDefinition,
@@ -45,4 +54,6 @@ module.exports = {
     ...protocCoreMessages,
     ...protocPlatformMessages,
   },
+  parseMetadata,
+  Metadata,
 };

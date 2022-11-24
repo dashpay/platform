@@ -2,7 +2,7 @@ const cbor = require('cbor');
 
 const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const { Metadata } = require('@grpc/grpc-js/build/src/metadata');
+const { parseMetadata } = require('@dashevo/dapi-grpc');
 
 const NotFoundError = require('./errors/NotFoundError');
 const TimeoutError = require('./errors/TimeoutError');
@@ -50,22 +50,7 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   const message = grpcError.details || grpcError.message;
 
-  let metadata = {};
-
-  if (grpcError.metadata) {
-    // In cases of gRPC-Web client we get plain map instead of Metadata instance
-    metadata = grpcError.metadata;
-    if (grpcError.metadata instanceof Metadata) {
-      // Handle grpc-js metadata
-      metadata = grpcError.metadata.getMap();
-    } else if (grpcError.metadata.headersMap) {
-      // Handle @improbable-eng/grpc-web metadata
-      metadata = {};
-      grpcError.metadata.forEach((key, values) => {
-        metadata[key] = values.join();
-      });
-    }
-  }
+  const metadata = parseMetadata(grpcError.metadata) || {};
 
   // Error data
   const driveErrorData = metadata['drive-error-data-bin'];

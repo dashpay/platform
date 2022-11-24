@@ -2356,8 +2356,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
-            ["@grpc/grpc-js", "npm:1.4.4"],\
-            ["@improbable-eng/grpc-web", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:0.15.0"],\
             ["assert-browserify", "npm:2.0.0"],\
             ["axios", "npm:0.27.2"],\
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],\
@@ -3113,20 +3111,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@improbable-eng/grpc-web", "npm:0.15.0"]\
           ],\
           "linkType": "SOFT"\
-        }],\
-        ["virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:0.15.0", {\
-          "packageLocation": "./.yarn/__virtual__/@improbable-eng-grpc-web-virtual-5239af9203/0/cache/@improbable-eng-grpc-web-npm-0.15.0-b5e59cba5e-8c6322e681.zip/node_modules/@improbable-eng/grpc-web/",\
-          "packageDependencies": [\
-            ["@improbable-eng/grpc-web", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:0.15.0"],\
-            ["@types/google-protobuf", null],\
-            ["browser-headers", "npm:0.4.1"],\
-            ["google-protobuf", null]\
-          ],\
-          "packagePeers": [\
-            "@types/google-protobuf",\
-            "google-protobuf"\
-          ],\
-          "linkType": "HARD"\
         }],\
         ["virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0", {\
           "packageLocation": "./.yarn/__virtual__/@improbable-eng-grpc-web-virtual-69d4d21791/0/cache/@improbable-eng-grpc-web-npm-0.15.0-b5e59cba5e-8c6322e681.zip/node_modules/@improbable-eng/grpc-web/",\

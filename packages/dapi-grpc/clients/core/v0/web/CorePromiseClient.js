@@ -30,7 +30,9 @@ const rewireStream = (stream) => {
         if (payload) {
           const { code, details, metadata } = payload;
           if (code !== 0) {
-            handler(new GrpcError(code, details, metadata));
+            const error = new GrpcError(code, details);
+            error.metadata = metadata;
+            handler(error);
           }
         }
       });
