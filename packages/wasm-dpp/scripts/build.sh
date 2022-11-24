@@ -9,7 +9,7 @@ fi
 OUTPUT_DIR="$PWD/wasm"
 OUTPUT_FILE="$OUTPUT_DIR/wasm_dpp_bg.wasm"
 OUTPUT_FILE_JS="$OUTPUT_DIR/wasm_dpp_bg.js"
-BUILD_COMMAND="cargo build --target=$TARGET --$CARGO_BUILD_PROFILE"
+BUILD_COMMAND="cargo build --target=$TARGET --profile $CARGO_BUILD_PROFILE"
 BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$CARGO_BUILD_PROFILE/wasm_dpp.wasm"
 
 

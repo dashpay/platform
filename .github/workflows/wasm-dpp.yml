@@ -38,6 +38,7 @@ jobs:
     with:
       package: 'wasm-dpp'
 
+  # TODO Do we really need this?
   wasm-errors:
     name: WASM compilation
     runs-on: ubuntu-22.04
