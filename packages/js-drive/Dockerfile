@@ -20,7 +20,8 @@ RUN apk update && \
                        gcc \
                        clang \
                        libc-dev \
-                       binutils
+                       binutils \
+                       bash
 
 # Install Rust
 ENV RUSTUP_HOME=/usr/local/rustup \
