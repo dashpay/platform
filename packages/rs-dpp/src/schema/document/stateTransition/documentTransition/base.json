@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$id": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 32,
+      "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
+    },
+    "$type": {
+      "type": "string"
+    },
+    "$action": {
+      "type": "integer",
+      "enum": [0, 1, 3]
+    },
+    "$dataContractId": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 32,
+      "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
+    }
+  },
+  "required": [
+    "$id",
+    "$type",
+    "$action",
+    "$dataContractId"
+  ],
+  "additionalProperties": false
+}

@@ -8,15 +8,23 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/dashpay-contract.yml
-      - .github/workflows/test.yml
+      - .github/workflows/checks.yml
       - packages/dashpay-contract/**
       - packages/js-dpp/**
+      - packages/wasm-dpp/**
+      - packages/rs-dpp/**
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  dapi-tests:
-    name: Run DAPI gRPC tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dashpay-contract'

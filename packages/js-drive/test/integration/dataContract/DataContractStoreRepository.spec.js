@@ -21,7 +21,7 @@ describe('DataContractStoreRepository', () => {
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, noopLogger);
@@ -109,7 +109,6 @@ describe('DataContractStoreRepository', () => {
       const committedDataResult = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
         DataContractStoreRepository.DATA_CONTRACT_KEY,
-        { useTransaction: true },
       );
 
       [protocolVersion, rawDataContract] = decodeProtocolEntity(committedDataResult.getValue());
