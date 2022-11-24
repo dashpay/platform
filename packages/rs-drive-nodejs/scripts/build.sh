@@ -5,6 +5,6 @@ if [ -z "$CARGO_BUILD_PROFILE" ]; then
 fi
 
 cargo-cp-artifact -ac drive-nodejs native/index.node -- \
-  cargo build --message-format=json-render-diagnostics --$CARGO_BUILD_PROFILE \
+  cargo build --message-format=json-render-diagnostics --profile $CARGO_BUILD_PROFILE \
   && neon-tag-prebuild \
   && rm -rf native
