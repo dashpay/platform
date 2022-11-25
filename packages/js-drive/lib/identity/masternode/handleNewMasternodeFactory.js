@@ -24,7 +24,6 @@ function handleNewMasternodeFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
-   * @param {GroveDBTransaction} transaction
    * @return Promise<Array<Identity|Document>>
    */
   async function handleNewMasternode(masternodeEntry, dataContract, blockInfo) {

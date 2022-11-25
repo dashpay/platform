@@ -72,7 +72,9 @@ function initChainHandlerFactory(
       0,
       protoTimestampToMillis(time),
     );
+
     await registerSystemDataContracts(consensusLogger, blockInfo);
+
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
       initialCoreChainLockedHeight,
       blockInfo,

@@ -133,8 +133,8 @@ class DocumentRepository {
    * @returns {Promise<StorageResult<Document[]>>}
    */
   async find(dataContract, documentType, options = {}) {
-    let useTransaction = false;
     const query = lodashCloneDeep(options);
+    let useTransaction = false;
 
     if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
       ({ useTransaction } = query);
@@ -240,8 +240,8 @@ class DocumentRepository {
    * @return {Promise<StorageResult>}
    */
   async prove(dataContract, documentType, options = {}) {
-    let useTransaction;
     const query = lodashCloneDeep(options);
+    let useTransaction = false;
 
     if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
       ({ useTransaction } = query);
