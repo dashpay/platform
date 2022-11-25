@@ -20,7 +20,7 @@ describe('IdentityStoreRepository', () => {
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -103,7 +103,6 @@ describe('IdentityStoreRepository', () => {
       const committedIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
         IdentityStoreRepository.IDENTITY_KEY,
-        { useTransaction: true },
       );
 
       [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getValue());
@@ -208,7 +207,6 @@ describe('IdentityStoreRepository', () => {
       const committedIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
         IdentityStoreRepository.IDENTITY_KEY,
-        { useTransaction: true },
       );
 
       [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getValue());

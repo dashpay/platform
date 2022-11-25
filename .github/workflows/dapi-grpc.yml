@@ -8,13 +8,19 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/dapi-grpc.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
       - packages/dapi-grpc/**
       - packages/js-grpc-common/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  dapi-tests:
-    name: Run DAPI gRPC tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dapi-grpc'

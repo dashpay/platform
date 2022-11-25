@@ -17,7 +17,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
 
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -34,9 +34,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
 
   describe('#store', () => {
     it('should store outpoint', async () => {
-      const result = await repository.store(outPointBuffer, {
-        useTransaction: true,
-      });
+      const result = await repository.store(outPointBuffer);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.equal(0);
