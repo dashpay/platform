@@ -109,6 +109,18 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   /**
+   * Initializes SPV chain with a list of headers and a known lastSyncedHeaderHeight
+   *
+   * @param headers
+   * @param lastSyncedHeaderHeight
+   */
+  initializeWith(headers, lastSyncedHeaderHeight) {
+    const firstHeaderHeight = lastSyncedHeaderHeight - headers.length + 1;
+    this.spvChain.reset(firstHeaderHeight);
+    this.spvChain.addHeaders(headers, firstHeaderHeight);
+  }
+
+  /**
    * Checks whether spv chain has header at specified height and flushes chains if not
    *
    * @private

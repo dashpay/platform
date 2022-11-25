@@ -384,15 +384,19 @@ const SpvChain = class {
    * added to an orphan array for possible later reconnection
    *
    * @param {Object[]|string[]|buffer[]} headers
+   * @param {number} batchHeadHeight - height of the first header in the array
    * @return {BlockHeader[]}
    */
-  addHeaders(headers, headHeight = 0) {
+  addHeaders(headers, batchHeadHeight = 0) {
+    let headHeight = batchHeadHeight;
     const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
 
     const tip = this.getTipHeader();
     // Handle 1 block intersection of batches
     if (tip && tip.hash === normalizedHeaders[0].hash) {
       normalizedHeaders.splice(0, 1);
+      // Patch head height value after splice
+      headHeight += 1;
     }
 
     if (normalizedHeaders.length === 0) {
@@ -400,7 +404,22 @@ const SpvChain = class {
       return [];
     }
 
-    const isOrphan = tip ? !SpvChain.isParentChild(normalizedHeaders[0], tip)
+    const firstHeader = normalizedHeaders[0];
+    const connectsToTip = tip && SpvChain.isParentChild(firstHeader, tip);
+
+    //
+    // Reorg detection
+    // Get prev header hash
+    const prevHash = utils.getCorrectedHash(firstHeader.prevHash);
+    const prevHeaderHeight = this.heightByHash[prevHash];
+
+    // Test on initial wallet load
+    if (prevHeaderHeight && prevHeaderHeight > 0 && prevHeaderHeight !== headHeight - 1) {
+      console.log('SPVCHAIN: Reorg detected.');
+      console.log(`------->: Batch head ${firstHeader.hash} at height ${headHeight} has parent at height ${prevHeaderHeight}`);
+    }
+
+    const isOrphan = tip ? connectsToTip
       : headHeight !== this.startBlockHeight;
 
     const allValid = normalizedHeaders.reduce(
