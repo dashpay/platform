@@ -8,23 +8,31 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/dashmate.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
       - packages/dashmate/**
       - packages/js-dash-sdk/**
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
       - packages/dapi-grpc/**
       - packages/js-dpp/**
+      - packages/wasm-dpp/**
+      - packages/rs-dpp/**
       - packages/js-grpc-common/**
       - packages/dashpay-contract/**
       - packages/feature-flags-contract/**
       - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
       - packages/dash-spv/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  dashmate-tests:
-    name: Run Dashmate tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: 'dashmate'

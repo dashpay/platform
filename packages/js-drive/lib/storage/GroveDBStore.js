@@ -197,8 +197,8 @@ class GroveDBStore {
       ));
     } catch (e) {
       if (
-        e.message.startsWith('path key not found')
-        || e.message.startsWith('path not found')
+        e.message.startsWith('grovedb: path key not found')
+        || e.message.startsWith('grovedb: path not found')
       ) {
         return new StorageResult(
           null,
@@ -244,8 +244,8 @@ class GroveDBStore {
       );
     } catch (e) {
       if (
-        e.message.startsWith('path key not found')
-        || e.message.startsWith('path not found')
+        e.message.startsWith('grovedb: path key not found')
+        || e.message.startsWith('grovedb: path not found')
       ) {
         return new StorageResult(
           null,
@@ -358,7 +358,7 @@ class GroveDBStore {
         options.useTransaction || false,
       );
     } catch (e) {
-      if (e.message.startsWith('path key not found')) {
+      if (e.message.startsWith('grovedb: path key not found')) {
         return new StorageResult(
           null,
           [],

@@ -448,7 +448,7 @@ function createDIContainer(options) {
       dataContractsBlockCacheSize,
     ) => new RSDrive(groveDBLatestFile, {
       dataContractsGlobalCacheSize,
-      dataContractsTransactionalCacheSize: dataContractsBlockCacheSize,
+      dataContractsBlockCacheSize,
     }))
       // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {

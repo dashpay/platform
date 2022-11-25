@@ -9,18 +9,50 @@ on:
     paths:
       - .github/workflows/wasm-dpp.yml
       - .github/workflows/js-dpp.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
+      - .github/workflows/rs-checks.yml
       - packages/js-dpp/**
       - packages/feature-flags-contract/**
       - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
       - packages/wasm-dpp/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  js-dpp-tests:
-    name: Run WASM DPP tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/wasm-dpp'
       install-browsers: true
+
+  rs-checks:
+    name: Rust
+    uses: ./.github/workflows/rs-checks.yml
+    with:
+      package: 'wasm-dpp'
+
+  wasm-errors:
+    name: WASM compilation
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile WASM
+        run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp
