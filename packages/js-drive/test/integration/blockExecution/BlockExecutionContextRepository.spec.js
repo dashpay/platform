@@ -27,7 +27,7 @@ describe('BlockExecutionContextRepository', () => {
 
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, noopLogger);

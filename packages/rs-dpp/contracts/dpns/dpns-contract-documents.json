@@ -1,0 +1,147 @@
+{
+	"domain": {
+		"type": "object",
+		"indices": [
+			{
+				"name": "parentNameAndLabel",
+				"properties": [
+					{
+						"normalizedParentDomainName": "asc"
+					},
+					{
+						"normalizedLabel": "asc"
+					}
+				],
+				"unique": true
+			},
+			{
+				"name": "dashIdentityId",
+				"properties": [
+					{
+						"records.dashUniqueIdentityId": "asc"
+					}
+				],
+				"unique": true
+			},
+			{
+				"name": "dashAlias",
+				"properties": [
+					{
+						"records.dashAliasIdentityId": "asc"
+					}
+				]
+			}
+		],
+		"properties": {
+			"label": {
+				"type": "string",
+				"pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
+				"minLength": 3,
+				"maxLength": 63,
+				"description": "Domain label. e.g. 'Bob'."
+			},
+			"normalizedLabel": {
+				"type": "string",
+				"pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
+				"maxLength": 63,
+				"description": "Domain label in lowercase for case-insensitive uniqueness validation. e.g. 'bob'",
+				"$comment": "Must be equal to the label in lowercase. This property will be deprecated due to case insensitive indices"
+			},
+			"normalizedParentDomainName": {
+				"type": "string",
+				"pattern": "^$|^[[a-z0-9][a-z0-9-\\.]{0,61}[a-z0-9]$",
+				"minLength": 0,
+				"maxLength": 63,
+				"description": "A full parent domain name in lowercase for case-insensitive uniqueness validation. e.g. 'dash'",
+				"$comment": "Must either be equal to an existing domain or empty to create a top level domain. Only the data contract owner can create top level domains."
+			},
+			"preorderSalt": {
+				"type": "array",
+				"byteArray": true,
+				"minItems": 32,
+				"maxItems": 32,
+				"description": "Salt used in the preorder document"
+			},
+			"records": {
+				"type": "object",
+				"properties": {
+					"dashUniqueIdentityId": {
+						"type": "array",
+						"byteArray": true,
+						"minItems": 32,
+						"maxItems": 32,
+						"contentMediaType": "application/x.dash.dpp.identifier",
+						"description": "Identity ID to be used to create the primary name the Identity",
+						"$comment": "Must be equal to the document owner"
+					},
+					"dashAliasIdentityId": {
+						"type": "array",
+						"byteArray": true,
+						"minItems": 32,
+						"maxItems": 32,
+						"contentMediaType": "application/x.dash.dpp.identifier",
+						"description": "Identity ID to be used to create alias names for the Identity",
+						"$comment": "Must be equal to the document owner"
+					}
+				},
+				"$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",
+				"minProperties": 1,
+				"maxProperties": 1,
+				"additionalProperties": false
+			},
+			"subdomainRules": {
+				"type": "object",
+				"properties": {
+					"allowSubdomains": {
+						"type": "boolean",
+						"description": "This option defines who can create subdomains: true - anyone; false - only the domain owner",
+						"$comment": "Only the domain owner is allowed to create subdomains for non top-level domains"
+					}
+				},
+				"description": "Subdomain rules allow domain owners to define rules for subdomains",
+				"additionalProperties": false,
+				"required": [
+					"allowSubdomains"
+				]
+			}
+		},
+		"required": [
+			"label",
+			"normalizedLabel",
+			"normalizedParentDomainName",
+			"preorderSalt",
+			"records",
+			"subdomainRules"
+		],
+		"additionalProperties": false,
+		"$comment": "In order to register a domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
+	},
+	"preorder": {
+		"type": "object",
+		"indices": [
+			{
+				"name": "saltedHash",
+				"properties": [
+					{
+						"saltedDomainHash": "asc"
+					}
+				],
+				"unique": true
+			}
+		],
+		"properties": {
+			"saltedDomainHash": {
+				"type": "array",
+				"byteArray": true,
+				"minItems": 32,
+				"maxItems": 32,
+				"description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
+			}
+		},
+		"required": [
+			"saltedDomainHash"
+		],
+		"additionalProperties": false,
+		"$comment": "Preorder documents are immutable: modification and deletion are restricted"
+	}
+}

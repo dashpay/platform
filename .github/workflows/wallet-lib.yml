@@ -1,4 +1,4 @@
-name: Wallet Lib
+name: JS Wallet Lib
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/wallet-lib.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
       - packages/dapi-grpc/**
@@ -19,11 +19,17 @@ on:
       - packages/dpns-contract/**
       - packages/masternode-reward-shares-contract/**
       - packages/dash-spv/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  js-wallet-lib-tests:
-    name: Run Wallet lib tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/wallet-lib'
       start-local-network: true

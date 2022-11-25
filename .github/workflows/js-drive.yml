@@ -1,4 +1,4 @@
-name: Drive
+name: JS Drive
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/js-drive.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
       - packages/js-drive/**
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
@@ -18,10 +18,16 @@ on:
       - packages/dapi-grpc/**
       - packages/js-grpc-common/**
       - packages/withdrawals-contract/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  js-dpp-tests:
-    name: Run Drive tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/drive'

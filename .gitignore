@@ -31,8 +31,6 @@ node_modules
 !.yarn/sdks
 !.yarn/versions
 
-faucet-wallet-*
-
 # Rust build artifacts
-target
+/target
 /Cargo.lock

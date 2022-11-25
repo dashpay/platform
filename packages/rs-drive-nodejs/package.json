@@ -1,0 +1,48 @@
+{
+  "name": "@dashevo/rs-drive",
+  "version": "0.24.0-dev.8",
+  "description": "Node.JS binding for Rust Drive",
+  "main": "Drive.js",
+  "scripts": {
+    "build": "yarn exec scripts/build.sh",
+    "test": "ultra --build && mocha test",
+    "lint": "eslint ."
+  },
+  "files": [
+    "prebuilds",
+    "Drive.js",
+    "GroveDB.js",
+    "appendStack.js",
+    "src"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "chai": "^4.3.4",
+    "dirty-chai": "^2.0.1",
+    "eslint": "^7.32.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.24.2",
+    "mocha": "^9.1.2",
+    "neon-cli": "^0.10.1",
+    "ultra-runner": "^3.10.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/rs-drive.git"
+  },
+  "keywords": [
+    "Dash Platform",
+    "Drive"
+  ],
+  "bugs": {
+    "url": "https://github.com/dashevo/rs-drive/issues"
+  },
+  "homepage": "https://github.com/dashevo/rs-drive#readme",
+  "dependencies": {
+    "@dashevo/dpp": "workspace:*",
+    "cargo-cp-artifact": "^0.1.6",
+    "cbor": "^8.0.0",
+    "neon-load-or-build": "^2.2.2",
+    "neon-tag-prebuild": "github:shumkov/neon-tag-prebuild#patch-1"
+  }
+}
