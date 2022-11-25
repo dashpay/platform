@@ -42,18 +42,38 @@ const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 const identityPublicKeySchema = require('@dashevo/dpp/schema/identity/publicKey.json');
 const stateTransitionPublicKeySchema = require('@dashevo/dpp/schema/identity/stateTransition/publicKey.json');
 
+const { default: loadWasmDpp } = require('../../../../dist');
+
 describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;
   let validator;
   let bls;
+  let PublicKeysValidator;
+  let publicKeysValidator;
 
   beforeEach(async () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
+    ({ PublicKeysValidator } = await loadWasmDpp());
+
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
     bls = await BlsSignatures.getInstance();
+
+    const blsAdapter = {
+      validatePublicKey(publicKeyBuffer) {
+        let pk;
+
+        try {
+          pk = bls.PublicKey.fromBytes(publicKeyBuffer);
+        } catch (e) {
+          return false;
+        }
+
+        return Boolean(pk);
+      },
+    };
 
     validator = new JsonSchemaValidator(ajv);
 
@@ -62,6 +82,8 @@ describe('validatePublicKeysFactory', () => {
       identityPublicKeySchema,
       bls,
     );
+
+    publicKeysValidator = new PublicKeysValidator(blsAdapter);
   });
 
   describe('id', () => {
@@ -369,7 +391,7 @@ describe('validatePublicKeysFactory', () => {
       data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
     }];
 
-    const result = validatePublicKeys(rawPublicKeys);
+    const result = publicKeysValidator.validateKeys(rawPublicKeys);
 
     expect(result.isValid()).to.be.true();
   });

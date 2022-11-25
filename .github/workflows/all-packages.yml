@@ -10,10 +10,16 @@ on:
     branches:
       - master
       - v[0-9]+\.[0-9]+-dev
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  workspaces:
-    name: Validate project workspaces
+  deps-versions:
+    name: JS dependency versions check
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
@@ -30,16 +36,37 @@ jobs:
       - name: Validate workspaces
         run: yarn constraints
 
+  crates-security:
+    name: Crates security audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Audit crates
+        uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  npm-security:
+    name: NPM security audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Audit NPM
+        run: yarn npm audit --environment production --all --recursive --ignore 1080920
+        # ignore "got"
+
   test-suite:
     name: Run Platform Test Suite
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - name: Cancel previous runs
-        uses: styfle/cancel-workflow-action@0.11.0
-        with:
-          access_token: ${{ github.token }}
-
       - name: Check out repo
         uses: actions/checkout@v2
 
@@ -53,11 +80,9 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-          components: clippy
-          override: true
 
-      - name: Setup wasm-bindgen
-        run: cargo install -f wasm-bindgen-cli
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -76,8 +101,8 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
@@ -120,11 +145,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - name: Cancel previous runs
-        uses: styfle/cancel-workflow-action@0.11.0
-        with:
-          access_token: ${{ github.token }}
-
       - name: Check out repo
         uses: actions/checkout@v2
 
@@ -138,11 +158,9 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-          components: clippy
-          override: true
 
-      - name: Setup wasm-bindgen
-        run: cargo install -f wasm-bindgen-cli
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -161,8 +179,8 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx

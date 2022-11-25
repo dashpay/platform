@@ -12,7 +12,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 wasm-bindgen = { version = "0.2.76", features = ["serde-serialize"] }
 js-sys = "0.3.53"
-web-sys = { version ="0.3.6", features = ["console"] }
-thiserror = { version="1.0" }
+web-sys = { version = "0.3.6", features = ["console"] }
+thiserror = { version = "1.0" }
 serde-wasm-bindgen = "0.4.3"
-dpp = { git = "https://github.com/dashevo/rs-platform", branch = "v0.24-dev" }
+dpp = { path = "../rs-dpp" }
+
+[profile.release]
+lto = true
+opt-level = 's'
