@@ -15,9 +15,7 @@ describe('BlockHeadersProvider - unit', () => {
     blockHeadersProvider = new BlockHeadersProvider();
     blockHeadersProvider.setSpvChain({
       addHeaders: this.sinon.stub().callsFake((newHeaders) => newHeaders),
-      hashesByHeight: {
-        0: '0x000000001',
-      },
+      hashesByHeight: new Map([[0, '0x000000001']]),
       reset: this.sinon.spy(),
       validate: this.sinon.spy(),
     });

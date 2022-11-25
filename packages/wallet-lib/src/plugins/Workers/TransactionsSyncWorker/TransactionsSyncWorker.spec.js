@@ -802,7 +802,7 @@ describe('TransactionsSyncWorker', () => {
       // Simulate data event
       const dataEventPayload = {
         transactions,
-        appendAddresses: this.sinon.spy(),
+        handleNewAddresses: this.sinon.spy(),
       };
 
       transactionsSyncWorker
@@ -819,7 +819,7 @@ describe('TransactionsSyncWorker', () => {
       expect(transactionsSyncWorker.historicalTransactionsToVerify)
         .to.deep.equal(expectedResult);
 
-      expect(dataEventPayload.appendAddresses)
+      expect(dataEventPayload.handleNewAddresses)
         .to.have.been.calledWith(addressesGenerated);
     });
 
@@ -844,7 +844,7 @@ describe('TransactionsSyncWorker', () => {
 
       transactionsSyncWorker.newTransactionsHandler({
         transactions,
-        appendAddresses: this.sinon.spy(),
+        handleNewAddresses: this.sinon.spy(),
       });
 
       // Generate and handle second set of transactions with duplicated ones
@@ -853,7 +853,7 @@ describe('TransactionsSyncWorker', () => {
 
       transactionsSyncWorker.newTransactionsHandler({
         transactions: transactionsWithDuplicates,
-        appendAddresses: this.sinon.spy(),
+        handleNewAddresses: this.sinon.spy(),
       });
 
       const { firstCall } = transactionsSyncWorker.importTransactions;
@@ -869,7 +869,7 @@ describe('TransactionsSyncWorker', () => {
     });
   });
 
-  describe.only('#newMerkleBlockHandler', () => {
+  describe('#newMerkleBlockHandler', () => {
     let storage;
     let chainStore;
     beforeEach(function beforeEach() {
