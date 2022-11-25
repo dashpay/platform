@@ -31,9 +31,8 @@ const filterTransactionsForAddresses = (transactions, addresses, network = 'live
       const payloadItem = txPayload[i];
 
       if (payloadItem.script) {
-        const address = payloadItem.script.toAddress(network).toString();
-
-        if (addresses.includes(address)) {
+        const address = payloadItem.script.toAddress(network);
+        if (address && addresses.includes(address.toString())) {
           return true;
         }
       }

@@ -18,7 +18,6 @@ const defaultOptions = {
   targetBatchSize: 50000,
   fromBlockHeight: 1,
   maxRetries: 10,
-  spvChain: null,
 };
 
 const EVENTS = {
@@ -49,7 +48,7 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    this.spvChain = this.options.spvChain || new SpvChain(this.options.network, 100);
+    this.spvChain = new SpvChain(this.options.network, 100);
 
     this.state = STATES.IDLE;
     this.wasmX11Ready = false;

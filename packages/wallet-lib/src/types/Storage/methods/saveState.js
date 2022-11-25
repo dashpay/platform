@@ -7,7 +7,7 @@ const CONSTANTS = require('../../../CONSTANTS');
  */
 const saveState = async function saveState() {
   if (this.autosave && this.adapter && this.adapter.setItem) {
-    this.lastSave = +new Date();
+    this.lastSave = Date.now();
 
     const self = this;
     try {
