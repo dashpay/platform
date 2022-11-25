@@ -7,6 +7,7 @@ const protocPlatformMessages = require('./clients/platform/v0/nodejs/platform_pr
 
 const getCoreDefinition = require('./lib/getCoreDefinition');
 const getPlatformDefinition = require('./lib/getPlatformDefinition');
+const parseMetadata = require('./lib/utils/parseMetadata');
 
 const {
   org: {
@@ -31,14 +32,6 @@ const {
     },
   },
 } = require('./clients/platform/v0/nodejs/platform_pbjs');
-
-const parseMetadata = (metadata) => {
-  if (metadata instanceof Metadata) {
-    return metadata.getMap();
-  }
-
-  return metadata;
-};
 
 module.exports = {
   getCoreDefinition,

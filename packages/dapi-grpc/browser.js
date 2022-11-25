@@ -4,21 +4,7 @@ const PlatformPromiseClient = require('./clients/platform/v0/web/PlatformPromise
 
 const coreMessages = require('./clients/core/v0/web/core_pb');
 const platformMessages = require('./clients/platform/v0/web/platform_pb');
-
-const parseMetadata = (metadata) => {
-  if (metadata instanceof Metadata) {
-    const parsedMetadata = {};
-    metadata.forEach((key, values) => {
-      // Join with comma because metadata items
-      // represented by an array of browser headers
-      parsedMetadata[key] = values.join(', ');
-    });
-
-    return parsedMetadata;
-  }
-
-  return metadata;
-};
+const parseMetadata = require('./lib/utils/parseMetadata');
 
 module.exports = {
   v0: {

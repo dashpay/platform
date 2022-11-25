@@ -28,6 +28,7 @@ describe('createGrpcTransportError', () => {
     let driveErrorDataBin = cbor.encode(errorData);
 
     // and grpc-web expects base64 string
+    // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
       driveErrorDataBin = driveErrorDataBin.toString('base64');
     }
@@ -106,6 +107,7 @@ describe('createGrpcTransportError', () => {
     let stackBin = cbor.encode(errorWithStack.stack);
 
     // and grpc-web expects string
+    // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
       stackBin = stackBin.toString('base64');
     }
@@ -157,6 +159,7 @@ describe('createGrpcTransportError', () => {
     });
 
     // and grpc-web expects string
+    // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
       driveErrorDataBin = driveErrorDataBin.toString('base64');
     }
