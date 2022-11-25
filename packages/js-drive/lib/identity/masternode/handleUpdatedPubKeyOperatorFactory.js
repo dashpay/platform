@@ -29,12 +29,14 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
    * @return Promise<Array<Identity|Document>>
    */
   async function handleUpdatedPubKeyOperator(
     masternodeEntry,
     previousMasternodeEntry,
     dataContract,
+    blockInfo,
   ) {
     const result = [];
 
@@ -82,6 +84,7 @@ function handleUpdatedPubKeyOperatorFactory(
       masternodeIdentifier,
       operatorIdentifier,
       proRegTxPayload.operatorReward,
+      blockInfo,
     );
 
     if (rewardShareDocument) {
@@ -112,6 +115,7 @@ function handleUpdatedPubKeyOperatorFactory(
         dataContract,
         'rewardShare',
         previousDocument.getId(),
+        blockInfo,
         { useTransaction: true },
       );
 

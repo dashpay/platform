@@ -31,6 +31,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   let stateRepositoryMock;
   let fetchDocumentsMock;
   let executionContext;
+  let blockTimeMs;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -42,6 +43,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ...documentsFixture[1].toObject(),
       lastName: 'NotSoShiny',
     }, dataContract);
+
+    blockTimeMs = Date.now();
 
     documents = [replaceDocument, documentsFixture[2]];
 
@@ -63,11 +66,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      time: {
-        seconds: 86400,
-      },
-    });
+    stateRepositoryMock.getTimeMs.returns(blockTimeMs);
 
     fetchDocumentsMock = this.sinonSandbox.stub();
     fetchDocumentsMock.resolves([
@@ -120,6 +119,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     try {
       await applyDocumentsBatchTransition(stateTransition);
+
       expect.fail('Error was not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(DocumentNotProvidedError);
@@ -146,7 +146,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateTransition.getExecutionContext().disableDryRun();
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.have.been.calledOnceWith();
+    expect(stateRepositoryMock.getTimeMs).to.have.been.calledOnceWith();
 
     const [documentTransition] = stateTransition.getTransitions();
     const newDocument = new Document({
@@ -155,7 +155,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       $type: documentTransition.getType(),
       $dataContractId: documentTransition.getDataContractId(),
       $ownerId: stateTransition.getOwnerId(),
-      $createdAt: 86400 * 1000,
+      $createdAt: blockTimeMs,
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());
 

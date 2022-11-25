@@ -4,14 +4,12 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 /**
  *
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
- * @param {BlockExecutionContext} blockExecutionContext
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
   transactionalStateRepository,
-  blockExecutionContext,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -19,12 +17,14 @@ function handleUpdatedScriptPayoutFactory(
    * @typedef handleUpdatedScriptPayout
    * @param {Identifier} identityId
    * @param {Script} newPayoutScript
+   * @param {BlockInfo} blockInfo
    * @param {Script} [previousPayoutScript]
    * @returns {Promise<void>}
    */
   async function handleUpdatedScriptPayout(
     identityId,
     newPayoutScript,
+    blockInfo,
     previousPayoutScript,
   ) {
     const identity = await transactionalStateRepository.fetchIdentity(identityId);
@@ -44,12 +44,11 @@ function handleUpdatedScriptPayoutFactory(
         previousPayoutScript,
         previousPubKeyType,
       );
-      const { time } = blockExecutionContext.getHeader();
 
       identityPublicKeys = identityPublicKeys.map((pk) => {
         if (pk.getData().equals(previousPubKeyData)) {
           pk.setDisabledAt(
-            time.seconds * 1000,
+            blockInfo.timeMs,
           );
         }
 

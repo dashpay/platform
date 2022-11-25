@@ -11,6 +11,7 @@ const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 /**
  * @param {IdentityStoreRepository} identityRepository
@@ -283,7 +284,8 @@ function expectDeterministicAppHashFactory(groveDBStore) {
 describe('synchronizeMasternodeIdentitiesFactory', () => {
   let container;
   let coreHeight;
-  let rawDiff;
+  let fetchSimplifiedMNListMock;
+  let fetchedSimplifiedMNList;
   let fetchTransactionMock;
   let smlStoreMock;
   let smlFixture;
@@ -294,22 +296,18 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let identityRepository;
   let documentRepository;
   let publicKeyToIdentitiesRepository;
-  let coreRpcClientMock;
   let expectOperatorIdentity;
   let expectMasternodeIdentity;
   let expectDeterministicAppHash;
   let firstSyncAppHash;
+  let blockInfo;
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = 'a5e3040603feaf608c8a8e048817ff535fc9bea500c80ce52f37b27ffb5d7555';
+    firstSyncAppHash = 'fd89ac711662e6e9eb127110d5a17e0192ae5fe71b8ddb2f19df74422e44224d';
+    blockInfo = new BlockInfo(10, 0, 1668702100799);
 
     container = await createTestDIContainer();
-
-    const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: 1651585250 } },
-    );
 
     // Mock fetchTransaction
 
@@ -336,13 +334,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Mock Core RPC
 
-    coreRpcClientMock = {
-      protx: this.sinon.stub().resolves({
-        result: rawDiff,
-      }),
+    fetchedSimplifiedMNList = {
+      mnList: [],
     };
 
-    container.register('coreRpcClient', asValue(coreRpcClientMock));
+    fetchSimplifiedMNListMock = this.sinon.stub().resolves(fetchedSimplifiedMNList);
+
+    container.register('fetchSimplifiedMNList', asValue(fetchSimplifiedMNListMock));
 
     // Mock SML
 
@@ -387,13 +385,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure(true);
 
-    // Create misc tree
-    await groveDBStore.createTree(
-      [],
-      Buffer.from([5]),
-      { useTransaction: true },
-    );
-
     const registerSystemDataContract = container.resolve('registerSystemDataContract');
     const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
     const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
@@ -407,8 +398,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       masternodeRewardSharesOwnerMasterPublicKey,
       masternodeRewardSharesOwnerSecondPublicKey,
       masternodeRewardSharesDocuments,
+      blockInfo,
     );
 
+    /**
+     * @type {synchronizeMasternodeIdentities}
+     */
     synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
 
     identityRepository = container.resolve('identityRepository');
@@ -443,7 +438,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   });
 
   it('should create identities for all masternodes on the first sync', async () => {
-    const result = await synchronizeMasternodeIdentities(coreHeight);
+    const result = await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     expect(result.fromHeight).to.be.equal(0);
     expect(result.toHeight).to.be.equal(3);
@@ -534,7 +529,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       ),
     );
 
-    const secondOperatorIdentityResult = await identityRepository.fetch(secondOperatorIdentifier);
+    const secondOperatorIdentityResult = await identityRepository.fetch(
+      secondOperatorIdentifier,
+      { useTransaction: true },
+    );
 
     const secondOperatorIdentity = secondOperatorIdentityResult.getValue();
 
@@ -554,6 +552,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
           ['$ownerId', '==', secondMasternodeIdentifier],
           ['payToId', '==', secondOperatorIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -565,33 +564,65 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
     // Sync initial list
 
-    await synchronizeMasternodeIdentities(coreHeight);
+    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
+    const nextCoreHeight = coreHeight + 42;
+
+    // Mock SML
+
+    const newSmlFixture = [
+      new SimplifiedMNListEntry({
+        proRegTxHash: '3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b',
+        confirmedHash: '3be1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b27323b',
+        service: '192.168.65.3:20201',
+        pubKeyOperator: '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b',
+        votingAddress: 'yVey9g4fsN3RY3ZjQ7HqiKEH2zEVAG95EN',
+        isValid: true,
+        payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
+        payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
+      }),
+    ];
+
+    smlStoreMock.getSMLbyHeight.withArgs(nextCoreHeight).returns({
+      mnList: smlFixture.concat(newSmlFixture),
+    });
+
+    fetchedSimplifiedMNList.mnList = smlFixture;
+
+    const transaction3 = {
+      extraPayload: {
+        operatorReward: 0,
+        keyIDOwner: Buffer.alloc(20).fill('c').toString('hex'),
+      },
+    };
+
+    fetchTransactionMock.withArgs('3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b').resolves(transaction3);
+
     // Second call
 
-    const result = await synchronizeMasternodeIdentities(coreHeight + 42);
+    const result = await synchronizeMasternodeIdentities(nextCoreHeight, blockInfo);
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(45);
-    expect(result.createdEntities).to.have.lengthOf(3);
+    expect(result.createdEntities).to.have.lengthOf(1);
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
     // Nothing happened
 
-    await expectDeterministicAppHash('c425ad55f0c029f287eb0f770040773d6c380bdb159991a24211607c41fd018f');
+    await expectDeterministicAppHash('8d461c8480554d083624adf76649a5e3a06f0138943c8866ecda8aeb9a4f6265');
 
     // Core RPC should be called
 
-    expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3, true);
+    expect(fetchSimplifiedMNListMock).to.have.been.calledOnceWithExactly(1, coreHeight);
   });
 
   it('should create masternode identities if new masternode appeared', async () => {
     // Sync initial list
 
-    await synchronizeMasternodeIdentities(coreHeight);
+    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -627,7 +658,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
@@ -635,7 +666,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('b95a99722cc21adc1c97fc91b19d3cd1a9473722cbe60ebeb5697f3e326645f3');
+    await expectDeterministicAppHash('7b042c138540aa250e9633817764d7c2ab623bceaecb76c58e55b72e3a2f4a8d');
 
     // New masternode identity should be created
 
@@ -692,7 +723,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should remove reward shares if masternode disappeared', async () => {
     // Sync initial list
 
-    await synchronizeMasternodeIdentities(coreHeight);
+    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -704,7 +735,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
@@ -712,7 +743,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('b189ba5e0a89881462706c9500c61bce255d15f1e78b23cc7e466bc1fac083c4');
+    await expectDeterministicAppHash('e9f09669066a21c07fe1dd783242420364f7561fc354fe8320159c57858d7e85');
 
     // Masternode identity should stay
 
@@ -738,6 +769,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         where: [
           ['$ownerId', '==', removedMasternodeIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -749,7 +781,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should remove reward shares if masternode is not valid', async () => {
     // Sync initial list
 
-    await synchronizeMasternodeIdentities(coreHeight);
+    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -764,7 +796,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
@@ -772,7 +804,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('b189ba5e0a89881462706c9500c61bce255d15f1e78b23cc7e466bc1fac083c4');
+    await expectDeterministicAppHash('e9f09669066a21c07fe1dd783242420364f7561fc354fe8320159c57858d7e85');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -787,6 +819,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         where: [
           ['$ownerId', '==', invalidMasternodeIdentifier],
         ],
+        useTransaction: true,
       },
     );
 
@@ -798,7 +831,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should create operator identity and reward shares if PubKeyOperator was changed', async () => {
     // Initial sync
 
-    await synchronizeMasternodeIdentities(coreHeight);
+    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -813,7 +846,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
@@ -821,7 +854,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(3);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('b09f6baa1e8973bfd8cf44ddf8974078ff8da0b5425a0e0aed5004076f94c553');
+    await expectDeterministicAppHash('28cdbff1397a7f8729d3e173098571bc810d98eff26a4951377fc25e0eb4cb26');
 
     // Masternode identity should stay
 
@@ -871,7 +904,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should handle changed payout and operator payout addresses', async () => {
     // Sync initial list
 
-    await synchronizeMasternodeIdentities(coreHeight);
+    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -887,9 +920,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    await synchronizeMasternodeIdentities(coreHeight + 1);
+    await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
-    await expectDeterministicAppHash('bd5eccfb5875cac137201a97757d84e6e400abf9f57250f8ca5a89bd266d53d1');
+    await expectDeterministicAppHash('94972e199db592928935b871841c762985352a9127cb677ab6e2afaa1b198a46');
 
     // Masternode identity should contain new public key
 

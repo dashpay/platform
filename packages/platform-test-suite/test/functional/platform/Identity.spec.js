@@ -42,7 +42,7 @@ describe('Platform', () => {
       dpp = new Dash.PlatformProtocol();
       await dpp.initialize();
 
-      client = await createClientWithFundedWallet(undefined, 200000);
+      client = await createClientWithFundedWallet(550000);
 
       walletAccount = await client.getWalletAccount();
     });
@@ -54,7 +54,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(140000);
+      identity = await client.platform.identities.register(400000);
 
       expect(identity).to.exist();
     });

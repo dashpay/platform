@@ -5,8 +5,6 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 /**
@@ -15,9 +13,9 @@ const BlockExecutionContext = require('../../blockExecution/BlockExecutionContex
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {rotateSignedStore} rotateSignedStore
  * @param {BaseLogger} logger
- * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
  * @param {ExecutionTimer} executionTimer
+ * @param {RSAbci} rsAbci
  *
  * @return {commitHandler}
  */
@@ -27,9 +25,9 @@ function commitHandlerFactory(
   blockExecutionContextStackRepository,
   rotateSignedStore,
   logger,
-  dataContractCache,
   groveDBStore,
   executionTimer,
+  rsAbci,
 ) {
   /**
    * Commit ABCI Handler
@@ -68,15 +66,12 @@ function commitHandlerFactory(
 
     // Update data contract cache with new version of
     // committed data contract
-    for (const dataContract of blockExecutionContext.getDataContracts()) {
-      const operations = [new ReadOperation(dataContract.toBuffer().length)];
+    const rsRequest = {
+      updatedDataContractIds: blockExecutionContext.getDataContracts()
+        .map((dataContract) => dataContract.getId()),
+    };
 
-      const cacheItem = new DataContractCacheItem(dataContract, operations);
-
-      if (dataContractCache.has(cacheItem.getKey())) {
-        dataContractCache.set(cacheItem.getKey(), cacheItem);
-      }
-    }
+    await rsAbci.afterFinalizeBlock(rsRequest);
 
     // Rotate signed store
     // Create a new GroveDB checkpoint and remove the old one

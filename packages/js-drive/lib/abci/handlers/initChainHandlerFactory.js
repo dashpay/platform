@@ -6,6 +6,9 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const BlockInfo = require('../../blockExecution/BlockInfo');
+const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
+
 /**
  * Init Chain ABCI handler
  *
@@ -64,17 +67,17 @@ function initChainHandlerFactory(
 
     await rsAbci.initChain({ }, true);
 
-    // Create misc tree
-    await groveDBStore.createTree(
-      [],
-      Buffer.from([5]),
-      { useTransaction: true },
+    const blockInfo = new BlockInfo(
+      0,
+      0,
+      protoTimestampToMillis(time),
     );
 
-    await registerSystemDataContracts(consensusLogger, time);
+    await registerSystemDataContracts(consensusLogger, blockInfo);
 
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
       initialCoreChainLockedHeight,
+      blockInfo,
     );
 
     const {

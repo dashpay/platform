@@ -8,7 +8,8 @@ const {
 
 const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
-const timeToMillis = require('../../util/timeToMillis');
+const BlockInfo = require('../../blockExecution/BlockInfo');
+const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
 
 /**
  * Begin Block ABCI Handler
@@ -55,6 +56,8 @@ function beginBlockHandlerFactory(
       coreChainLockedHeight,
       height,
       version,
+      time,
+      proposerProTxHash,
     } = header;
 
     // Start block execution timer
@@ -104,6 +107,8 @@ function beginBlockHandlerFactory(
 
     blockExecutionContext.setHeader(header);
 
+    blockExecutionContext.setTimeMs(protoTimestampToMillis(time));
+
     blockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
     // Set protocol version to DPP
@@ -123,23 +128,38 @@ function beginBlockHandlerFactory(
      * @type {BlockBeginRequest}
      */
     const rsRequest = {
-      blockHeight: header.height.toNumber(),
-      blockTimeMs: timeToMillis(header.time.seconds, header.time.nanos),
-      proposerProTxHash: header.proposerProTxHash,
+      blockHeight: height.toNumber(),
+      blockTimeMs: blockExecutionContext.getTimeMs(),
+      proposerProTxHash,
       validatorSetQuorumHash: Buffer.alloc(32),
     };
 
     if (previousContext) {
-      const previousHeader = previousContext.getHeader();
-
-      rsRequest.previousBlockTimeMs = timeToMillis(
-        previousHeader.time.seconds, previousHeader.time.nanos,
-      );
+      rsRequest.previousBlockTimeMs = previousContext.getTimeMs();
     }
 
     logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    await rsAbci.blockBegin(rsRequest, true);
+    const rsResponse = await rsAbci.blockBegin(rsRequest, true);
+
+    blockExecutionContext.setEpochInfo(rsResponse.epochInfo);
+
+    const { currentEpochIndex, isEpochChange } = rsResponse;
+
+    if (isEpochChange) {
+      const debugData = {
+        currentEpochIndex,
+        blockTime: blockExecutionContext.getTimeMs(),
+      };
+
+      if (rsRequest.previousBlockTimeMs) {
+        debugData.previousBlockTimeMs = rsRequest.previousBlockTimeMs;
+      }
+
+      const blockTimeFormatted = new Date(blockExecutionContext.getTimeMs()).toUTCString();
+
+      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
+    }
 
     // Update SML
 
@@ -151,8 +171,11 @@ function beginBlockHandlerFactory(
     );
 
     if (isSimplifiedMasternodeListUpdated) {
+      const blockInfo = BlockInfo.createFromBlockExecutionContext(blockExecutionContext);
+
       const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
         coreChainLockedHeight,
+        blockInfo,
       );
 
       const {

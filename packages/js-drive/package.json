@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.23.0-alpha.8",
+  "version": "0.23.0-alpha.9",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -76,7 +76,7 @@
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
-    "@dashevo/rs-drive": "0.23.0-dev.9",
+    "@dashevo/rs-drive": "0.23.0-beta.1",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
     "awilix": "^4.2.6",
@@ -92,7 +92,6 @@
     "lodash.get": "^4.4.2",
     "lodash.set": "^4.3.2",
     "long": "^5.2.0",
-    "lru-cache": "^5.1.1",
     "node-graceful": "^3.0.1",
     "pino": "^6.4.0",
     "pino-multi-stream": "^5.2.0",

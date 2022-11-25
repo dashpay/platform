@@ -2,7 +2,8 @@
  * @param sinonSandbox
  * @return {{
  *   fetchDataContract: *,
- *   storeDataContract: *,
+ *   createDataContract: *,
+ *   updateDataContract: *,
  *   fetchDocuments: *,
  *   createDocument: *,
  *   updateDocument: *,
@@ -13,12 +14,14 @@
  *   updateIdentity: *,
  *   verifyInstantLock: *,
  *   fetchSMLStore: *,
+ *   getTimeMs: *,
  * }}
  */
 module.exports = function createStateRepositoryMock(sinonSandbox) {
   return {
     fetchDataContract: sinonSandbox.stub(),
-    storeDataContract: sinonSandbox.stub(),
+    createDataContract: sinonSandbox.stub(),
+    updateDataContract: sinonSandbox.stub(),
     fetchDocuments: sinonSandbox.stub(),
     createDocument: sinonSandbox.stub(),
     updateDocument: sinonSandbox.stub(),
@@ -35,5 +38,6 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     verifyChainLockHeight: sinonSandbox.stub(),
     isAssetLockTransactionOutPointAlreadyUsed: sinonSandbox.stub(),
     fetchSMLStore: sinonSandbox.stub(),
+    getTimeMs: sinonSandbox.stub(),
   };
 };
