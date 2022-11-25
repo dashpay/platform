@@ -18,8 +18,6 @@ const EVENTS = {
 
 /**
  * @typedef TransactionsReaderOptions
- * @property {Function} [createHistoricalSyncStream]
- * @property {Function} [createContinuousSyncStream]
  * @property {string} [network]
  * @property {number} maxRetries
  * @property {string} walletId
@@ -41,13 +39,15 @@ const EVENTS = {
 class TransactionsReader extends EventEmitter {
   /**
    * @param {TransactionsReaderOptions} options
+   * @param {Function} [createHistoricalSyncStream]
+   * @param {Function} [createContinuousSyncStream]
    */
-  constructor(options = {}) {
+  constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
-    this.createHistoricalSyncStream = options.createHistoricalSyncStream;
-    this.createContinuousSyncStream = options.createContinuousSyncStream;
     this.network = options.network;
     this.maxRetries = options.maxRetries;
+    this.createHistoricalSyncStream = createHistoricalSyncStream;
+    this.createContinuousSyncStream = createContinuousSyncStream;
 
     this.historicalSyncStream = null;
     this.continuousSyncStream = null;
@@ -82,7 +82,7 @@ class TransactionsReader extends EventEmitter {
       throw new Error(`Invalid total amount of blocks to sync: ${totalAmount}`);
     }
 
-    const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
+    const subscribeWithRetries = this.createSubscribeToHistoricalBatch(this.maxRetries);
     const count = toBlockHeight - fromBlockHeight + 1;
     this.historicalSyncStream = await subscribeWithRetries(fromBlockHeight, count, addresses);
     this.logger.debug(`[TransactionsReader] Started syncing blocks from ${fromBlockHeight} to ${toBlockHeight}`);
@@ -96,7 +96,7 @@ class TransactionsReader extends EventEmitter {
    * @param {number} [maxRetries=0] - maximum amount of retries
    * @returns {function(*, *, *): Promise<Stream>}
    */
-  subscribeToHistoricalBatch(maxRetries = 0) {
+  createSubscribeToHistoricalBatch(maxRetries = 0) {
     let currentRetries = 0;
     /**
      * Subscribes to the stream of historical data and handles retry logic

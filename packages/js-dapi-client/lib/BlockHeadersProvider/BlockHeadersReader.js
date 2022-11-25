@@ -10,8 +10,6 @@ const EVENTS = {
 
 /**
  * @typedef BlockHeadersReaderOptions
- * @property {Function} [createHistoricalSyncStream]
- * @property {Function} [createContinuousSyncStream]
  * @property {number} [maxParallelStreams]
  * @property {number} [targetBatchSize]
  * @property {number} [maxRetries]
@@ -20,11 +18,13 @@ const EVENTS = {
 class BlockHeadersReader extends EventEmitter {
   /**
    * @param {BlockHeadersReaderOptions} options
+   * @param createHistoricalSyncStream
+   * @param createContinuousSyncStream
    */
-  constructor(options = {}) {
+  constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
-    this.createHistoricalSyncStream = options.createHistoricalSyncStream;
-    this.createContinuousSyncStream = options.createContinuousSyncStream;
+    this.createHistoricalSyncStream = createHistoricalSyncStream;
+    this.createContinuousSyncStream = createContinuousSyncStream;
     this.maxParallelStreams = options.maxParallelStreams;
     this.targetBatchSize = options.targetBatchSize;
     this.maxRetries = options.maxRetries;
@@ -76,7 +76,7 @@ class BlockHeadersReader extends EventEmitter {
       const startingHeight = (batchIndex * actualBatchSize) + fromBlockHeight;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
 
-      const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
+      const subscribeWithRetries = this.createSubscribeToHistoricalBatch(this.maxRetries);
       // eslint-disable-next-line no-await-in-loop
       const stream = await subscribeWithRetries(startingHeight, count);
       this.historicalStreams.push(stream);
@@ -174,7 +174,7 @@ class BlockHeadersReader extends EventEmitter {
    * @param {number} [maxRetries=0] - maximum amount of retries
    * @returns {function(*, *): Promise<Stream>}
    */
-  subscribeToHistoricalBatch(maxRetries = 0) {
+  createSubscribeToHistoricalBatch(maxRetries = 0) {
     let currentRetries = 0;
 
     /**

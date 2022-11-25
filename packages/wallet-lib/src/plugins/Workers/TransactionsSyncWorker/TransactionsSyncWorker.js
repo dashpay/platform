@@ -101,13 +101,15 @@ class TransactionsSyncWorker extends Worker {
         );
       };
 
-      this.transactionsReader = new TransactionsReader({
-        maxRetries: MAX_RETRIES,
-        network: this.network,
-        walletId: this.walletId,
-        createContinuousSyncStream,
+      this.transactionsReader = new TransactionsReader(
+        {
+          maxRetries: MAX_RETRIES,
+          network: this.network,
+          walletId: this.walletId,
+        },
         createHistoricalSyncStream,
-      });
+        createContinuousSyncStream,
+      );
     }
   }
 

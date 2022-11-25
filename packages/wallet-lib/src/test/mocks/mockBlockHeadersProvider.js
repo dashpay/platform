@@ -22,19 +22,19 @@ const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream, he
     return continuousStream;
   };
 
-  return new BlockHeadersProvider({
-    maxParallelStreams: numStreams,
-    targetBatchSize: headersPerStream,
-    createHistoricalSyncStream:
-      (fromBlockHeight, count) => subscribeToBlockHeadersWithChainLocks({
-        fromBlockHeight,
-        count,
-      }),
-    createContinuousSyncStream:
-      () => subscribeToBlockHeadersWithChainLocks({
-        count: 0,
-      }),
-  });
+  return new BlockHeadersProvider(
+    {
+      maxParallelStreams: numStreams,
+      targetBatchSize: headersPerStream,
+    },
+    (fromBlockHeight, count) => subscribeToBlockHeadersWithChainLocks({
+      fromBlockHeight,
+      count,
+    }),
+    () => subscribeToBlockHeadersWithChainLocks({
+      count: 0,
+    }),
+  );
 };
 
 module.exports = mockBlockHeadersProvider;

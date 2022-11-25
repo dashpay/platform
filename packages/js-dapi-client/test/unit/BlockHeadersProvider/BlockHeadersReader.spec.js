@@ -26,38 +26,37 @@ describe('BlockHeadersReader - unit', () => {
       maxRetries: 1,
       maxParallelStreams: 6,
       targetBatchSize: 10,
-      createHistoricalSyncStream: () => {},
-      createContinuousSyncStream: () => {},
     };
 
-    this.sinon.stub(options, 'createHistoricalSyncStream')
+    const createHistoricalSyncStream = this.sinon.stub()
       .callsFake(async () => {
         const stream = new BlockHeadersWithChainLocksStreamMock(this.sinon);
         historicalStreams.push(stream);
         return stream;
       });
-
-    this.sinon.stub(options, 'createContinuousSyncStream')
+    const createContinuousSyncStream = this.sinon.stub()
       .callsFake(async () => {
         const stream = new BlockHeadersWithChainLocksStreamMock(this.sinon);
         continuousSyncStream = stream;
         return stream;
       });
 
-    blockHeadersReader = new BlockHeadersReader(options);
+    blockHeadersReader = new BlockHeadersReader(
+      options, createHistoricalSyncStream, createContinuousSyncStream,
+    );
     this.sinon.spy(blockHeadersReader, 'emit');
     this.sinon.spy(blockHeadersReader, 'on');
     this.sinon.spy(blockHeadersReader, 'stopReadingHistorical');
   });
 
-  describe('#subscribeToHistoricalBatch', () => {
+  describe('#createSubscribeToHistoricalBatch', () => {
     let headers;
     let subscribeToHistoricalBatch;
 
     beforeEach(() => {
       headers = getHeadersFixture();
 
-      subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatch(
+      subscribeToHistoricalBatch = blockHeadersReader.createSubscribeToHistoricalBatch(
         options.maxRetries,
       );
     });
@@ -419,7 +418,7 @@ describe('BlockHeadersReader - unit', () => {
 
   describe('#readHistorical', () => {
     beforeEach(function () {
-      this.sinon.spy(blockHeadersReader, 'subscribeToHistoricalBatch');
+      this.sinon.spy(blockHeadersReader, 'createSubscribeToHistoricalBatch');
     });
 
     it('should start historical sync and subscribe to events and commands', async () => {
@@ -435,7 +434,7 @@ describe('BlockHeadersReader - unit', () => {
     it('should create only one stream in case the amount of blocks is too small', async () => {
       const amount = Math.ceil(options.targetBatchSize * 1.4);
       await blockHeadersReader.readHistorical(1, amount);
-      expect(blockHeadersReader.subscribeToHistoricalBatch).to.be.calledOnce();
+      expect(blockHeadersReader.createSubscribeToHistoricalBatch).to.be.calledOnce();
     });
 
     it('should evenly spread the load between streams', async () => {
@@ -460,7 +459,7 @@ describe('BlockHeadersReader - unit', () => {
 
     it('should limit amount of streams in case batch size is too small compared to total amount', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
-      expect(blockHeadersReader.subscribeToHistoricalBatch.callCount)
+      expect(blockHeadersReader.createSubscribeToHistoricalBatch.callCount)
         .to.equal(options.maxParallelStreams);
     });
 

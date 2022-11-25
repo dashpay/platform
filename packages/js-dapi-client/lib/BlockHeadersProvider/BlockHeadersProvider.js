@@ -11,8 +11,6 @@ const BlockHeadersReader = require('./BlockHeadersReader');
  * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
  * @property {number} [targetBatchSize=100000] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
- * @property {Function} [createHistoricalSyncStream]
- * @property {Function} [createContinuousSyncStream]
  */
 const defaultOptions = {
   network: 'testnet',
@@ -41,8 +39,10 @@ const STATES = {
 class BlockHeadersProvider extends EventEmitter {
   /**
    * @param {BlockHeadersProviderOptions} options
+   * @param {Function} [createHistoricalSyncStream]
+   * @param {Function} [createContinuousSyncStream]
    */
-  constructor(options = {}) {
+  constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
     this.options = {
       ...defaultOptions,
@@ -57,6 +57,8 @@ class BlockHeadersProvider extends EventEmitter {
     this.errorHandler = this.errorHandler.bind(this);
     this.headersHandler = this.headersHandler.bind(this);
     this.historicalDataObtainedHandler = this.historicalDataObtainedHandler.bind(this);
+    this.createHistoricalSyncStream = createHistoricalSyncStream;
+    this.createContinuousSyncStream = createContinuousSyncStream;
   }
 
   /**
@@ -93,9 +95,9 @@ class BlockHeadersProvider extends EventEmitter {
           maxParallelStreams: this.options.maxParallelStreams,
           targetBatchSize: this.options.targetBatchSize,
           maxRetries: this.options.maxRetries,
-          createContinuousSyncStream: this.options.createContinuousSyncStream,
-          createHistoricalSyncStream: this.options.createHistoricalSyncStream,
         },
+        this.createHistoricalSyncStream,
+        this.createContinuousSyncStream,
       );
     }
 

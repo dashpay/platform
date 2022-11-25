@@ -23,37 +23,40 @@ describe('TransactionsReader - unit', () => {
   beforeEach(function () {
     options = {
       network: NETWORK,
-      createHistoricalSyncStream: () => {},
-      createContinuousSyncStream: () => {},
       maxRetries: 3,
     };
 
-    this.sinon.stub(options, 'createHistoricalSyncStream')
+    const createHistoricalSyncStream = this.sinon.stub()
       .callsFake(async () => {
         const streamMock = new TxStreamMock(this.sinon);
         historicalSyncStream = streamMock;
         return streamMock;
       });
 
-    this.sinon.stub(options, 'createContinuousSyncStream')
+    const createContinuousSyncStream = this.sinon.stub()
       .callsFake(async () => {
         const streamMock = new TxStreamMock(this.sinon);
         continuousSyncStream = streamMock;
         return streamMock;
       });
 
-    transactionsReader = new TransactionsReader(options);
+    transactionsReader = new TransactionsReader(
+      options,
+      createHistoricalSyncStream,
+      createContinuousSyncStream,
+    );
+
     this.sinon.spy(transactionsReader, 'emit');
     this.sinon.spy(transactionsReader, 'on');
     this.sinon.spy(transactionsReader, 'stopHistoricalSync');
-    this.sinon.spy(transactionsReader, 'subscribeToHistoricalBatch');
+    this.sinon.spy(transactionsReader, 'createSubscribeToHistoricalBatch');
     this.sinon.spy(transactionsReader, 'startContinuousSync');
   });
 
-  describe('#subscribeToHistoricalBatch', () => {
+  describe('#createSubscribeToHistoricalBatch', () => {
     let subscribeToHistoricalBatch;
     beforeEach(() => {
-      subscribeToHistoricalBatch = transactionsReader.subscribeToHistoricalBatch(
+      subscribeToHistoricalBatch = transactionsReader.createSubscribeToHistoricalBatch(
         MAX_RETRIES,
       );
     });

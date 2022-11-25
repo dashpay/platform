@@ -51,8 +51,6 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     const { network } = options;
 
     const blockHeadersProviderOptions = {
-      createContinuousSyncStream,
-      createHistoricalSyncStream,
       ...BlockHeadersProvider.defaultOptions,
       ...options.blockHeadersProviderOptions,
       network,
@@ -72,14 +70,17 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
 
     blockHeadersProvider = new BlockHeadersProvider(
       blockHeadersProviderOptions,
+      createHistoricalSyncStream,
+      createContinuousSyncStream,
     );
   }
 
   if (!blockHeadersProvider) {
-    blockHeadersProvider = new BlockHeadersProvider({
+    blockHeadersProvider = new BlockHeadersProvider(
+      {},
       createContinuousSyncStream,
       createHistoricalSyncStream,
-    });
+    );
   }
 
   return blockHeadersProvider;
