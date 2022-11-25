@@ -36,7 +36,7 @@ export default async function register(
     const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
       .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
-    this.logger.silly(`[Identity#register] Broadcast identity create ST "${identityCreateTransition.hash}"`);
+    this.logger.silly(`[Identity#register] Broadcast identity create ST"`);
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
