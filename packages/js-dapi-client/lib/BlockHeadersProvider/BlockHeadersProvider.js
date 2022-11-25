@@ -128,7 +128,7 @@ class BlockHeadersProvider extends EventEmitter {
    */
   ensureChainRoot(height) {
     // Flush spv chain in case header at specified height was not found
-    if (!this.spvChain.hashesByHeight[height - 1]) {
+    if (!this.spvChain.hashesByHeight.has(height - 1)) {
       this.spvChain.reset(height);
     }
   }

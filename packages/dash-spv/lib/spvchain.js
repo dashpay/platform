@@ -10,13 +10,9 @@ const SpvChain = class {
     this.reset(startBlockHeight);
     this.init(chainType, startBlock);
 
-    this.hashesByHeight = {
-      [this.startBlockHeight]: this.root.hash,
-    };
+    this.hashesByHeight = new Map([[this.startBlockHeight, this.root.hash]]);
 
-    this.heightByHash = {
-      [this.root.hash]: this.startBlockHeight,
-    };
+    this.heightByHash = new Map([[this.root.hash, this.startBlockHeight]]);
 
     // TODO: legacy - remove this
     this.orphanBlocks = [];
@@ -28,8 +24,8 @@ const SpvChain = class {
     this.orphanChunks = [];
     this.prunedHeaders = [];
 
-    this.hashesByHeight = {};
-    this.heightByHash = {};
+    this.hashesByHeight = new Map();
+    this.heightByHash = new Map();
     this.orphansHashes = new Set();
     this.startBlockHeight = fromBlockHeight < 0 ? 0 : fromBlockHeight;
   }
@@ -106,8 +102,8 @@ const SpvChain = class {
     const head = longestChain[longestChain.length - 1];
     const tail = this.prunedHeaders[0] || longestChain[0];
 
-    const headHeight = this.heightByHash[head.hash];
-    const tailHeight = this.heightByHash[tail.hash];
+    const headHeight = this.heightByHash.get(head.hash);
+    const tailHeight = this.heightByHash.get(tail.hash);
 
     if (this.orphanChunks.length) {
       throw new SPVError('Chain contains orphan chunks');
@@ -121,11 +117,11 @@ const SpvChain = class {
       throw new SPVError(`Tail header '${tail.hash}' height is invalid ${tailHeight}`);
     }
 
-    if (this.hashesByHeight[headHeight] !== head.hash) {
+    if (this.hashesByHeight.get(headHeight) !== head.hash) {
       throw new SPVError(`Head header '${head.hash}' height mismatch`);
     }
 
-    if (this.hashesByHeight[tailHeight] !== tail.hash) {
+    if (this.hashesByHeight.get(tailHeight) !== tail.hash) {
       throw new SPVError(`Tail header '${tail.hash}' height mismatch`);
     }
 
@@ -183,8 +179,8 @@ const SpvChain = class {
 
     headers.forEach((header, i) => {
       const height = lastHeight + i;
-      this.hashesByHeight[height] = header.hash;
-      this.heightByHash[header.hash] = height;
+      this.hashesByHeight.set(height, header.hash);
+      this.heightByHash.set(header.hash, height);
     });
 
     const newLongestChain = longestChain.concat(headers);
@@ -200,7 +196,7 @@ const SpvChain = class {
 
   /** @private */
   isDuplicate(hash) {
-    return !!this.heightByHash[hash] || this.orphansHashes.has(hash);
+    return this.heightByHash.has(hash) || this.orphansHashes.has(hash);
   }
 
   /** @private */
@@ -411,7 +407,7 @@ const SpvChain = class {
     // Reorg detection
     // Get prev header hash
     const prevHash = utils.getCorrectedHash(firstHeader.prevHash);
-    const prevHeaderHeight = this.heightByHash[prevHash];
+    const prevHeaderHeight = this.heightByHash.get(prevHash);
 
     // Test on initial wallet load
     if (prevHeaderHeight && prevHeaderHeight > 0 && prevHeaderHeight !== headHeight - 1) {
@@ -419,7 +415,7 @@ const SpvChain = class {
       console.log(`------->: Batch head ${firstHeader.hash} at height ${headHeight} has parent at height ${prevHeaderHeight}`);
     }
 
-    const isOrphan = tip ? connectsToTip
+    const isOrphan = tip ? !connectsToTip
       : headHeight !== this.startBlockHeight;
 
     const allValid = normalizedHeaders.reduce(
