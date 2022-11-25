@@ -14,7 +14,6 @@ const validatePublicKeysFactory = require(
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-
 const DuplicatedIdentityPublicKeyError = require(
   '@dashevo/dpp/lib/errors/consensus/basic/identity/DuplicatedIdentityPublicKeyError',
 );
@@ -51,11 +50,17 @@ describe('validatePublicKeysFactory', () => {
   let bls;
   let PublicKeysValidator;
   let publicKeysValidator;
+  let InvalidIdentityPublicKeyDataErrorWasm;
+  let PublicKeyValidationError;
 
   beforeEach(async () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
-    ({ PublicKeysValidator } = await loadWasmDpp());
+    ({
+      PublicKeysValidator,
+      InvalidIdentityPublicKeyDataError: InvalidIdentityPublicKeyDataErrorWasm,
+      PublicKeyValidationError,
+    } = await loadWasmDpp());
 
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
@@ -423,13 +428,13 @@ describe('validatePublicKeysFactory', () => {
 
     const result = publicKeysValidator.validateKeys(rawPublicKeys);
 
-    await expectValidationError(result, InvalidIdentityPublicKeyDataError);
+    await expectValidationError(result, InvalidIdentityPublicKeyDataErrorWasm);
 
     const [error] = result.getErrors();
 
     expect(error.getCode()).to.equal(1040);
     expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[0].id);
-    expect(error.getValidationError()).to.be.instanceOf(TypeError);
+    expect(error.getValidationError()).to.be.instanceOf(PublicKeyValidationError);
     expect(error.getValidationError().message).to.equal('Invalid public key');
   });
 

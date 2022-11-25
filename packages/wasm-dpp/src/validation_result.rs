@@ -1,6 +1,7 @@
 use dpp::validation::ValidationResult;
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
+use crate::errors::consensus_error::from_consensus_error;
 use crate::errors::from_dpp_err;
 
 #[wasm_bindgen(js_name=ValidationResult)]
@@ -25,12 +26,12 @@ impl ValidationResultWasm {
     }
 
     #[wasm_bindgen(js_name=getErrors)]
-    pub fn errors(&self) {
+    pub fn errors(&self) -> Vec<JsValue> {
         self.0
             .errors()
-            .iter()
-            .map(|e| from_dpp_err(e))
-            .collect();
+            .into_iter()
+            .map(|e| from_consensus_error(e))
+            .collect()
     }
 }
 
