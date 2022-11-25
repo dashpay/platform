@@ -1,8 +1,8 @@
 # Wallet Library
 
 [![NPM Version](https://img.shields.io/npm/v/@dashevo/wallet-lib)](https://www.npmjs.com/package/@dashevo/wallet-lib)
-[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
+[![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
 A pure and extensible JavaScript Wallet Library for Dash
@@ -91,7 +91,7 @@ Account will by default be on expected BIP44 path (...0/0).
 
 Insight-Client has been removed from MVP and is not working since Wallet-lib v3.0.
 
-- [DAPI-Client](https://github.com/dashevo/platform/tree/master/packages/js-dapi-client)
+- [DAPI-Client](https://github.com/dashpay/platform/tree/master/packages/js-dapi-client)
 
 ### Adapters :
 
@@ -106,12 +106,12 @@ More extensive documentation is available at https://dashpay.github.io/platform/
 
 ## Maintainers
 
-Wallet-Lib is maintained by the [Dash Core Developers](https://www.github.com/dashevo).
+Wallet-Lib is maintained by the [Dash Core Developers](https://www.github.com/dashpay).
 We want to thank all members of the community that have submitted suggestions, issues and pull requests.
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
 
 ## License
 

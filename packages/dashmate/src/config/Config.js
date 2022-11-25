@@ -163,7 +163,6 @@ class Config {
       COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
-      COMPOSE_DOCKER_CLI_BUILD: 1,
       DOCKER_BUILDKIT: 1,
       ...convertObjectToEnvs(this.getOptions()),
     };

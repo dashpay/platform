@@ -5,6 +5,7 @@ const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryErro
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
@@ -15,6 +16,7 @@ describe('fetchDocumentsFactory', () => {
   let documentRepository;
   let dataContract;
   let container;
+  let blockInfo;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
@@ -38,13 +40,15 @@ describe('fetchDocumentsFactory', () => {
       },
     ];
 
+    blockInfo = new BlockInfo(1, 0, Date.now());
+
     /**
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
     await rsDrive.createInitialStateStructure();
 
-    await dataContractRepository.store(dataContract);
+    await dataContractRepository.create(dataContract, blockInfo);
 
     fetchDocuments = container.resolve('fetchDocuments');
   });
@@ -56,7 +60,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const result = await fetchDocuments(contractId, documentType);
 
@@ -74,7 +78,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const query = { where: [['name', '==', document.get('name')]] };
 
@@ -91,7 +95,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const query = { where: [['name', '==', 'unknown']] };
 
@@ -108,7 +112,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by an equal date', async () => {
     const indexedDocument = getDocumentsFixture(dataContract)[3];
 
-    await documentRepository.create(indexedDocument);
+    await documentRepository.create(indexedDocument, blockInfo);
 
     const query = {
       where: [
@@ -131,7 +135,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by a date range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.create(indexedDocument);
+    await documentRepository.create(indexedDocument, blockInfo);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() - 10);
@@ -162,7 +166,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch empty array in case date is out of range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.create(indexedDocument);
+    await documentRepository.create(indexedDocument, blockInfo);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() + 10);
@@ -189,12 +193,12 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
-    await documentRepository.create(document);
+    await documentRepository.create(document, blockInfo);
 
     const query = { where: [['lastName', '==', 'unknown']] };
 
     try {
-      await fetchDocuments(contractId, documentType, query);
+      await fetchDocuments(contractId, documentType, blockInfo, query);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {

@@ -18,10 +18,11 @@ describe('Platform', () => {
 
       before(async () => {
         ownerClient = await createClientWithFundedWallet(
+          150000,
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
-        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 50000);
+        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 100000);
 
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
@@ -95,8 +96,16 @@ describe('Platform', () => {
         );
 
         await ownerClient.platform.documents.broadcast({
-          create: [documentUpdate, documentRevert],
+          create: [documentUpdate],
         }, identity);
+
+        // forcing creation of additional block (enableAtHeight + 1)
+        await ownerClient.platform.documents.broadcast({
+          create: [documentRevert],
+        }, identity);
+
+        // forcing creation of additional block (enableAtHeight + 2)
+        await ownerClient.platform.identities.register(1400);
 
         // wait for block and check consensus params were changed
         let height;

@@ -15,11 +15,22 @@
  */
 
 /**
- * Store Data Contract
+ * Create Data Contract
  *
  * @async
  * @method
- * @name StateRepository#storeDataContract
+ * @name StateRepository#createDataContract
+ * @param {DataContract} dataContract
+ * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Update Data Contract
+ *
+ * @async
+ * @method
+ * @name StateRepository#updateDataContract
  * @param {DataContract} dataContract
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
  * @returns {Promise<void>}
@@ -189,4 +200,12 @@
  * @method
  * @name StateRepository#fetchSMLStore
  * @returns {Promise<SimplifiedMNListStore>}
+ */
+
+/**
+ * Returns current block time in milliseconds
+ *
+ * @method
+ * @name StateRepository#getTimeMs
+ * @returns {number}
  */

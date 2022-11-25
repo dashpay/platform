@@ -30,9 +30,9 @@ describe('Platform', () => {
     let document;
 
     before(async () => {
-      client = await createClientWithFundedWallet(undefined, 200000);
+      client = await createClientWithFundedWallet(1010000);
 
-      identity = await client.platform.identities.register(160000);
+      identity = await client.platform.identities.register(1000000);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();

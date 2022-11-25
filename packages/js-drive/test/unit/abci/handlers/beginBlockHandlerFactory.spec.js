@@ -16,6 +16,8 @@ const NotSupportedNetworkProtocolVersionError = require('../../../../lib/abci/ha
 const NetworkProtocolVersionIsNotSetError = require('../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
+const millisToProtoTimestamp = require('../../../../lib/util/millisToProtoTimestamp');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
@@ -36,11 +38,12 @@ describe('beginBlockHandlerFactory', () => {
   let blockExecutionContextStackMock;
   let executionTimerMock;
   let rsAbciMock;
+  let rsResponseMock;
+  let blockInfo;
+  let timeMs;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
-
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -62,9 +65,10 @@ describe('beginBlockHandlerFactory', () => {
     });
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
-    const getHeaderMock = this.sinon.stub();
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -72,8 +76,15 @@ describe('beginBlockHandlerFactory', () => {
       stopTimer: this.sinon.stub(),
     };
 
+    rsResponseMock = {
+      epochInfo: {
+        currentEpochIndex: 1,
+        isEpochChange: false,
+      },
+    };
+
     rsAbciMock = {
-      blockBegin: this.sinon.stub(),
+      blockBegin: this.sinon.stub().resolves(rsResponseMock),
     };
 
     beginBlockHandler = beginBlockHandlerFactory(
@@ -91,21 +102,29 @@ describe('beginBlockHandlerFactory', () => {
       rsAbciMock,
     );
 
-    blockHeight = new Long(1);
+    blockHeight = Long.fromNumber(1);
+
+    timeMs = Date.now();
 
     header = {
       version: {
         app: protocolVersion,
       },
       height: blockHeight,
-      time: {
-        seconds: Math.ceil(new Date().getTime() / 1000),
-      },
+      time: millisToProtoTimestamp(timeMs),
       coreChainLockedHeight,
       proposerProTxHash: Buffer.alloc(32, 1),
     };
 
-    getHeaderMock.returns(header);
+    blockInfo = new BlockInfo(
+      blockHeight.toNumber(),
+      rsResponseMock.epochInfo.currentEpochIndex,
+      timeMs,
+    );
+
+    blockExecutionContextMock.getHeader.returns(header);
+    blockExecutionContextMock.getEpochInfo.returns(rsResponseMock.epochInfo);
+    blockExecutionContextMock.getTimeMs.returns(timeMs);
 
     lastCommitInfo = {};
 
@@ -156,6 +175,7 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(synchronizeMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
       coreChainLockedHeight,
+      blockInfo,
     );
   });
 
@@ -190,6 +210,7 @@ describe('beginBlockHandlerFactory', () => {
       height: {
         equals: this.sinon.stub().returns(true),
       },
+      time: millisToProtoTimestamp(timeMs),
     });
 
     blockExecutionContextStackMock.getFirst.returns({
@@ -199,11 +220,9 @@ describe('beginBlockHandlerFactory', () => {
             equals: this.sinon.stub().returns(true),
             toNumber: this.sinon.stub().returns(1000),
           },
-          time: {
-            seconds: Math.ceil(new Date().getTime() / 1000),
-          },
         },
       ),
+      getTimeMs: this.sinon.stub().returns(timeMs),
     });
 
     groveDBStoreMock.isTransactionStarted.resolves(true);

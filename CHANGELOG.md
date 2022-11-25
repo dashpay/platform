@@ -1,3 +1,64 @@
+## [0.23.0-alpha.9](https://github.com/dashpay/platform/compare/v0.23.0-alpha.8...v0.23.0-alpha.9) (2022-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* precise storage fees (#619)
+
+### Features
+
+* precise storage fees ([#619](https://github.com/dashpay/platform/issues/619))
+
+
+### Bug Fixes
+
+* **dapi:** Cannot read properties of undefined (reading 'PoSePenalty') ([#612](https://github.com/dashpay/platform/issues/612))
+
+## [0.23.0-alpha.8](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.23.0-alpha.8) (2022-11-04)
+
+
+### Bug Fixes
+
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+
+
+### Continuous Integration
+
+* update deps ([#591](https://github.com/dashpay/platform/issues/591))
+
+
+### Documentation
+
+* GitHub org change updates ([#590](https://github.com/dashpay/platform/issues/590))
+
+## [0.23.0-alpha.7](https://github.com/dashpay/platform/compare/v0.23.0-alpha.6...v0.23.0-alpha.7) (2022-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous data is not compatible with new Drive
+
+
+### Bug Fixes
+
+* **dapi:** caching of headers prone to reorgs ([#578](https://github.com/dashpay/platform/issues/578))
+
+
+### Documentation
+
+* update URL from dashevo to dashpay ([#579](https://github.com/dashpay/platform/issues/579))
+
+
+### Build System
+
+* **dapi-grpc:** update grpc protoc image ([#553](https://github.com/dashpay/platform/issues/553))
+* remove buildx bake workaround ([#541](https://github.com/dashpay/platform/issues/541))
+
+
+### Miscellaneous Chores
+
+* **drive:** update RS Drive to 0.23.0-dev.9 ([#588](https://github.com/dashpay/platform/issues/588))
+
 ## [0.23.0-alpha.6](https://github.com/dashpay/platform/compare/v0.23.0-alpha.5...v0.23.0-alpha.6) (2022-10-12)
 
 

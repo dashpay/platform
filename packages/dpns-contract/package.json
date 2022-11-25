@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpns-contract",
-  "version": "0.23.0-alpha.6",
+  "version": "0.23.0-alpha.9",
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
     "lint": "eslint .",

@@ -1,4 +1,5 @@
 /**
+ * @param {DocumentRepository} documentRepository
  *
  * @returns {handleRemovedMasternode}
  */
@@ -7,8 +8,12 @@ function handleRemovedMasternodeFactory(
 ) {
   /**
    * @typedef {handleRemovedMasternode}
+   *
+   * @param {Identifier} masternodeIdentifier
+   * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
    */
-  async function handleRemovedMasternode(masternodeIdentifier, dataContract) {
+  async function handleRemovedMasternode(masternodeIdentifier, dataContract, blockInfo) {
     //  Delete documents belongs to masternode identity (ownerId) from rewards contract
     // since max amount is 16, we can fetch all of them in one request
     const result = [];
@@ -31,6 +36,7 @@ function handleRemovedMasternodeFactory(
         dataContract,
         'rewardShare',
         document.getId(),
+        blockInfo,
         { useTransaction: true },
       );
 

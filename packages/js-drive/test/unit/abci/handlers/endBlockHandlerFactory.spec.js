@@ -54,6 +54,7 @@ describe('endBlockHandlerFactory', () => {
 
     blockExecutionContextMock.hasDataContract.returns(true);
     blockExecutionContextMock.getHeader.returns(headerMock);
+    blockExecutionContextMock.getTimeMs.returns(Date.now());
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
 
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
@@ -91,10 +92,12 @@ describe('endBlockHandlerFactory', () => {
       blockEnd: blockEndMock,
     };
 
-    blockEndMock.resolves({
+    blockExecutionContextMock.getEpochInfo.returns({
       currentEpochIndex: 42,
       isEpochChange: true,
     });
+
+    blockEndMock.resolves({ });
 
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
