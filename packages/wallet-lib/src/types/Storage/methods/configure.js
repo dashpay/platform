@@ -29,13 +29,17 @@ module.exports = async function configure(opts = {}) {
     }
 
     const { skipSynchronizationBeforeHeight } = this.application.syncOptions || {};
-    const skippedSyncBefore = storage.unsafeOptions && storage.unsafeOptions.skipSync;
+    const skipSynchronizationBeforeHeightPrev = storage.unsafeOptions
+      && storage.unsafeOptions.skipSynchronizationBeforeHeight;
 
-    if (skippedSyncBefore && !skipSynchronizationBeforeHeight) {
+    if (skipSynchronizationBeforeHeightPrev && !skipSynchronizationBeforeHeight) {
       logger.warn('\'skipSynchronizationBeforeHeight\' option has been unset since the last use, re-syncing from start');
       await this.adapter.setItem(`wallet_${opts.walletId}`, null);
-    } else if (!skippedSyncBefore && skipSynchronizationBeforeHeight) {
+    } else if (!skipSynchronizationBeforeHeightPrev && skipSynchronizationBeforeHeight) {
       logger.warn(`'skipSynchronizationBeforeHeight' option has been set, syncing from ${skipSynchronizationBeforeHeight}`);
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    } else if (skipSynchronizationBeforeHeightPrev !== skipSynchronizationBeforeHeight) {
+      logger.warn(`'skipSynchronizationBeforeHeight' option has been changed, syncing from ${skipSynchronizationBeforeHeight}`);
       await this.adapter.setItem(`wallet_${opts.walletId}`, null);
     }
   }

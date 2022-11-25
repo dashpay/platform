@@ -17,15 +17,17 @@ const saveState = async function saveState() {
       }, {});
 
       const { skipSynchronizationBeforeHeight } = this.application.syncOptions || {};
+      const skipSyncBeforeHeight = parseInt(skipSynchronizationBeforeHeight, 10);
 
       const walletId = this.currentWalletId;
       const storage = {
         version: CONSTANTS.STORAGE.version,
         chains: {},
-        // Memorize skipSync flag in order to wipe the storage
-        // and re-sync from block 1 in case the option is removed on next launch
+        // Memorize skipSynchronizationBeforeHeight option in order to wipe the storage
+        // and re-sync from block 1 in case the option is removed or value changed on next launch
         unsafeOptions: {
-          skipSync: skipSynchronizationBeforeHeight && skipSynchronizationBeforeHeight > 0,
+          skipSynchronizationBeforeHeight:
+            !Number.isNaN(skipSyncBeforeHeight) ? skipSyncBeforeHeight : 0,
         },
       };
 
