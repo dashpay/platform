@@ -964,7 +964,7 @@ mod tests {
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
         assert_eq!(3211, added_bytes);
-        assert_eq!(2804600, processing_fee);
+        assert_eq!(2878800, processing_fee);
     }
 
     #[test]

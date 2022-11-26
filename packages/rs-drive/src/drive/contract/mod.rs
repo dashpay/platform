@@ -1053,7 +1053,7 @@ mod tests {
                 },
                 false,
                 BlockInfo::default(),
-                false,
+                true,
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1090,7 +1090,7 @@ mod tests {
                 },
                 false,
                 BlockInfo::default(),
-                false,
+                true,
                 None,
             )
             .expect("expected to insert a document successfully");

@@ -1664,7 +1664,7 @@ mod tests {
         test_fees_for_update_document_on_index(true, false)
     }
 
-    fn test_worst_case_fees_for_update_document(using_history: bool, using_transaction: bool) {
+    fn test_estimated_fees_for_update_document(using_history: bool, using_transaction: bool) {
         let config = DriveConfig {
             batching_enabled: true,
             batching_consistency_verification: true,
@@ -1879,23 +1879,23 @@ mod tests {
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_no_history_using_transaction() {
-        test_worst_case_fees_for_update_document(false, true)
+    fn test_estimated_fees_for_update_document_no_history_using_transaction() {
+        test_estimated_fees_for_update_document(false, true)
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_no_history_no_transaction() {
-        test_worst_case_fees_for_update_document(false, false)
+    fn test_estimated_fees_for_update_document_no_history_no_transaction() {
+        test_estimated_fees_for_update_document(false, false)
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_with_history_using_transaction() {
-        test_worst_case_fees_for_update_document(true, true)
+    fn test_estimated_fees_for_update_document_with_history_using_transaction() {
+        test_estimated_fees_for_update_document(true, true)
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_with_history_no_transaction() {
-        test_worst_case_fees_for_update_document(true, false)
+    fn test_estimated_fees_for_update_document_with_history_no_transaction() {
+        test_estimated_fees_for_update_document(true, false)
     }
 
     #[derive(Serialize, Deserialize)]

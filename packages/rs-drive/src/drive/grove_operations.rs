@@ -36,10 +36,10 @@ use crate::drive::batch::GroveDbOpBatch;
 use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use costs::storage_cost::transition::OperationStorageTransitionType;
 use costs::{CostContext, CostsExt, OperationCost};
-use grovedb::batch::{
-    key_info::KeyInfo, BatchApplyOptions, GroveDbOp, GroveDbOpMode, KeyInfoPath, Op,
-};
+use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
+use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op};
 use grovedb::{Element, GroveDb, PathQuery, TransactionArg};
+use std::collections::HashMap;
 
 use crate::drive::defaults::{MAX_ELEMENT_SIZE, SOME_TREE_SIZE};
 use crate::drive::flags::StorageFlags;
@@ -61,6 +61,7 @@ use grovedb::operations::delete::DeleteOptions;
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::Error as GroveError;
+use storage::rocksdb_storage::RocksDbStorage;
 
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
 /// and returns the operation's return value.
@@ -882,37 +883,30 @@ impl Drive {
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
         };
-        if apply {
-            let cost_context = self.grove.delete_operation_for_delete_internal(
+        let delete_operation = if apply {
+            self.grove.delete_operation_for_delete_internal(
                 path,
                 key,
                 &options,
                 true,
                 &current_batch_operations.operations,
                 transaction,
-            );
-
-            if let Some(delete_operation) =
-                push_drive_operation_result(cost_context, drive_operations)?
-            {
-                // we also add the actual delete operation
-                drive_operations.push(DriveOperation::GroveOperation(delete_operation))
-            }
+            )
         } else {
-            let worst_case_cost = self.grove.worst_case_deletion_cost(
-                path,
-                key,
-                MAX_ELEMENT_SIZE, // only_delete_tree_if_empty,
-                                  // true,
-                                  // &current_batch_operations,
-                                  // transaction,
-            );
+            self.grove
+                .worst_case_delete_operation_for_delete_internal::<RocksDbStorage, P>(
+                    &KeyInfoPath::from_known_path(path),
+                    &KeyInfo::KnownKey(key.to_vec()),
+                    true,
+                    MAX_ELEMENT_SIZE,
+                )
+        };
 
-            let cost_context = Ok(worst_case_cost).wrap_with_cost(OperationCost::default());
-
-            let delete_operation = push_drive_operation_result(cost_context, drive_operations)?;
+        if let Some(delete_operation) =
+            push_drive_operation_result(delete_operation, drive_operations)?
+        {
             // we also add the actual delete operation
-            drive_operations.push(CalculatedCostOperation(delete_operation))
+            drive_operations.push(DriveOperation::GroveOperation(delete_operation))
         }
 
         Ok(())
@@ -1113,63 +1107,31 @@ impl Drive {
             //println!("changes {} {:#?}", ops.len(), ops);
             for operation in ops.operations.into_iter() {
                 //println!("on {:#?}", op);
-                let GroveDbOp {
-                    path,
-                    key,
-                    op,
-                    mode,
-                } = operation;
-                match mode {
-                    GroveDbOpMode::RunOp => match op {
-                        Op::Insert { element } => self.grove_insert(
-                            PathKeyElementInfo::<0>::PathKeyElement((
-                                path.to_path(),
-                                key.as_slice(),
-                                element,
-                            )),
-                            transaction,
-                            true,
-                            options.clone(),
-                            drive_operations,
-                        )?,
-                        Op::Delete | Op::DeleteTree => self.grove_delete(
+                let GroveDbOp { path, key, op } = operation;
+                match op {
+                    Op::Insert { element } => self.grove_insert(
+                        PathKeyElementInfo::<0>::PathKeyElement((
                             path.to_path(),
                             key.as_slice(),
-                            true,
-                            transaction,
-                            drive_operations,
-                        )?,
-                        _ => {
-                            return Err(Error::Drive(DriveError::UnsupportedPrivate(
-                                "Only Insert and Deletion operations are allowed",
-                            )))
-                        }
-                    },
-                    GroveDbOpMode::WorstCaseOp => match op {
-                        Op::Insert { element } => self.grove_insert(
-                            PathKeyElementInfo::<0>::PathKeyElement((
-                                path.to_path(),
-                                key.as_slice(),
-                                element,
-                            )),
-                            transaction,
-                            false,
-                            options.clone(),
-                            drive_operations,
-                        )?,
-                        Op::Delete | Op::DeleteTree => self.grove_delete(
-                            path.to_path(),
-                            key.as_slice(),
-                            false,
-                            transaction,
-                            drive_operations,
-                        )?,
-                        _ => {
-                            return Err(Error::Drive(DriveError::UnsupportedPrivate(
-                                "Only Insert and Deletion operations are allowed",
-                            )))
-                        }
-                    },
+                            element,
+                        )),
+                        transaction,
+                        true,
+                        options.clone(),
+                        drive_operations,
+                    )?,
+                    Op::Delete | Op::DeleteTree => self.grove_delete(
+                        path.to_path(),
+                        key.as_slice(),
+                        true,
+                        transaction,
+                        drive_operations,
+                    )?,
+                    _ => {
+                        return Err(Error::Drive(DriveError::UnsupportedPrivate(
+                            "Only Insert and Deletion operations are allowed",
+                        )))
+                    }
                 }
             }
             Ok(())
@@ -1183,7 +1145,8 @@ impl Drive {
         validate: bool,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let cost_context = GroveDb::worst_case_operations_for_batch(
+        let cost_context = GroveDb::estimated_case_operations_for_batch(
+            AverageCaseCostsType(HashMap::new()),
             ops.operations,
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,

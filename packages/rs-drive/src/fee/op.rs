@@ -493,7 +493,7 @@ impl DriveOperation {
 
     /// Sets `GroveOperation` for inserting an element at the given path and key
     pub fn for_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
-        GroveOperation(GroveDbOp::insert_run_op(path, key, element))
+        GroveOperation(GroveDbOp::insert_op(path, key, element))
     }
 
     /// Sets `CostCalculationInsertOperation` given path, key, and value sizes.
