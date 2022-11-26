@@ -1,9 +1,12 @@
 const EventEmitter = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const wait = require('../utils/wait');
 
 const defaultOptions = {
   // TODO: manage timeout according to the Nginx setting of the node
   reconnectTimeoutDelay: 50000,
+  maxRetriesOnError: 10,
+  retryOnErrorDelay: 1000,
 };
 
 const EVENTS = {
@@ -31,7 +34,12 @@ class ReconnectableStream extends EventEmitter {
     this.streamFunction = streamFunction;
     this.reconnectTimeout = null;
 
-    this.options = { ...defaultOptions, ...options };
+    const opts = { ...defaultOptions, ...options };
+    this.reconnectTimeoutDelay = opts.reconnectTimeoutDelay;
+    this.maxRetriesOnError = opts.maxRetriesOnError;
+    this.retryOnErrorDelay = opts.retryOnErrorDelay;
+    this.setTimeout = setTimeout;
+    this.clearTimeout = clearTimeout;
 
     /**
      * Stream function arguments
@@ -46,6 +54,9 @@ class ReconnectableStream extends EventEmitter {
     this.dataHandler = this.dataHandler.bind(this);
     this.endHandler = this.endHandler.bind(this);
     this.addListeners = this.addListeners.bind(this);
+
+    // Manages retry attempts when error happens
+    this.retriesOnError = 0;
   }
 
   async connect(...args) {
@@ -53,10 +64,12 @@ class ReconnectableStream extends EventEmitter {
     this.stream = await this.streamFunction(...this.args);
     this.addListeners();
 
-    this.reconnectTimeout = setTimeout(
-      this.reconnect,
-      this.options.reconnectTimeoutDelay,
-    );
+    if (this.reconnectTimeoutDelay > 0) {
+      this.reconnectTimeout = this.setTimeout(
+        this.reconnect,
+        this.reconnectTimeoutDelay,
+      );
+    }
   }
 
   reconnect() {
@@ -115,7 +128,29 @@ class ReconnectableStream extends EventEmitter {
       return;
     }
     this.stopReconnectTimeout();
-    this.emit(EVENTS.ERROR, e);
+
+    if (
+      this.maxRetriesOnError === -1 // Infinite retries
+      || this.retriesOnError < this.maxRetriesOnError // Limited retries
+    ) {
+      let newArgs = this.args;
+      const updateArgs = (...args) => {
+        newArgs = args;
+      };
+
+      this.emit(EVENTS.BEFORE_RECONNECT, updateArgs);
+
+      wait(this.retryOnErrorDelay)
+        .then(() => this.connect(...newArgs))
+        .then(() => {
+          this.retriesOnError += 1;
+        })
+        .catch((connectError) => {
+          this.emit(EVENTS.ERROR, connectError);
+        });
+    } else {
+      this.emit(EVENTS.ERROR, e);
+    }
   }
 
   /**
@@ -123,7 +158,7 @@ class ReconnectableStream extends EventEmitter {
    */
   stopReconnectTimeout() {
     if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
+      this.clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
   }

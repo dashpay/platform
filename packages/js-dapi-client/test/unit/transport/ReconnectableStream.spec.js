@@ -2,11 +2,14 @@ const EventEmitter = require('events');
 const { expect } = require('chai');
 
 const ReconnectableStream = require('../../../lib/transport/ReconnectableStream');
+const wait = require('../../../lib/utils/wait');
 
 describe('ReconnectableStream', () => {
   let reconnectableStream;
   let stream;
-  let timeoutCallback;
+  let setTimeoutCallback;
+  const maxRetriesOnError = 2;
+  const retryOnErrorDelay = 10;
 
   beforeEach(function () {
     stream = new EventEmitter();
@@ -22,7 +25,10 @@ describe('ReconnectableStream', () => {
     this.sinon.spy(stream, 'on');
     const streamFunction = this.sinon.stub().returns(stream);
 
-    reconnectableStream = new ReconnectableStream(streamFunction);
+    reconnectableStream = new ReconnectableStream(streamFunction, {
+      maxRetriesOnError,
+      retryOnErrorDelay,
+    });
 
     this.sinon.spy(reconnectableStream, 'addListeners');
     this.sinon.spy(reconnectableStream, 'connect');
@@ -30,11 +36,11 @@ describe('ReconnectableStream', () => {
     this.sinon.spy(reconnectableStream, 'endHandler');
     this.sinon.spy(reconnectableStream, 'emit');
     this.sinon.spy(reconnectableStream, 'stopReconnectTimeout');
-    this.sinon.stub(global, 'setTimeout').callsFake((callback) => {
-      timeoutCallback = callback;
+    this.sinon.stub(reconnectableStream, 'clearTimeout');
+    this.sinon.stub(reconnectableStream, 'setTimeout').callsFake((callback) => {
+      setTimeoutCallback = callback;
       return 1;
     });
-    this.sinon.stub(global, 'clearTimeout');
   });
 
   describe('#connect', () => {
@@ -46,7 +52,7 @@ describe('ReconnectableStream', () => {
 
     it('should trigger reconnect after timeout', async () => {
       await reconnectableStream.connect();
-      timeoutCallback();
+      setTimeoutCallback();
       expect(reconnectableStream.reconnect).to.have.been.calledOnce();
     });
   });
@@ -101,23 +107,72 @@ describe('ReconnectableStream', () => {
   });
 
   describe('#errorHandler', () => {
-    it('should handle error', async () => {
-      await reconnectableStream.connect();
-      let emittedError;
-      reconnectableStream.on(ReconnectableStream.EVENTS.ERROR, (error) => {
-        emittedError = error;
-      });
-
-      const error = new Error('test error');
-      stream.emit('error', error);
-
-      expect(emittedError).to.equal(error);
-    });
-
     it('should handle cancellation', async () => {
       await reconnectableStream.connect();
       stream.cancel();
       expect(reconnectableStream.emit).to.have.not.been.called();
+    });
+
+    it('should retry in case of an error', async () => {
+      await reconnectableStream.connect();
+      const newArgs = ['newArg1', 'newArg2'];
+      reconnectableStream.on('beforeReconnect', (updateArgs) => {
+        updateArgs(newArgs);
+      });
+
+      reconnectableStream.stream.emit('error', new Error('Fake stream error'));
+      setTimeoutCallback(); // Simulate setTimeout execution
+
+      await wait(10);
+
+      expect(reconnectableStream.connect).to.have.been.calledTwice();
+      expect(reconnectableStream.connect.secondCall.args)
+        .to.deep.equal([newArgs]);
+    });
+
+    it('should handle error in case retry attempts were exhausted', async () => {
+      await reconnectableStream.connect();
+
+      // Exhaust retry attempts
+      for (let i = 0; i < maxRetriesOnError; i += 1) {
+        const error = new Error(`Retry exhaust error ${i}`);
+        reconnectableStream.stream.emit('error', error);
+        // eslint-disable-next-line no-await-in-loop
+        await wait(10);
+      }
+
+      let lastError;
+      reconnectableStream.on(ReconnectableStream.EVENTS.ERROR, (error) => {
+        lastError = error;
+      });
+
+      const error = new Error('Last error');
+      stream.emit('error', error);
+
+      expect(lastError).to.equal(error);
+    });
+
+    it('should handle retry error', async () => {
+      await reconnectableStream.connect();
+
+      const retryError = new Error('Error retrying on error');
+
+      // Prepare streamFunction to throw an error on retry attempt
+      reconnectableStream.streamFunction.throws(retryError);
+
+      // Emit stream error
+      reconnectableStream.stream.emit(
+        'error',
+        new Error('Fake stream error'),
+      );
+
+      // Wait for
+      await wait(10);
+
+      expect(reconnectableStream.emit).to.have.been.calledWith(
+        'error',
+        retryError,
+      );
     });
   });
 
@@ -125,15 +180,15 @@ describe('ReconnectableStream', () => {
     it('should stop reconnect timeout', async () => {
       await reconnectableStream.connect();
       reconnectableStream.stopReconnectTimeout();
-      expect(global.clearTimeout).to.have.been.calledOnce();
+      expect(reconnectableStream.clearTimeout).to.have.been.calledOnce();
       expect(reconnectableStream.reconnectTimeout).to.equal(null);
     });
 
     it('should do nothing in case reconnect timeout is not set', async () => {
       await reconnectableStream.connect();
-      timeoutCallback();
+      setTimeoutCallback();
       reconnectableStream.stopReconnectTimeout();
-      expect(global.clearTimeout).to.have.not.been.called();
+      expect(reconnectableStream.clearTimeout).to.have.not.been.called();
       expect(reconnectableStream.reconnectTimeout).to.equal(null);
     });
   });
@@ -150,6 +205,8 @@ describe('ReconnectableStream', () => {
 
   describe('#destroy', async () => {
     it('should destroy stream', async () => {
+      // Do not retry on destroy
+      reconnectableStream.maxRetriesOnError = 0;
       await reconnectableStream.connect();
       const errorEventPromise = new Promise((resolve) => {
         reconnectableStream.on('error', resolve);

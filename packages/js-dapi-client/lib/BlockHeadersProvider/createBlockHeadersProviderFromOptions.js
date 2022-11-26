@@ -35,6 +35,9 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
   const createContinuousSyncStream = (fromBlockHeight) => ReconnectableStream
     .create(
       coreMethods.subscribeToBlockHeadersWithChainLocks,
+      {
+        maxRetriesOnError: -1,
+      },
     )({
       fromBlockHeight,
     });

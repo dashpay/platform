@@ -88,6 +88,9 @@ class TransactionsSyncWorker extends Worker {
       const createContinuousSyncStream = (bloomFilter, rangeOptions) => ReconnectableStream
         .create(
           this.transport.client.core.subscribeToTransactionsWithProofs,
+          {
+            maxRetriesOnError: -1,
+          },
         )(
           bloomFilter,
           rangeOptions,
