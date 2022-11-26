@@ -39,7 +39,7 @@ module.exports = async function configure(opts = {}) {
       logger.warn(`'skipSynchronizationBeforeHeight' option has been set, syncing from ${skipSynchronizationBeforeHeight}`);
       await this.adapter.setItem(`wallet_${opts.walletId}`, null);
     } else if (
-      skipSynchronizationBeforeHeight
+      skipSynchronizationBeforeHeightPrev && skipSynchronizationBeforeHeight
       && skipSynchronizationBeforeHeightPrev !== skipSynchronizationBeforeHeight
     ) {
       logger.warn(`'skipSynchronizationBeforeHeight' option has been changed, syncing from ${skipSynchronizationBeforeHeight}`);
