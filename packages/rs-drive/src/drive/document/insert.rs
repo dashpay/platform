@@ -80,8 +80,8 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         block_info: &BlockInfo,
         insert_without_check: bool,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
@@ -300,7 +300,7 @@ impl Drive {
             };
             let inserted = self.batch_insert_if_not_exists(
                 path_key_element_info,
-                estimated_costs_only_with_layer_info.map(|_| document_type.max_size()),
+                estimated_costs_only_with_layer_info.as_mut().map(|_| document_type.max_size()),
                 transaction,
                 drive_operations,
             )?;
@@ -481,7 +481,7 @@ impl Drive {
             document_and_contract_info,
             override_document,
             block_info,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
         self.apply_batch_drive_operations(
@@ -498,8 +498,8 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -521,7 +521,7 @@ impl Drive {
 
         // Apply means stateful query
         let query_stateless_with_max_value_size = estimated_costs_only_with_layer_info
-            .map(|_| document_and_contract_info.document_type.max_size());
+            .as_mut().map(|_| document_and_contract_info.document_type.max_size());
 
         if override_document
             && document_and_contract_info
@@ -770,7 +770,7 @@ impl Drive {
                 let inserted = self.batch_insert_if_not_exists(
                     path_key_element_info,
                     estimated_costs_only_with_layer_info
-                        .map(|_| document_and_contract_info.document_type.max_size()),
+                        .as_mut().map(|_| document_and_contract_info.document_type.max_size()),
                     transaction,
                     &mut batch_operations,
                 )?;

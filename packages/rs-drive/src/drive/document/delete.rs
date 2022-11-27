@@ -172,7 +172,7 @@ impl Drive {
             contract,
             document_type_name,
             owner_id,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
         self.apply_batch_drive_operations(
@@ -190,8 +190,8 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {

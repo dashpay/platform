@@ -120,8 +120,8 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         insert_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -239,7 +239,7 @@ impl Drive {
             contract_element,
             contract,
             block_info,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
         )?;
         self.apply_batch_drive_operations(
             estimated_costs_only_with_layer_info,
@@ -257,8 +257,8 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -280,8 +280,8 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
@@ -464,7 +464,7 @@ impl Drive {
             contract,
             original_contract,
             block_info,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
         self.apply_batch_drive_operations(
@@ -482,8 +482,8 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
@@ -507,8 +507,8 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -872,7 +872,7 @@ impl Drive {
             contract,
             contract_serialization,
             &block_info,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
             storage_flags,
             transaction,
         )?;
@@ -896,8 +896,8 @@ impl Drive {
         contract: &Contract,
         contract_serialization: Vec<u8>,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,

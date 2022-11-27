@@ -229,7 +229,7 @@ impl Drive {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
         self.apply_batch_drive_operations(
@@ -245,8 +245,8 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -298,7 +298,7 @@ impl Drive {
                 storage_flags,
             );
             let query_stateless_max_value_size =
-                estimated_costs_only_with_layer_info.map(|_| document_type.max_size());
+                estimated_costs_only_with_layer_info.as_mut().map(|_| document_type.max_size());
 
             // next we need to get the old document from storage
             let old_document_element = if document_type.documents_keep_history {
@@ -573,7 +573,7 @@ impl Drive {
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
                             PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
-                            estimated_costs_only_with_layer_info
+                            estimated_costs_only_with_layer_info.as_mut()
                                 .map(|_| OPTIMIZED_DOCUMENT_REFERENCE),
                             transaction,
                             &mut batch_operations,

@@ -48,8 +48,8 @@ pub trait DriveOperationConverter {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -83,8 +83,8 @@ impl DriveOperationConverter for ContractOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -233,8 +233,8 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -470,8 +470,8 @@ impl DriveOperationConverter for DriveOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: Option<
-            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut  Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -522,7 +522,7 @@ impl Drive {
         for drive_op in operations {
             drive_operations.append(&mut drive_op.to_drive_operations(
                 self,
-                estimated_costs_only_with_layer_info.as_mut(),
+                &mut estimated_costs_only_with_layer_info,
                 block_info,
                 transaction,
             )?);
