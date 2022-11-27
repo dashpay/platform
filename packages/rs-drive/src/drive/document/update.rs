@@ -32,13 +32,14 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use grovedb::{Element, TransactionArg};
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, SOME_OPTIMIZED_DOCUMENT_REFERENCE};
+use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, OPTIMIZED_DOCUMENT_REFERENCE};
 use crate::drive::document::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
@@ -104,6 +105,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -131,7 +137,7 @@ impl Drive {
                 owner_id,
             },
             &block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
         )?;
@@ -182,6 +188,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
 
         let document_type = contract.document_type_for_name(document_type_name)?;
 
@@ -196,7 +207,7 @@ impl Drive {
                 owner_id,
             },
             &block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
         )?;
@@ -209,17 +220,24 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        apply: bool,
+        mut estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
-            apply,
+            estimated_costs_only_with_layer_info.as_mut(),
             transaction,
         )?;
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            drive_operations,
+        )
     }
 
     /// Gathers operations for updating a document.
@@ -227,7 +245,9 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
@@ -247,7 +267,7 @@ impl Drive {
                 document_and_contract_info,
                 false,
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
             );
         }
@@ -277,11 +297,8 @@ impl Drive {
                 document_and_contract_info.document_type,
                 storage_flags,
             );
-            let query_stateless_max_value_size = if apply {
-                None
-            } else {
-                Some(document_type.max_size())
-            };
+            let query_stateless_max_value_size =
+                estimated_costs_only_with_layer_info.map(|_| document_type.max_size());
 
             // next we need to get the old document from storage
             let old_document_element = if document_type.documents_keep_history {
@@ -318,7 +335,7 @@ impl Drive {
                 &document_and_contract_info,
                 block_info,
                 true,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
                 &mut batch_operations,
             )?;
@@ -393,7 +410,7 @@ impl Drive {
                                 document_top_field.as_slice(),
                             )),
                             storage_flags,
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -452,7 +469,7 @@ impl Drive {
                                     index_property.name.as_bytes(),
                                 )),
                                 storage_flags,
-                                apply,
+                                estimated_costs_only_with_layer_info.is_none(),
                                 transaction,
                                 &mut batch_operations,
                             )?;
@@ -482,7 +499,7 @@ impl Drive {
                                     document_index_field.as_slice(),
                                 )),
                                 storage_flags,
-                                apply,
+                                estimated_costs_only_with_layer_info.is_none(),
                                 transaction,
                                 &mut batch_operations,
                             )?;
@@ -513,7 +530,7 @@ impl Drive {
                             old_index_path,
                             document.id.as_slice(),
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -523,7 +540,7 @@ impl Drive {
                             old_index_path,
                             &[0],
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -536,7 +553,7 @@ impl Drive {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
                             storage_flags,
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -556,11 +573,8 @@ impl Drive {
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
                             PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
-                            if apply {
-                                None
-                            } else {
-                                SOME_OPTIMIZED_DOCUMENT_REFERENCE
-                            },
+                            estimated_costs_only_with_layer_info
+                                .map(|_| OPTIMIZED_DOCUMENT_REFERENCE),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -605,7 +619,6 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
 
     #[test]

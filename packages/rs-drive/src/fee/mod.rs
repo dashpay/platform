@@ -27,10 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use costs::storage_cost::removal::Identifier;
 use enum_map::EnumMap;
-use intmap::IntMap;
-use std::collections::BTreeMap;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;

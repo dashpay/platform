@@ -35,10 +35,10 @@
 use crate::drive::batch::GroveDbOpBatch;
 use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use costs::storage_cost::transition::OperationStorageTransitionType;
-use costs::{CostContext, CostsExt, OperationCost};
+use costs::CostContext;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op};
-use grovedb::{Element, GroveDb, PathQuery, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
 use std::collections::HashMap;
 
 use crate::drive::defaults::{MAX_ELEMENT_SIZE, SOME_TREE_SIZE};
@@ -1142,11 +1142,12 @@ impl Drive {
     pub(crate) fn grove_batch_operations_costs(
         &self,
         ops: GroveDbOpBatch,
+        estimated_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation>,
         validate: bool,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let cost_context = GroveDb::estimated_case_operations_for_batch(
-            AverageCaseCostsType(HashMap::new()),
+            AverageCaseCostsType(estimated_layer_info),
             ops.operations,
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,

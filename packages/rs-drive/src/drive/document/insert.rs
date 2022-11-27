@@ -32,9 +32,10 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::{Element, TransactionArg};
-use std::collections::HashSet;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::{HashMap, HashSet};
 use std::option::Option::None;
 
 use crate::contract::Contract;
@@ -79,7 +80,9 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         block_info: &BlockInfo,
         insert_without_check: bool,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -113,7 +116,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
                 storage_flags,
-                apply,
+                estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 drive_operations,
             )?;
@@ -297,11 +300,7 @@ impl Drive {
             };
             let inserted = self.batch_insert_if_not_exists(
                 path_key_element_info,
-                if apply {
-                    None
-                } else {
-                    Some(document_type.max_size())
-                },
+                estimated_costs_only_with_layer_info.map(|_| document_type.max_size()),
                 transaction,
                 drive_operations,
             )?;
@@ -473,14 +472,24 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
         let batch_operations = self.add_document_for_contract_operations(
             document_and_contract_info,
             override_document,
             block_info,
-            apply,
+            estimated_costs_only_with_layer_info.as_mut(),
             transaction,
         )?;
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            drive_operations,
+        )
     }
 
     /// Gathers the operations to add a document to a contract.
@@ -489,7 +498,9 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
@@ -509,11 +520,8 @@ impl Drive {
         );
 
         // Apply means stateful query
-        let query_stateless_with_max_value_size = if apply {
-            None
-        } else {
-            Some(document_and_contract_info.document_type.max_size())
-        };
+        let query_stateless_with_max_value_size = estimated_costs_only_with_layer_info
+            .map(|_| document_and_contract_info.document_type.max_size());
 
         if override_document
             && document_and_contract_info
@@ -533,7 +541,7 @@ impl Drive {
             let update_operations = self.update_document_for_contract_operations(
                 document_and_contract_info,
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
             )?;
             batch_operations.extend(update_operations);
@@ -544,7 +552,7 @@ impl Drive {
                 &document_and_contract_info,
                 block_info,
                 override_document,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
                 &mut batch_operations,
             )?;
@@ -591,7 +599,7 @@ impl Drive {
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
                     path_key_info.clone(),
                     storage_flags,
-                    apply,
+                    estimated_costs_only_with_layer_info.is_none(),
                     transaction,
                     &mut batch_operations,
                 )?;
@@ -640,7 +648,7 @@ impl Drive {
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
                         path_key_info.clone(),
                         storage_flags,
-                        apply,
+                        estimated_costs_only_with_layer_info.is_none(),
                         transaction,
                         &mut batch_operations,
                     )?;
@@ -663,7 +671,7 @@ impl Drive {
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
                         path_key_info.clone(),
                         storage_flags,
-                        apply,
+                        estimated_costs_only_with_layer_info.is_none(),
                         transaction,
                         &mut batch_operations,
                     )?;
@@ -690,7 +698,7 @@ impl Drive {
                 self.batch_insert_empty_tree_if_not_exists(
                     path_key_info,
                     storage_flags,
-                    apply,
+                    estimated_costs_only_with_layer_info.is_none(),
                     transaction,
                     &mut batch_operations,
                 )?;
@@ -761,11 +769,8 @@ impl Drive {
                 // here we should return an error if the element already exists
                 let inserted = self.batch_insert_if_not_exists(
                     path_key_element_info,
-                    if apply {
-                        None
-                    } else {
-                        Some(document_and_contract_info.document_type.max_size())
-                    },
+                    estimated_costs_only_with_layer_info
+                        .map(|_| document_and_contract_info.document_type.max_size()),
                     transaction,
                     &mut batch_operations,
                 )?;

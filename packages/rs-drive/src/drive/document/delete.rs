@@ -32,7 +32,9 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
-use grovedb::{Element, TransactionArg};
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
@@ -65,12 +67,17 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
         self.delete_document_for_contract_apply_and_add_to_operations(
             document_id,
             contract,
             document_type_name,
             owner_id,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
         )?;
@@ -115,6 +122,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -132,7 +144,7 @@ impl Drive {
             contract,
             document_type_name,
             owner_id,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
         )?;
@@ -149,7 +161,9 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
-        apply: bool,
+        mut estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -158,10 +172,15 @@ impl Drive {
             contract,
             document_type_name,
             owner_id,
-            apply,
+            estimated_costs_only_with_layer_info.as_mut(),
             transaction,
         )?;
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            drive_operations,
+        )
     }
 
     /// Prepares the operations for deleting a document.
@@ -171,7 +190,9 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
@@ -199,7 +220,7 @@ impl Drive {
         let contract_documents_primary_key_path =
             contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
 
-        let stateless = !apply;
+        let stateless = !estimated_costs_only_with_layer_info.is_some();
         let query_stateless_max_value_size = if stateless {
             Some(document_type.max_size())
         } else {
@@ -300,7 +321,7 @@ impl Drive {
                     index_path,
                     document_id.as_slice(),
                     Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                    apply,
+                    estimated_costs_only_with_layer_info.is_none(),
                     transaction,
                     &mut batch_operations,
                 )?;
@@ -310,7 +331,7 @@ impl Drive {
                     index_path,
                     &[0],
                     Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                    apply,
+                    estimated_costs_only_with_layer_info.is_none(),
                     transaction,
                     &mut batch_operations,
                 )?;

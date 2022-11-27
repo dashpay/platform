@@ -32,14 +32,15 @@
 //! This module defines functions pertinent to Contracts stored in Drive.
 //!
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::common::encode::encode_unsigned_integer;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::data_contract::extra::DriveContractExt;
+use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
@@ -119,7 +120,9 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         insert_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let contract_root_path = contract_root_path(contract.id.as_bytes());
@@ -146,7 +149,7 @@ impl Drive {
                 insert_operations,
             )?;
 
-            let path_key_element_info = if apply {
+            let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
                     &[0],
@@ -163,7 +166,7 @@ impl Drive {
             self.batch_insert(path_key_element_info, insert_operations)?;
         } else {
             // the contract is just stored at key 0
-            let path_key_element_info = if apply {
+            let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
                 PathFixedSizeKeyElement((contract_root_path, &[0], contract_element))
             } else {
                 PathKeyElementSize((
@@ -227,9 +230,23 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let batch_operations =
-            self.insert_contract_operations(contract_element, contract, block_info, apply)?;
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+        let batch_operations = self.insert_contract_operations(
+            contract_element,
+            contract,
+            block_info,
+            estimated_costs_only_with_layer_info.as_mut(),
+        )?;
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            drive_operations,
+        )
     }
 
     /// The operations for adding a contract.
@@ -240,11 +257,17 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let batch_operations =
-            self.insert_contract_operations(contract_element, contract, block_info, apply)?;
+        let batch_operations = self.insert_contract_operations(
+            contract_element,
+            contract,
+            block_info,
+            estimated_costs_only_with_layer_info,
+        )?;
         drive_operations.extend(batch_operations);
         Ok(())
     }
@@ -257,7 +280,9 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
         let storage_flags =
@@ -274,13 +299,17 @@ impl Drive {
             contract_element,
             contract,
             block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             &mut batch_operations,
         )?;
 
         // the documents
         let contract_root_path = contract_root_path(contract.id.as_bytes());
-        let key_info = if apply { KeyRef(&[1]) } else { KeySize(1) };
+        let key_info = if estimated_costs_only_with_layer_info.is_none() {
+            KeyRef(&[1])
+        } else {
+            KeySize(1)
+        };
         self.batch_insert_empty_tree(
             contract_root_path,
             key_info,
@@ -309,7 +338,11 @@ impl Drive {
             ];
 
             // primary key tree
-            let key_info = if apply { KeyRef(&[0]) } else { KeySize(1) };
+            let key_info = if estimated_costs_only_with_layer_info.is_none() {
+                KeyRef(&[0])
+            } else {
+                KeySize(1)
+            };
             self.batch_insert_empty_tree(
                 type_path,
                 key_info,
@@ -421,15 +454,25 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
         let batch_operations = self.update_contract_operations(
             contract_element,
             contract,
             original_contract,
             block_info,
-            apply,
+            estimated_costs_only_with_layer_info.as_mut(),
             transaction,
         )?;
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            drive_operations,
+        )
     }
 
     /// Updates a contract.
@@ -439,7 +482,9 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -448,7 +493,7 @@ impl Drive {
             contract,
             original_contract,
             block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
         )?;
         drive_operations.extend(batch_operations);
@@ -462,7 +507,9 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
@@ -511,7 +558,7 @@ impl Drive {
             contract_element,
             contract,
             block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             &mut batch_operations,
         )?;
 
@@ -550,7 +597,7 @@ impl Drive {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
                             storage_flags.as_ref(),
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -816,17 +863,22 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut cost_operations = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
         let batch_operations = self.apply_contract_operations(
             contract,
             contract_serialization,
             &block_info,
-            apply,
+            estimated_costs_only_with_layer_info.as_mut(),
             storage_flags,
             transaction,
         )?;
         let fetch_cost = DriveOperation::combine_cost_operations(&batch_operations);
         self.apply_batch_drive_operations(
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
             &mut cost_operations,
@@ -844,7 +896,9 @@ impl Drive {
         contract: &Contract,
         contract_serialization: Vec<u8>,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -854,7 +908,8 @@ impl Drive {
         let mut already_exists = false;
         let mut original_contract_stored_data = vec![];
 
-        let query_state_less_max_value_size = if apply {
+        // no estimated_costs_only_with_layer_info, means we want to apply to state
+        let query_state_less_max_value_size = if estimated_costs_only_with_layer_info.is_none() {
             None
         } else {
             Some(CONTRACT_MAX_SERIALIZED_SIZE)
@@ -898,7 +953,7 @@ impl Drive {
                     contract,
                     &original_contract,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                     &mut drive_operations,
                 )?;
@@ -908,7 +963,7 @@ impl Drive {
                 contract_element,
                 contract,
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 &mut drive_operations,
             )?;
         }

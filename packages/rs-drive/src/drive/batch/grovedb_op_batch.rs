@@ -33,7 +33,7 @@
 //!
 
 use crate::drive::flags::StorageFlags;
-use grovedb::batch::{key_info::KeyInfo, GroveDbOp, GroveDbOpConsistencyResults, KeyInfoPath};
+use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults};
 use grovedb::Element;
 
 /// A batch of GroveDB operations as a vector.

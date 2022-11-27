@@ -28,9 +28,11 @@
 //
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
 
-use grovedb::{GroveDb, Transaction, TransactionArg};
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
 use object_size_info::DocumentAndContractInfo;
 use object_size_info::DocumentInfo::DocumentSize;
@@ -206,14 +208,16 @@ impl Drive {
     /// Applies a batch of Drive operations to groveDB.
     fn apply_batch_drive_operations(
         &self,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         batch_operations: Vec<DriveOperation>,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
         self.apply_batch_grovedb_operations(
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             grove_db_operations,
             drive_operations,
@@ -228,20 +232,27 @@ impl Drive {
     /// Applies a batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
     fn apply_batch_grovedb_operations(
         &self,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         batch_operations: GroveDbOpBatch,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        if apply {
+        if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
+            self.grove_batch_operations_costs(
+                batch_operations,
+                estimated_layer_info,
+                false,
+                drive_operations,
+            )?;
+        } else {
             self.grove_apply_batch_with_add_costs(
                 batch_operations,
                 false,
                 transaction,
                 drive_operations,
             )?;
-        } else {
-            self.grove_batch_operations_costs(batch_operations, false, drive_operations)?;
         }
         Ok(())
     }
