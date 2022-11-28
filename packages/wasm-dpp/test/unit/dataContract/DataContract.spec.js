@@ -14,6 +14,7 @@ describe('DataContract', () => {
   let entropy;
   let contractId;
   let dataContract;
+  let defs;
 
   let DataContract;
   let DataContractDefaults;
@@ -49,6 +50,8 @@ describe('DataContract', () => {
     entropy = Buffer.alloc(32, 420);
     contractId = generateRandomIdentifier();
 
+    defs = { something: { type: "string" } };
+
     jsDataContract = new JsDataContract({
       $schema: JsDataContract.DEFAULTS.SCHEMA,
       $id: contractId,
@@ -56,7 +59,7 @@ describe('DataContract', () => {
       protocolVersion: 1,
       ownerId,
       documents,
-      $defs: {},
+      $defs: defs,
     });
 
     dataContract = new DataContract({
@@ -66,7 +69,7 @@ describe('DataContract', () => {
       protocolVersion: 1,
       ownerId,
       documents,
-      $defs: {},
+      $defs: defs,
     });
   });
 
@@ -81,14 +84,14 @@ describe('DataContract', () => {
         protocolVersion: 1,
         version: 1,
         documents,
-        $defs: {},
+        $defs: defs,
       });
 
       expect(dataContract.getId().toBuffer()).to.deep.equal(id.toBuffer());
       expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId.toBuffer());
       expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
       expect(dataContract.getDocuments()).to.deep.equal(documents);
-      expect(dataContract.getDefinitions()).to.deep.equal({});
+      expect(dataContract.getDefinitions()).to.deep.equal(defs);
     });
   });
 
@@ -241,12 +244,12 @@ describe('DataContract', () => {
     it('should return $defs', () => {
       const result = dataContract.getDefinitions();
 
-      expect(result).to.deep.equal({});
+      expect(result).to.deep.equal(defs);
     });
   });
 
   describe('#toJSON', () => {
-    it('should return DataContract as plain object', () => {
+    it('should return JataContract as plain object', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
@@ -256,7 +259,7 @@ describe('DataContract', () => {
         version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
-        $defs: {},
+        $defs: defs,
       });
     });
 

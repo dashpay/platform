@@ -1,19 +1,37 @@
 const bs58 = require('bs58');
-const generateDataContractId = require('@dashevo/dpp/lib/dataContract/generateDataContractId');
+
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('generateDataContractId', () => {
   let ownerId;
   let entropy;
+  let DataContractFactory;
+  let DataContractValidator;
+
+  before(async () => {
+    ({
+      DataContractFactory, DataContractValidator,
+    } = await loadWasmDpp());
+  });
+
 
   beforeEach(() => {
-    ownerId = bs58.decode('23wdhodag');
-    entropy = bs58.decode('5dz916pTe1');
+    ownerId = bs58.decode('4Sr8EZ9BjQpMpBX5PLPxfvv5crTERSWBnRJXxUmCcrCQ');
+    entropy = bs58.decode('85NSrhBXYJAwzj8rDXuYhPQZPyg67diKSNcfhfnVhKnT');
   });
 
   it('should generate bs58 id based on ', () => {
-    const id = bs58.decode('CnS7cz4z1qoPsNfEgpgyVnKdtH2u7bgzZXHLcCQt24US');
-    const generatedId = generateDataContractId(ownerId, entropy);
+    const id = bs58.decode('8W4qubpTaFKEWHqr9vAFSNGFULnz2TbgbG4eUik7yWx2');
 
-    expect(Buffer.compare(id, generatedId)).to.equal(0);
+    const entropyGenerator = {
+      generate() {
+        return entropy;
+      }
+    };
+
+    const factory = new DataContractFactory(1337, new DataContractValidator(), entropyGenerator);
+    const dataContract = factory.create(ownerId, {});
+
+    expect(Buffer.compare(id, dataContract.getId().toBuffer())).to.equal(0);
   });
 });
