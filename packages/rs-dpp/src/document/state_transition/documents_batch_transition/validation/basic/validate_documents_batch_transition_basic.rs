@@ -245,10 +245,11 @@ fn validate_raw_transitions<'a>(
                 let enriched_data_contract = &enriched_contracts_by_action[&action];
                 let document_schema = enriched_data_contract.get_document_schema(document_type)?;
 
-                let schema_validator = JsonSchemaValidator::new_with_definitions(
-                    document_schema.clone(),
-                    enriched_data_contract.definitions(),
-                )
+                let schema_validator = if let Some(defs) = enriched_data_contract.definitions() {
+                    JsonSchemaValidator::new_with_definitions(document_schema.clone(), defs)
+                } else {
+                    JsonSchemaValidator::new(document_schema.clone())
+                }
                 .map_err(|e| anyhow!("unable to compile enriched schema: {}", e))?;
 
                 let schema_result = schema_validator.validate(raw_document_transition)?;
