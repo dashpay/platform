@@ -57,7 +57,7 @@ function finalizeBlockHandlerFactory(
     consensusLogger.trace({ abciRequest: request });
 
     if (
-      proposalBlockExecutionContext.getHeight() !== height
+      proposalBlockExecutionContext.getHeight().toNumber() !== height.toNumber()
       || proposalBlockExecutionContext.getRound() !== round
     ) {
       consensusLogger.warn('Height or round in execution context do not equal request values.');
