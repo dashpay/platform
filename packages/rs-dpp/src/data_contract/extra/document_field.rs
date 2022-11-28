@@ -126,6 +126,50 @@ impl DocumentFieldType {
         }
     }
 
+    /// The middle size rounded down halfway between min and max size
+    pub fn middle_size(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_size().unwrap();
+        let max_size = self.max_size().unwrap();
+        Some((min_size + max_size) / 2)
+    }
+
+    /// The middle size rounded up halfway between min and max size
+    pub fn middle_size_ceil(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_size().unwrap();
+        let max_size = self.max_size().unwrap();
+        Some((min_size + max_size + 1) / 2)
+    }
+
+    /// The middle size rounded down halfway between min and max byte size
+    pub fn middle_byte_size(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_byte_size().unwrap();
+        let max_size = self.max_byte_size().unwrap();
+        Some((min_size + max_size) / 2)
+    }
+
+    /// The middle size rounded up halfway between min and max byte size
+    pub fn middle_byte_size_ceil(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_byte_size().unwrap();
+        let max_size = self.max_byte_size().unwrap();
+        Some((min_size + max_size + 1) / 2)
+    }
+
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
         let min_size = self.min_size().unwrap();
         let max_size = self.max_size().unwrap();

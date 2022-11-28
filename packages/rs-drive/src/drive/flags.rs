@@ -30,6 +30,7 @@
 //! Flags
 //!
 
+use crate::drive::defaults::DEFAULT_HASH_SIZE;
 use crate::drive::flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
@@ -342,6 +343,23 @@ impl StorageFlags {
             }
             _ => {}
         }
+    }
+
+    /// ApproximateSize
+    pub fn approximate_size(
+        has_owner_id: bool,
+        approximate_changes_and_bytes_count: Option<(u16, u8)>,
+    ) -> u32 {
+        let mut size = 3; // 1 for type byte, 2 for epoch number
+        if has_owner_id {
+            size += DEFAULT_HASH_SIZE;
+        }
+        if let Some((approximate_change_count, bytes_changed_required_size)) =
+            approximate_changes_and_bytes_count
+        {
+            size += (approximate_change_count as u32) * (2 + bytes_changed_required_size as u32)
+        }
+        size
     }
 
     /// Serialize storage flags

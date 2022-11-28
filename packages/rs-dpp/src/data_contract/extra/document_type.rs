@@ -340,6 +340,20 @@ impl DocumentType {
             .unwrap_or(u16::MAX)
     }
 
+    /// The estimated size uses the middle ceil size of all attributes
+    pub fn estimated_size(&self) -> u16 {
+        let mut iter = self
+            .properties
+            .iter()
+            .filter_map(|(_, document_field_type)| {
+                document_field_type.document_type.middle_byte_size_ceil()
+            });
+        let first = Some(iter.next().unwrap_or_default());
+
+        iter.fold(first, |acc, item| acc.and_then(|acc| acc.checked_add(item)))
+            .unwrap_or(u16::MAX)
+    }
+
     pub fn top_level_indices(&self) -> Result<Vec<&IndexProperty>, ContractError> {
         let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
         for index in &self.indices {

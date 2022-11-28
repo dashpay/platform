@@ -190,7 +190,7 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,

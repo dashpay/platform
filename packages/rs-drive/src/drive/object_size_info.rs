@@ -443,6 +443,16 @@ impl<'a> DocumentInfo<'a> {
         matches!(self, DocumentInfo::DocumentRefAndSerialization(..))
     }
 
+    /// Gets the borrowed document
+    pub fn get_borrowed_document(&self) -> Option<&Document> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),
+            DocumentInfo::DocumentWithoutSerialization((document, _)) => Some(document),
+            DocumentInfo::DocumentSize(document_max_size) => None,
+        }
+    }
+
     /// Makes the document ID the key.
     pub fn id_key_value_info(&self) -> KeyValueInfo {
         match self {

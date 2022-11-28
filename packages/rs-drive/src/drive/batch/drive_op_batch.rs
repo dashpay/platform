@@ -48,7 +48,7 @@ pub trait DriveOperationConverter {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
@@ -83,7 +83,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
@@ -233,7 +233,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,
@@ -470,7 +470,7 @@ impl DriveOperationConverter for DriveOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         block_info: &BlockInfo,

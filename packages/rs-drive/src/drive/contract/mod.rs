@@ -120,7 +120,7 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         insert_operations: &mut Vec<DriveOperation>,
@@ -257,7 +257,7 @@ impl Drive {
         contract_element: Element,
         contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<DriveOperation>,
@@ -482,7 +482,7 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
@@ -507,7 +507,7 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
@@ -896,7 +896,7 @@ impl Drive {
         contract: &Contract,
         contract_serialization: Vec<u8>,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut  Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         storage_flags: Option<&StorageFlags>,
