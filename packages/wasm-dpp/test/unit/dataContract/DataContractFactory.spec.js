@@ -18,25 +18,26 @@ const { default: loadWasmDpp } = require('../../../dist');
 describe('DataContractFactory', () => {
   let DataContractFactory;
   let DataContractValidator;
+  let DataContract;
 
   let factory;
-  let dataContract;
+  let jsDataContract;
   let rawDataContract;
   let dataContractValidator;
 
   before(async () => {
     ({
-      DataContractFactory, DataContractValidator,
+      DataContractFactory, DataContractValidator, DataContract
     } = await loadWasmDpp());
   });
 
   beforeEach(() => {
-    dataContract = getDataContractFixture();
+    jsDataContract = getDataContractFixture();
 
     // For some reason fixture has empty $defs which violates meta schema
-    delete dataContract.$defs;
+    delete jsDataContract.$defs;
 
-    rawDataContract = dataContract.toObject();
+    rawDataContract = jsDataContract.toObject();
 
     dataContractValidator = new DataContractValidator();
 
@@ -49,7 +50,7 @@ describe('DataContractFactory', () => {
   describe('create', () => {
     it('should return new Data Contract with specified name and documents definition', () => {
       const result = factory.create(
-        dataContract.ownerId.toBuffer(),
+        jsDataContract.ownerId.toBuffer(),
         rawDataContract.documents,
       ).toObject();
 
@@ -64,7 +65,7 @@ describe('DataContractFactory', () => {
     });
 
     it('should return new Data Contract without validation if "skipValidation" option is passed', async () => {
-      let alteredContract = dataContract.toObject();
+      let alteredContract = jsDataContract.toObject();
       alteredContract.$defs = {}; // Empty defs are bad!
 
       const resultSkipValidation = await factory.createFromObject(alteredContract, true);
@@ -73,7 +74,7 @@ describe('DataContractFactory', () => {
     });
 
     it('should throw an error if passed object is not valid', async () => {
-      let alteredContract = dataContract.toObject();
+      let alteredContract = jsDataContract.toObject();
       alteredContract.$defs = {}; // Empty defs are bad!
 
       let error;
@@ -97,13 +98,13 @@ describe('DataContractFactory', () => {
     let serializedDataContract;
 
     beforeEach(() => {
-      serializedDataContract = dataContract.toBuffer();
+      serializedDataContract = jsDataContract.toBuffer();
     });
 
     it('should return new Data Contract from serialized contract', async () => {
       const result = await factory.createFromBuffer(serializedDataContract);
 
-      expect(result.toObject()).to.deep.equal(dataContract.toObject());
+      expect(result.toObject()).to.deep.equal(jsDataContract.toObject());
     });
 
     // it('should throw InvalidDataContractError if the decoding fails with consensus error', async () => {
@@ -141,15 +142,17 @@ describe('DataContractFactory', () => {
     // });
   });
 
-  // describe('createDataContractCreateTransition', () => {
-  //   it('should return new DataContractCreateTransition with passed DataContract', () => {
-  //     const result = factory.createDataContractCreateTransition(dataContract);
+  describe('createDataContractCreateTransition', () => {
+    it('should return new DataContractCreateTransition with passed DataContract', async () => {
+      // Create wasm version of DataContract
+      let dataContract = new DataContract(rawDataContract);
+      dataContract.setEntropy(jsDataContract.getEntropy());
 
-  //     expect(result).to.be.an.instanceOf(DataContractCreateTransition);
+      const result = await factory.createDataContractCreateTransition(dataContract);
 
-  //     expect(result.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
-  //     expect(result.getEntropy()).to.deep.equal(dataContract.getEntropy());
-  //     expect(result.getDataContract().toObject()).to.deep.equal(dataContract.toObject());
-  //   });
-  // });
+      expect(result.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
+      expect(result.getEntropy()).to.deep.equal(jsDataContract.getEntropy());
+      expect(result.getDataContract().toObject()).to.deep.equal(jsDataContract.toObject());
+    });
+  });
 });
