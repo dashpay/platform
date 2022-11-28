@@ -556,7 +556,6 @@ function createDIContainer(options) {
       latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
-      proposalBlockExecutionContext,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -569,7 +568,6 @@ function createDIContainer(options) {
         latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
-        proposalBlockExecutionContext,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -589,7 +587,6 @@ function createDIContainer(options) {
       simplifiedMasternodeList,
       logStateRepository,
       rsDrive,
-      proposalBlockExecutionContext,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -602,7 +599,6 @@ function createDIContainer(options) {
         latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
-        proposalBlockExecutionContext,
         {
           useTransaction: true,
         },

@@ -21,7 +21,6 @@ class DriveStateRepository {
    * @param {BlockExecutionContext} latestBlockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
-   * @param {BlockExecutionContext} proposalBlockExecutionContext
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
