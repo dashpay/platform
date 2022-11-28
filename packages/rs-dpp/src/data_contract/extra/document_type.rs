@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::data_contract::extra::ArrayFieldType;
 use ciborium::value::Value;
@@ -354,14 +354,14 @@ impl DocumentType {
             .unwrap_or(u16::MAX)
     }
 
-    pub fn top_level_indices(&self) -> Result<Vec<&IndexProperty>, ContractError> {
+    pub fn top_level_indices(&self) -> Vec<&IndexProperty> {
         let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
         for index in &self.indices {
             if let Some(property) = index.properties.get(0) {
                 index_properties.push(property);
             }
         }
-        Ok(index_properties)
+        index_properties
     }
 
     pub fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {

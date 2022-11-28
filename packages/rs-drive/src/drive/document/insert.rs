@@ -34,7 +34,9 @@
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerInformation::{
+    ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements,
+};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
@@ -657,7 +659,8 @@ impl Drive {
             // if we are trying to get estimated costs we need to add the upper levels
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                Self::add_estimation_costs_for_levels_up_to_contract(
+                Self::add_estimation_costs_for_levels_up_to_contract_document_type(
+                    document_and_contract_info.contract,
                     estimated_costs_only_with_layer_info,
                 );
             }
@@ -677,6 +680,15 @@ impl Drive {
             .get_storage_flags_ref();
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
+
+        // if we are trying to get estimated costs we need to add the top index property tree
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimated_costs_for_top_level_indices_for_document_type(
+                document_and_contract_info.contract,
+                document_and_contract_info.document_type,
+                estimated_costs_only_with_layer_info,
+            );
+        }
 
         // fourth we need to store a reference to the document for each index
         for index in &document_and_contract_info.document_type.indices {

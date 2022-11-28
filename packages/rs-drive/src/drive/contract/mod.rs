@@ -62,7 +62,7 @@ use crate::fee::{calculate_fee, FeeResult};
 use crate::fee_pools::epochs::Epoch;
 
 /// The global root path for all contracts
-pub(crate) fn all_contracts_global_root_path() -> [&[u8]; 1] {
+pub(crate) fn all_contracts_global_root_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::ContractDocuments)]
 }
 
@@ -357,7 +357,7 @@ impl Drive {
 
             let mut index_cache: HashSet<&[u8]> = HashSet::new();
             // for each type we should insert the indices that are top level
-            for index in document_type.top_level_indices()? {
+            for index in document_type.top_level_indices() {
                 // toDo: change this to be a reference by index
                 let index_bytes = index.name.as_bytes();
                 if !index_cache.contains(index_bytes) {
@@ -595,7 +595,7 @@ impl Drive {
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
-                for index in document_type.top_level_indices()? {
+                for index in document_type.top_level_indices() {
                     // toDo: we can save a little by only inserting on new indexes
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {
@@ -635,7 +635,7 @@ impl Drive {
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
-                for index in document_type.top_level_indices()? {
+                for index in document_type.top_level_indices() {
                     // toDo: change this to be a reference by index
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {

@@ -45,7 +45,7 @@ mod insert;
 mod update;
 
 /// Returns the path to a contract document type.
-fn contract_document_type_path<'a>(
+pub(crate) fn contract_document_type_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 4] {
@@ -58,7 +58,7 @@ fn contract_document_type_path<'a>(
 }
 
 /// Returns the path to the primary keys of a contract document type.
-fn contract_documents_primary_key_path<'a>(
+pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 5] {

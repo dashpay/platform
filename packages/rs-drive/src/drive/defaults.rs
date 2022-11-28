@@ -79,3 +79,5 @@ pub const AVERAGE_NUMBER_OF_UPDATES: u8 = 10;
 /// How many bytes are added on average per update
 /// 1 here signifies less than 128
 pub const AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE: u8 = 1;
+
+pub const ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE: u8 = 12;
