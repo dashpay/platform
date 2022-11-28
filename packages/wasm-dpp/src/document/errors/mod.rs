@@ -11,7 +11,7 @@ pub use mismatch_owners_ids_error::*;
 pub use no_documents_supplied_error::*;
 
 use crate::mocks;
-use crate::{utils::*, DocumentWasm};
+use crate::{DocumentWasm, utils::*};
 
 mod document_already_exists_error;
 mod document_not_provided_error;
