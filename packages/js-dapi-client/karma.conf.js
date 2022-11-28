@@ -21,6 +21,11 @@ module.exports = (config) => {
       resolve: webpackConfig[0].resolve,
       plugins: webpackConfig[0].plugins,
     },
+    client: {
+      mocha: {
+        timeout: 5000,
+      },
+    },
     reporters: ['mocha'],
     port: 9876,
     colors: true,

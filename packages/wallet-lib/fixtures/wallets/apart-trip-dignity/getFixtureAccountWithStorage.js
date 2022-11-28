@@ -25,7 +25,6 @@ module.exports = (opts = {}) => {
     }), { isMasterKeyChain: true });
 
     const walletStore = mockedWallet.storage.getWalletStore(walletId);
-    walletStore.importState(walletStoreMock);
     const chainStore = mockedWallet.storage.getChainStore('testnet');
     chainStore.importState(chainStoreMock);
 

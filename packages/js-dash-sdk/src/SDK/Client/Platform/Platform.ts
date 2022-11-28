@@ -32,6 +32,8 @@ import broadcastStateTransition from "./broadcastStateTransition";
 import StateRepository from './StateRepository';
 import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
+import logger, { ConfigurableLogger } from "../../../logger"
+
 /**
  * Interface for PlatformOpts
  *
@@ -118,6 +120,8 @@ export class Platform {
      */
     public contracts: DataContracts;
 
+    public logger: ConfigurableLogger;
+
     /**
      * Broadcasts state transition
      * @param {Object} stateTransition
@@ -170,6 +174,8 @@ export class Platform {
         };
 
         this.client = options.client;
+        const walletId = this.client.wallet ? this.client.wallet.walletId : 'noid'
+        this.logger = logger.getForId(walletId)
 
         const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
             options.network,

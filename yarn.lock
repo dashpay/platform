@@ -1361,6 +1361,7 @@ __metadata:
     string_decoder: ^1.3.0
     url: ^0.11.0
     util: ^0.12.4
+    wasm-x11-hash: ~0.0.2
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
   languageName: unknown
@@ -1442,6 +1443,7 @@ __metadata:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
     "@dashevo/dashcore-lib": ~0.19.44
+    chai: ^4.3.4
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
@@ -1902,6 +1904,7 @@ __metadata:
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
+    "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
@@ -1913,6 +1916,7 @@ __metadata:
     chai-as-promised: ^7.1.1
     crypto-browserify: ^3.12.0
     crypto-js: ^4.0.0
+    dirty-chai: ^2.0.1
     dotenv-safe: ^8.2.0
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1942,6 +1946,7 @@ __metadata:
     string_decoder: ^1.3.0
     url: ^0.11.0
     util: ^0.12.4
+    wasm-x11-hash: ~0.0.2
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
     winston: ^3.2.1
@@ -5557,6 +5562,7 @@ __metadata:
     util: ^0.12.4
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
+    winston: ^3.2.1
   languageName: unknown
   linkType: soft
 
@@ -14105,6 +14111,13 @@ typescript@^3.9.5:
   version: 1.0.0
   resolution: "walk-up-path@npm:1.0.0"
   checksum: b8019ac4fb9ba1576839ec66d2217f62ab773c1cc4c704bfd1c79b1359fef5366f1382d3ab230a66a14c3adb1bf0fe102d1fdaa3437881e69154dfd1432abd32
+  languageName: node
+  linkType: hard
+
+"wasm-x11-hash@npm:~0.0.2":
+  version: 0.0.2
+  resolution: "wasm-x11-hash@npm:0.0.2"
+  checksum: 67005c5d048a62f8987c0b47d3e526e7a3cc506e479fb401a7280cb00c9b247537cb21049c575bc7a713dc1a188d5ee7d35310dd1369093dc2b34c1093ff3636
   languageName: node
   linkType: hard
 
