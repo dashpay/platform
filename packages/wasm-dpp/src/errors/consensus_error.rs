@@ -1,8 +1,8 @@
-use std::ops::Deref;
-use dpp::consensus::{ConsensusError as DPPConsensusError};
-use wasm_bindgen::{JsCast, JsValue};
-use wasm_bindgen::prelude::*;
 use crate::errors::consensus::basic::InvalidIdentityPublicKeyDataErrorWasm;
+use dpp::consensus::ConsensusError as DPPConsensusError;
+use std::ops::Deref;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::{JsCast, JsValue};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -43,6 +43,6 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         // DPPConsensusError::FeeError(_) => {}
         // DPPConsensusError::TestConsensusError(_) => {}
         // TODO: remove
-        _ => e.to_string().into()
+        _ => e.to_string().into(),
     }
 }

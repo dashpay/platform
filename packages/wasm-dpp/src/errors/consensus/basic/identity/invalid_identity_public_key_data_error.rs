@@ -1,13 +1,13 @@
+use crate::errors::PublicKeyValidationErrorWasm;
 use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
 use dpp::errors::consensus::basic::JsonSchemaError;
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 use wasm_bindgen::prelude::*;
-use crate::errors::PublicKeyValidationErrorWasm;
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeyDataError)]
 pub struct InvalidIdentityPublicKeyDataErrorWasm {
-    inner: InvalidIdentityPublicKeyDataError
+    inner: InvalidIdentityPublicKeyDataError,
 }
 
 impl From<InvalidIdentityPublicKeyDataError> for InvalidIdentityPublicKeyDataErrorWasm {

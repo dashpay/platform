@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=JsonSchemaError)]
 pub struct JsonSchemaErrorWasm {
-    inner: JsonSchemaError
+    inner: JsonSchemaError,
 }
 
 impl From<JsonSchemaError> for JsonSchemaErrorWasm {

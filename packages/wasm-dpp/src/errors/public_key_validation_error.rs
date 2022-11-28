@@ -1,11 +1,11 @@
 use dpp::PublicKeyValidationError;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name=PublicKeyValidationError)]
 #[derive(Clone, Debug)]
 pub struct PublicKeyValidationErrorWasm {
-    inner: PublicKeyValidationError
+    inner: PublicKeyValidationError,
 }
 
 impl From<PublicKeyValidationError> for PublicKeyValidationErrorWasm {
@@ -16,7 +16,6 @@ impl From<PublicKeyValidationError> for PublicKeyValidationErrorWasm {
 
 #[wasm_bindgen(js_class=PublicKeyValidationError)]
 impl PublicKeyValidationErrorWasm {
-
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> JsValue {
         self.inner.message().into()
