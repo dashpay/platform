@@ -654,6 +654,13 @@ impl Drive {
             batch_operations.extend(update_operations);
             return Ok(batch_operations);
         } else {
+            // if we are trying to get estimated costs we need to add the upper levels
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_levels_up_to_contract(
+                    estimated_costs_only_with_layer_info,
+                );
+            }
             // if we have override_document set that means we already checked if it exists
             self.add_document_to_primary_storage(
                 &document_and_contract_info,

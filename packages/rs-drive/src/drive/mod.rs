@@ -56,6 +56,7 @@ pub mod contract;
 pub mod defaults;
 /// Document module
 pub mod document;
+mod estimation_costs;
 /// Fee pools module
 pub mod fee_pools;
 pub mod flags;

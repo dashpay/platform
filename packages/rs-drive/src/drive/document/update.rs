@@ -272,6 +272,13 @@ impl Drive {
             );
         }
 
+        // if we are trying to get estimated costs we need to add the upper levels
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_levels_up_to_contract(
+                estimated_costs_only_with_layer_info,
+            );
+        }
+
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owner_id;

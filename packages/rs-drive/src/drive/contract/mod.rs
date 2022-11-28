@@ -61,6 +61,11 @@ use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeRe
 use crate::fee::{calculate_fee, FeeResult};
 use crate::fee_pools::epochs::Epoch;
 
+/// The global root path for all contracts
+pub(crate) fn all_contracts_global_root_path() -> [&[u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::ContractDocuments)]
+}
+
 /// Takes a contract ID and returns the contract's root path.
 pub(crate) fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
     [
