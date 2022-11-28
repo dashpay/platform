@@ -36,7 +36,6 @@ class DriveStateRepository {
     latestBlockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
-    proposalBlockExecutionContext,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -49,7 +48,6 @@ class DriveStateRepository {
     this.blockExecutionContext = latestBlockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
-    this.proposalBlockExecutionContext = proposalBlockExecutionContext;
     this.#options = options;
   }
 
