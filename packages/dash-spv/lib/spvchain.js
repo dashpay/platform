@@ -4,6 +4,7 @@ const utils = require('./utils');
 const SPVError = require('./errors/SPVError');
 
 const SpvChain = class {
+  // TODO: move chainType and confirms to `options`
   constructor(chainType, confirms = 100, startBlock, startBlockHeight) {
     this.confirmsBeforeFinal = confirms;
 
