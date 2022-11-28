@@ -39,13 +39,9 @@ class ReconnectableStream extends EventEmitter {
     this.maxRetriesOnError = opts.maxRetriesOnError;
     this.retryOnErrorDelay = opts.retryOnErrorDelay;
     // Assign setTimeout and clearTimeout as class method for tests
-    this.setTimeout = (callback, delay) => {
-      setTimeout(callback, delay);
-    };
+    this.setTimeout = (callback, delay) => setTimeout(callback, delay);
 
-    this.clearTimeout = (reference) => {
-      clearTimeout(reference);
-    };
+    this.clearTimeout = (reference) => clearTimeout(reference);
 
     /**
      * Stream function arguments

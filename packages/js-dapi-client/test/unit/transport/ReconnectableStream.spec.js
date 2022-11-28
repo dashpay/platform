@@ -8,6 +8,7 @@ describe('ReconnectableStream', () => {
   let reconnectableStream;
   let stream;
   let setTimeoutCallback;
+  const setTimeoutReference = 1111;
   const maxRetriesOnError = 2;
   const retryOnErrorDelay = 10;
 
@@ -39,7 +40,7 @@ describe('ReconnectableStream', () => {
     this.sinon.stub(reconnectableStream, 'clearTimeout');
     this.sinon.stub(reconnectableStream, 'setTimeout').callsFake((callback) => {
       setTimeoutCallback = callback;
-      return 1;
+      return setTimeoutReference;
     });
   });
 
@@ -180,7 +181,8 @@ describe('ReconnectableStream', () => {
     it('should stop reconnect timeout', async () => {
       await reconnectableStream.connect();
       reconnectableStream.stopReconnectTimeout();
-      expect(reconnectableStream.clearTimeout).to.have.been.calledOnce();
+      expect(reconnectableStream.clearTimeout).to.have.been
+        .calledOnceWith(setTimeoutReference);
       expect(reconnectableStream.reconnectTimeout).to.equal(null);
     });
 
