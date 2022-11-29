@@ -1,18 +1,24 @@
-use crate::errors::consensus::basic::InvalidIdentityPublicKeyDataErrorWasm;
+use crate::errors::consensus::basic::{IncompatibleProtocolVersionErrorWasm, UnsupportedProtocolVersionErrorWasm};
 use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdErrorWasm, InvalidIdentityPublicKeyDataErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
         DPPConsensusError::JsonSchemaError(e) => {
-            //JsonSchemaErrorWasm::from(e).into()
             e.to_string().into()
         }
-        // DPPConsensusError::UnsupportedProtocolVersionError(_) => {}
-        // DPPConsensusError::IncompatibleProtocolVersionError(_) => {}
-        // DPPConsensusError::DuplicatedIdentityPublicKeyIdError(_) => {}
+        DPPConsensusError::UnsupportedProtocolVersionError(e) => {
+            UnsupportedProtocolVersionErrorWasm::from(e).into()
+        }
+        DPPConsensusError::IncompatibleProtocolVersionError(e) => {
+            IncompatibleProtocolVersionErrorWasm::from(e).into()
+        }
+        DPPConsensusError::DuplicatedIdentityPublicKeyIdError(e) => {
+            DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()
+        }
         DPPConsensusError::InvalidIdentityPublicKeyDataError(e) => {
             InvalidIdentityPublicKeyDataErrorWasm::from(e.clone()).into()
         }
