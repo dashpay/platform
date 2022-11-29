@@ -8,6 +8,7 @@ mod invalid_identity_public_key_security_level_error;
 mod missing_master_public_key_error;
 mod identity_asset_lock_transaction_output_not_found_error;
 mod invalid_identity_asset_lock_transaction_error;
+mod invalid_instant_asset_lock_proof_error;
 
 pub use duplicated_identity_public_key_error::*;
 pub use duplicated_identity_public_key_id_error::*;
@@ -19,3 +20,4 @@ pub use invalid_identity_public_key_security_level_error::*;
 pub use missing_master_public_key_error::*;
 pub use identity_asset_lock_transaction_output_not_found_error::*;
 pub use invalid_identity_asset_lock_transaction_error::*;
+pub use invalid_instant_asset_lock_proof_error::*;
