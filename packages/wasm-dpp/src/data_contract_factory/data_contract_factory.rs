@@ -8,11 +8,10 @@ use dpp::{
     prelude::Identifier,
     version::ProtocolVersionValidator,
 };
-use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    data_contract::errors::{from_data_contract_to_js_error, InvalidDataContractError},
+    data_contract::errors::InvalidDataContractError,
     errors::{consensus_error::from_consensus_error, from_dpp_err, RustConversionError},
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
@@ -65,9 +64,10 @@ extern "C" {
 
 impl EntropyGenerator for ExternalEntropyGenerator {
     fn generate(&self) -> [u8; 32] {
+        // TODO: think about changing API to return an error but does it worth it for JS?
         let res = ExternalEntropyGenerator::generate(self)
             .try_into()
-            .expect("TODO");
+            .expect("Bad entropy generator provided: should return 32 bytes");
         res
     }
 }

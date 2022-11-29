@@ -3,7 +3,14 @@ use crate::errors::consensus::basic::{
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, MissingMasterPublicKeyErrorWasm};
+use crate::errors::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
+    IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
+    IdentityAssetLockTransactionOutputNotFoundErrorWasm,
+    InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
+    InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
+    InvalidIdentityPublicKeySecurityLevelErrorWasm, MissingMasterPublicKeyErrorWasm,
+};
 use wasm_bindgen::JsValue;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {

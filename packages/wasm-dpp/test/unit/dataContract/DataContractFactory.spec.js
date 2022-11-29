@@ -74,11 +74,7 @@ describe('DataContractFactory', () => {
       }
 
       expect(error.getRawDataContract()).to.deep.equal(alteredContract);
-      // expect(error.getErrors()).to.have.length(1);
-
-      // const [consensusError] = error.getErrors();
-
-      // expect(consensusError).to.equal(validationError);
+      expect(error.getErrors()).to.have.length(1);
     });
   });
 
@@ -95,39 +91,16 @@ describe('DataContractFactory', () => {
       expect(result.toObject()).to.deep.equal(jsDataContract.toObject());
     });
 
-    // it('should throw InvalidDataContractError if the decoding fails with consensus error', async () => {
-    //   const parsingError = new SerializedObjectParsingError(
-    //     serializedDataContract,
-    //     new Error(),
-    //   );
-
-    //   decodeProtocolEntityMock.throws(parsingError);
-
-    //   try {
-    //     await factory.createFromBuffer(serializedDataContract);
-
-    //     expect.fail('should throw InvalidDataContractError');
-    //   } catch (e) {
-    //     expect(e).to.be.an.instanceOf(InvalidDataContractError);
-
-    //     const [innerError] = e.getErrors();
-    //     expect(innerError).to.equal(parsingError);
-    //   }
-    // });
-
-    // it('should throw an error if decoding fails with any other error', async () => {
-    //   const parsingError = new Error('Something failed during parsing');
-
-    //   decodeProtocolEntityMock.throws(parsingError);
-
-    //   try {
-    //     await factory.createFromBuffer(serializedDataContract);
-
-    //     expect.fail('should throw an error');
-    //   } catch (e) {
-    //     expect(e).to.equal(parsingError);
-    //   }
-    // });
+    it('should throw InvalidDataContractError if the decoding fails with consensus error', async () => {
+      try {
+        // Casually break serialized data contract:
+        serializedDataContract[5] += 1337;
+        await factory.createFromBuffer(serializedDataContract);
+        expect.fail('should throw InvalidDataContractError');
+      } catch (e) {
+        expect(e).to.match(/Parsing of serialized object failed/);
+      }
+    });
   });
 
   describe('createDataContractCreateTransition', () => {

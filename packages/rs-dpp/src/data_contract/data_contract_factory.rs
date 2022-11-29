@@ -37,10 +37,7 @@ pub struct DataContractFactory {
 }
 
 impl DataContractFactory {
-    pub fn new(
-        protocol_version: u32,
-        validate_data_contract: DataContractValidator,
-    ) -> Self {
+    pub fn new(protocol_version: u32, validate_data_contract: DataContractValidator) -> Self {
         Self {
             protocol_version,
             validate_data_contract,

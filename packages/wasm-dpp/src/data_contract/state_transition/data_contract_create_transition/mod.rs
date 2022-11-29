@@ -1,7 +1,7 @@
 use dpp::data_contract::state_transition::DataContractCreateTransition;
 use wasm_bindgen::prelude::*;
 
-use crate::{DataContractWasm, buffer::Buffer};
+use crate::{buffer::Buffer, DataContractWasm};
 
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
 pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
