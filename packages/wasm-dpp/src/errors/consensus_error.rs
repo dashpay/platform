@@ -9,6 +9,8 @@ use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
 use wasm_bindgen::JsValue;
 use dpp::{DataTriggerError, StateError};
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -79,9 +81,9 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IdentityInsufficientBalanceError(e) => {
             IdentityInsufficientBalanceErrorWasm::from(e).into()
         }
-        // DPPConsensusError::IdentityAlreadyExistsError(e) => {
-        //
-        // }
+        DPPConsensusError::IdentityAlreadyExistsError(e) => {
+            IdentityAlreadyExistsErrorWasm::from(e).into()
+        }
         // DPPConsensusError::SignatureError(_) => {}
         // DPPConsensusError::FeeError(_) => {}
         // DPPConsensusError::TestConsensusError(_) => {}
