@@ -13,7 +13,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
-use crate::errors::consensus::state::document::DocumentAlreadyPresentErrorWasm;
+use crate::errors::consensus::state::document::{DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm};
 use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -130,7 +130,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::DataContractAlreadyPresentError { data_contract_id } => {
             DataContractAlreadyPresentErrorWasm::new(data_contract_id.clone(), code).into()
         }
-        // StateError::DocumentNotFoundError { .. } => {}
+        StateError::DocumentNotFoundError { document_id } => {
+            DocumentNotFoundErrorWasm::new(document_id.clone(), code).into()
+        }
         // StateError::DocumentOwnerMismatchError { .. } => {}
         // StateError::DocumentTimestampMismatchError { .. } => {}
         // StateError::DocumentTimestampWindowViolationError { .. } => {}
