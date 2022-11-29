@@ -3,8 +3,9 @@ use crate::errors::consensus::basic::{
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, MissingMasterPublicKeyErrorWasm};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm};
 use wasm_bindgen::JsValue;
+use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -51,7 +52,9 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()
         }
-        // DPPConsensusError::InvalidInstantAssetLockProofSignatureError(_) => {}
+        DPPConsensusError::InvalidInstantAssetLockProofSignatureError(e) => {
+            InvalidInstantAssetLockProofSignatureErrorWasm::from(e).into()
+        }
         // DPPConsensusError::IdentityAssetLockProofLockedTransactionMismatchError(_) => {}
         // DPPConsensusError::IdentityAssetLockTransactionIsNotFoundError(_) => {}
         // DPPConsensusError::InvalidAssetLockProofCoreChainHeightError(_) => {}
