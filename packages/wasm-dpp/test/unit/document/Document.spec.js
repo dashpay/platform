@@ -30,7 +30,6 @@ describe('Document', () => {
 
   });
 
-
   beforeEach(async function beforeEach() {
     const now = new Date().getTime();
     const id = await generateRandomIdentifierAsync();
@@ -38,7 +37,6 @@ describe('Document', () => {
 
     const ownerId = await generateRandomIdentifierAsync();
     const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
-
 
     const jsDataContractFactory = new JsDataContractFactory(createDPPMock(), () => { });
     const dataContractFactory = new DataContractFactory(1);
@@ -72,7 +70,6 @@ describe('Document', () => {
     dataContract = dataContractFactory.create(ownerId.clone(), rawDataContract);
     jsDataContract = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
-
     rawDocument = {
       $protocolVersion: protocolVersion.latestVersion,
       $id: id,
@@ -84,7 +81,6 @@ describe('Document', () => {
       $updatedAt: now,
     };
 
-
     document = new Document(rawDocument, dataContract);
     let jsRawDocument = cloneDeepWith(rawDocument);
     jsRawDocument.$id = jsId;
@@ -94,7 +90,6 @@ describe('Document', () => {
     jsDocument = new JsDocument(jsRawDocument, jsDataContract);
     jsDocument.dataContractId = JsIdentifier.from(Buffer.from(dataContract.getId().toBuffer()));
   });
-
 
   describe('constructor', () => {
     it('should create Document with $id and data if present', async () => {
@@ -205,9 +200,6 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      console.log(`the created time is ${document.getCreatedAt()}`);
-      console.log(`the raw created time is ${rawDocument.$createdAt}`);
-
       expect(document.getCreatedAt()).to.equal(rawDocument.$createdAt);
     });
 
@@ -228,7 +220,6 @@ describe('Document', () => {
 
       expect(document.getUpdatedAt()).to.equal(rawDocument.$updatedAt);
     });
-    // });
 
     describe('#getId', () => {
       it('should return ID', async () => {
