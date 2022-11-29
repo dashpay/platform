@@ -64,8 +64,8 @@ impl ErrorWithCode for StateError {
             // Document
             Self::DocumentAlreadyPresentError { .. } => 4004,
             Self::DocumentNotFoundError { .. } => 4005,
-            Self::DocumentOwnerMismatchError { .. } => 4006,
-            Self::DocumentTimestampMismatchError { .. } => 4007,
+            Self::DocumentOwnerIdMismatchError { .. } => 4006,
+            Self::DocumentTimestampsMismatchError { .. } => 4007,
             Self::DocumentTimestampWindowViolationError { .. } => 4008,
             Self::DuplicateUniqueIndexError { .. } => 4009,
             Self::InvalidDocumentRevisionError { .. } => 4010,

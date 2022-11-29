@@ -30,9 +30,7 @@ use dpp::StateError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
-use crate::errors::consensus::state::document::{
-    DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
-};
+use crate::errors::consensus::state::document::{DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm, DocumentTimestampsMismatchErrorWasm};
 use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -154,18 +152,20 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::DocumentNotFoundError { document_id } => {
             DocumentNotFoundErrorWasm::new(document_id.clone(), code).into()
         }
-        StateError::DocumentOwnerMismatchError {
+        StateError::DocumentOwnerIdMismatchError {
             document_id,
             document_owner_id,
             existing_document_owner_id,
-        } => DocumentOwnerIdMismatchErrorWasm::new(
+        } => { DocumentOwnerIdMismatchErrorWasm::new(
             document_id.clone(),
             document_owner_id.clone(),
             existing_document_owner_id.clone(),
             code,
         )
-        .into(),
-        // StateError::DocumentTimestampMismatchError { .. } => {}
+        .into() }
+        StateError::DocumentTimestampsMismatchError { document_id } => {
+            DocumentTimestampsMismatchErrorWasm::new(document_id.clone(), code).into()
+        }
         // StateError::DocumentTimestampWindowViolationError { .. } => {}
         // StateError::DuplicateUniqueIndexError { .. } => {}
         // StateError::InvalidDocumentRevisionError { .. } => {}
