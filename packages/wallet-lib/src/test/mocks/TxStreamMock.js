@@ -10,7 +10,6 @@ class TxStreamMock extends EventEmitter {
       sinon.spy(this, 'on');
       sinon.spy(this, 'removeListener');
       sinon.spy(this, 'emit');
-      sinon.spy(this, 'destroy');
       sinon.spy(this, 'cancel');
     }
 
@@ -34,14 +33,6 @@ class TxStreamMock extends EventEmitter {
   }
 
   end() {
-    this.emit('end');
-    this.removeAllListeners();
-  }
-
-  destroy(e) {
-    if (e) {
-      this.emit(TxStreamMock.EVENTS.error, e);
-    }
     this.emit('end');
     this.removeAllListeners();
   }
@@ -71,6 +62,10 @@ class TxStreamMock extends EventEmitter {
 
   finish() {
     this.emit(TxStreamMock.EVENTS.end);
+  }
+
+  errorHandler(e) {
+    this.emit('error', e);
   }
 }
 

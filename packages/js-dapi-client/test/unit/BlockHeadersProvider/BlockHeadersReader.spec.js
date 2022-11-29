@@ -315,7 +315,7 @@ describe('BlockHeadersReader - unit', () => {
       );
     });
 
-    it('[data] should destroy stream in case headers batch was rejected', async () => {
+    it('[data] should cancel stream in case headers batch was rejected', async () => {
       await blockHeadersReader.subscribeToNew(startFrom);
 
       const rejectWith = new Error('Stream error');

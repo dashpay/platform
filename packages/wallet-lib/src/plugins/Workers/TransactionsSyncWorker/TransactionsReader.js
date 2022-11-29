@@ -118,6 +118,37 @@ class TransactionsReader extends EventEmitter {
       // Arguments for the stream restart when it comes to a need to expand bloom filter
       let restartArgs = null;
 
+      const errorHandler = (streamError) => {
+        if (streamError.code === GrpcErrorCodes.CANCELLED) {
+          return;
+        }
+
+        if (currentRetries < maxRetries) {
+          this.logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, `"${streamError.message}"`);
+
+          const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
+          const remainingCount = count - blocksRead;
+          if (remainingCount <= 0) {
+            return;
+          }
+
+          subscribeWithRetries(
+            lastSyncedBlockHeight + 1,
+            remainingCount,
+            addresses,
+          ).then((newStream) => {
+            this.historicalSyncStream = newStream;
+            currentRetries += 1;
+          }).catch((e) => {
+            this.emit(EVENTS.ERROR, e);
+          }).finally(() => {
+            restartArgs = null;
+          });
+        } else {
+          this.emit(EVENTS.ERROR, streamError);
+        }
+      };
+
       const dataHandler = (data) => {
         const rawTransactions = data.getRawTransactions();
         const rawMerkleBlock = data.getRawMerkleBlock();
@@ -193,41 +224,11 @@ class TransactionsReader extends EventEmitter {
               throw new Error('Unable to reject accepted merkle block');
             }
             rejected = true;
-            stream.destroy(e);
+            this.cancelStream(stream);
+            errorHandler(e);
           };
 
           this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });
-        }
-      };
-
-      const errorHandler = (streamError) => {
-        if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          return;
-        }
-
-        if (currentRetries < maxRetries) {
-          this.logger.debug(`[TransactionsReader] Stream error, retry attempt ${currentRetries}/${maxRetries}`, `"${streamError.message}"`);
-
-          const blocksRead = lastSyncedBlockHeight - fromBlockHeight + 1;
-          const remainingCount = count - blocksRead;
-          if (remainingCount <= 0) {
-            return;
-          }
-
-          subscribeWithRetries(
-            lastSyncedBlockHeight + 1,
-            remainingCount,
-            addresses,
-          ).then((newStream) => {
-            this.historicalSyncStream = newStream;
-            currentRetries += 1;
-          }).catch((e) => {
-            this.emit(EVENTS.ERROR, e);
-          }).finally(() => {
-            restartArgs = null;
-          });
-        } else {
-          this.emit(EVENTS.ERROR, streamError);
         }
       };
 
@@ -341,7 +342,8 @@ class TransactionsReader extends EventEmitter {
 
           if (merkleBlockHeight < fromBlockHeight) {
             const error = new Error(`Merkle block height is lesser than expected startBlockHeight: ${merkleBlockHeight} < ${fromBlockHeight}`);
-            stream.destroy(error);
+            this.cancelStream(stream);
+            stream.errorHandler(error);
             return;
           }
 
@@ -355,7 +357,8 @@ class TransactionsReader extends EventEmitter {
             throw new Error('Unable to reject accepted merkle block');
           }
           rejected = true;
-          stream.destroy(e);
+          this.cancelStream(stream);
+          stream.errorHandler(e);
         };
 
         this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });

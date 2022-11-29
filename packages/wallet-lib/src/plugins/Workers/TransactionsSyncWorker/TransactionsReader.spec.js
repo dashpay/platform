@@ -134,12 +134,12 @@ describe('TransactionsReader - unit', () => {
                 firstAccepted = true;
                 acceptMerkleBlock(1, []);
                 try {
-                  rejectMerkleBlock();
+                  rejectMerkleBlock(new Error('test'));
                 } catch (e) {
                   failedRejectionError = e;
                 }
               } else {
-                rejectMerkleBlock();
+                rejectMerkleBlock(new Error('test'));
                 try {
                   acceptMerkleBlock(1, []);
                 } catch (e) {
@@ -299,7 +299,7 @@ describe('TransactionsReader - unit', () => {
             merkleBlock = mockMerkleBlock([]);
           });
 
-          it('should destroy stream if Merkle Block rejected', async () => {
+          it('should cancel and restart stream if Merkle Block rejected', async () => {
             await subscribeToHistoricalBatch(
               fromBlockHeight, count, DEFAULT_ADDRESSES,
             );
@@ -313,8 +313,8 @@ describe('TransactionsReader - unit', () => {
             historicalSyncStream.sendMerkleBlock(merkleBlock);
             await waitOneTick();
             expect(historicalSyncStream).to.equal(transactionsReader.historicalSyncStream);
-            expect(stream.destroy)
-              .to.have.been.calledWith(rejectedMerkleBlockWith);
+            expect(stream.cancel).to.have.been.calledOnce();
+            expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledTwice();
           });
         });
       });
@@ -695,6 +695,8 @@ describe('TransactionsReader - unit', () => {
           let firstAccepted = false;
           let failedRejectionError = null;
           let failedAcceptanceError = null;
+          transactionsReader.on('error', () => {});
+
           transactionsReader.on(
             TransactionsReader.EVENTS.MERKLE_BLOCK,
             ({ acceptMerkleBlock, rejectMerkleBlock }) => {
@@ -702,12 +704,12 @@ describe('TransactionsReader - unit', () => {
                 firstAccepted = true;
                 acceptMerkleBlock(fromBlockHeight + 1, []);
                 try {
-                  rejectMerkleBlock();
+                  rejectMerkleBlock(new Error('Rejected'));
                 } catch (e) {
                   failedRejectionError = e;
                 }
               } else {
-                rejectMerkleBlock();
+                rejectMerkleBlock(new Error('Rejected'));
                 try {
                   acceptMerkleBlock(1, []);
                 } catch (e) {
