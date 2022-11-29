@@ -4,6 +4,7 @@ mod invalid_identity_public_key_security_level_error;
 mod duplicated_identity_public_key_error;
 mod missing_master_public_key_error;
 mod identity_asset_lock_transaction_out_point_already_exists_error;
+mod invalid_identity_asset_lock_transaction_output_error;
 
 pub use invalid_identity_public_key_data_error::*;
 pub use duplicated_identity_public_key_id_error::*;
@@ -11,3 +12,4 @@ pub use invalid_identity_public_key_security_level_error::*;
 pub use duplicated_identity_public_key_error::*;
 pub use missing_master_public_key_error::*;
 pub use identity_asset_lock_transaction_out_point_already_exists_error::*;
+pub use invalid_identity_asset_lock_transaction_output_error::*;
