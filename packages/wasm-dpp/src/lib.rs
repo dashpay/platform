@@ -24,4 +24,5 @@ mod utils;
 
 mod bls_adapter;
 mod buffer;
+mod lodash;
 pub mod validation_result;

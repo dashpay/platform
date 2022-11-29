@@ -1,3 +1,4 @@
+use dpp::prelude::Identifier;
 pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -97,7 +98,13 @@ impl IdentifierWrapper {
         self.wrapped.buffer.len()
     }
 
-    pub fn inner(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         self.wrapped.buffer.to_vec()
+    }
+}
+
+impl IdentifierWrapper {
+    pub fn inner(self) -> Identifier {
+        self.wrapped
     }
 }

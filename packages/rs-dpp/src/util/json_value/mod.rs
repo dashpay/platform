@@ -18,6 +18,8 @@ use super::{
 
 mod insert_with_path;
 use insert_with_path::*;
+mod remove_path;
+use remove_path::*;
 
 const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -83,6 +85,12 @@ pub trait JsonValueExt {
     /// Insert value under the path. Path is dot-separated string. i.e `properties[0].id`. If parents don't
     /// exists they will be created
     fn insert_with_path(&mut self, path: &str, value: JsonValue) -> Result<(), anyhow::Error>;
+
+    /// removes data from path and tries deserialize into given type
+    fn remove_path_into<K: DeserializeOwned>(
+        &mut self,
+        property_name: &str,
+    ) -> Result<K, anyhow::Error>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -275,25 +283,27 @@ impl JsonValueExt for JsonValue {
         paths: impl IntoIterator<Item = &'a str>,
         with: ReplaceWith,
     ) -> Result<(), anyhow::Error> {
+        let mut results = vec![];
+
         for raw_path in paths {
             let mut to_replace = get_value_mut(raw_path, self);
             match to_replace {
                 Some(ref mut v) => {
-                    replace_identifier(v, with).map_err(|err| {
+                    results.push(replace_identifier(v, with).map_err(|err| {
                         anyhow!(
                             "unable replace the {:?} with {:?}: '{}'",
                             raw_path,
                             with,
                             err
                         )
-                    })?;
+                    }));
                 }
                 None => {
                     trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
                 }
             }
         }
-        Ok(())
+        results.into_iter().collect::<Result<_, _>>()
     }
 
     /// replaces binary data specified by path with either the Bytes format or string format (base58 or base64)
@@ -302,11 +312,13 @@ impl JsonValueExt for JsonValue {
         paths: impl IntoIterator<Item = &'a str>,
         with: ReplaceWith,
     ) -> Result<(), anyhow::Error> {
+        let mut results = vec![];
+
         for raw_path in paths {
             let mut to_replace = get_value_mut(raw_path, self);
             match to_replace {
                 Some(ref mut value) => {
-                    replace_binary(value, with).map_err(|err| {
+                    results.push(replace_binary(value, with).map_err(|err| {
                         anyhow!(
                             "unable replace {:?} with {:?}: '{}' input data: '{}'",
                             raw_path,
@@ -314,14 +326,14 @@ impl JsonValueExt for JsonValue {
                             err,
                             value
                         )
-                    })?;
+                    }));
                 }
                 None => {
                     trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
                 }
             }
         }
-        Ok(())
+        results.into_iter().collect::<Result<_, _>>()
     }
 
     fn parse_and_add_protocol_version<'a>(
@@ -367,6 +379,17 @@ impl JsonValueExt for JsonValue {
         let path: JsonPath = path_literal.try_into().unwrap();
         insert_with_path(self, &path, value)
     }
+
+    /// Removes the value under given path and tries to deserialize it into provided type
+    fn remove_path_into<K: DeserializeOwned>(&mut self, path: &str) -> Result<K, anyhow::Error> {
+        let path_literal: JsonPathLiteral = path.into();
+        let json_path: JsonPath = path_literal.try_into().unwrap();
+
+        let data = remove_path(&json_path, self)
+            .ok_or_else(|| anyhow!("the '{path}' doesn't exists in '{self:#?}'"))?;
+
+        serde_json::from_value(data).map_err(|err| anyhow!("unable convert data: {}`", err))
+    }
 }
 
 /// replaces the Identifiers specified in binary_properties with Bytes or Base58
@@ -389,21 +412,21 @@ pub fn replace_identifier(
     to_replace: &mut JsonValue,
     with: ReplaceWith,
 ) -> Result<(), ProtocolError> {
-    let mut json_value = JsonValue::Null;
-    std::mem::swap(to_replace, &mut json_value);
+    // TODO: remove the clone(). If replace fails, the original value should be untouched
     match with {
         ReplaceWith::Base58 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
             let identifier = Identifier::from_bytes(&data_bytes)?;
+
             *to_replace = JsonValue::String(identifier.to_string(Encoding::Base58));
         }
         ReplaceWith::Base64 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
             let identifier = Identifier::from_bytes(&data_bytes)?;
             *to_replace = JsonValue::String(identifier.to_string(Encoding::Base64));
         }
         ReplaceWith::Bytes => {
-            let data_string: String = serde_json::from_value(json_value)?;
+            let data_string: String = serde_json::from_value(to_replace.clone())?;
             let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_vec();
             *to_replace = JsonValue::Array(identifier);
         }
@@ -412,19 +435,18 @@ pub fn replace_identifier(
 }
 
 pub fn replace_binary(to_replace: &mut JsonValue, with: ReplaceWith) -> Result<(), anyhow::Error> {
-    let mut json_value = JsonValue::Null;
-    std::mem::swap(to_replace, &mut json_value);
+    // TODO: remove the clone(). If replace fails, the original value should be untouched
     match with {
         ReplaceWith::Base58 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
             *to_replace = JsonValue::String(bs58::encode(data_bytes).into_string());
         }
         ReplaceWith::Base64 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
             *to_replace = JsonValue::String(base64::encode(data_bytes));
         }
         ReplaceWith::Bytes => {
-            let base64: String = serde_json::from_value(json_value)?;
+            let base64: String = serde_json::from_value(to_replace.clone())?;
             *to_replace = JsonValue::from(base64::decode(base64)?);
         }
     }
@@ -610,4 +632,32 @@ mod test {
             json!("new_value")
         );
     }
+
+    #[test]
+    fn failed_replace_should_leave_original_data_untouched() {
+        let mut document = json!({
+            "root" :  {
+                "from" : {
+                    "id": "123",
+                    "message": "text_message",
+                },
+            }
+        });
+
+        assert!(document["root"]["from"]["id"].is_string());
+
+        let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
+        binary_properties.insert(
+            "root.from.id".to_string(),
+            json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),
+        );
+        let result = identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes);
+        assert_error_contains!(result, "Identifier must be 32 bytes long");
+        assert_eq!(
+            document["root"]["from"]["id"],
+            JsonValue::String(String::from("123"))
+        );
+    }
+
+    // TODO write the test - for remove_into()
 }

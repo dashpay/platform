@@ -1,6 +1,8 @@
 use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
+use itertools::Either;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -10,6 +12,7 @@ pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
+use crate::identifier;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::util::cbor_value::CborCanonicalMap;
@@ -23,7 +26,7 @@ pub mod errors;
 pub mod generate_document_id;
 pub mod state_transition;
 
-const IDENTIFIER_FIELDS: [&str; 3] = ["$id", "$dataContractId", "$ownerId"];
+pub const IDENTIFIER_FIELDS: [&str; 3] = ["$id", "$dataContractId", "$ownerId"];
 
 /// The document object represents the data provided by the platform in response to a query.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -98,7 +101,14 @@ impl Document {
     }
 
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        let mut value = serde_json::to_value(self)?;
+
+        let (identifiers_paths, binary_paths) = self.get_binary_and_identifier_paths();
+
+        let _ = value.replace_identifier_paths(identifiers_paths, ReplaceWith::Base58);
+        let _ = value.replace_binary_paths(binary_paths, ReplaceWith::Base64);
+
+        Ok(value)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
@@ -108,7 +118,6 @@ impl Document {
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
         json_value.parse_and_add_protocol_version("$protocolVersion", protocol_bytes)?;
-        // TODO identifiers and binary data for dynamic values
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let document: Document = serde_json::from_value(json_value)?;
@@ -133,15 +142,18 @@ impl Document {
     }
 
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
+
         if !skip_identifiers_conversion {
-            // TODO identifiers and binary data for dynamic values
-            json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
+            let (identifier_paths, binary_paths) = self.get_binary_and_identifier_paths();
+            let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
+            let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
         }
+
         Ok(json_object)
     }
 
-    pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
+    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.to_le_bytes().to_vec();
 
         let map = CborValue::serialized(&self)
@@ -155,6 +167,7 @@ impl Document {
             canonical_map.remove("$updatedAt");
         }
 
+        // TODO dynamic fields must be also included
         canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
 
         let mut document_buffer = canonical_map
@@ -164,17 +177,6 @@ impl Document {
         result_buf.append(&mut document_buffer);
 
         Ok(result_buf)
-    }
-
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let protocol_version = self.protocol_version;
-        let mut json_object = self.to_object(false)?;
-
-        if let JsonValue::Object(ref mut o) = json_object {
-            o.remove("$protocolVersion");
-        };
-
-        serializer::value_to_cbor(json_object, Some(protocol_version))
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -205,12 +207,44 @@ impl Document {
     pub fn set_data(&mut self, data: JsonValue) {
         self.data = data;
     }
+
+    pub fn get_binary_and_identifier_paths(&self) -> (Vec<&str>, Vec<&str>) {
+        let maybe_binary_properties = self
+            .data_contract
+            .get_binary_properties(&self.document_type);
+
+        let mut binary_paths: Vec<&str> = vec![];
+        let mut identifiers_paths: Vec<&str> = vec![];
+
+        if let Ok(binary_properties) = maybe_binary_properties {
+            (binary_paths, identifiers_paths) =
+                binary_properties.iter().partition_map(|(path, v)| {
+                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                        if content_type == identifier::MEDIA_TYPE {
+                            Either::Right(path.as_str())
+                        } else {
+                            return Either::Left(path.as_str());
+                        }
+                    } else {
+                        Either::Left(path.as_str())
+                    }
+                });
+        }
+        (
+            identifiers_paths
+                .into_iter()
+                .chain(IDENTIFIER_FIELDS)
+                .unique()
+                .collect(),
+            binary_paths,
+        )
+    }
 }
 
 #[cfg(test)]
 mod test {
     use anyhow::Result;
-    use serde_json::Value;
+    use serde_json::{json, Value};
 
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
@@ -357,11 +391,77 @@ mod test {
 
         let document = Document::from_cbor(&document_cbor)?;
 
-        let buffer = document.to_cbor()?;
+        let buffer = document.to_buffer()?;
 
         assert_eq!(document_cbor, buffer);
 
         Ok(())
+    }
+
+    #[test]
+    fn json_should_generate_human_readable_binaries() {
+        let data_contract = json!({
+            "protocolVersion" :0,
+            "$id" : vec![0_u8;32],
+            "$schema" : "schema",
+            "version" : 0,
+            "ownerId" : vec![0_u8;32],
+            "documents" : {
+                "test" : {
+                    "properties" : {
+                        "alphaIdentifier" :  {
+                            "type": "array",
+                            "byteArray": true,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                        },
+                        "alphaBinary" :  {
+                            "type": "array",
+                            "byteArray": true,
+                        }
+                    }
+                }
+            }
+        });
+        let data_contract = DataContract::from_raw_object(data_contract).unwrap();
+        let alpha_value = vec![10_u8; 32];
+        let id = vec![11_u8; 32];
+        let owner_id = vec![12_u8; 32];
+        let data_contract_id = vec![13_u8; 32];
+
+        let raw_document = json!({
+            "$protocolVersion"  : 0,
+            "$id" : id,
+            "$ownerId" : owner_id,
+            "$type" : "test",
+            "$dataContractId" : data_contract_id,
+            "revision" : 1,
+            "alphaBinary" : alpha_value,
+            "alphaIdentifier" : alpha_value,
+        });
+
+        let document = Document::from_raw_document(raw_document, data_contract).unwrap();
+        let json_document = document.to_json().expect("no errors");
+
+        assert_eq!(
+            json_document["$id"],
+            Value::String(bs58::encode(&id).into_string())
+        );
+        assert_eq!(
+            json_document["$ownerId"],
+            Value::String(bs58::encode(&owner_id).into_string())
+        );
+        assert_eq!(
+            json_document["$dataContractId"],
+            Value::String(bs58::encode(&data_contract_id).into_string())
+        );
+        assert_eq!(
+            json_document["alphaBinary"],
+            Value::String(base64::encode(&alpha_value))
+        );
+        assert_eq!(
+            json_document["alphaIdentifier"],
+            Value::String(bs58::encode(&alpha_value).into_string())
+        );
     }
 
     fn document_cbor_bytes() -> Vec<u8> {

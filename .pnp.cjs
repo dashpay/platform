@@ -2987,7 +2987,11 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha", "npm:2.0.1"],\
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],\
             ["karma-webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.0.0"],\
+            ["lodash", "npm:4.17.21"],\
             ["lodash.clonedeep", "npm:4.5.0"],\
+            ["lodash.clonedeepwith", "npm:4.5.0"],\
+            ["lodash.get", "npm:4.4.2"],\
+            ["lodash.set", "npm:4.3.2"],\
             ["long", "npm:5.2.0"],\
             ["mocha", "npm:9.2.2"],\
             ["path-browserify", "npm:1.0.1"],\

@@ -214,7 +214,7 @@ impl DataContract {
     }
 
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
         }
@@ -227,7 +227,7 @@ impl DataContract {
 
     /// Returns Data Contract as a JSON Value
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
@@ -397,16 +397,23 @@ impl TryFrom<JsonValue> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
         let mut v = v;
-        // TODO add binary_properties regeneration
+
         v.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-        Ok(serde_json::from_value(v)?)
+
+        let mut data_contract: Self = serde_json::from_value(v)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
     }
 }
 
 impl TryFrom<&str> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: &str) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_str(v)?)
+        let mut data_contract: DataContract = serde_json::from_str(v)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
     }
 }
 
