@@ -51,7 +51,6 @@ class ReconnectableStream extends EventEmitter {
     this.connect = this.connect.bind(this);
     this.reconnect = this.reconnect.bind(this);
     this.cancel = this.cancel.bind(this);
-    this.destroy = this.destroy.bind(this);
     this.errorHandler = this.errorHandler.bind(this);
     this.dataHandler = this.dataHandler.bind(this);
     this.endHandler = this.endHandler.bind(this);
@@ -168,10 +167,6 @@ class ReconnectableStream extends EventEmitter {
   cancel() {
     this.stopReconnectTimeout();
     return this.stream.cancel();
-  }
-
-  destroy(e) {
-    this.stream.destroy(e);
   }
 }
 

@@ -109,7 +109,15 @@ class BlockHeadersReader extends EventEmitter {
 
     const stream = await this.createContinuousSyncStream(fromBlockHeight);
 
-    stream.on('data', (data) => {
+    const errorHandler = (e) => {
+      this.continuousSyncStream = null;
+      if (e.code === GrpcErrorCodes.CANCELLED) {
+        return;
+      }
+      this.emit(EVENTS.ERROR, e);
+    };
+
+    const dataHandler = (data) => {
       const blockHeadersResponse = data.getBlockHeaders();
 
       if (blockHeadersResponse) {
@@ -126,34 +134,35 @@ class BlockHeadersReader extends EventEmitter {
          * @param e
          */
         const rejectHeaders = (e) => {
-          stream.destroy(e);
+          stream.cancel();
+          // Call ReconnectableStream error handler to
+          // trigger retry logic
+          stream.errorHandler(e);
         };
+
         this.emit(EVENTS.BLOCK_HEADERS, {
           headers,
           headHeight: batchHeadHeight,
         }, rejectHeaders);
       }
-    });
+    };
 
-    stream.on('beforeReconnect', (updateArguments) => {
+    const beforeReconnectHandler = (updateArguments) => {
       updateArguments({
         fromBlockHeight: lastKnownChainHeight,
       });
 
       lastKnownChainHeight -= 1;
-    });
+    };
 
-    stream.on('error', (e) => {
+    const endHandler = () => {
       this.continuousSyncStream = null;
-      if (e.code === GrpcErrorCodes.CANCELLED) {
-        return;
-      }
-      this.emit(EVENTS.ERROR, e);
-    });
+    };
 
-    stream.on('end', () => {
-      this.continuousSyncStream = null;
-    });
+    stream.on('data', dataHandler);
+    stream.on('beforeReconnect', beforeReconnectHandler);
+    stream.on('error', errorHandler);
+    stream.on('end', endHandler);
 
     this.continuousSyncStream = stream;
     return stream;
@@ -189,37 +198,6 @@ class BlockHeadersReader extends EventEmitter {
 
       const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
-      const dataHandler = (data) => {
-        const blockHeaders = data.getBlockHeaders();
-
-        if (blockHeaders) {
-          const headersList = blockHeaders.getHeadersList()
-            .map((header) => new BlockHeader(Buffer.from(header)));
-
-          let rejected = false;
-
-          /**
-           * Kills stream in case of deliberate rejection from the outside
-           *
-           * @param e
-           */
-          const rejectHeaders = (e) => {
-            rejected = true;
-            stream.destroy(e);
-          };
-
-          const batchHeadHeight = fromBlockHeight + headersObtained;
-          this.emit(EVENTS.BLOCK_HEADERS, {
-            headers: headersList,
-            headHeight: batchHeadHeight,
-          }, rejectHeaders);
-
-          if (!rejected) {
-            headersObtained += headersList.length;
-          }
-        }
-      };
-
       const errorHandler = (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
           // TODO: consider reworking with COMMANDS instead
@@ -248,6 +226,38 @@ class BlockHeadersReader extends EventEmitter {
         } else {
           this.stopReadingHistorical();
           this.emit(EVENTS.ERROR, streamError);
+        }
+      };
+
+      const dataHandler = (data) => {
+        const blockHeaders = data.getBlockHeaders();
+
+        if (blockHeaders) {
+          const headersList = blockHeaders.getHeadersList()
+            .map((header) => new BlockHeader(Buffer.from(header)));
+
+          let rejected = false;
+
+          /**
+           * Kills stream in case of deliberate rejection from the outside
+           *
+           * @param e
+           */
+          const rejectHeaders = (e) => {
+            rejected = true;
+            stream.cancel();
+            errorHandler(e);
+          };
+
+          const batchHeadHeight = fromBlockHeight + headersObtained;
+          this.emit(EVENTS.BLOCK_HEADERS, {
+            headers: headersList,
+            headHeight: batchHeadHeight,
+          }, rejectHeaders);
+
+          if (!rejected) {
+            headersObtained += headersList.length;
+          }
         }
       };
 

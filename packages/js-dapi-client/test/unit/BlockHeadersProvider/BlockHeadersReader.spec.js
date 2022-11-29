@@ -114,7 +114,7 @@ describe('BlockHeadersReader - unit', () => {
       });
     });
 
-    it('[data] should destroy stream in case headers batch was rejected', async () => {
+    it('[data] should cancel and retry stream in case headers batch was rejected', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
       const rejectWith = new Error('Invalid headers');
@@ -130,7 +130,9 @@ describe('BlockHeadersReader - unit', () => {
 
       await rejectionPromise;
 
-      expect(stream.destroy).to.have.been.calledWith(rejectWith);
+      expect(stream.cancel).to.have.been.calledOnce();
+      expect(blockHeadersReader.createHistoricalSyncStream)
+        .to.have.been.calledTwice();
     });
 
     it('[error] should handle stream cancellation', async () => {

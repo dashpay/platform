@@ -7,18 +7,10 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
     sinon.spy(this, 'on');
     sinon.spy(this, 'removeListener');
     sinon.spy(this, 'emit');
-    sinon.spy(this, 'destroy');
     sinon.spy(this, 'removeAllListeners');
     sinon.spy(this, 'cancel');
 
     this.errored = false;
-  }
-
-  destroy(e) {
-    this.emit('end');
-    if (e) {
-      this.emit('error', e);
-    }
   }
 
   cancel() {
@@ -47,6 +39,15 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
         },
       }),
     });
+  }
+
+  errorHandler(e) {
+    this.emit('error', e);
+  }
+
+  end() {
+    this.emit('end');
+    this.removeAllListeners();
   }
 }
 

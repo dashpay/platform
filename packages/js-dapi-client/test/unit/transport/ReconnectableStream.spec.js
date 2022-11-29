@@ -20,9 +20,7 @@ describe('ReconnectableStream', () => {
         code: 1,
       });
     });
-    stream.destroy = this.sinon.stub().callsFake((e) => {
-      stream.emit('error', e);
-    });
+
     this.sinon.spy(stream, 'on');
     const streamFunction = this.sinon.stub().returns(stream);
 
@@ -202,25 +200,6 @@ describe('ReconnectableStream', () => {
       reconnectableStream.cancel();
       expect(reconnectableStream.stopReconnectTimeout).to.have.been.calledOnce();
       expect(reconnectableStream.stream.cancel).to.have.been.calledOnce();
-    });
-  });
-
-  describe('#destroy', async () => {
-    it('should destroy stream', async () => {
-      // Do not retry on destroy
-      reconnectableStream.maxRetriesOnError = 0;
-      await reconnectableStream.connect();
-      const errorEventPromise = new Promise((resolve) => {
-        reconnectableStream.on('error', resolve);
-      });
-
-      const err = new Error('test error');
-      reconnectableStream.destroy(err);
-
-      const emittedError = await errorEventPromise;
-      expect(emittedError).to.equal(err);
-      expect(reconnectableStream.stopReconnectTimeout).to.have.been.calledOnce();
-      expect(stream.destroy).to.have.been.calledOnceWith(err);
     });
   });
 

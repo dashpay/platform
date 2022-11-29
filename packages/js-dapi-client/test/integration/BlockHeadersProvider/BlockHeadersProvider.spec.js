@@ -76,7 +76,7 @@ describe('BlockHeadersProvider - integration', () => {
         to = to > historicalHeadersAmount ? historicalHeadersAmount : to;
 
         stream.sendHeaders(headers.slice(from, to));
-        stream.destroy();
+        stream.cancel();
       }
     });
 
@@ -112,7 +112,7 @@ describe('BlockHeadersProvider - integration', () => {
   it('should read batch from the head and form longest chain', async () => {
     const headersToSend = headers.slice(0, historicalBatchSize);
     historicalStreams[0].sendHeaders(headersToSend);
-    historicalStreams[0].destroy();
+    historicalStreams[0].end();
 
     const { spvChain } = blockHeadersProvider;
     expect(spvChain.getLongestChain({ withPruned: true }))
