@@ -66,7 +66,7 @@ describe('createCoreChainLockUpdateFactory', () => {
 
     const response = await createCoreChainLockUpdate(round, loggerMock);
 
-      expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
+    expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
     expect(response).to.be.undefined();
   });
