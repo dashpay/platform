@@ -6,15 +6,14 @@ const DocumentCreateTransition = require(
 );
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-
-const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const cloneDeepWith = require('lodash.clonedeep');
 
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../../dist');
 
 let DataContractFactory;
-let DataContract;
 let Identifier;
+let Document;
 
 describe('Document', () => {
   let rawDocument;
@@ -25,7 +24,7 @@ describe('Document', () => {
 
   beforeEach(async () => {
     ({
-      Identifier, Document, DataContract, DataContractFactory
+      Identifier, Document, DataContractFactory
     } = await loadWasmDpp());
 
   });
@@ -311,8 +310,6 @@ describe('Document', () => {
 
     });
 
-
-
     describe('#toJSON', () => {
       it('should return Document as plain JS object', () => {
         const jsonDocument = {
@@ -325,7 +322,6 @@ describe('Document', () => {
         expect(document.toJSON()).to.deep.equal(jsonDocument);
       });
     });
-
 
     describe('#toObject', () => {
       it('should return Document as object', () => {
@@ -343,8 +339,6 @@ describe('Document', () => {
 
       });
     });
-
-
 
     describe('#toBuffer', () => {
       it('returned bytes should be the same as JS version', () => {
