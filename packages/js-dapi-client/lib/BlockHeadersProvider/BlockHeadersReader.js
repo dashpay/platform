@@ -1,4 +1,6 @@
 const { EventEmitter } = require('events');
+const { BlockHeader } = require('@dashevo/dashcore-lib');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
@@ -6,15 +8,8 @@ const EVENTS = {
   ERROR: 'error',
 };
 
-const COMMANDS = {
-  HANDLE_FINISHED_STREAM: 'HANDLE_FINISHED_STREAM',
-  HANDLE_STREAM_RETRY: 'HANDLE_STREAM_RETRY',
-  HANDLE_STREAM_ERROR: 'HANDLE_STREAM_ERROR',
-};
-
 /**
  * @typedef BlockHeadersReaderOptions
- * @property {CoreMethodsFacade} [coreMethods]
  * @property {number} [maxParallelStreams]
  * @property {number} [targetBatchSize]
  * @property {number} [maxRetries]
@@ -23,10 +18,13 @@ const COMMANDS = {
 class BlockHeadersReader extends EventEmitter {
   /**
    * @param {BlockHeadersReaderOptions} options
+   * @param createHistoricalSyncStream
+   * @param createContinuousSyncStream
    */
-  constructor(options = {}) {
+  constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
-    this.coreMethods = options.coreMethods;
+    this.createHistoricalSyncStream = createHistoricalSyncStream;
+    this.createContinuousSyncStream = createContinuousSyncStream;
     this.maxParallelStreams = options.maxParallelStreams;
     this.targetBatchSize = options.targetBatchSize;
     this.maxRetries = options.maxRetries;
@@ -34,9 +32,16 @@ class BlockHeadersReader extends EventEmitter {
     /**
      * Holds references to the historical streams
      *
-     * @type {*[]}
+     * @type {Stream[]}
      */
     this.historicalStreams = [];
+
+    /**
+     * Holds reference to the continuous sync stream
+     *
+     * @type {Stream}
+     */
+    this.continuousSyncStream = null;
   }
 
   /**
@@ -48,39 +53,17 @@ class BlockHeadersReader extends EventEmitter {
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
     if (this.historicalStreams.length) {
-      throw new Error('Historical streams are already running');
+      throw new Error('Historical streams are already running. Please stop them first.');
+    }
+
+    if (fromBlockHeight <= 0) {
+      throw new Error(`Invalid fromBlockHeight value: ${fromBlockHeight}`);
     }
 
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
-    if (totalAmount === 0) {
-      return;
-    }
-
-    if (totalAmount < 0) {
+    if (totalAmount <= 0) {
       throw new Error(`Invalid total amount of headers to read: ${totalAmount}`);
     }
-
-    // Resubscribe to the stream in case of error, and replace the stream in the array
-    this.on(COMMANDS.HANDLE_STREAM_RETRY, (oldStream, newStream) => {
-      const index = this.historicalStreams.indexOf(oldStream);
-      this.historicalStreams[index] = newStream;
-    });
-
-    // Remove stream from the array in case of error
-    this.on(COMMANDS.HANDLE_STREAM_ERROR, (stream, e) => {
-      const index = this.historicalStreams.indexOf(stream);
-      this.historicalStreams.splice(index, 1);
-      this.emit(EVENTS.ERROR, e);
-    });
-
-    // Remove finished stream from the array and emit HISTORICAL_DATA_OBTAINED event
-    this.on(COMMANDS.HANDLE_FINISHED_STREAM, (stream) => {
-      const index = this.historicalStreams.indexOf(stream);
-      this.historicalStreams.splice(index, 1);
-      if (this.historicalStreams.length === 0) {
-        this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-      }
-    });
 
     const numStreams = Math.min(
       Math.max(Math.round(totalAmount / this.targetBatchSize), 1),
@@ -88,12 +71,12 @@ class BlockHeadersReader extends EventEmitter {
     );
 
     const actualBatchSize = Math.ceil(totalAmount / numStreams);
+
     for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
-      const startingHeight = (batchIndex * actualBatchSize) + 1;
+      const startingHeight = (batchIndex * actualBatchSize) + fromBlockHeight;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
 
-      const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
-
+      const subscribeWithRetries = this.createSubscribeToHistoricalBatch(this.maxRetries);
       // eslint-disable-next-line no-await-in-loop
       const stream = await subscribeWithRetries(startingHeight, count);
       this.historicalStreams.push(stream);
@@ -101,28 +84,42 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   stopReadingHistorical() {
-    this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
-    this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
-    this.removeAllListeners(COMMANDS.HANDLE_FINISHED_STREAM);
-    this.historicalStreams.forEach((stream) => stream.destroy());
-    this.historicalStreams = [];
+    while (this.historicalStreams.length) {
+      const stream = this.historicalStreams.shift();
+      stream.cancel();
+    }
   }
 
   /**
    * Subscribes to continuously arriving block headers
    *
    * @param {number} fromBlockHeight
-   * @returns {Promise<Stream>}
+   * @returns {Promise<ReconnectableStream>}
    */
   async subscribeToNew(fromBlockHeight) {
-    const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
-      fromBlockHeight,
-    });
+    if (this.continuousSyncStream) {
+      throw new Error('Continuous sync has already been started');
+    }
+
+    if (typeof fromBlockHeight !== 'number' || fromBlockHeight < 1) {
+      throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
+    }
+
+    let lastKnownChainHeight = fromBlockHeight - 1;
+
+    const stream = await this.createContinuousSyncStream(fromBlockHeight);
 
     stream.on('data', (data) => {
-      const blockHeaders = data.getBlockHeaders();
+      const blockHeadersResponse = data.getBlockHeaders();
 
-      if (blockHeaders) {
+      if (blockHeadersResponse) {
+        const rawHeaders = blockHeadersResponse.getHeadersList();
+
+        const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
+
+        lastKnownChainHeight += headers.length;
+        const batchHeadHeight = lastKnownChainHeight - headers.length + 1;
+
         /**
          * Kills stream in case of deliberate rejection from the outside
          *
@@ -131,16 +128,42 @@ class BlockHeadersReader extends EventEmitter {
         const rejectHeaders = (e) => {
           stream.destroy(e);
         };
-
-        this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), rejectHeaders);
+        this.emit(EVENTS.BLOCK_HEADERS, {
+          headers,
+          headHeight: batchHeadHeight,
+        }, rejectHeaders);
       }
     });
 
+    stream.on('beforeReconnect', (updateArguments) => {
+      updateArguments({
+        fromBlockHeight: lastKnownChainHeight,
+      });
+
+      lastKnownChainHeight -= 1;
+    });
+
     stream.on('error', (e) => {
+      this.continuousSyncStream = null;
+      if (e.code === GrpcErrorCodes.CANCELLED) {
+        return;
+      }
       this.emit(EVENTS.ERROR, e);
     });
 
+    stream.on('end', () => {
+      this.continuousSyncStream = null;
+    });
+
+    this.continuousSyncStream = stream;
     return stream;
+  }
+
+  unsubscribeFromNew() {
+    if (this.continuousSyncStream) {
+      this.continuousSyncStream.cancel();
+      this.continuousSyncStream = null;
+    }
   }
 
   /**
@@ -151,7 +174,7 @@ class BlockHeadersReader extends EventEmitter {
    * @param {number} [maxRetries=0] - maximum amount of retries
    * @returns {function(*, *): Promise<Stream>}
    */
-  subscribeToHistoricalBatch(maxRetries = 0) {
+  createSubscribeToHistoricalBatch(maxRetries = 0) {
     let currentRetries = 0;
 
     /**
@@ -164,16 +187,14 @@ class BlockHeadersReader extends EventEmitter {
     const subscribeWithRetries = async (fromBlockHeight, count) => {
       let headersObtained = 0;
 
-      const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
-        fromBlockHeight,
-        count,
-      });
+      const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
-      stream.on('data', (data) => {
+      const dataHandler = (data) => {
         const blockHeaders = data.getBlockHeaders();
 
         if (blockHeaders) {
-          const headersList = blockHeaders.getHeadersList();
+          const headersList = blockHeaders.getHeadersList()
+            .map((header) => new BlockHeader(Buffer.from(header)));
 
           let rejected = false;
 
@@ -187,34 +208,64 @@ class BlockHeadersReader extends EventEmitter {
             stream.destroy(e);
           };
 
-          this.emit(EVENTS.BLOCK_HEADERS, headersList, rejectHeaders);
+          const batchHeadHeight = fromBlockHeight + headersObtained;
+          this.emit(EVENTS.BLOCK_HEADERS, {
+            headers: headersList,
+            headHeight: batchHeadHeight,
+          }, rejectHeaders);
 
           if (!rejected) {
             headersObtained += headersList.length;
           }
         }
-      });
+      };
 
-      stream.on('error', (streamError) => {
+      const errorHandler = (streamError) => {
+        if (streamError.code === GrpcErrorCodes.CANCELLED) {
+          // TODO: consider reworking with COMMANDS instead
+          // of producing a side effect that alters class state
+          const index = this.historicalStreams.indexOf(stream);
+          if (index >= 0) {
+            this.historicalStreams.splice(index, 1);
+          }
+          return;
+        }
+
         if (currentRetries < maxRetries) {
           const newFromBlockHeight = fromBlockHeight + headersObtained;
           const newCount = count - headersObtained;
 
+          // TODO: do not retry in case newCount is zero
           subscribeWithRetries(newFromBlockHeight, newCount)
             .then((newStream) => {
+              const index = this.historicalStreams.indexOf(stream);
+              this.historicalStreams[index] = newStream;
               currentRetries += 1;
-              this.emit(COMMANDS.HANDLE_STREAM_RETRY, stream, newStream);
             }).catch((e) => {
-              this.emit(COMMANDS.HANDLE_STREAM_ERROR, stream, e);
+              this.stopReadingHistorical();
+              this.emit(EVENTS.ERROR, e);
             });
         } else {
-          this.emit(COMMANDS.HANDLE_STREAM_ERROR, stream, streamError);
+          this.stopReadingHistorical();
+          this.emit(EVENTS.ERROR, streamError);
         }
-      });
+      };
 
-      stream.on('end', () => {
-        this.emit(COMMANDS.HANDLE_FINISHED_STREAM, stream);
-      });
+      const endHandler = () => {
+        const index = this.historicalStreams.indexOf(stream);
+        this.historicalStreams.splice(index, 1);
+        if (this.historicalStreams.length === 0) {
+          this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+        }
+      };
+
+      // TODO: consider reworking with "pasued" mode to
+      // control the data flow manually because SPV verification is
+      // resource intense and backpressure could be a problem
+      // also the whole thing severely affects UI responsiveness
+      stream.on('data', dataHandler);
+      stream.on('error', errorHandler);
+      stream.on('end', endHandler);
 
       return stream;
     };
@@ -224,6 +275,5 @@ class BlockHeadersReader extends EventEmitter {
 }
 
 BlockHeadersReader.EVENTS = EVENTS;
-BlockHeadersReader.COMMANDS = COMMANDS;
 
 module.exports = BlockHeadersReader;

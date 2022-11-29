@@ -67,7 +67,5 @@ FixtureTransport.prototype.getStatus = require('./methods/getStatus');
 FixtureTransport.prototype.getTransaction = require('./methods/getTransaction');
 FixtureTransport.prototype.sendTransaction = require('./methods/sendTransaction');
 FixtureTransport.prototype.subscribeToAddressesTransactions = require('./methods/subscribeToAddressesTransactions');
-FixtureTransport.prototype.subscribeToBlockHeaders = require('./methods/subscribeToBlockHeaders');
-FixtureTransport.prototype.subscribeToBlocks = require('./methods/subscribeToBlocks');
 
 module.exports = FixtureTransport;
