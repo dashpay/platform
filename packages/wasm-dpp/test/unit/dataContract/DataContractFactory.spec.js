@@ -73,8 +73,7 @@ describe('DataContractFactory', () => {
         error = e;
       }
 
-      // TODO
-      // expect(error.getRawDataContract()).to.equal(alteredContract);
+      expect(error.getRawDataContract()).to.deep.equal(alteredContract);
       // expect(error.getErrors()).to.have.length(1);
 
       // const [consensusError] = error.getErrors();

@@ -104,17 +104,17 @@ impl JsonSchemaValidator {
     /// Uses predefined meta-schemas to validate data contract schema
     pub fn validate_data_contract_schema(
         data_contract_schema: &Value,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> ValidationResult<()> {
         let mut validation_result = ValidationResult::new(None);
         let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 
         match res {
-            Ok(_) => Ok(validation_result),
+            Ok(_) => validation_result,
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(ConsensusError::from).collect();
                 validation_result.add_errors(errors);
-                Ok(validation_result)
+                validation_result
             }
         }
     }

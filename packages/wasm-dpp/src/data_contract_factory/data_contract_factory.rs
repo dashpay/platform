@@ -8,10 +8,12 @@ use dpp::{
     prelude::Identifier,
     version::ProtocolVersionValidator,
 };
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    errors::{from_dpp_err, RustConversionError},
+    data_contract::errors::{from_data_contract_to_js_error, InvalidDataContractError},
+    errors::{consensus_error::from_consensus_error, from_dpp_err, RustConversionError},
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
 
@@ -111,13 +113,20 @@ impl DataContractFactoryWasm {
         skip_validation: Option<bool>,
     ) -> Result<DataContractWasm, JsValue> {
         let parameters: DataContractParameters =
-            with_js_error!(serde_wasm_bindgen::from_value(object))?;
+            with_js_error!(serde_wasm_bindgen::from_value(object.clone()))?;
         let parameters_json = serde_json::to_value(parameters).expect("Implements Serialize");
-        self.0
+        let result = self
+            .0
             .create_from_object(parameters_json, skip_validation.unwrap_or(false))
-            .await
-            .map(Into::into)
-            .map_err(from_dpp_err)
+            .await;
+        match result {
+            Ok(data_contract) => Ok(data_contract.into()),
+            Err(dpp::ProtocolError::InvalidDataContractError { errors, .. }) => {
+                let js_errors = errors.iter().map(from_consensus_error).collect();
+                Err(InvalidDataContractError::new(js_errors, object).into())
+            }
+            Err(other) => Err(from_dpp_err(other)),
+        }
     }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
