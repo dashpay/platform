@@ -14,6 +14,7 @@ mod missing_master_public_key_error;
 mod identity_asset_lock_transaction_is_not_found_error;
 mod invalid_asset_lock_proof_core_chain_height_error;
 mod invalid_asset_lock_proof_transaction_height_error;
+mod invalid_identity_credit_withdrawal_transition_core_fee_error;
 
 pub use duplicated_identity_public_key_error::*;
 pub use duplicated_identity_public_key_id_error::*;
@@ -31,3 +32,4 @@ pub use missing_master_public_key_error::*;
 pub use identity_asset_lock_transaction_is_not_found_error::*;
 pub use invalid_asset_lock_proof_core_chain_height_error::*;
 pub use invalid_asset_lock_proof_transaction_height_error::*;
+pub use invalid_identity_credit_withdrawal_transition_core_fee_error::*;
