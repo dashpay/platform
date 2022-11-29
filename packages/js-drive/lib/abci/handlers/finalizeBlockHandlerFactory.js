@@ -40,12 +40,6 @@ function finalizeBlockHandlerFactory(
       commit: commitInfo,
       height,
       round,
-      txs,
-      time,
-      coreChainLockedHeight,
-      version,
-      proposerProTxHash,
-
     } = request;
 
     const consensusLogger = logger.child({
@@ -61,6 +55,20 @@ function finalizeBlockHandlerFactory(
       || proposalBlockExecutionContext.getRound() !== round
     ) {
       consensusLogger.warn('Height or round in execution context do not equal request values.');
+
+      const {
+        block: {
+          header: {
+            time,
+            version,
+            proposerProTxHash,
+            coreChainLockedHeight,
+          },
+          data: {
+            txs,
+          },
+        },
+      } = request;
 
       await processProposalHandler({
         height,
