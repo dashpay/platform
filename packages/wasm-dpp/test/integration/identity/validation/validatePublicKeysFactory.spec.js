@@ -14,11 +14,6 @@ const validatePublicKeysFactory = require(
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
-const {
-  expectValidationError,
-  expectJsonSchemaError,
-} = require('@dashevo/dpp/lib/test/expect/expectError');
-
 const DuplicatedIdentityPublicKeyError = require(
   '@dashevo/dpp/lib/errors/consensus/basic/identity/DuplicatedIdentityPublicKeyError',
 );
@@ -41,6 +36,10 @@ const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 
 const identityPublicKeySchema = require('@dashevo/dpp/schema/identity/publicKey.json');
 const stateTransitionPublicKeySchema = require('@dashevo/dpp/schema/identity/stateTransition/publicKey.json');
+const {
+  expectValidationError,
+  expectJsonSchemaError,
+} = require('../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
@@ -51,11 +50,17 @@ describe('validatePublicKeysFactory', () => {
   let bls;
   let PublicKeysValidator;
   let publicKeysValidator;
+  let InvalidIdentityPublicKeyDataErrorWasm;
+  let PublicKeyValidationError;
 
   beforeEach(async () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
-    ({ PublicKeysValidator } = await loadWasmDpp());
+    ({
+      PublicKeysValidator,
+      InvalidIdentityPublicKeyDataError: InvalidIdentityPublicKeyDataErrorWasm,
+      PublicKeyValidationError,
+    } = await loadWasmDpp());
 
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
@@ -411,7 +416,7 @@ describe('validatePublicKeysFactory', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should return invalid result if BLS12_381 public key is invalid', () => {
+  it('should return invalid result if BLS12_381 public key is invalid', async () => {
     rawPublicKeys = [{
       id: 0,
       type: IdentityPublicKey.TYPES.BLS12_381,
@@ -421,15 +426,15 @@ describe('validatePublicKeysFactory', () => {
       data: Buffer.from('11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
     }];
 
-    const result = validatePublicKeys(rawPublicKeys);
+    const result = publicKeysValidator.validateKeys(rawPublicKeys);
 
-    expectValidationError(result, InvalidIdentityPublicKeyDataError);
+    await expectValidationError(result, InvalidIdentityPublicKeyDataErrorWasm);
 
     const [error] = result.getErrors();
 
     expect(error.getCode()).to.equal(1040);
     expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[0].id);
-    expect(error.getValidationError()).to.be.instanceOf(TypeError);
+    expect(error.getValidationError()).to.be.instanceOf(PublicKeyValidationError);
     expect(error.getValidationError().message).to.equal('Invalid public key');
   });
 
