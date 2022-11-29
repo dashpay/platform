@@ -257,6 +257,32 @@ mod test {
             .try_init();
     }
 
+    fn data_contract_with_dynamic_properties() -> DataContract {
+        let data_contract = json!({
+            "protocolVersion" :0,
+            "$id" : vec![0_u8;32],
+            "$schema" : "schema",
+            "version" : 0,
+            "ownerId" : vec![0_u8;32],
+            "documents" : {
+                "test" : {
+                    "properties" : {
+                        "alphaIdentifier" :  {
+                            "type": "array",
+                            "byteArray": true,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                        },
+                        "alphaBinary" :  {
+                            "type": "array",
+                            "byteArray": true,
+                        }
+                    }
+                }
+            }
+        });
+        DataContract::from_raw_object(data_contract).unwrap()
+    }
+
     #[test]
     fn test_document_deserialize() -> Result<()> {
         init();
@@ -400,29 +426,7 @@ mod test {
 
     #[test]
     fn json_should_generate_human_readable_binaries() {
-        let data_contract = json!({
-            "protocolVersion" :0,
-            "$id" : vec![0_u8;32],
-            "$schema" : "schema",
-            "version" : 0,
-            "ownerId" : vec![0_u8;32],
-            "documents" : {
-                "test" : {
-                    "properties" : {
-                        "alphaIdentifier" :  {
-                            "type": "array",
-                            "byteArray": true,
-                            "contentMediaType": "application/x.dash.dpp.identifier",
-                        },
-                        "alphaBinary" :  {
-                            "type": "array",
-                            "byteArray": true,
-                        }
-                    }
-                }
-            }
-        });
-        let data_contract = DataContract::from_raw_object(data_contract).unwrap();
+        let data_contract = data_contract_with_dynamic_properties();
         let alpha_value = vec![10_u8; 32];
         let id = vec![11_u8; 32];
         let owner_id = vec![12_u8; 32];

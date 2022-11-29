@@ -265,3 +265,9 @@ impl DataContractDefaults {
         SCHEMA_URI.to_string()
     }
 }
+
+impl DataContractWasm {
+    pub fn inner(&self) -> &DataContract {
+        &self.0
+    }
+}

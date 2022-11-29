@@ -101,6 +101,13 @@ impl IdentifierWrapper {
     pub fn to_bytes(&self) -> Vec<u8> {
         self.wrapped.buffer.to_vec()
     }
+
+    #[wasm_bindgen(js_name=clone)]
+    pub fn deep_clone(&self) -> IdentifierWrapper {
+        IdentifierWrapper {
+            wrapped: self.wrapped.clone(),
+        }
+    }
 }
 
 impl IdentifierWrapper {
