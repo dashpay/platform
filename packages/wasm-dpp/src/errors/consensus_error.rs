@@ -3,7 +3,7 @@ use crate::errors::consensus::basic::{
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, MissingMasterPublicKeyErrorWasm};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, MissingMasterPublicKeyErrorWasm};
 use wasm_bindgen::JsValue;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -45,7 +45,9 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IdentityAssetLockTransactionOutputNotFoundError(e) => {
             IdentityAssetLockTransactionOutputNotFoundErrorWasm::from(e).into()
         }
-        // DPPConsensusError::InvalidIdentityAssetLockTransactionError(_) => {}
+        DPPConsensusError::InvalidIdentityAssetLockTransactionError(e) => {
+            InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
+        }
         // DPPConsensusError::InvalidInstantAssetLockProofError(_) => {}
         // DPPConsensusError::InvalidInstantAssetLockProofSignatureError(_) => {}
         // DPPConsensusError::IdentityAssetLockProofLockedTransactionMismatchError(_) => {}
