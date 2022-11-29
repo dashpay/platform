@@ -20,7 +20,7 @@ impl DuplicatedIdentityPublicKeyErrorWasm {
     #[wasm_bindgen(js_name=getDuplicatedPublicKeysIds)]
     pub fn duplicated_public_keys_ids(&self) -> Vec<u32> {
         // TODO: key ids probably should be u32
-        self.inner.duplicated_ids().iter().map(|id| *id as u32).collect()
+        self.inner.duplicated_public_keys_ids().iter().map(|id| *id as u32).collect()
     }
 
     #[wasm_bindgen(js_name=getCode)]
