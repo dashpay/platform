@@ -10,9 +10,9 @@ pub struct InvalidIdentityPublicKeyDataErrorWasm {
     inner: InvalidIdentityPublicKeyDataError,
 }
 
-impl From<InvalidIdentityPublicKeyDataError> for InvalidIdentityPublicKeyDataErrorWasm {
-    fn from(e: InvalidIdentityPublicKeyDataError) -> Self {
-        Self { inner: e }
+impl From<&InvalidIdentityPublicKeyDataError> for InvalidIdentityPublicKeyDataErrorWasm {
+    fn from(e: &InvalidIdentityPublicKeyDataError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 

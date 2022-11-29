@@ -3,11 +3,12 @@ use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdErrorWasm, InvalidIdentityPublicKeyDataErrorWasm};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
         DPPConsensusError::JsonSchemaError(e) => {
+            // TODO: rework JSONSchema error
             e.to_string().into()
         }
         DPPConsensusError::UnsupportedProtocolVersionError(e) => {
@@ -20,9 +21,11 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
             DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()
         }
         DPPConsensusError::InvalidIdentityPublicKeyDataError(e) => {
-            InvalidIdentityPublicKeyDataErrorWasm::from(e.clone()).into()
+            InvalidIdentityPublicKeyDataErrorWasm::from(e).into()
         }
-        // DPPConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => {}
+        DPPConsensusError::InvalidIdentityPublicKeySecurityLevelError(e) => {
+            InvalidIdentityPublicKeySecurityLevelErrorWasm::from(e).into()
+        }
         // DPPConsensusError::DuplicatedIdentityPublicKeyError(_) => {}
         // DPPConsensusError::MissingMasterPublicKeyError(_) => {}
         // DPPConsensusError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => {}
