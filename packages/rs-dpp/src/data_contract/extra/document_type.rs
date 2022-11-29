@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+use std::collections::hash_map::Entry;
 
 use crate::data_contract::extra::ArrayFieldType;
 use ciborium::value::Value;
@@ -29,13 +30,33 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
+    #[serde(skip)]
+    pub index_structure: IndexLevel,
     pub properties: BTreeMap<String, DocumentField>,
     pub required_fields: BTreeSet<String>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
 }
 
+
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct IndexLevel {
+    pub indices: BTreeMap<String, IndexLevel>,
+}
+
 impl DocumentType {
+    pub fn new(name: String, indices: Vec<Index>, properties: BTreeMap<String, DocumentField>, required_fields: BTreeSet<String>, documents_keep_history: bool, documents_mutable: bool) -> Self {
+        let index_structure = Self::build_index_structure(indices.as_slice());
+        DocumentType {
+            name,
+            indices,
+            index_structure,
+            properties,
+            required_fields,
+            documents_keep_history,
+            documents_mutable
+        }
+    }
     // index_names can be in any order
     // in field name must be in the last two indexes.
     pub fn index_for_types(
@@ -58,6 +79,31 @@ impl DocumentType {
             }
         }
         best_index
+    }
+
+    pub fn build_index_structure(
+        indices: &[Index],
+    ) -> IndexLevel {
+        // let base_path = [];
+        let mut base_level = IndexLevel::default();
+        // let mut lower_level;
+        // let hashmap: HashMap<String, Vec<&Index>> = HashMap::new();
+        // for index in indices.iter() {
+        //     let mut current_level = &mut base_level;
+        //     for property in index.properties.iter() {
+        //         match current_level.indices.entry(property.name.clone()) {
+        //             Entry::Occupied(mut o) => {
+        //                 current_level = o.get_mut();
+        //             }
+        //             Entry::Vacant(e) => {
+        //                 lower_level = IndexLevel::default();
+        //                 e.insert(lower_level);
+        //                 current_level = &mut lower_level;
+        //             }
+        //         }
+        //     }
+        // }
+        base_level
     }
 
     pub fn serialize_value_for_key<'a>(
@@ -317,9 +363,12 @@ impl DocumentType {
             );
         }
 
+        let index_structure = Self::build_index_structure(indices.as_slice());
+
         Ok(DocumentType {
             name: String::from(name),
             indices,
+            index_structure,
             properties: document_properties,
             required_fields,
             documents_keep_history,

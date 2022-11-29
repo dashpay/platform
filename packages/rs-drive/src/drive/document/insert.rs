@@ -683,7 +683,7 @@ impl Drive {
 
         // if we are trying to get estimated costs we need to add the top index property tree
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimated_costs_for_top_level_indices_for_document_type(
+            Self::add_estimated_costs_indices_for_document_type(
                 document_and_contract_info.contract,
                 document_and_contract_info.document_type,
                 estimated_costs_only_with_layer_info,
