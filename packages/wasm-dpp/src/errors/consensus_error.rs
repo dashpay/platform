@@ -5,11 +5,14 @@ use crate::errors::consensus::basic::{
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
 use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockProofLockedTransactionMismatchErrorWasm, IdentityAssetLockTransactionIsNotFoundErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm, InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm};
-use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, InvalidInstantAssetLockProofSignatureError};
 use wasm_bindgen::JsValue;
 use dpp::{DataTriggerError, StateError};
+use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use crate::errors::consensus::state::document::DocumentAlreadyPresentErrorWasm;
 use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -84,12 +87,17 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IdentityAlreadyExistsError(e) => {
             IdentityAlreadyExistsErrorWasm::from(e).into()
         }
-        // DPPConsensusError::SignatureError(_) => {}
-        // DPPConsensusError::FeeError(_) => {}
         // DPPConsensusError::TestConsensusError(_) => {}
         // DPPConsensusError::SerializedObjectParsingError { .. } => {}
         // DPPConsensusError::ProtocolVersionParsingError { .. } => {}
         // DPPConsensusError::IncompatibleRe2PatternError { .. } => {}
+        // DPPConsensusError::FeeError(e) => {
+        //
+        // }
+        DPPConsensusError::SignatureError(e) => {
+            from_signature_error(e);
+            "Not implemented".into()
+        }
         DPPConsensusError::StateError(state_error) => {
             from_state_error(state_error);
             "Not implemented".into()
@@ -103,31 +111,42 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     }
 }
 
-fn from_state_error(state_error: &Box<StateError>) {
+fn from_state_error(state_error: &Box<StateError>) -> JsValue {
+    let code = state_error.get_code();
+
     match state_error.deref() {
-        StateError::DataTriggerError(data_trigger_error) => {
-            match data_trigger_error.deref() {
-                DataTriggerError::DataTriggerConditionError { .. } => {}
-                DataTriggerError::DataTriggerExecutionError { .. } => {}
-                DataTriggerError::DataTriggerInvalidResultError { .. } => {}
-            }
-        },
-        StateError::DuplicatedIdentityPublicKeyIdError { .. } => {}
-        StateError::DuplicatedIdentityPublicKeyError { .. } => {}
-        StateError::DocumentAlreadyPresentError { .. } => {}
-        StateError::DataContractAlreadyPresentError { .. } => {}
-        StateError::DocumentNotFoundError { .. } => {}
-        StateError::DocumentOwnerMismatchError { .. } => {}
-        StateError::DocumentTimestampMismatchError { .. } => {}
-        StateError::DocumentTimestampWindowViolationError { .. } => {}
-        StateError::DuplicateUniqueIndexError { .. } => {}
-        StateError::InvalidDocumentRevisionError { .. } => {}
-        StateError::InvalidIdentityRevisionError { .. } => {}
-        StateError::IdentityPublicKeyDisabledAtWindowViolationError { .. } => {}
-        StateError::IdentityPublicKeyIsReadOnlyError { .. } => {}
-        StateError::InvalidIdentityPublicKeyIdError { .. } => {}
-        StateError::MaxIdentityPublicKeyLimitReached { .. } => {}
-        StateError::IdentityPublicKeyDisabledError { .. } => {}
+        StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids } => {
+            let e = DuplicatedIdentityPublicKeyIdError::new(duplicated_ids.clone());
+            DuplicatedIdentityPublicKeyIdErrorWasm::from(&e).into()
+        }
+        StateError::DuplicatedIdentityPublicKeyError { duplicated_public_key_ids } => {
+            let e = DuplicatedIdentityPublicKeyError::new(duplicated_public_key_ids.clone());
+            DuplicatedIdentityPublicKeyErrorWasm::from(&e).into()
+        }
+        StateError::DocumentAlreadyPresentError { document_id } => {
+            DocumentAlreadyPresentErrorWasm::new(document_id.clone(), code).into()
+        }
+        // StateError::DataContractAlreadyPresentError { .. } => {}
+        // StateError::DocumentNotFoundError { .. } => {}
+        // StateError::DocumentOwnerMismatchError { .. } => {}
+        // StateError::DocumentTimestampMismatchError { .. } => {}
+        // StateError::DocumentTimestampWindowViolationError { .. } => {}
+        // StateError::DuplicateUniqueIndexError { .. } => {}
+        // StateError::InvalidDocumentRevisionError { .. } => {}
+        // StateError::InvalidIdentityRevisionError { .. } => {}
+        // StateError::IdentityPublicKeyDisabledAtWindowViolationError { .. } => {}
+        // StateError::IdentityPublicKeyIsReadOnlyError { .. } => {}
+        // StateError::InvalidIdentityPublicKeyIdError { .. } => {}
+        // StateError::MaxIdentityPublicKeyLimitReached { .. } => {}
+        // StateError::IdentityPublicKeyDisabledError { .. } => {}
+        // StateError::DataTriggerError(data_trigger_error) => {
+        //     match data_trigger_error.deref() {
+        //         DataTriggerError::DataTriggerConditionError { .. } => {}
+        //         DataTriggerError::DataTriggerExecutionError { .. } => {}
+        //         DataTriggerError::DataTriggerInvalidResultError { .. } => {}
+        //     }
+        // },
+        _ => "Not implemented".into()
     }
 }
 
@@ -160,5 +179,18 @@ fn from_basic_error(basic_error: &Box<BasicError>) {
         BasicError::IncompatibleDataContractSchemaError { .. } => {}
         BasicError::InvalidIdentityPublicKeySignatureError { .. } => {}
         BasicError::InvalidDataContractId { .. } => {}
+    }
+}
+
+fn from_signature_error(signature_error: &SignatureError) {
+    match signature_error {
+        SignatureError::MissingPublicKeyError { .. } => {}
+        SignatureError::InvalidIdentityPublicKeyTypeError { .. } => {}
+        SignatureError::InvalidStateTransitionSignatureError => {}
+        SignatureError::IdentityNotFoundError { .. } => {}
+        SignatureError::InvalidSignaturePublicKeySecurityLevelError { .. } => {}
+        SignatureError::PublicKeyIsDisabledError { .. } => {}
+        SignatureError::PublicKeySecurityLevelNotMetError { .. } => {}
+        SignatureError::WrongPublicKeyPurposeError { .. } => {}
     }
 }
