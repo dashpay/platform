@@ -37,12 +37,7 @@ impl DocumentWasm {
         js_data_contract: &DataContractWasm,
     ) -> Result<DocumentWasm, JsValue> {
         let mut raw_document = to_serde_json_value(&js_raw_document)?;
-
-        raw_document
-            .replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)
-            .unwrap();
-
-        // TODO dynamic fields must be replaced as well??
+        let _ = raw_document.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
 
         let document =
             Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
