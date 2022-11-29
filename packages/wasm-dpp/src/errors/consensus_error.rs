@@ -30,7 +30,10 @@ use dpp::StateError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
-use crate::errors::consensus::state::document::{DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm, DocumentTimestampsMismatchErrorWasm};
+use crate::errors::consensus::state::document::{
+    DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
+    DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
+};
 use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -117,8 +120,7 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
             "Not implemented".into()
         }
         DPPConsensusError::StateError(state_error) => {
-            from_state_error(state_error);
-            "Not implemented".into()
+            from_state_error(state_error)
         }
         DPPConsensusError::BasicError(basic_error) => {
             from_basic_error(basic_error);
@@ -156,17 +158,31 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             document_id,
             document_owner_id,
             existing_document_owner_id,
-        } => { DocumentOwnerIdMismatchErrorWasm::new(
+        } => DocumentOwnerIdMismatchErrorWasm::new(
             document_id.clone(),
             document_owner_id.clone(),
             existing_document_owner_id.clone(),
             code,
         )
-        .into() }
+        .into(),
         StateError::DocumentTimestampsMismatchError { document_id } => {
             DocumentTimestampsMismatchErrorWasm::new(document_id.clone(), code).into()
         }
-        // StateError::DocumentTimestampWindowViolationError { .. } => {}
+        StateError::DocumentTimestampWindowViolationError {
+            timestamp_name,
+            document_id,
+            timestamp,
+            time_window_start,
+            time_window_end,
+        } => DocumentTimestampWindowViolationErrorWasm::new(
+            timestamp_name.clone(),
+            document_id.clone(),
+            *timestamp,
+            *time_window_start,
+            *time_window_end,
+            code,
+        )
+        .into(),
         // StateError::DuplicateUniqueIndexError { .. } => {}
         // StateError::InvalidDocumentRevisionError { .. } => {}
         // StateError::InvalidIdentityRevisionError { .. } => {}

@@ -19,12 +19,12 @@ impl DocumentOwnerIdMismatchErrorWasm {
 
     #[wasm_bindgen(js_name=getDocumentOwnerId)]
     pub fn document_owner_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_id.as_bytes())
+        Buffer::from_bytes(self.document_owner_id.as_bytes())
     }
 
     #[wasm_bindgen(js_name=getExistingDocumentOwnerId)]
     pub fn existing_document_owner_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_id.as_bytes())
+        Buffer::from_bytes(self.existing_document_owner_id.as_bytes())
     }
 
     #[wasm_bindgen(js_name=getCode)]
