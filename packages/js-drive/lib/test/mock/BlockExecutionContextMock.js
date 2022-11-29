@@ -5,8 +5,6 @@
  * @method reset
  * @method setHeight
  * @method getHeight
- * @method setTime
- * @method getTime
  * @method setVersion
  * @method getVersion
  * @method setLastCommitInfo
@@ -15,8 +13,13 @@
  * @method getInvalidTxCount
  * @method setConsensusLogger
  * @method getConsensusLogger
+ * @method getRound
  * @method fromObject
  * @method toObject
+ * @method getEpochInfo
+ * @method setEpochInfo
+ * @method setTimeMs
+ * @method getTimeMs
  */
 class BlockExecutionContextMock {
   /**
@@ -30,8 +33,6 @@ class BlockExecutionContextMock {
     this.getCoreChainLockedHeight = sinon.stub();
     this.setHeight = sinon.stub();
     this.getHeight = sinon.stub();
-    this.setTime = sinon.stub();
-    this.getTime = sinon.stub();
     this.reset = sinon.stub();
     this.setVersion = sinon.stub();
     this.getVersion = sinon.stub();
@@ -41,10 +42,15 @@ class BlockExecutionContextMock {
     this.getConsensusLogger = sinon.stub();
     this.setWithdrawalTransactionsMap = sinon.stub();
     this.getWithdrawalTransactionsMap = sinon.stub();
+    this.getRound = sinon.stub();
     this.populate = sinon.stub();
     this.isEmpty = sinon.stub();
     this.fromObject = sinon.stub();
     this.toObject = sinon.stub();
+    this.setEpochInfo = sinon.stub();
+    this.getEpochInfo = sinon.stub();
+    this.setTimeMs = sinon.stub();
+    this.getTimeMs = sinon.stub();
   }
 }
 

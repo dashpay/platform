@@ -29,7 +29,7 @@ function rotateAndCreateValidatorSetUpdateFactory(
     // Rotate validators
 
     let validatorSetUpdate;
-    const rotationEntropy = Buffer.from(lastCommitInfo.stateSignature);
+    const rotationEntropy = Buffer.from(lastCommitInfo.blockSignature);
     if (await validatorSet.rotate(height, coreChainLockedHeight, rotationEntropy)) {
       validatorSetUpdate = createValidatorSetUpdate(validatorSet);
 

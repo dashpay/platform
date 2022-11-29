@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.7",
+  "version": "0.24.0-dev.8",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -37,7 +37,7 @@
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@3.2.2",
+  "packageManager": "yarn@3.3.0",
   "ultra": {
     "concurrent": [
       "clean"
@@ -69,11 +69,14 @@
     "packages/platform-test-suite",
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
-    "packages/wasm-dpp"
+    "packages/wasm-dpp",
+    "packages/withdrawals-contract",
+    "packages/rs-drive-nodejs"
   ],
   "resolutions": {
     "elliptic": "^6.5.4",
     "bn.js": "4.12.0",
-    "ejs": "^3.1.7"
+    "ejs": "^3.1.7",
+    "engine.io": "^6.2.1"
   }
 }

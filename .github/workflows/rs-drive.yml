@@ -1,0 +1,29 @@
+name: RS Drive
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+    paths:
+      - .github/workflows/rs-drive.yml
+      - .github/workflows/rs-checks.yml
+      - packages/feature-flags-contract/**
+      - packages/dpns-contract/**
+      - packages/dashpay-contract/**
+      - packages/masternode-reward-shares-contract/**
+      - packages/rs-dpp/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rs-checks:
+    name: Rust
+    uses: ./.github/workflows/rs-checks.yml
+    with:
+      package: 'drive'

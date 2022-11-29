@@ -32,6 +32,8 @@ describe('GetIdentityResponse', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setMetadata(metadata);
 
@@ -62,8 +64,9 @@ describe('GetIdentityResponse', () => {
     expect(identity).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+    expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
 
   it('should create an instance from proto', () => {
@@ -84,9 +87,10 @@ describe('GetIdentityResponse', () => {
   it('should create an instance with proof from proto', () => {
     const proofProto = new ProofResponse();
 
-    proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
     proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setRound(proofFixture.round);
 
     proto.setIdentity(undefined);
     proto.setProof(proofProto);
@@ -99,8 +103,9 @@ describe('GetIdentityResponse', () => {
     const proof = getIdentityResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+    expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {

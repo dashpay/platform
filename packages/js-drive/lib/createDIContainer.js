@@ -12,7 +12,6 @@ const Long = require('long');
 
 const RSDrive = require('@dashevo/rs-drive');
 
-const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
@@ -139,6 +138,7 @@ const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
+const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 
 /**
  *
@@ -147,7 +147,8 @@ const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSynced
  * @param {string} options.ABCI_PORT
  * @param {string} options.DB_PATH
  * @param {string} options.GROVEDB_LATEST_FILE
- * @param {string} options.DATA_CONTRACT_CACHE_SIZE
+ * @param {string} options.DATA_CONTRACTS_GLOBAL_CACHE_SIZE
+ * @param {string} options.DATA_CONTRACTS_BLOCK_CACHE_SIZE
  * @param {string} options.CORE_JSON_RPC_HOST
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
@@ -238,7 +239,13 @@ function createDIContainer(options) {
     dbPath: asValue(options.DB_PATH),
 
     groveDBLatestFile: asValue(options.GROVEDB_LATEST_FILE),
-    dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
+
+    dataContractsGlobalCacheSize: asValue(
+      parseInt(options.DATA_CONTRACTS_GLOBAL_CACHE_SIZE, 10),
+    ),
+    dataContractsBlockCacheSize: asValue(
+      parseInt(options.DATA_CONTRACTS_BLOCK_CACHE_SIZE, 10),
+    ),
 
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
@@ -344,6 +351,7 @@ function createDIContainer(options) {
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
+    fetchSimplifiedMNList: asFunction(fetchSimplifiedMNListFactory),
     validateQuorumTtl: asFunction(validateQuorumTtlFactory),
     getScoredQuorumHashes: asValue(getScoredQuorumHashes),
     coreZMQClient: asFunction((
@@ -436,7 +444,14 @@ function createDIContainer(options) {
    */
 
   container.register({
-    rsDrive: asFunction((groveDBLatestFile) => new RSDrive(groveDBLatestFile))
+    rsDrive: asFunction((
+      groveDBLatestFile,
+      dataContractsGlobalCacheSize,
+      dataContractsBlockCacheSize,
+    ) => new RSDrive(groveDBLatestFile, {
+      dataContractsGlobalCacheSize,
+      dataContractsBlockCacheSize,
+    }))
       // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
         // Flush data on disk
@@ -503,10 +518,6 @@ function createDIContainer(options) {
       groveDBStore,
       decodeProtocolEntity,
     ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
-
-    dataContractCache: asFunction((dataContractCacheSize) => (
-      new LRUCache(dataContractCacheSize)
-    )).singleton(),
   });
 
   /**
@@ -547,7 +558,6 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      dataContractCache,
       latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
@@ -567,7 +577,6 @@ function createDIContainer(options) {
 
       return new CachedStateRepositoryDecorator(
         stateRepository,
-        dataContractCache,
       );
     }).singleton(),
 
@@ -579,7 +588,6 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      dataContractCache,
       latestBlockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
@@ -602,7 +610,7 @@ function createDIContainer(options) {
       );
 
       const cachedRepository = new CachedStateRepositoryDecorator(
-        stateRepository, dataContractCache,
+        stateRepository,
       );
 
       if (!logStateRepository) {

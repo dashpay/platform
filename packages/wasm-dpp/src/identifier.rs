@@ -76,11 +76,6 @@ impl IdentifierWrapper {
         Buffer::from_bytes(self.wrapped.buffer.as_slice())
     }
 
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> Buffer {
-        Buffer::from_bytes(self.wrapped.buffer.as_slice())
-    }
-
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> String {
         self.to_string(None)

@@ -7,21 +7,21 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {Identifier} masternodeRewardSharesContractId
  * @param {createRewardShareDocument} createRewardShareDocument
  * @param {DocumentRepository} documentRepository
+ * @param {IdentityStoreRepository} identityRepository
  * @param {fetchTransaction} fetchTransaction
  * @return {handleUpdatedPubKeyOperator}
  */
 function handleUpdatedPubKeyOperatorFactory(
   transactionalDpp,
-  transactionalStateRepository,
   createMasternodeIdentity,
   masternodeRewardSharesContractId,
   createRewardShareDocument,
   documentRepository,
+  identityRepository,
   fetchTransaction,
 ) {
   /**
@@ -29,12 +29,14 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
+   * @param {BlockInfo} blockInfo
    * @return Promise<Array<Identity|Document>>
    */
   async function handleUpdatedPubKeyOperator(
     masternodeEntry,
     previousMasternodeEntry,
     dataContract,
+    blockInfo,
   ) {
     const result = [];
 
@@ -50,7 +52,10 @@ function handleUpdatedPubKeyOperatorFactory(
 
     const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
-    const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentifier);
+    const operatorIdentityResult = await identityRepository.fetch(
+      operatorIdentifier,
+      { useTransaction: true },
+    );
 
     let operatorPayoutPubKey;
     if (masternodeEntry.operatorPayoutAddress) {
@@ -59,7 +64,7 @@ function handleUpdatedPubKeyOperatorFactory(
     }
 
     //  Create an identity for operator if there is no identity exist with the same ID
-    if (operatorIdentity === null) {
+    if (operatorIdentityResult.isNull()) {
       result.push(
         await createMasternodeIdentity(
           operatorIdentifier,
@@ -82,6 +87,7 @@ function handleUpdatedPubKeyOperatorFactory(
       masternodeIdentifier,
       operatorIdentifier,
       proRegTxPayload.operatorReward,
+      blockInfo,
     );
 
     if (rewardShareDocument) {
@@ -112,6 +118,7 @@ function handleUpdatedPubKeyOperatorFactory(
         dataContract,
         'rewardShare',
         previousDocument.getId(),
+        blockInfo,
         { useTransaction: true },
       );
 

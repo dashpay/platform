@@ -1,33 +1,25 @@
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
+const StorageResult = require('../../../../lib/storage/StorageResult');
 
 describe('handleUpdatedScriptPayoutFactory', () => {
   let handleUpdatedScriptPayout;
-  let stateRepositoryMock;
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
   let getPublicKeyFromPayoutScriptMock;
-  let blockExecutionContextMock;
   let identity;
-  let time;
+  let blockInfo;
+  let identityRepositoryMock;
+  let publicKeyToIdentitiesRepositoryMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
 
-    time = new Date().getTime();
-
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getTime.returns({ seconds: Math.ceil(time / 1000) });
-
-    stateRepositoryMock = createStateRepositoryMock(this.sinon);
-    stateRepositoryMock.fetchIdentity.resolves(
-      identity,
-    );
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
       IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -35,9 +27,18 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(Buffer.alloc(20, '0'));
 
+    identityRepositoryMock = {
+      update: this.sinon.stub(),
+      fetch: this.sinon.stub().resolves(new StorageResult(identity, [])),
+    };
+
+    publicKeyToIdentitiesRepositoryMock = {
+      store: this.sinon.stub(),
+    };
+
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
-      stateRepositoryMock,
-      blockExecutionContextMock,
+      identityRepositoryMock,
+      publicKeyToIdentitiesRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
     );
@@ -59,8 +60,8 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.publicKeys[0].getData(),
     );
 
-    expect(stateRepositoryMock.updateIdentity).to.not.be.called();
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
+    expect(identityRepositoryMock.update).to.not.be.called();
+    expect(publicKeyToIdentitiesRepositoryMock.store).to.not.be.called();
   });
 
   it('should store updated identity with updated public keys', async () => {
@@ -75,7 +76,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     const identityToStore = new Identity(identity.toObject());
 
-    identityPublicKeys[0].disabledAt = time;
+    identityPublicKeys[0].disabledAt = blockInfo.timeMs;
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
@@ -87,10 +88,15 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     identityPublicKeys.push(newWithdrawalIdentityPublicKey);
     identityToStore.setPublicKeys(identityPublicKeys);
 
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(identityToStore);
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
+    expect(identityRepositoryMock.update).to.be.calledOnceWithExactly(
+      identityToStore,
+      { useTransaction: true },
+    );
+
+    expect(publicKeyToIdentitiesRepositoryMock.store).to.be.calledOnceWithExactly(
+      newPubKeyData,
       identity.getId(),
-      [newPubKeyData],
+      { useTransaction: true },
     );
   });
 
@@ -116,10 +122,14 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     identityPublicKeys.push(newWithdrawalIdentityPublicKey);
     identityToStore.setPublicKeys(identityPublicKeys);
 
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(identityToStore);
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
+    expect(identityRepositoryMock.update).to.be.calledOnceWithExactly(
+      identityToStore,
+      { useTransaction: true },
+    );
+    expect(publicKeyToIdentitiesRepositoryMock.store).to.be.calledOnceWithExactly(
+      newPubKeyData,
       identity.getId(),
-      [newPubKeyData],
+      { useTransaction: true },
     );
   });
 });

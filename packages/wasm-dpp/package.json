@@ -1,18 +1,18 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.24.0-dev.7",
+  "version": "0.24.0-dev.8",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "scripts/build.sh && webpack",
+    "build": "yarn exec scripts/build.sh && webpack",
     "test": "yarn run test:node && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
     "webpack": "webpack",
     "lint": "eslint . && cargo clippy && cargo fmt --check",
     "lint:fix": "eslint . --fix && cargo clippy --fix && cargo fmt",
-    "clean": "scripts/clean.sh"
+    "clean": "yarn exec scripts/clean.sh"
   },
   "ultra": {
     "concurrent": [
@@ -29,6 +29,9 @@
     }
   ],
   "license": "MIT",
+  "dependencies": {
+    "@dashevo/bls": "~1.0.0-beta.2"
+  },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/dashcore-lib": "~0.19.44",

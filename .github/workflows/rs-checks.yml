@@ -1,0 +1,87 @@
+name: Package RS Tests
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: The package name to run tests for
+        type: string
+        required: true
+
+jobs:
+  lint:
+    name: Linting
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
+
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Check formatting
+        run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`
+
+  compile:
+    name: Compilation errors
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - run: cargo check --package=${{ inputs.package }}
+
+  test:
+    name: Tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --package=${{ inputs.package }} --all-features
