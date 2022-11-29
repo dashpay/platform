@@ -3,17 +3,7 @@ use crate::errors::consensus::basic::{
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
-use crate::errors::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
-    IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
-    IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
-    IdentityAssetLockTransactionOutputNotFoundErrorWasm,
-    InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
-    InvalidIdentityAssetLockTransactionErrorWasm,
-    InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
-    InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
-    InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
-};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockProofLockedTransactionMismatchErrorWasm, IdentityAssetLockTransactionIsNotFoundErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm};
 use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
 use wasm_bindgen::JsValue;
 
@@ -68,7 +58,9 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IdentityAssetLockProofLockedTransactionMismatchError(e) => {
             IdentityAssetLockProofLockedTransactionMismatchErrorWasm::from(e).into()
         }
-        // DPPConsensusError::IdentityAssetLockTransactionIsNotFoundError(_) => {}
+        DPPConsensusError::IdentityAssetLockTransactionIsNotFoundError(e) => {
+            IdentityAssetLockTransactionIsNotFoundErrorWasm::from(e).into()
+        }
         // DPPConsensusError::InvalidAssetLockProofCoreChainHeightError(_) => {}
         // DPPConsensusError::InvalidAssetLockProofTransactionHeightError(_) => {}
         // DPPConsensusError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => {}
