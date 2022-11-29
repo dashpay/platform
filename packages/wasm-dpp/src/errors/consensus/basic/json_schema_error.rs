@@ -1,16 +1,15 @@
-use dpp::codes::ErrorWithCode;
 use dpp::errors::consensus::basic::JsonSchemaError;
-use dpp::errors::consensus::ConsensusError as DPPConsensusError;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=JsonSchemaError)]
 pub struct JsonSchemaErrorWasm {
-    inner: JsonSchemaError,
+    _inner: JsonSchemaError,
 }
 
 impl From<JsonSchemaError> for JsonSchemaErrorWasm {
     fn from(e: JsonSchemaError) -> Self {
-        Self { inner: e }
+        Self { _inner: e }
     }
 }
 

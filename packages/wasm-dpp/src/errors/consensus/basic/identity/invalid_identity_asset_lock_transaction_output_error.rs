@@ -1,17 +1,17 @@
-use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, InvalidIdentityAssetLockTransactionOutputError};
+use dpp::consensus::basic::identity::InvalidIdentityAssetLockTransactionOutputError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityAssetLockTransactionOutputError)]
 pub struct InvalidIdentityAssetLockTransactionOutputErrorWasm {
-    inner: InvalidIdentityAssetLockTransactionOutputError
+    inner: InvalidIdentityAssetLockTransactionOutputError,
 }
 
-impl From<&InvalidIdentityAssetLockTransactionOutputError> for InvalidIdentityAssetLockTransactionOutputErrorWasm {
+impl From<&InvalidIdentityAssetLockTransactionOutputError>
+    for InvalidIdentityAssetLockTransactionOutputErrorWasm
+{
     fn from(e: &InvalidIdentityAssetLockTransactionOutputError) -> Self {
-        Self {
-            inner: e.clone()
-        }
+        Self { inner: e.clone() }
     }
 }
 

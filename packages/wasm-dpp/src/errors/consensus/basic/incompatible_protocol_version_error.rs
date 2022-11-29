@@ -1,17 +1,15 @@
-use dpp::consensus::basic::{IncompatibleProtocolVersionError};
+use dpp::consensus::basic::IncompatibleProtocolVersionError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IncompatibleProtocolVersionError)]
 pub struct IncompatibleProtocolVersionErrorWasm {
-    inner: IncompatibleProtocolVersionError
+    inner: IncompatibleProtocolVersionError,
 }
 
 impl From<&IncompatibleProtocolVersionError> for IncompatibleProtocolVersionErrorWasm {
     fn from(e: &IncompatibleProtocolVersionError) -> Self {
-        Self {
-            inner: e.clone()
-        }
+        Self { inner: e.clone() }
     }
 }
 
@@ -26,7 +24,6 @@ impl IncompatibleProtocolVersionErrorWasm {
     pub fn minimal_protocol_version(&self) -> u32 {
         self.inner.minimal_protocol_version()
     }
-
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {

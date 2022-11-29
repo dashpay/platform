@@ -1,17 +1,17 @@
-use crate::errors::PublicKeyValidationErrorWasm;
 use dpp::codes::ErrorWithCode;
-use dpp::consensus::basic::identity::{InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
-use dpp::errors::consensus::basic::JsonSchemaError;
+use dpp::consensus::basic::identity::InvalidIdentityPublicKeySecurityLevelError;
+
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 use wasm_bindgen::prelude::*;
-use dpp::identity::{Purpose, SecurityLevel};
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeySecurityLevelError)]
 pub struct InvalidIdentityPublicKeySecurityLevelErrorWasm {
     inner: InvalidIdentityPublicKeySecurityLevelError,
 }
 
-impl From<&InvalidIdentityPublicKeySecurityLevelError> for InvalidIdentityPublicKeySecurityLevelErrorWasm {
+impl From<&InvalidIdentityPublicKeySecurityLevelError>
+    for InvalidIdentityPublicKeySecurityLevelErrorWasm
+{
     fn from(e: &InvalidIdentityPublicKeySecurityLevelError) -> Self {
         Self { inner: e.clone() }
     }

@@ -1,9 +1,16 @@
-use crate::errors::consensus::basic::{IncompatibleProtocolVersionErrorWasm, UnsupportedProtocolVersionErrorWasm};
+use crate::errors::consensus::basic::{
+    IncompatibleProtocolVersionErrorWasm, UnsupportedProtocolVersionErrorWasm,
+};
 use dpp::consensus::ConsensusError as DPPConsensusError;
-use std::ops::Deref;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::{JsCast, JsValue};
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, MissingMasterPublicKeyErrorWasm};
+
+use crate::errors::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
+    IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
+    InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
+    InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
+    InvalidIdentityPublicKeySecurityLevelErrorWasm, MissingMasterPublicKeyErrorWasm,
+};
+use wasm_bindgen::JsValue;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -38,7 +45,9 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::InvalidIdentityAssetLockTransactionOutputError(e) => {
             InvalidIdentityAssetLockTransactionOutputErrorWasm::from(e).into()
         }
-        // DPPConsensusError::InvalidAssetLockTransactionOutputReturnSize(_) => {}
+        DPPConsensusError::InvalidAssetLockTransactionOutputReturnSize(e) => {
+            InvalidAssetLockTransactionOutputReturnSizeErrorWasm::from(e).into()
+        }
         // DPPConsensusError::IdentityAssetLockTransactionOutputNotFoundError(_) => {}
         // DPPConsensusError::InvalidIdentityAssetLockTransactionError(_) => {}
         // DPPConsensusError::InvalidInstantAssetLockProofError(_) => {}

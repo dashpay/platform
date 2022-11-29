@@ -1,5 +1,4 @@
 use crate::errors::consensus_error::from_consensus_error;
-use crate::errors::from_dpp_err;
 use dpp::validation::ValidationResult;
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;

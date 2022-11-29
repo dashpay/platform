@@ -1,17 +1,15 @@
-use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, MissingMasterPublicKeyError};
+use dpp::consensus::basic::identity::MissingMasterPublicKeyError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MissingMasterPublicKeyError)]
 pub struct MissingMasterPublicKeyErrorWasm {
-    inner: MissingMasterPublicKeyError
+    inner: MissingMasterPublicKeyError,
 }
 
 impl From<&MissingMasterPublicKeyError> for MissingMasterPublicKeyErrorWasm {
     fn from(e: &MissingMasterPublicKeyError) -> Self {
-        Self {
-            inner: e.clone()
-        }
+        Self { inner: e.clone() }
     }
 }
 

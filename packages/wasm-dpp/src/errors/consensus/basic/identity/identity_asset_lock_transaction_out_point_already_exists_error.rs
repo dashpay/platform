@@ -1,19 +1,19 @@
-use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdError, IdentityAssetLockTransactionOutPointAlreadyExistsError};
+use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
-use dpp::dashcore::Txid;
+
 use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityAssetLockTransactionOutPointAlreadyExistsError)]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
-    inner: IdentityAssetLockTransactionOutPointAlreadyExistsError
+    inner: IdentityAssetLockTransactionOutPointAlreadyExistsError,
 }
 
-impl From<&IdentityAssetLockTransactionOutPointAlreadyExistsError> for IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
+impl From<&IdentityAssetLockTransactionOutPointAlreadyExistsError>
+    for IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm
+{
     fn from(e: &IdentityAssetLockTransactionOutPointAlreadyExistsError) -> Self {
-        Self {
-            inner: e.clone()
-        }
+        Self { inner: e.clone() }
     }
 }
 

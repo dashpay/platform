@@ -4,14 +4,12 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=UnsupportedProtocolVersionError)]
 pub struct UnsupportedProtocolVersionErrorWasm {
-    inner: UnsupportedProtocolVersionError
+    inner: UnsupportedProtocolVersionError,
 }
 
 impl From<&UnsupportedProtocolVersionError> for UnsupportedProtocolVersionErrorWasm {
     fn from(e: &UnsupportedProtocolVersionError) -> Self {
-        Self {
-            inner: e.clone()
-        }
+        Self { inner: e.clone() }
     }
 }
 
@@ -26,7 +24,6 @@ impl UnsupportedProtocolVersionErrorWasm {
     pub fn latest_version(&self) -> u32 {
         self.inner.latest_version()
     }
-
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
