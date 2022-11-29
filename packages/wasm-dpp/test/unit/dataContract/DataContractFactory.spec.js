@@ -2,17 +2,6 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-const InvalidDataContractError = require('@dashevo/dpp/lib/dataContract/errors/InvalidDataContractError');
-const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-
-const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
-
 const { default: loadWasmDpp } = require('../../../dist');
 
 describe('DataContractFactory', () => {
