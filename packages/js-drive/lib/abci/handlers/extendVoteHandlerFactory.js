@@ -21,7 +21,7 @@ function extendVoteHandlerFactory(proposalBlockExecutionContext) {
    * @param {number} request.round
    * @return {Promise<abci.ResponseExtendVote>}
    */
-  async function extendVoteHandler({ round }) {
+  async function extendVoteHandler() {
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
 

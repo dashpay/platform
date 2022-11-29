@@ -459,7 +459,6 @@ class GroveDBStore {
    * @return {Promise<void>}
    */
   async startTransaction() {
-    console.log('GroveDBStore startTransaction');
     return this.db.startTransaction();
   }
 
@@ -476,8 +475,6 @@ class GroveDBStore {
    * @returns {Promise<void>}
    */
   async rollbackTransaction() {
-    console.log('GroveDBStore rollbackTransaction');
-
     return this.db.rollbackTransaction();
   }
 
@@ -485,8 +482,6 @@ class GroveDBStore {
    * @return {Promise<void>}
    */
   async commitTransaction() {
-    console.log('GroveDBStore commitTransaction');
-
     return this.db.commitTransaction();
   }
 
@@ -494,8 +489,6 @@ class GroveDBStore {
    * @return {Promise<void>}
    */
   async abortTransaction() {
-    console.log('GroveDBStore abortTransaction');
-
     return this.db.abortTransaction();
   }
 

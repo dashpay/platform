@@ -11,22 +11,22 @@ const {
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {processProposalHandler} processProposalHandler
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  proposalBlockExecutionContext,
   coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
+  proposalBlockExecutionContext,
   processProposalHandler,
 ) {
   /**
