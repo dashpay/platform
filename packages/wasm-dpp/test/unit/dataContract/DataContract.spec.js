@@ -50,7 +50,7 @@ describe('DataContract', () => {
     entropy = Buffer.alloc(32, 420);
     contractId = generateRandomIdentifier();
 
-    defs = { something: { type: "string" } };
+    defs = { something: { type: 'string' } };
 
     jsDataContract = new JsDataContract({
       $schema: JsDataContract.DEFAULTS.SCHEMA,

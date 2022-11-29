@@ -16,7 +16,7 @@ describe('DataContractFactory', () => {
 
   before(async () => {
     ({
-      DataContractFactory, DataContractValidator, DataContract
+      DataContractFactory, DataContractValidator, DataContract,
     } = await loadWasmDpp());
   });
 
@@ -43,7 +43,7 @@ describe('DataContractFactory', () => {
         rawDataContract.documents,
       ).toObject();
 
-      expect(result).excluding("$id").to.deep.equal(rawDataContract);
+      expect(result).excluding('$id').to.deep.equal(rawDataContract);
     });
   });
 
@@ -54,7 +54,7 @@ describe('DataContractFactory', () => {
     });
 
     it('should return new Data Contract without validation if "skipValidation" option is passed', async () => {
-      let alteredContract = jsDataContract.toObject();
+      const alteredContract = jsDataContract.toObject();
       alteredContract.$defs = {}; // Empty defs are bad!
 
       const resultSkipValidation = await factory.createFromObject(alteredContract, true);
@@ -63,7 +63,7 @@ describe('DataContractFactory', () => {
     });
 
     it('should throw an error if passed object is not valid', async () => {
-      let alteredContract = jsDataContract.toObject();
+      const alteredContract = jsDataContract.toObject();
       alteredContract.$defs = {}; // Empty defs are bad!
 
       let error;
@@ -106,7 +106,7 @@ describe('DataContractFactory', () => {
   describe('createDataContractCreateTransition', () => {
     it('should return new DataContractCreateTransition with passed DataContract', async () => {
       // Create wasm version of DataContract
-      let dataContract = new DataContract(rawDataContract);
+      const dataContract = new DataContract(rawDataContract);
       dataContract.setEntropy(jsDataContract.getEntropy());
 
       const result = await factory.createDataContractCreateTransition(dataContract);

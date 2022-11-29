@@ -14,7 +14,6 @@ describe('generateDataContractId', () => {
     } = await loadWasmDpp());
   });
 
-
   beforeEach(() => {
     ownerId = bs58.decode('4Sr8EZ9BjQpMpBX5PLPxfvv5crTERSWBnRJXxUmCcrCQ');
     entropy = bs58.decode('85NSrhBXYJAwzj8rDXuYhPQZPyg67diKSNcfhfnVhKnT');
@@ -26,7 +25,7 @@ describe('generateDataContractId', () => {
     const entropyGenerator = {
       generate() {
         return entropy;
-      }
+      },
     };
 
     const factory = new DataContractFactory(1337, new DataContractValidator(), entropyGenerator);
