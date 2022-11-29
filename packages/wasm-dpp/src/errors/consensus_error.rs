@@ -1,11 +1,14 @@
+use std::ops::Deref;
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, UnsupportedProtocolVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockProofLockedTransactionMismatchErrorWasm, IdentityAssetLockTransactionIsNotFoundErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm, InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockProofLockedTransactionMismatchErrorWasm, IdentityAssetLockTransactionIsNotFoundErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm, InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm};
 use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
 use wasm_bindgen::JsValue;
+use dpp::{DataTriggerError, StateError};
+use dpp::consensus::basic::BasicError;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -73,17 +76,87 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(e) => {
             InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm::from(e).into()
         }
-        // DPPConsensusError::StateError(_) => {}
-        // DPPConsensusError::BasicError(_) => {}
-        // DPPConsensusError::SerializedObjectParsingError { .. } => {}
-        // DPPConsensusError::ProtocolVersionParsingError { .. } => {}
-        // DPPConsensusError::IncompatibleRe2PatternError { .. } => {}
-        // DPPConsensusError::IdentityInsufficientBalanceError(_) => {}
-        // DPPConsensusError::IdentityAlreadyExistsError(_) => {}
+        DPPConsensusError::IdentityInsufficientBalanceError(e) => {
+            IdentityInsufficientBalanceErrorWasm::from(e).into()
+        }
+        // DPPConsensusError::IdentityAlreadyExistsError(e) => {
+        //
+        // }
         // DPPConsensusError::SignatureError(_) => {}
         // DPPConsensusError::FeeError(_) => {}
         // DPPConsensusError::TestConsensusError(_) => {}
+        // DPPConsensusError::SerializedObjectParsingError { .. } => {}
+        // DPPConsensusError::ProtocolVersionParsingError { .. } => {}
+        // DPPConsensusError::IncompatibleRe2PatternError { .. } => {}
+        DPPConsensusError::StateError(state_error) => {
+            from_state_error(state_error);
+            "Not implemented".into()
+        }
+        DPPConsensusError::BasicError(basic_error) => {
+            from_basic_error(basic_error);
+            "Not implemented".into()
+        }
         // TODO: remove
         _ => e.to_string().into(),
+    }
+}
+
+fn from_state_error(state_error: &Box<StateError>) {
+    match state_error.deref() {
+        StateError::DataTriggerError(data_trigger_error) => {
+            match data_trigger_error.deref() {
+                DataTriggerError::DataTriggerConditionError { .. } => {}
+                DataTriggerError::DataTriggerExecutionError { .. } => {}
+                DataTriggerError::DataTriggerInvalidResultError { .. } => {}
+            }
+        },
+        StateError::DuplicatedIdentityPublicKeyIdError { .. } => {}
+        StateError::DuplicatedIdentityPublicKeyError { .. } => {}
+        StateError::DocumentAlreadyPresentError { .. } => {}
+        StateError::DataContractAlreadyPresentError { .. } => {}
+        StateError::DocumentNotFoundError { .. } => {}
+        StateError::DocumentOwnerMismatchError { .. } => {}
+        StateError::DocumentTimestampMismatchError { .. } => {}
+        StateError::DocumentTimestampWindowViolationError { .. } => {}
+        StateError::DuplicateUniqueIndexError { .. } => {}
+        StateError::InvalidDocumentRevisionError { .. } => {}
+        StateError::InvalidIdentityRevisionError { .. } => {}
+        StateError::IdentityPublicKeyDisabledAtWindowViolationError { .. } => {}
+        StateError::IdentityPublicKeyIsReadOnlyError { .. } => {}
+        StateError::InvalidIdentityPublicKeyIdError { .. } => {}
+        StateError::MaxIdentityPublicKeyLimitReached { .. } => {}
+        StateError::IdentityPublicKeyDisabledError { .. } => {}
+    }
+}
+
+fn from_basic_error(basic_error: &Box<BasicError>) {
+    match basic_error.deref() {
+        BasicError::DataContractNotPresent { .. } => {}
+        BasicError::InvalidDataContractVersionError { .. } => {}
+        BasicError::DataContractMaxDepthExceedError(_) => {}
+        BasicError::InvalidDocumentTypeError { .. } => {}
+        BasicError::DuplicateIndexNameError { .. } => {}
+        BasicError::InvalidJsonSchemaRefError { .. } => {}
+        BasicError::IndexError(_) => {}
+        BasicError::JsonSchemaCompilationError(_) => {}
+        BasicError::InconsistentCompoundIndexDataError { .. } => {}
+        BasicError::MissingDocumentTypeError => {}
+        BasicError::MissingDocumentTransitionActionError => {}
+        BasicError::InvalidDocumentTransitionActionError { .. } => {}
+        BasicError::InvalidDocumentTransitionIdError { .. } => {}
+        BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => {}
+        BasicError::MissingDataContractIdError => {}
+        BasicError::InvalidIdentifierError { .. } => {}
+        BasicError::DataContractUniqueIndicesChangedError { .. } => {}
+        BasicError::DataContractInvalidIndexDefinitionUpdateError { .. } => {}
+        BasicError::DataContractHaveNewUniqueIndexError { .. } => {}
+        BasicError::IdentityNotFoundError { .. } => {}
+        BasicError::MissingStateTransitionTypeError => {}
+        BasicError::InvalidStateTransitionTypeError { .. } => {}
+        BasicError::StateTransitionMaxSizeExceededError { .. } => {}
+        BasicError::DataContractImmutablePropertiesUpdateError { .. } => {}
+        BasicError::IncompatibleDataContractSchemaError { .. } => {}
+        BasicError::InvalidIdentityPublicKeySignatureError { .. } => {}
+        BasicError::InvalidDataContractId { .. } => {}
     }
 }
