@@ -86,7 +86,7 @@ class BlockHeadersReader extends EventEmitter {
   stopReadingHistorical() {
     while (this.historicalStreams.length) {
       const stream = this.historicalStreams.shift();
-      stream.cancel();
+      this.cancelStream(stream);
     }
   }
 
@@ -134,7 +134,7 @@ class BlockHeadersReader extends EventEmitter {
          * @param e
          */
         const rejectHeaders = (e) => {
-          stream.cancel();
+          this.cancelStream(stream);
           // Call ReconnectableStream error handler to
           // trigger retry logic
           stream.errorHandler(e);
@@ -164,13 +164,19 @@ class BlockHeadersReader extends EventEmitter {
     stream.on('error', errorHandler);
     stream.on('end', endHandler);
 
+    stream.removeAllListeners = () => {
+      stream.removeListener('data', dataHandler);
+      stream.removeListener('end', endHandler);
+      stream.removeListener('beforeReconnect', beforeReconnectHandler);
+    };
+
     this.continuousSyncStream = stream;
     return stream;
   }
 
   unsubscribeFromNew() {
     if (this.continuousSyncStream) {
-      this.continuousSyncStream.cancel();
+      this.cancelStream(this.continuousSyncStream);
       this.continuousSyncStream = null;
     }
   }
@@ -245,7 +251,7 @@ class BlockHeadersReader extends EventEmitter {
            */
           const rejectHeaders = (e) => {
             rejected = true;
-            stream.cancel();
+            this.cancelStream(stream);
             errorHandler(e);
           };
 
@@ -277,10 +283,21 @@ class BlockHeadersReader extends EventEmitter {
       stream.on('error', errorHandler);
       stream.on('end', endHandler);
 
+      stream.removeAllListeners = () => {
+        stream.removeListener('data', dataHandler);
+        stream.removeListener('end', endHandler);
+      };
+
       return stream;
     };
 
     return subscribeWithRetries;
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  cancelStream(stream) {
+    stream.removeAllListeners();
+    stream.cancel();
   }
 }
 

@@ -205,6 +205,10 @@ class BlockHeadersProvider extends EventEmitter {
   headersHandler(headersData, reject) {
     const { headers, headHeight } = headersData;
 
+    // TODO: simulate headers rejection and debug
+    // BlockHeadersReader might not correctly set startBlockHeight
+    // which results in orphan chunks in SPV
+
     try {
       const headersAdded = this.spvChain.addHeaders(headers, headHeight);
 
