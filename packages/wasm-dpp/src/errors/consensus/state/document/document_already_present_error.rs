@@ -1,8 +1,6 @@
-use dpp::consensus::basic::identity::{IdentityInsufficientBalanceError};
-use dpp::consensus::ConsensusError;
-use wasm_bindgen::prelude::*;
-use dpp::identifier::Identifier;
 use crate::buffer::Buffer;
+use dpp::identifier::Identifier;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DocumentAlreadyPresentError)]
 pub struct DocumentAlreadyPresentErrorWasm {
@@ -25,8 +23,6 @@ impl DocumentAlreadyPresentErrorWasm {
 
 impl DocumentAlreadyPresentErrorWasm {
     pub fn new(document_id: Identifier, code: u32) -> Self {
-        Self {
-            document_id, code
-        }
+        Self { document_id, code }
     }
 }

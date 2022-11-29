@@ -1,16 +1,14 @@
-use dpp::consensus::basic::identity::{IdentityInsufficientBalanceError};
+use crate::buffer::Buffer;
+use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
-use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityInsufficientBalanceError)]
 pub struct IdentityInsufficientBalanceErrorWasm {
     inner: IdentityInsufficientBalanceError,
 }
 
-impl From<&IdentityInsufficientBalanceError>
-for IdentityInsufficientBalanceErrorWasm
-{
+impl From<&IdentityInsufficientBalanceError> for IdentityInsufficientBalanceErrorWasm {
     fn from(e: &IdentityInsufficientBalanceError) -> Self {
         Self { inner: e.clone() }
     }

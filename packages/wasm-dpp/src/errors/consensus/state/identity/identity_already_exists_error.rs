@@ -1,16 +1,14 @@
+use crate::buffer::Buffer;
+use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
-use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityAlreadyExistsError)]
 pub struct IdentityAlreadyExistsErrorWasm {
     inner: IdentityAlreadyExistsError,
 }
 
-impl From<&IdentityAlreadyExistsError>
-for IdentityAlreadyExistsErrorWasm
-{
+impl From<&IdentityAlreadyExistsError> for IdentityAlreadyExistsErrorWasm {
     fn from(e: &IdentityAlreadyExistsError) -> Self {
         Self { inner: e.clone() }
     }

@@ -10,7 +10,7 @@ pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm {
 }
 
 impl From<&InvalidIdentityCreditWithdrawalTransitionOutputScriptError>
-for InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm
+    for InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm
 {
     fn from(e: &InvalidIdentityCreditWithdrawalTransitionOutputScriptError) -> Self {
         Self { inner: e.clone() }

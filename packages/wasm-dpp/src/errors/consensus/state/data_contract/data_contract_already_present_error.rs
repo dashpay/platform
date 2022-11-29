@@ -1,8 +1,6 @@
-use dpp::consensus::basic::identity::{IdentityInsufficientBalanceError};
-use dpp::consensus::ConsensusError;
-use wasm_bindgen::prelude::*;
-use dpp::identifier::Identifier;
 use crate::buffer::Buffer;
+use dpp::identifier::Identifier;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractAlreadyPresentError)]
 pub struct DataContractAlreadyPresentErrorWasm {
@@ -26,7 +24,8 @@ impl DataContractAlreadyPresentErrorWasm {
 impl DataContractAlreadyPresentErrorWasm {
     pub fn new(data_contract_id: Identifier, code: u32) -> Self {
         Self {
-            data_contract_id, code
+            data_contract_id,
+            code,
         }
     }
 }

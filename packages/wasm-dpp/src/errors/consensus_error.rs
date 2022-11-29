@@ -1,19 +1,38 @@
-use std::ops::Deref;
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, UnsupportedProtocolVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
+use std::ops::Deref;
 
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockProofLockedTransactionMismatchErrorWasm, IdentityAssetLockTransactionIsNotFoundErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm, InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm};
-use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, InvalidInstantAssetLockProofSignatureError};
-use wasm_bindgen::JsValue;
-use dpp::{DataTriggerError, StateError};
+use crate::errors::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
+    IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
+    IdentityAssetLockTransactionIsNotFoundErrorWasm,
+    IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
+    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm,
+    InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm,
+    InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
+    InvalidIdentityAssetLockTransactionErrorWasm,
+    InvalidIdentityAssetLockTransactionOutputErrorWasm,
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm,
+    InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm,
+    InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm,
+    MissingMasterPublicKeyErrorWasm,
+};
 use dpp::codes::ErrorWithCode;
+use dpp::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
-use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use dpp::StateError;
+use wasm_bindgen::JsValue;
+
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
-use crate::errors::consensus::state::document::{DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm};
+use crate::errors::consensus::state::document::{
+    DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
+};
 use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -120,7 +139,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             let e = DuplicatedIdentityPublicKeyIdError::new(duplicated_ids.clone());
             DuplicatedIdentityPublicKeyIdErrorWasm::from(&e).into()
         }
-        StateError::DuplicatedIdentityPublicKeyError { duplicated_public_key_ids } => {
+        StateError::DuplicatedIdentityPublicKeyError {
+            duplicated_public_key_ids,
+        } => {
             let e = DuplicatedIdentityPublicKeyError::new(duplicated_public_key_ids.clone());
             DuplicatedIdentityPublicKeyErrorWasm::from(&e).into()
         }
@@ -133,7 +154,17 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::DocumentNotFoundError { document_id } => {
             DocumentNotFoundErrorWasm::new(document_id.clone(), code).into()
         }
-        // StateError::DocumentOwnerMismatchError { .. } => {}
+        StateError::DocumentOwnerMismatchError {
+            document_id,
+            document_owner_id,
+            existing_document_owner_id,
+        } => DocumentOwnerIdMismatchErrorWasm::new(
+            document_id.clone(),
+            document_owner_id.clone(),
+            existing_document_owner_id.clone(),
+            code,
+        )
+        .into(),
         // StateError::DocumentTimestampMismatchError { .. } => {}
         // StateError::DocumentTimestampWindowViolationError { .. } => {}
         // StateError::DuplicateUniqueIndexError { .. } => {}
@@ -151,7 +182,7 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         //         DataTriggerError::DataTriggerInvalidResultError { .. } => {}
         //     }
         // },
-        _ => "Not implemented".into()
+        _ => "Not implemented".into(),
     }
 }
 

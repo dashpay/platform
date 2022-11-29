@@ -8,7 +8,7 @@ pub struct InvalidAssetLockProofCoreChainHeightErrorWasm {
 }
 
 impl From<&InvalidAssetLockProofCoreChainHeightError>
-for InvalidAssetLockProofCoreChainHeightErrorWasm
+    for InvalidAssetLockProofCoreChainHeightErrorWasm
 {
     fn from(e: &InvalidAssetLockProofCoreChainHeightError) -> Self {
         Self { inner: e.clone() }

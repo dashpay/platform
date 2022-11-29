@@ -8,7 +8,7 @@ pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm {
 }
 
 impl From<&InvalidIdentityCreditWithdrawalTransitionCoreFeeError>
-for InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm
+    for InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm
 {
     fn from(e: &InvalidIdentityCreditWithdrawalTransitionCoreFeeError) -> Self {
         Self { inner: e.clone() }

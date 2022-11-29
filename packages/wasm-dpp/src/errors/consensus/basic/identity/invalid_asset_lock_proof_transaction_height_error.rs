@@ -8,7 +8,7 @@ pub struct InvalidAssetLockProofTransactionHeightErrorWasm {
 }
 
 impl From<&InvalidAssetLockProofTransactionHeightError>
-for InvalidAssetLockProofTransactionHeightErrorWasm
+    for InvalidAssetLockProofTransactionHeightErrorWasm
 {
     fn from(e: &InvalidAssetLockProofTransactionHeightError) -> Self {
         Self { inner: e.clone() }
