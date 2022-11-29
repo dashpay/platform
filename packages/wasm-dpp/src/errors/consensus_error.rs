@@ -3,7 +3,7 @@ use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
-use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -26,7 +26,9 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::InvalidIdentityPublicKeySecurityLevelError(e) => {
             InvalidIdentityPublicKeySecurityLevelErrorWasm::from(e).into()
         }
-        // DPPConsensusError::DuplicatedIdentityPublicKeyError(_) => {}
+        DPPConsensusError::DuplicatedIdentityPublicKeyError(e) => {
+            DuplicatedIdentityPublicKeyErrorWasm::from(e).into()
+        }
         // DPPConsensusError::MissingMasterPublicKeyError(_) => {}
         // DPPConsensusError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => {}
         // DPPConsensusError::InvalidIdentityAssetLockTransactionOutputError(_) => {}
