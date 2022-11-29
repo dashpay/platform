@@ -8,7 +8,7 @@ pub struct IdentityAssetLockTransactionOutputNotFoundErrorWasm {
 }
 
 impl From<&IdentityAssetLockTransactionOutputNotFoundError>
-for IdentityAssetLockTransactionOutputNotFoundErrorWasm
+    for IdentityAssetLockTransactionOutputNotFoundErrorWasm
 {
     fn from(e: &IdentityAssetLockTransactionOutputNotFoundError) -> Self {
         Self { inner: e.clone() }

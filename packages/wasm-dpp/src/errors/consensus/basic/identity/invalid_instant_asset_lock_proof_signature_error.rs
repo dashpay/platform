@@ -7,7 +7,9 @@ pub struct InvalidInstantAssetLockProofSignatureErrorWasm {
     inner: InvalidInstantAssetLockProofSignatureError,
 }
 
-impl From<&InvalidInstantAssetLockProofSignatureError> for InvalidInstantAssetLockProofSignatureErrorWasm {
+impl From<&InvalidInstantAssetLockProofSignatureError>
+    for InvalidInstantAssetLockProofSignatureErrorWasm
+{
     fn from(e: &InvalidInstantAssetLockProofSignatureError) -> Self {
         Self { inner: e.clone() }
     }
