@@ -35,7 +35,7 @@ use crate::errors::consensus::state::document::{
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityRevisionErrorWasm};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -215,7 +215,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::IdentityPublicKeyIsReadOnlyError { public_key_index } => {
             IdentityPublicKeyIsReadOnlyErrorWasm::new(*public_key_index, code).into()
         }
-        // StateError::InvalidIdentityPublicKeyIdError { .. } => {}
+        StateError::InvalidIdentityPublicKeyIdError { id } => {
+            InvalidIdentityPublicKeyIdErrorWasm::new(*id, code).into()
+        }
         // StateError::MaxIdentityPublicKeyLimitReached { .. } => {}
         // StateError::IdentityPublicKeyDisabledError { .. } => {}
         // StateError::DataTriggerError(data_trigger_error) => {
