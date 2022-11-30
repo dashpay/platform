@@ -1,6 +1,8 @@
 use dpp::{
     data_contract::state_transition::DataContractCreateTransition,
-    state_transition::StateTransitionType,
+    state_transition::{
+        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+    },
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -8,6 +10,7 @@ use wasm_bindgen::prelude::*;
 use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, RustConversionError},
+    identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm,
 };
 
@@ -66,5 +69,58 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
         Buffer::from_bytes(&self.0.entropy)
+    }
+
+    #[wasm_bindgen(js_name=getOwnerId)]
+    pub fn get_owner_id(&self) -> IdentifierWrapper {
+        self.0.get_owner_id().clone().into()
+    }
+
+    #[wasm_bindgen(js_name=getType)]
+    pub fn get_type(&self) -> u32 {
+        self.0.get_type() as u32
+    }
+
+    #[wasm_bindgen(js_name=toJSON)]
+    pub fn to_json(&self) -> JsValue {
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        self.0
+            .to_json()
+            .expect("ass")
+            .serialize(&serializer)
+            .expect("piss")
+    }
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
+        let bytes = self
+            .0
+            .to_buffer(skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+        Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=getModifiedDataIds)]
+    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+        self.0
+            .get_modified_data_ids()
+            .into_iter()
+            .map(|identifier| Into::<IdentifierWrapper>::into(identifier.clone()).into())
+            .collect()
+    }
+
+    #[wasm_bindgen(js_name=isDataContractStateTransition)]
+    pub fn is_data_contract_state_transition(&self) -> bool {
+        self.0.is_data_contract_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=isDocumentStateTransition)]
+    pub fn is_document_state_transition(&self) -> bool {
+        self.0.is_document_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=isIdentityStateTransition)]
+    pub fn is_identity_state_transition(&self) -> bool {
+        self.0.is_identity_state_transition()
     }
 }

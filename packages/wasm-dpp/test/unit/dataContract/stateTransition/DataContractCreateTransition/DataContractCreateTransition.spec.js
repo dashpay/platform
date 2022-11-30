@@ -1,24 +1,19 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-// const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-const hash = require('@dashevo/dpp/lib/util/hash');
-const serializer = require('@dashevo/dpp/lib/util/serializer');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('DataContractCreateTransition', () => {
   let stateTransition;
   let dataContract;
-  let hashMock;
-  let encodeMock;
   let DataContractCreateTransition;
+  let Identifier;
 
   before(async () => {
     ({
-      DataContractCreateTransition,
+      DataContractCreateTransition, Identifier,
     } = await loadWasmDpp());
   });
 
@@ -40,122 +35,78 @@ describe('DataContractCreateTransition', () => {
     });
   });
 
-  // describe('#getType', () => {
-  //   it('should return State Transition type', () => {
-  //     const result = stateTransition.getType();
+  describe('#getType', () => {
+    it('should return State Transition type', () => {
+      const result = stateTransition.getType();
 
-  //     expect(result).to.equal(stateTransitionTypes.DATA_CONTRACT_CREATE);
-  //   });
-  // });
+      expect(result).to.equal(stateTransitionTypes.DATA_CONTRACT_CREATE);
+    });
+  });
 
-  // describe('#getDataContract', () => {
-  //   it('should return Data Contract', () => {
-  //     const result = stateTransition.getDataContract();
+  describe('#getDataContract', () => {
+    it('should return Data Contract', () => {
+      const result = stateTransition.getDataContract();
 
-  //     expect(result.toObject()).to.deep.equal(dataContract.toObject());
-  //   });
-  // });
+      expect(result.toObject()).to.deep.equal(dataContract.toObject());
+    });
+  });
 
-  // describe('#toJSON', () => {
-  //   it('should return State Transition as plain JS object', () => {
-  //     expect(stateTransition.toJSON()).to.deep.equal({
-  //       protocolVersion: protocolVersion.latestVersion,
-  //       type: stateTransitionTypes.DATA_CONTRACT_CREATE,
-  //       dataContract: dataContract.toJSON(),
-  //       signaturePublicKeyId: undefined,
-  //       signature: undefined,
-  //       entropy: dataContract.getEntropy().toString('base64'),
-  //     });
-  //   });
-  // });
+  describe('#toJSON', () => {
+    it('should return State Transition as plain JS object', () => {
+      expect(stateTransition.toJSON()).to.deep.equal({
+        protocolVersion: protocolVersion.latestVersion,
+        type: stateTransitionTypes.DATA_CONTRACT_CREATE,
+        dataContract: dataContract.toJSON(),
+        entropy: dataContract.getEntropy().toString('base64'),
+      });
+    });
+  });
 
-  // describe('#toBuffer', () => {
-  //   it('should return serialized State Transition', () => {
-  //     const serializedStateTransition = Buffer.from('123');
+  describe('#toBuffer', () => {
+    it('should return serialized State Transition', () => {
+      const protocolVersionUInt32 = Buffer.alloc(4);
+      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
 
-  //     encodeMock.returns(serializedStateTransition);
+      const result = stateTransition.toBuffer();
+      expect(result.compare(protocolVersionUInt32, 0, 4, 0, 4)).to.be.true;
+    });
+  });
 
-  //     const protocolVersionUInt32 = Buffer.alloc(4);
-  //     protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
+  describe('#getOwnerId', () => {
+    it('should return owner id', async () => {
+      const result = stateTransition.getOwnerId();
 
-  //     const result = stateTransition.toBuffer();
+      expect(result.toBuffer()).to.deep.equal(stateTransition.getDataContract().getOwnerId().toBuffer());
+    });
+  });
 
-  //     expect(result).to.deep.equal(
-  //       Buffer.concat([protocolVersionUInt32, serializedStateTransition]),
-  //     );
+  describe('#getModifiedDataIds', () => {
+    it('should return ids of affected data contracts', () => {
+      const result = stateTransition.getModifiedDataIds();
 
-  //     const dataToEncode = stateTransition.toObject();
-  //     delete dataToEncode.protocolVersion;
+      expect(result.length).to.be.equal(1);
+      const contractId = result[0];
 
-  //     expect(encodeMock.getCall(0).args).to.have.deep.members([
-  //       dataToEncode,
-  //     ]);
-  //   });
-  // });
+      expect(contractId).to.be.an.instanceOf(Identifier);
+      expect(contractId.toBuffer()).to.be.deep.equal(dataContract.getId().toBuffer());
+    });
+  });
 
-  // describe('#hash', () => {
-  //   it('should return State Transition hash as hex', () => {
-  //     const serializedDocument = Buffer.from('123');
-  //     const hashedDocument = '456';
+  describe('#isDataContractStateTransition', () => {
+    it('should return true', () => {
+      expect(stateTransition.isDataContractStateTransition()).to.be.true();
+    });
+  });
 
-  //     encodeMock.returns(serializedDocument);
-  //     hashMock.returns(hashedDocument);
+  describe('#isDocumentStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isDocumentStateTransition()).to.be.false();
+    });
+  });
 
-  //     const result = stateTransition.hash();
-
-  //     expect(result).to.equal(hashedDocument);
-
-  //     const dataToEncode = stateTransition.toObject();
-  //     delete dataToEncode.protocolVersion;
-
-  //     expect(encodeMock.getCall(0).args).to.have.deep.members([
-  //       dataToEncode,
-  //     ]);
-
-  //     const protocolVersionUInt32 = Buffer.alloc(4);
-  //     protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
-
-  //     expect(hashMock).to.have.been.calledOnceWith(
-  //       Buffer.concat([protocolVersionUInt32, serializedDocument]),
-  //     );
-  //   });
-  // });
-
-  // describe('#getOwnerId', () => {
-  //   it('should return owner id', async () => {
-  //     const result = stateTransition.getOwnerId();
-
-  //     expect(result).to.equal(stateTransition.getDataContract().getOwnerId());
-  //   });
-  // });
-
-  // describe('#getModifiedDataIds', () => {
-  //   it('should return ids of affected data contracts', () => {
-  //     const result = stateTransition.getModifiedDataIds();
-
-  //     expect(result.length).to.be.equal(1);
-  //     const contractId = result[0];
-
-  //     expect(contractId).to.be.an.instanceOf(Identifier);
-  //     expect(contractId).to.be.deep.equal(dataContract.getId());
-  //   });
-  // });
-
-  // describe('#isDataContractStateTransition', () => {
-  //   it('should return true', () => {
-  //     expect(stateTransition.isDataContractStateTransition()).to.be.true();
-  //   });
-  // });
-
-  // describe('#isDocumentStateTransition', () => {
-  //   it('should return false', () => {
-  //     expect(stateTransition.isDocumentStateTransition()).to.be.false();
-  //   });
-  // });
-
-  // describe('#isIdentityStateTransition', () => {
-  //   it('should return false', () => {
-  //     expect(stateTransition.isIdentityStateTransition()).to.be.false();
-  //   });
-  // });
+  describe('#isIdentityStateTransition', () => {
+    it('should return false', () => {
+      expect(stateTransition.isIdentityStateTransition()).to.be.false();
+    });
+  });
 });

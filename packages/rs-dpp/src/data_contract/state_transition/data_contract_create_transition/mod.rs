@@ -32,10 +32,16 @@ pub struct DataContractCreateTransition {
     #[serde(skip_serializing)]
     pub data_contract: DataContract,
     pub entropy: [u8; 32],
+    #[serde(skip_serializing_if = "is_zero")]
     pub signature_public_key_id: KeyID,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub signature: Vec<u8>,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
+}
+
+fn is_zero(x: &u64) -> bool {
+    *x == 0
 }
 
 impl std::default::Default for DataContractCreateTransition {
