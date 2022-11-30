@@ -16,7 +16,7 @@ describe('DataContractFactory', () => {
 
   before(async () => {
     ({
-      DataContractFactory, DataContractValidator, DataContract,
+      DataContractFactory, DataContractValidator, DataContract, InvalidDataContractError,
     } = await loadWasmDpp());
   });
 
@@ -66,15 +66,15 @@ describe('DataContractFactory', () => {
       const alteredContract = jsDataContract.toObject();
       alteredContract.$defs = {}; // Empty defs are bad!
 
-      let error;
       try {
         await factory.createFromObject(alteredContract);
       } catch (e) {
-        error = e;
+        expect(e).to.be.an.instanceOf(InvalidDataContractError);
+        expect(e.getRawDataContract()).to.deep.equal(alteredContract);
+        expect(e.getErrors()).to.have.length(1);
+        // TODO JsonSchemaError binding type required
+        // const [consensusError] = error.getErrors();
       }
-
-      expect(error.getRawDataContract()).to.deep.equal(alteredContract);
-      expect(error.getErrors()).to.have.length(1);
     });
   });
 
@@ -98,6 +98,8 @@ describe('DataContractFactory', () => {
         await factory.createFromBuffer(serializedDataContract);
         expect.fail('should throw InvalidDataContractError');
       } catch (e) {
+        // TODO SerializedObjectParsingError binding type required
+        //expect(e).to.be.an.instanceOf(SerializedObjectPasingError);
         expect(e).to.match(/Parsing of serialized object failed/);
       }
     });
