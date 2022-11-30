@@ -27,7 +27,6 @@ use dpp::consensus::basic::identity::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
-use dpp::StateError::InvalidIdentityRevisionError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
@@ -36,7 +35,7 @@ use crate::errors::consensus::state::document::{
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, InvalidIdentityRevisionErrorWasm};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, InvalidIdentityRevisionErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -202,7 +201,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             current_revision,
         } => InvalidIdentityRevisionErrorWasm::new(identity_id.clone(), *current_revision, code)
             .into(),
-        // StateError::IdentityPublicKeyDisabledAtWindowViolationError { .. } => {}
+        StateError::IdentityPublicKeyDisabledAtWindowViolationError { disabled_at, time_window_start, time_window_end } => {
+            IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(*disabled_at, *time_window_start, *time_window_end, code).into()
+        }
         // StateError::IdentityPublicKeyIsReadOnlyError { .. } => {}
         // StateError::InvalidIdentityPublicKeyIdError { .. } => {}
         // StateError::MaxIdentityPublicKeyLimitReached { .. } => {}

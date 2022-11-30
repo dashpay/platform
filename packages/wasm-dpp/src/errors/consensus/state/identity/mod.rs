@@ -1,5 +1,7 @@
 mod identity_already_exists_error;
 mod invalid_identity_revision_error;
+mod identity_public_key_disabled_at_window_violation_error;
 
 pub use identity_already_exists_error::*;
 pub use invalid_identity_revision_error::*;
+pub use identity_public_key_disabled_at_window_violation_error::*;
