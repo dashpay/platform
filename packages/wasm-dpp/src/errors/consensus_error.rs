@@ -35,7 +35,7 @@ use crate::errors::consensus::state::document::{
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, InvalidIdentityRevisionErrorWasm};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityRevisionErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -201,10 +201,20 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             current_revision,
         } => InvalidIdentityRevisionErrorWasm::new(identity_id.clone(), *current_revision, code)
             .into(),
-        StateError::IdentityPublicKeyDisabledAtWindowViolationError { disabled_at, time_window_start, time_window_end } => {
-            IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(*disabled_at, *time_window_start, *time_window_end, code).into()
+        StateError::IdentityPublicKeyDisabledAtWindowViolationError {
+            disabled_at,
+            time_window_start,
+            time_window_end,
+        } => IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(
+            *disabled_at,
+            *time_window_start,
+            *time_window_end,
+            code,
+        )
+        .into(),
+        StateError::IdentityPublicKeyIsReadOnlyError { public_key_index } => {
+            IdentityPublicKeyIsReadOnlyErrorWasm::new(*public_key_index, code).into()
         }
-        // StateError::IdentityPublicKeyIsReadOnlyError { .. } => {}
         // StateError::InvalidIdentityPublicKeyIdError { .. } => {}
         // StateError::MaxIdentityPublicKeyLimitReached { .. } => {}
         // StateError::IdentityPublicKeyDisabledError { .. } => {}
