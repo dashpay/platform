@@ -1,0 +1,116 @@
+{
+    "withdrawal": {
+      "description": "Withdrawal document to track underlying transaction",
+      "type": "object",
+      "indices": [
+        {
+          "name": "pooling",
+          "properties": [
+            {
+              "status": "asc"
+            },
+            {
+              "pooling": "asc"
+            },
+            {
+              "coreFeePerByte": "asc"
+            },
+            {
+              "$updatedAt": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "transaction",
+          "properties": [
+            {
+              "status": "asc"
+            },
+            {
+              "transactionId": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "status",
+          "properties": [
+            {
+              "status": "asc"
+            },
+            {
+              "$createdAt": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "ownerId",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "unique": false
+        }
+      ],
+      "properties": {
+        "transactionId": {
+          "description": "Hash of asset unlock transaction. Populated with untied transaction hash on “pooled” stage and with signed transaction on “broatcasted” stage",
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32
+        },
+        "transactionSignHeight": {
+          "type": "integer",
+          "description": "The Core height on which transaction was signed",
+          "minimum": 1
+        },
+        "amount": {
+          "type": "integer",
+          "description": "The amount to be withdrawn",
+          "minimum": 1000
+        },
+        "coreFeePerByte": {
+          "type": "integer",
+          "description": "This is the fee that you are willing to spend for this transaction in Duffs/Byte",
+          "minimum": 1
+        },
+        "pooling": {
+          "type": "integer",
+          "description": "This indicated the level at which Platform should try to pool this transaction",
+          "enum": [
+            0
+          ]
+        },
+        "outputScript": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 23,
+          "maxItems": 25
+        },
+        "status": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "$createdAt",
+        "$updatedAt",
+        "amount",
+        "coreFeePerByte",
+        "pooling",
+        "outputScript",
+        "status"
+      ]
+    }
+  }

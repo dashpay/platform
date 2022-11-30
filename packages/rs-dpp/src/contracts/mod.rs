@@ -5,6 +5,7 @@ pub mod dashpay_contract;
 pub mod dpns_contract;
 pub mod feature_flags_contract;
 pub mod masternode_reward_shares_contract;
+pub mod withdrawals_contract;
 
 /// Contains the system IDs.
 //? The structure contains the heap-allocated String, which is not memory efficient.

@@ -1,8 +1,9 @@
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
-    document::document_factory::DocumentFactory, mocks, prelude::*,
-    tests::utils::generate_random_identifier_struct as gen_owner_id, version::LATEST_VERSION,
+    contracts::withdrawals_contract, document::document_factory::DocumentFactory, mocks,
+    prelude::*, tests::utils::generate_random_identifier_struct as gen_owner_id,
+    version::LATEST_VERSION,
 };
 
 use super::get_document_validator_fixture;
@@ -29,6 +30,23 @@ pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document
     let owner_id = gen_owner_id();
 
     get_documents(factory, data_contract, owner_id)
+}
+
+pub fn get_withdrawal_document_fixture(data_contract: &DataContract, data: Value) -> Document {
+    let factory = DocumentFactory::new(
+        LATEST_VERSION,
+        get_document_validator_fixture(),
+        mocks::FetchAndValidateDataContract {},
+    );
+
+    factory
+        .create(
+            data_contract.clone(),
+            data_contract.owner_id.clone(),
+            withdrawals_contract::types::WITHDRAWAL.to_string(),
+            data,
+        )
+        .unwrap()
 }
 
 fn get_documents(
