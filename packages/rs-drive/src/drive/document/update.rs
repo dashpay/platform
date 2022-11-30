@@ -1264,6 +1264,9 @@ mod tests {
             has_raw_enabled: true,
             default_genesis_time: Some(0),
             encoding: DriveEncoding::DriveCbor,
+            core_rpc_url: None,
+            core_rpc_password: None,
+            core_rpc_username: None,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();

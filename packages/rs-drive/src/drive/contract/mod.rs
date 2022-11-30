@@ -405,7 +405,7 @@ impl Drive {
 
         drive_cache
             .cached_contracts
-            .insert(updated_contract_fetch_info, transaction.is_some());
+            .insert(updated_contract_fetch_info, transaction);
 
         calculate_fee(None, Some(drive_operations), &block_info.epoch)
     }
@@ -651,10 +651,7 @@ impl Drive {
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
         let mut cache = self.cache.borrow_mut();
 
-        match cache
-            .cached_contracts
-            .get(contract_id, transaction.is_some())
-        {
+        match cache.cached_contracts.get(contract_id, transaction) {
             None => {
                 let maybe_contract_fetch_info = self.fetch_contract_and_add_operations(
                     contract_id,
@@ -667,7 +664,7 @@ impl Drive {
                 if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
                     cache
                         .cached_contracts
-                        .insert(Arc::clone(contract_fetch_info), transaction.is_some());
+                        .insert(Arc::clone(contract_fetch_info), transaction);
                 };
 
                 Ok(maybe_contract_fetch_info)
@@ -692,7 +689,7 @@ impl Drive {
                         // we override the cache for the contract as the fee is now calculated
                         cache
                             .cached_contracts
-                            .insert(updated_contract_fetch_info, transaction.is_some());
+                            .insert(updated_contract_fetch_info, transaction);
 
                         fee
                     };
@@ -746,7 +743,7 @@ impl Drive {
         self.cache
             .borrow()
             .cached_contracts
-            .get(contract_id, transaction.is_some())
+            .get(contract_id, transaction)
             .map(|fetch_info| Arc::clone(&fetch_info))
     }
 

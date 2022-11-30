@@ -28,3 +28,5 @@ pub mod query;
 pub use dpp;
 /// GroveDB module
 pub use grovedb;
+/// Anything releated to RPC calls
+pub mod rpc;

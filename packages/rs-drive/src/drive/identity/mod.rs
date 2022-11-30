@@ -46,7 +46,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 
-pub mod withdrawal_queue;
+pub mod withdrawal_transactions_queue;
 
 const IDENTITY_KEY: [u8; 1] = [0];
 

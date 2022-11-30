@@ -37,7 +37,7 @@ use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
 use grovedb::TransactionArg;
 
-use super::identity::withdrawal_queue::add_initial_withdrawal_state_structure_operations;
+use super::identity::withdrawal_transactions_queue::add_initial_withdrawal_state_structure_operations;
 
 impl Drive {
     /// Creates the initial state structure.
