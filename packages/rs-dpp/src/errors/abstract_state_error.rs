@@ -82,7 +82,7 @@ pub enum StateError {
     InvalidIdentityPublicKeyIdError { id: KeyID },
 
     #[error("Identity cannot contain more than {max_items} public keys")]
-    MaxIdentityPublicKeyLimitReached { max_items: usize },
+    MaxIdentityPublicKeyLimitReachedError { max_items: usize },
 
     #[error("Identity Public Key #{public_key_index} is disabled")]
     IdentityPublicKeyDisabledError { public_key_index: KeyID },

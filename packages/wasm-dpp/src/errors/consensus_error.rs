@@ -35,7 +35,7 @@ use crate::errors::consensus::state::document::{
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -218,7 +218,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::InvalidIdentityPublicKeyIdError { id } => {
             InvalidIdentityPublicKeyIdErrorWasm::new(*id, code).into()
         }
-        // StateError::MaxIdentityPublicKeyLimitReached { .. } => {}
+        StateError::MaxIdentityPublicKeyLimitReachedError { max_items } => {
+            MaxIdentityPublicKeyLimitReachedErrorWasm::new(*max_items, code).into()
+        }
         // StateError::IdentityPublicKeyDisabledError { .. } => {}
         // StateError::DataTriggerError(data_trigger_error) => {
         //     match data_trigger_error.deref() {
