@@ -344,6 +344,29 @@ describe('Document', () => {
         expect(jsBuffer.length).to.equal(buffer.length);
         expect(jsBuffer).to.deep.equal(buffer);
       });
+
+      // TODO fixme
+      // it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+
+      //   // we should set the identifier
+      //   const jsId = new JsIdentifier.from(Buffer.alloc(32));
+      //   const id = new Identifier(Buffer.alloc(32));
+      //   const path = "dataObject.binaryObject.identifier";
+
+
+      //   jsDocument.set(path, jsId);
+      //   document.set(path, id);
+
+      //   console.log(jsDocument);
+      //   console.log("-----------------------")
+      //   console.log(document.toObject());
+
+      //   const jsBuffer = jsDocument.toBuffer();
+      //   const buffer = document.toBuffer();
+
+      //   expect(jsBuffer.length).to.equal(buffer.length);
+      //   expect(jsBuffer).to.deep.equal(buffer);
+      // });
     });
 
     describe('#hash', () => {

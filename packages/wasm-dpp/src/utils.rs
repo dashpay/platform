@@ -1,15 +1,26 @@
 use dpp::dashcore::anyhow::Context;
 use js_sys::Function;
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 pub trait ToSerdeJSONExt {
     fn to_serde_json_value(&self) -> Result<Value, JsValue>;
+    fn to_serde<D: DeserializeOwned>(&self) -> Result<D, JsValue>
+    where
+        D: for<'de> serde::de::Deserialize<'de> + 'static;
 }
 
 impl ToSerdeJSONExt for JsValue {
     fn to_serde_json_value(&self) -> Result<Value, JsValue> {
         to_serde_json_value(self)
+    }
+
+    fn to_serde<D>(&self) -> Result<D, JsValue>
+    where
+        D: for<'de> serde::de::Deserialize<'de> + 'static,
+    {
+        to_serde(self)
     }
 }
 
@@ -41,6 +52,17 @@ where
 pub fn to_serde_json_value(data: &JsValue) -> Result<Value, JsValue> {
     let data = stringify(data)?;
     let value: Value = serde_json::from_str(&data)
+        .with_context(|| format!("cant convert {:#?} to serde json value", data))
+        .map_err(|e| format!("{:#}", e))?;
+    Ok(value)
+}
+
+pub fn to_serde<D>(data: &JsValue) -> Result<D, JsValue>
+where
+    D: for<'de> serde::de::Deserialize<'de> + 'static,
+{
+    let data = stringify(data)?;
+    let value: D = serde_json::from_str(&data)
         .with_context(|| format!("cant convert {:#?} to serde json value", data))
         .map_err(|e| format!("{:#}", e))?;
     Ok(value)

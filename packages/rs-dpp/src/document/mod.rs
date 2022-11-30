@@ -26,7 +26,22 @@ pub mod errors;
 pub mod generate_document_id;
 pub mod state_transition;
 
-pub const IDENTIFIER_FIELDS: [&str; 3] = ["$id", "$dataContractId", "$ownerId"];
+pub mod property_names {
+    pub const PROTOCOL_VERSION: &str = "$protocolVersion";
+    pub const ID: &str = "$id";
+    pub const DOCUMENT_TYPE: &str = "$type";
+    pub const REVISION: &str = "$revision";
+    pub const DATA_CONTRACT_ID: &str = "$dataContractId";
+    pub const OWNER_ID: &str = "$ownerId";
+    pub const CREATED_AT: &str = "$createdAt";
+    pub const UPDATED_AT: &str = "$updatedAt";
+}
+
+pub const IDENTIFIER_FIELDS: [&str; 3] = [
+    property_names::ID,
+    property_names::DATA_CONTRACT_ID,
+    property_names::OWNER_ID,
+];
 
 /// The document object represents the data provided by the platform in response to a query.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -103,10 +118,12 @@ impl Document {
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = serde_json::to_value(self)?;
 
-        let (identifiers_paths, binary_paths) = self.get_binary_and_identifier_paths();
+        let (identifier_paths, binary_paths) = self
+            .data_contract
+            .get_identifiers_and_binary_paths(&self.document_type);
 
-        let _ = value.replace_identifier_paths(identifiers_paths, ReplaceWith::Base58);
-        let _ = value.replace_binary_paths(binary_paths, ReplaceWith::Base64);
+        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
+        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
 
         Ok(value)
     }
@@ -118,6 +135,7 @@ impl Document {
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
         json_value.parse_and_add_protocol_version("$protocolVersion", protocol_bytes)?;
+
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let document: Document = serde_json::from_value(json_value)?;
@@ -145,7 +163,7 @@ impl Document {
         let mut json_object = serde_json::to_value(self)?;
 
         if !skip_identifiers_conversion {
-            let (identifier_paths, binary_paths) = self.get_binary_and_identifier_paths();
+            let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths();
             let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
             let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
         }
@@ -167,8 +185,8 @@ impl Document {
             canonical_map.remove("$updatedAt");
         }
 
-        // TODO dynamic fields must be also included
-        canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
+        let (identifier_paths, _) = self.get_identifiers_and_binary_paths();
+        canonical_map.replace_values(identifier_paths, ReplaceWith::Bytes);
 
         let mut document_buffer = canonical_map
             .to_bytes()
@@ -208,28 +226,11 @@ impl Document {
         self.data = data;
     }
 
-    pub fn get_binary_and_identifier_paths(&self) -> (Vec<&str>, Vec<&str>) {
-        let maybe_binary_properties = self
+    pub fn get_identifiers_and_binary_paths(&self) -> (Vec<&str>, Vec<&str>) {
+        let (identifiers_paths, binary_paths) = self
             .data_contract
-            .get_binary_properties(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type);
 
-        let mut binary_paths: Vec<&str> = vec![];
-        let mut identifiers_paths: Vec<&str> = vec![];
-
-        if let Ok(binary_properties) = maybe_binary_properties {
-            (binary_paths, identifiers_paths) =
-                binary_properties.iter().partition_map(|(path, v)| {
-                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
-                        if content_type == identifier::MEDIA_TYPE {
-                            Either::Right(path.as_str())
-                        } else {
-                            return Either::Left(path.as_str());
-                        }
-                    } else {
-                        Either::Left(path.as_str())
-                    }
-                });
-        }
         (
             identifiers_paths
                 .into_iter()

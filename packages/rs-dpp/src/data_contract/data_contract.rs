@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
+use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -11,13 +12,13 @@ use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, Cbor
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
-use crate::Convertible;
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
     metadata::Metadata,
     util::{hash::hash, serializer},
 };
+use crate::{identifier, Convertible};
 
 use super::errors::*;
 use super::extra::DocumentType;
@@ -390,6 +391,28 @@ impl DataContract {
             .iter()
             .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
             .collect();
+    }
+
+    pub fn get_identifiers_and_binary_paths(&self, document_type: &str) -> (Vec<&str>, Vec<&str>) {
+        let maybe_binary_properties = self.get_binary_properties(document_type);
+        let mut binary_paths: Vec<&str> = vec![];
+        let mut identifiers_paths: Vec<&str> = vec![];
+
+        if let Ok(binary_properties) = maybe_binary_properties {
+            (binary_paths, identifiers_paths) =
+                binary_properties.iter().partition_map(|(path, v)| {
+                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                        if content_type == identifier::MEDIA_TYPE {
+                            Either::Right(path.as_str())
+                        } else {
+                            return Either::Left(path.as_str());
+                        }
+                    } else {
+                        Either::Left(path.as_str())
+                    }
+                });
+        }
+        (identifiers_paths, binary_paths)
     }
 }
 

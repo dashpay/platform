@@ -299,7 +299,11 @@ impl JsonValueExt for JsonValue {
                     }));
                 }
                 None => {
-                    trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
+                    trace!(
+                        "path '{}' is not found, when replacing to {:?} ",
+                        raw_path,
+                        with
+                    )
                 }
             }
         }
