@@ -27,11 +27,16 @@ use dpp::consensus::basic::identity::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
+use dpp::StateError::InvalidIdentityRevisionError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
-use crate::errors::consensus::state::document::{DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm, DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm, DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm};
-use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
+use crate::errors::consensus::state::document::{
+    DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
+    DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
+    DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
+};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, InvalidIdentityRevisionErrorWasm};
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
     match e {
@@ -116,9 +121,7 @@ pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
             from_signature_error(e);
             "Not implemented".into()
         }
-        DPPConsensusError::StateError(state_error) => {
-            from_state_error(state_error)
-        }
+        DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => {
             from_basic_error(basic_error);
             "Not implemented".into()
@@ -180,13 +183,25 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             code,
         )
         .into(),
-        StateError::DuplicateUniqueIndexError { document_id, duplicating_properties } => {
-            DuplicateUniqueIndexErrorWasm::new(document_id.clone(), duplicating_properties.clone(), code).into()
-        }
-        StateError::InvalidDocumentRevisionError { document_id, current_revision } => {
-            InvalidDocumentRevisionErrorWasm::new(document_id.clone(), *current_revision, code).into()
-        }
-        // StateError::InvalidIdentityRevisionError { .. } => {}
+        StateError::DuplicateUniqueIndexError {
+            document_id,
+            duplicating_properties,
+        } => DuplicateUniqueIndexErrorWasm::new(
+            document_id.clone(),
+            duplicating_properties.clone(),
+            code,
+        )
+        .into(),
+        StateError::InvalidDocumentRevisionError {
+            document_id,
+            current_revision,
+        } => InvalidDocumentRevisionErrorWasm::new(document_id.clone(), *current_revision, code)
+            .into(),
+        StateError::InvalidIdentityRevisionError {
+            identity_id,
+            current_revision,
+        } => InvalidIdentityRevisionErrorWasm::new(identity_id.clone(), *current_revision, code)
+            .into(),
         // StateError::IdentityPublicKeyDisabledAtWindowViolationError { .. } => {}
         // StateError::IdentityPublicKeyIsReadOnlyError { .. } => {}
         // StateError::InvalidIdentityPublicKeyIdError { .. } => {}
