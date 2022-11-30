@@ -1,4 +1,3 @@
-use wasm_bindgen::convert::IntoWasmAbi;
 use crate::buffer::Buffer;
 use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;

@@ -30,10 +30,7 @@ use dpp::StateError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
-use crate::errors::consensus::state::document::{
-    DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
-    DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
-};
+use crate::errors::consensus::state::document::{DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm, DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm, DuplicateUniqueIndexErrorWasm};
 use crate::errors::consensus::state::identity::IdentityAlreadyExistsErrorWasm;
 
 pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
@@ -183,7 +180,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             code,
         )
         .into(),
-        // StateError::DuplicateUniqueIndexError { .. } => {}
+        StateError::DuplicateUniqueIndexError { document_id, duplicating_properties } => {
+            DuplicateUniqueIndexErrorWasm::new(document_id.clone(), duplicating_properties.clone(), code).into()
+        }
         // StateError::InvalidDocumentRevisionError { .. } => {}
         // StateError::InvalidIdentityRevisionError { .. } => {}
         // StateError::IdentityPublicKeyDisabledAtWindowViolationError { .. } => {}
