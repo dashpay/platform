@@ -114,8 +114,7 @@ const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForH
 const ValidatorSet = require('./validator/ValidatorSet');
 const createValidatorSetUpdate = require('./abci/handlers/validator/createValidatorSetUpdate');
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
-const getScoredQuorumHashes = require('./core/getScoredQuorumHashes');
-const validateQuorumTtlFactory = require('./core/validateQuorumTtlFactory');
+const getRandomQuorumFactory = require('./core/getRandomQuorumFactory');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 
@@ -352,8 +351,7 @@ function createDIContainer(options) {
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     fetchSimplifiedMNList: asFunction(fetchSimplifiedMNListFactory),
-    validateQuorumTtl: asFunction(validateQuorumTtlFactory),
-    getScoredQuorumHashes: asValue(getScoredQuorumHashes),
+    getRandomQuorum: asFunction(getRandomQuorumFactory),
     coreZMQClient: asFunction((
       coreZMQHost,
       coreZMQPort,

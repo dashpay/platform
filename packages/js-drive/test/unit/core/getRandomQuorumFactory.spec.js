@@ -1,7 +1,7 @@
 const { expect } = require('chai');
-const getScoredQuorumHashes = require('../../../lib/core/getScoredQuorumHashes');
+const getRandomQuorumFactory = require('../../../lib/core/getRandomQuorumFactory');
 
-describe('getScoredQuorumHashes', () => {
+describe('getRandomQuorumFactory', () => {
   let smlMock;
   let quorumType;
 
@@ -27,7 +27,7 @@ describe('getScoredQuorumHashes', () => {
   });
 
   it('should return random quorum based on entropy', () => {
-    const result = getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
+    const result = getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
 
     expect(smlMock.getQuorumsOfType).to.have.been.calledOnceWithExactly(quorumType);
 
@@ -41,7 +41,7 @@ describe('getScoredQuorumHashes', () => {
     smlMock.getQuorumsOfType.returns([]);
 
     expect(() => {
-      getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
+      getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
     }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of any type`);
   });
 
@@ -50,7 +50,7 @@ describe('getScoredQuorumHashes', () => {
     smlMock.quorumList = [{ llmqType: 999 }];
 
     expect(() => {
-      getScoredQuorumHashes(smlMock, quorumType, Buffer.alloc(1));
+      getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
     }).to.throw(`SML at block ${'0'.repeat(32)} contains no quorums of type 1, but contains entries for types 999. Please check the Drive configuration`);
   });
 

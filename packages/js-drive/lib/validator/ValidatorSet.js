@@ -5,29 +5,26 @@ const ValidatorNetworkInfo = require('./ValidatorNetworkInfo');
 class ValidatorSet {
   /**
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {getScoredQuorumHashes} getScoredQuorumHashes
+   * @param {getRandomQuorum} getRandomQuorum
    * @param {fetchQuorumMembers} fetchQuorumMembers
    * @param {number} validatorSetLLMQType
    * @param {RpcClient} coreRpcClient
    * @param {number} tenderdashP2pPort
-   * @param {validateQuorumTtl} validateQuorumTtl
    */
   constructor(
     simplifiedMasternodeList,
-    getScoredQuorumHashes,
+    getRandomQuorum,
     fetchQuorumMembers,
     validatorSetLLMQType,
     coreRpcClient,
     tenderdashP2pPort,
-    validateQuorumTtl,
   ) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
-    this.getScoredQuorumHashes = getScoredQuorumHashes;
+    this.getRandomQuorum = getRandomQuorum;
     this.fetchQuorumMembers = fetchQuorumMembers;
     this.validatorSetLLMQType = validatorSetLLMQType;
     this.coreRpcClient = coreRpcClient;
     this.tenderdashP2pPort = tenderdashP2pPort;
-    this.validateQuorumTtl = validateQuorumTtl;
 
     this.quorum = null;
     this.validators = [];
@@ -109,38 +106,12 @@ class ValidatorSet {
    * @return {Promise<void>}
    */
   async switchToRandomQuorum(sml, coreHeight, rotationEntropy) {
-    const scoredQuorumHashes = this.getScoredQuorumHashes(
+    this.quorum = await this.getRandomQuorum(
       sml,
       this.validatorSetLLMQType,
       rotationEntropy,
+      coreHeight,
     );
-
-    let quorum;
-    for (const scoredQuorumHash of scoredQuorumHashes) {
-      const quorumHash = scoredQuorumHash.hash.toString('hex');
-      const quorumToValidate = sml.getQuorum(this.validatorSetLLMQType, quorumHash);
-
-      const quorumTtlIsEnough = await this.validateQuorumTtl(
-        sml,
-        this.validatorSetLLMQType,
-        quorumToValidate,
-        coreHeight,
-        ValidatorSet.ROTATION_BLOCK_INTERVAL,
-      );
-
-      if (quorumTtlIsEnough) {
-        quorum = quorumToValidate;
-        break;
-      }
-    }
-
-    if (!quorum) {
-      // choose as usual
-      const quorumHash = scoredQuorumHashes[0].hash.toString('hex');
-      quorum = sml.getQuorum(this.validatorSetLLMQType, quorumHash);
-    }
-
-    this.quorum = quorum;
 
     const quorumMembers = await this.fetchQuorumMembers(
       this.validatorSetLLMQType,
