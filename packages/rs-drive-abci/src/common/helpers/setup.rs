@@ -33,6 +33,11 @@
 //!
 
 use crate::platform::Platform;
+use rs_drive::{
+    contract::DataContract,
+    drive::{flags::StorageFlags, Drive},
+    query::TransactionArg,
+};
 use tempfile::TempDir;
 
 /// A function which sets up Platform.
@@ -52,4 +57,22 @@ pub fn setup_platform_with_initial_state_structure() -> Platform {
         .expect("should create root tree successfully");
 
     platform
+}
+
+/// A function to setup system data contract
+pub fn setup_system_data_contract(
+    drive: &Drive,
+    data_contract: DataContract,
+    transaction: TransactionArg,
+) {
+    drive
+        .apply_contract_cbor(
+            data_contract.to_cbor().unwrap(),
+            Some(data_contract.id.to_buffer()),
+            1f64,
+            true,
+            StorageFlags { epoch: 1 },
+            transaction,
+        )
+        .unwrap();
 }

@@ -13,7 +13,7 @@ rust_decimal_macros = "1.25.0"
 chrono = "0.4.20"
 serde = { version = "1.0.132", features = ["derive"] }
 serde_json = { version="1.0", features=["preserve_order"] }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", features["core-rpc-mock"] }
 thiserror = "1.0.30"
 rand = "0.8.4"
 tempfile = "3"
@@ -22,3 +22,5 @@ base64 = "0.13.0"
 hex = "0.4.3"
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 
+[dev-dependencies]
+dpp = { path = "../rs-dpp", features = ["testing-utils"]}
