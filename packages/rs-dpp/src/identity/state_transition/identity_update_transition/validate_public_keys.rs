@@ -39,7 +39,8 @@ pub fn validate_public_keys(
         as usize;
 
     if raw_public_keys.len() > max_items {
-        validation_result.add_error(StateError::MaxIdentityPublicKeyLimitReachedError { max_items });
+        validation_result
+            .add_error(StateError::MaxIdentityPublicKeyLimitReachedError { max_items });
         return Ok(validation_result);
     }
 

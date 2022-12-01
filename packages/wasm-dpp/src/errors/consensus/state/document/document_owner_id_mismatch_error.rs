@@ -34,7 +34,17 @@ impl DocumentOwnerIdMismatchErrorWasm {
 }
 
 impl DocumentOwnerIdMismatchErrorWasm {
-    pub fn new(document_id: Identifier, document_owner_id: Identifier, existing_document_owner_id: Identifier, code: u32) -> Self {
-        Self { document_id, document_owner_id, existing_document_owner_id, code }
+    pub fn new(
+        document_id: Identifier,
+        document_owner_id: Identifier,
+        existing_document_owner_id: Identifier,
+        code: u32,
+    ) -> Self {
+        Self {
+            document_id,
+            document_owner_id,
+            existing_document_owner_id,
+            code,
+        }
     }
 }

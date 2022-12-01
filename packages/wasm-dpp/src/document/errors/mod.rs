@@ -10,7 +10,7 @@ pub use invalid_initial_revision_error::*;
 pub use mismatch_owners_ids_error::*;
 pub use no_documents_supplied_error::*;
 
-use crate::mocks;
+use crate::errors::consensus_error::from_consensus_error;
 use crate::{utils::*, DocumentWasm};
 
 mod document_already_exists_error;
@@ -36,10 +36,7 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         }
         DocumentError::InvalidDocument { errors, document } => InvalidDocumentError::new(
             (*document).into(),
-            errors
-                .into_iter()
-                .map(mocks::from_consensus_to_js_error)
-                .collect(),
+            errors.into_iter().map(from_consensus_error).collect(),
         )
         .into(),
         DocumentError::InvalidDocumentAction {

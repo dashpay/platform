@@ -1,7 +1,5 @@
-use crate::buffer::Buffer;
-use dpp::identifier::Identifier;
-use wasm_bindgen::prelude::*;
 use dpp::identity::KeyID;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeyIdError)]
 pub struct InvalidIdentityPublicKeyIdErrorWasm {
@@ -24,13 +22,7 @@ impl InvalidIdentityPublicKeyIdErrorWasm {
 }
 
 impl InvalidIdentityPublicKeyIdErrorWasm {
-    pub fn new(
-        id: KeyID,
-        code: u32
-    ) -> Self {
-        Self {
-            id,
-            code,
-        }
+    pub fn new(id: KeyID, code: u32) -> Self {
+        Self { id, code }
     }
 }

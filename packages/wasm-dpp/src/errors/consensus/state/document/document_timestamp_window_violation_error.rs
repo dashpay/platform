@@ -58,7 +58,7 @@ impl DocumentTimestampWindowViolationErrorWasm {
         timestamp: i64,
         time_window_start: i64,
         time_window_end: i64,
-        code: u32
+        code: u32,
     ) -> Self {
         Self {
             timestamp_name,

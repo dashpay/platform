@@ -1,6 +1,3 @@
-use crate::buffer::Buffer;
-use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MaxIdentityPublicKeyLimitReachedError)]
@@ -24,8 +21,6 @@ impl MaxIdentityPublicKeyLimitReachedErrorWasm {
 
 impl MaxIdentityPublicKeyLimitReachedErrorWasm {
     pub fn new(max_items: usize, code: u32) -> Self {
-        Self {
-            max_items, code
-        }
+        Self { max_items, code }
     }
 }

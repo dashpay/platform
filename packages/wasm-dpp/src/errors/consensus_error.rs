@@ -29,15 +29,21 @@ use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
+use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerConditionErrorWasm;
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
 use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm};
+use crate::errors::consensus::state::identity::{
+    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm,
+    IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm,
+    InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
+};
+use dpp::errors::DataTriggerError;
 
-pub fn from_consensus_error(e: &DPPConsensusError) -> JsValue {
+pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     match e {
         DPPConsensusError::JsonSchemaError(e) => {
             // TODO: rework JSONSchema error
@@ -221,14 +227,30 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::MaxIdentityPublicKeyLimitReachedError { max_items } => {
             MaxIdentityPublicKeyLimitReachedErrorWasm::new(*max_items, code).into()
         }
-        // StateError::IdentityPublicKeyDisabledError { .. } => {}
-        // StateError::DataTriggerError(data_trigger_error) => {
-        //     match data_trigger_error.deref() {
-        //         DataTriggerError::DataTriggerConditionError { .. } => {}
-        //         DataTriggerError::DataTriggerExecutionError { .. } => {}
-        //         DataTriggerError::DataTriggerInvalidResultError { .. } => {}
-        //     }
-        // },
+        // TODO: Not sure, seems like this error has been removed from the js-dpp
+        // StateError::IdentityPublicKeyDisabledError { public_key_index } => {}
+        StateError::DataTriggerError(data_trigger_error) => {
+            match data_trigger_error.deref() {
+                DataTriggerError::DataTriggerConditionError {
+                    data_contract_id,
+                    document_transition_id,
+                    message,
+                    document_transition,
+                    owner_id,
+                } => DataTriggerConditionErrorWasm::new(
+                    data_contract_id.clone(),
+                    document_transition_id.clone(),
+                    message.clone(),
+                    document_transition.clone(),
+                    owner_id.clone(),
+                    code,
+                )
+                .into(),
+                // DataTriggerError::DataTriggerExecutionError { .. } => {}
+                // DataTriggerError::DataTriggerInvalidResultError { .. } => {}
+                _ => "Not implemented".into(),
+            }
+        }
         _ => "Not implemented".into(),
     }
 }
@@ -276,4 +298,8 @@ fn from_signature_error(signature_error: &SignatureError) {
         SignatureError::PublicKeySecurityLevelNotMetError { .. } => {}
         SignatureError::WrongPublicKeyPurposeError { .. } => {}
     }
+}
+
+pub fn from_consensus_error(consensus_error: DPPConsensusError) -> JsValue {
+    from_consensus_error_ref(&consensus_error)
 }

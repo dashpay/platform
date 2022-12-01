@@ -1,7 +1,5 @@
-use crate::buffer::Buffer;
-use dpp::identifier::Identifier;
-use wasm_bindgen::prelude::*;
 use dpp::identity::KeyID;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyIsReadOnlyError)]
 pub struct IdentityPublicKeyIsReadOnlyErrorWasm {
@@ -24,13 +22,7 @@ impl IdentityPublicKeyIsReadOnlyErrorWasm {
 }
 
 impl IdentityPublicKeyIsReadOnlyErrorWasm {
-    pub fn new(
-        key_id: KeyID,
-        code: u32
-    ) -> Self {
-        Self {
-            key_id,
-            code,
-        }
+    pub fn new(key_id: KeyID, code: u32) -> Self {
+        Self { key_id, code }
     }
 }

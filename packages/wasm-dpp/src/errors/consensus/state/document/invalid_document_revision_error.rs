@@ -1,6 +1,5 @@
 use crate::buffer::Buffer;
 use dpp::identifier::Identifier;
-use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDocumentRevisionError)]
