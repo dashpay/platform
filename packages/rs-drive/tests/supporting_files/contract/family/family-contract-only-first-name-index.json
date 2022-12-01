@@ -1,0 +1,42 @@
+{
+  "$id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "version": 1,
+  "documents": {
+    "person": {
+      "indices": [
+        {
+          "properties": [
+            {
+              "firstName": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "age": {
+          "type": "integer"
+        },
+        "firstName": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "middleName": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "lastName": {
+          "type": "string",
+          "maxLength": 50
+        }
+      },
+      "required": [
+        "firstName",
+        "lastName",
+        "age"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

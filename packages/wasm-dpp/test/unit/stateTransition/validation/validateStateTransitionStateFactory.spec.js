@@ -1,18 +1,18 @@
-const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 
-const validateStateTransitionStateFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionStateFactory');
+const validateStateTransitionStateFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionStateFactory');
 
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DataContractFactory = require('../../../../lib/dataContract/DataContractFactory');
+const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
 
-const InvalidStateTransitionTypeError = require('../../../../lib/stateTransition/errors/InvalidStateTransitionTypeError');
-const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionTypeError');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('validateStateTransitionStateFactory', () => {
   let validateDataContractSTDataMock;

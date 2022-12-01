@@ -1,3 +1,72 @@
+## [0.23.0-alpha.9](https://github.com/dashpay/platform/compare/v0.23.0-alpha.8...v0.23.0-alpha.9) (2022-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* precise storage fees (#619)
+
+### Features
+
+* precise storage fees ([#619](https://github.com/dashpay/platform/issues/619))
+
+
+### Bug Fixes
+
+* **dapi:** Cannot read properties of undefined (reading 'PoSePenalty') ([#612](https://github.com/dashpay/platform/issues/612))
+
+## [0.24.0-dev.8](https://github.com/dashpay/platform/compare/v0.24.0-dev.7...v0.24.0-dev.8) (2022-11-18)
+
+
+### Features
+
+* add `withdrawals` data contract package ([#604](https://github.com/dashpay/platform/issues/604))
+* **dpp:** dashpay datatrigger toUserIds better validation ([#620](https://github.com/dashpay/platform/issues/620))
+* **drive:** select the most vital validator set quorums ([#617](https://github.com/dashpay/platform/issues/617))
+
+
+### Bug Fixes
+
+* DataContract.spec.js in wasm-dpp ([#618](https://github.com/dashpay/platform/issues/618))
+* renamed method from rs-dpp ([#623](https://github.com/dashpay/platform/issues/623))
+
+## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.23.0-dev.6...v0.24.0-dev.7) (2022-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** same block execution (#593)
+
+### Features
+
+* **dpp:** initial RS DPP integration ([#483](https://github.com/dashpay/platform/issues/483))
+* **drive:** same block execution ([#593](https://github.com/dashpay/platform/issues/593))
+
+
+### Bug Fixes
+
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+* **dapi:** `getConsensusParamsHandler` was handling wrong Tendermint error ([#601](https://github.com/dashpay/platform/issues/601))
+* **dashmate:** invalid testnet TenderDash genesis ([#608](https://github.com/dashpay/platform/issues/608))
+* **dashmate:** SSL verification server cannot be started ([#606](https://github.com/dashpay/platform/issues/606))
+
+## [0.23.0-alpha.8](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.23.0-alpha.8) (2022-11-04)
+
+
+### Bug Fixes
+
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+
+
+### Continuous Integration
+
+* update deps ([#591](https://github.com/dashpay/platform/issues/591))
+
+
+### Documentation
+
+* GitHub org change updates ([#590](https://github.com/dashpay/platform/issues/590))
+
+
 ## [0.24.0-dev.6](https://github.com/dashpay/platform/compare/v0.24.0-dev.5...v0.24.0-dev.6) (2022-10-26)
 
 

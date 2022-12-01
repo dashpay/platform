@@ -30,9 +30,9 @@ describe('Platform', () => {
     let document;
 
     before(async () => {
-      client = await createClientWithFundedWallet(undefined, 200000);
+      client = await createClientWithFundedWallet(1010000);
 
-      identity = await client.platform.identities.register(160000);
+      identity = await client.platform.identities.register(1000000);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
@@ -272,11 +272,14 @@ describe('Platform', () => {
       expect(proof.storeTreeProofs.documentsProof).to.be.an.instanceof(Uint8Array);
       expect(proof.storeTreeProofs.documentsProof.length).to.be.greaterThan(0);
 
-      expect(proof.signatureLLMQHash).to.be.an.instanceof(Uint8Array);
-      expect(proof.signatureLLMQHash.length).to.be.equal(32);
+      expect(proof.quorumHash).to.be.an.instanceof(Uint8Array);
+      expect(proof.quorumHash.length).to.be.equal(32);
 
       expect(proof.signature).to.be.an.instanceof(Uint8Array);
       expect(proof.signature.length).to.be.equal(96);
+
+      expect(proof.round).to.be.a('number');
+      expect(proof.round).to.be.greaterThanOrEqual(0);
     });
 
     it('should fail to update document with timestamp in violated time frame', async () => {

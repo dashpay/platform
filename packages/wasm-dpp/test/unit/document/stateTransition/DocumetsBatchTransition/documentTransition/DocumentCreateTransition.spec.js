@@ -1,4 +1,4 @@
-const getDocumentTransitionsFixture = require('../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
 describe('DocumentCreateTransition', () => {
   let documentTransition;

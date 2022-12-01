@@ -30,6 +30,11 @@
 @class WaitForStateTransitionResultResponse;
 
 #if !defined(GPB_GRPC_FORWARD_DECLARE_MESSAGE_PROTO) || !GPB_GRPC_FORWARD_DECLARE_MESSAGE_PROTO
+#if defined(GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS) && GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS
+  #import <Protobuf/GPBTimestamp.pbobjc.h>
+#else
+  #import "GPBTimestamp.pbobjc.h"
+#endif
 #endif
 
 @class GRPCUnaryProtoCall;

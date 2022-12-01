@@ -1,5 +1,5 @@
 const bs58 = require('bs58');
-const generateDataContractId = require('../../../lib/dataContract/generateDataContractId');
+const generateDataContractId = require('@dashevo/dpp/lib/dataContract/generateDataContractId');
 
 describe('generateDataContractId', () => {
   let ownerId;

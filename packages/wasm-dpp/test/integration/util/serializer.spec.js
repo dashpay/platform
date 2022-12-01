@@ -1,6 +1,6 @@
-const { encode } = require('../../../lib/util/serializer');
+const { encode } = require('@dashevo/dpp/lib/util/serializer');
 
-const DataSerializationError = require('../../../lib/util/errors/MaxEncodedBytesReachedError');
+const DataSerializationError = require('@dashevo/dpp/lib/util/errors/MaxEncodedBytesReachedError');
 
 describe('serializer', function main() {
   this.timeout(10000);

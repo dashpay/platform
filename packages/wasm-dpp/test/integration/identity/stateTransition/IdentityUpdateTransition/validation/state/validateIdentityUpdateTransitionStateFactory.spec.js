@@ -1,17 +1,17 @@
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
-const validateIdentityUpdateTransitionStateFactory = require('../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validateIdentityUpdateTransitionStateFactory');
-const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
-const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
-const InvalidIdentityRevisionError = require('../../../../../../../lib/errors/consensus/state/identity/InvalidIdentityRevisionError');
-const IdentityPublicKeyIsReadOnlyError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
-const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
-const InvalidIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
-const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
-const IdentityPublicKeyIsDisabledError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyIsDisabledError');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const validateIdentityUpdateTransitionStateFactory = require('@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validateIdentityUpdateTransitionStateFactory');
+const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const InvalidIdentityRevisionError = require('@dashevo/dpp/lib/errors/consensus/state/identity/InvalidIdentityRevisionError');
+const IdentityPublicKeyIsReadOnlyError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
+const IdentityPublicKeyDisabledAtWindowViolationError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
+const InvalidIdentityPublicKeyIdError = require('@dashevo/dpp/lib/errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const IdentityPublicKeyIsDisabledError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyIsDisabledError');
 
 describe('validateIdentityUpdateTransitionStateFactory', () => {
   let validateIdentityUpdateTransitionState;
@@ -34,15 +34,9 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
-    blockTime = new Date().getTime() / 1000;
+    blockTime = Date.now();
 
-    const abciHeader = {
-      time: {
-        seconds: blockTime,
-      },
-    };
-
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(abciHeader);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
 
     validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       stateRepositoryMock,
@@ -108,20 +102,17 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should return invalid result if disabledAt has violated time window', async () => {
     stateTransition.setPublicKeyIdsToDisable([1]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
+    // blockTime - 10 minutes
+    stateTransition.setPublicKeysDisabledAt(new Date(blockTime - 1000 * 60 * 60 * 10));
 
-    const timeWindowStart = new Date(blockTime * 1000);
+    const timeWindowStart = new Date(blockTime);
     timeWindowStart.setMinutes(
       timeWindowStart.getMinutes() - 5,
     );
 
-    const timeWindowEnd = new Date(blockTime * 1000);
+    const timeWindowEnd = new Date(blockTime);
     timeWindowEnd.setMinutes(
       timeWindowEnd.getMinutes() + 5,
-    );
-
-    stateTransition.publicKeysDisabledAt.setMinutes(
-      stateTransition.publicKeysDisabledAt.getMinutes() - 6,
     );
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -161,7 +152,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -179,7 +170,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
@@ -203,10 +194,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
-      .to.be.calledOnce();
-
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -290,10 +278,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
-      .to.not.be.called();
-
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
   });
 });

@@ -1,21 +1,14 @@
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
-const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
-
 /**
  * @implements StateRepository
  */
 class CachedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository} stateRepository
-   * @param {LRUCache} dataContractCache
    */
   constructor(
     stateRepository,
-    dataContractCache,
   ) {
     this.stateRepository = stateRepository;
-    this.contractCache = dataContractCache;
   }
 
   /**
@@ -126,48 +119,34 @@ class CachedStateRepositoryDecorator {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
-    const idString = id.toString();
-
-    let cacheItem = this.contractCache.get(idString);
-
-    if (cacheItem) {
-      if (executionContext) {
-        executionContext.addOperation(...cacheItem.getOperations());
-      }
-
-      return cacheItem.getDataContract();
-    }
-
-    const isolatedExecutionContext = new StateTransitionExecutionContext();
-
-    const dataContract = await this.stateRepository.fetchDataContract(id, isolatedExecutionContext);
-
-    if (executionContext) {
-      executionContext.addOperation(...isolatedExecutionContext.getOperations());
-    }
-
-    if (dataContract !== null) {
-      cacheItem = new DataContractCacheItem(
-        dataContract,
-        isolatedExecutionContext.getOperations(),
-      );
-
-      this.contractCache.set(idString, cacheItem);
-    }
-
-    return dataContract;
+    return this.stateRepository.fetchDataContract(
+      id,
+      executionContext,
+    );
   }
 
   /**
-   * Store Data Contract
+   * Create Data Contract
    *
    * @param {DataContract} dataContract
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
-    return this.stateRepository.storeDataContract(dataContract, executionContext);
+  async createDataContract(dataContract, executionContext = undefined) {
+    return this.stateRepository.createDataContract(dataContract, executionContext);
+  }
+
+  /**
+   * Update Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    return this.stateRepository.updateDataContract(dataContract, executionContext);
   }
 
   /**
@@ -244,15 +223,6 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch the latest platform block time
-   *
-   * @return {Promise<protobuf.Timestamp>}
-   */
-  async fetchLatestPlatformBlockTime() {
-    return this.stateRepository.fetchLatestPlatformBlockTime();
-  }
-
-  /**
    * Fetch the latest platform core chainlocked height
    *
    * @return {Promise<number>}
@@ -304,6 +274,15 @@ class CachedStateRepositoryDecorator {
       index,
       transactionBytes,
     );
+  }
+
+  /**
+   * Returns block time
+   *
+   * @returns {number}
+   */
+  fetchLatestPlatformBlockTime() {
+    return this.stateRepository.fetchLatestPlatformBlockTime();
   }
 }
 

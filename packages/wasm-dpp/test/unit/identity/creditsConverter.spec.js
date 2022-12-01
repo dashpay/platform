@@ -2,7 +2,7 @@ const {
   convertSatoshiToCredits,
   convertCreditsToSatoshi,
   RATIO,
-} = require('../../../lib/identity/creditsConverter');
+} = require('@dashevo/dpp/lib/identity/creditsConverter');
 
 describe('creditsConverter', () => {
   describe('convertSatoshiToCredits', () => {

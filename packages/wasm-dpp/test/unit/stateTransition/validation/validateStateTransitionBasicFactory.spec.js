@@ -1,24 +1,24 @@
-const validateStateTransitionBasicFactory = require('../../../../lib/stateTransition/validation/validateStateTransitionBasicFactory');
+const validateStateTransitionBasicFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionBasicFactory');
 
-const DataContractFactory = require('../../../../lib/dataContract/DataContractFactory');
+const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
 
-const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const StateTransitionMaxSizeExceededError = require('../../../../lib/errors/consensus/basic/stateTransition/StateTransitionMaxSizeExceededError');
+const StateTransitionMaxSizeExceededError = require('@dashevo/dpp/lib/errors/consensus/basic/stateTransition/StateTransitionMaxSizeExceededError');
 
 const {
   expectValidationError,
-} = require('../../../../lib/test/expect/expectError');
+} = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const MissingStateTransitionTypeError = require('../../../../lib/errors/consensus/basic/stateTransition/MissingStateTransitionTypeError');
-const InvalidStateTransitionTypeError = require('../../../../lib/errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
-const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
-const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
+const MissingStateTransitionTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/stateTransition/MissingStateTransitionTypeError');
+const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 describe('validateStateTransitionBasicFactory', () => {
   let validateStateTransitionBasic;

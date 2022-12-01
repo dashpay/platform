@@ -1,17 +1,17 @@
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
+const StorageResult = require('../../../../lib/storage/StorageResult');
 
 describe('handleUpdatedVotingAddressFactory', () => {
   let handleUpdatedVotingAddress;
   let createMasternodeIdentityMock;
-  let stateRepositoryMock;
   let smlEntry;
   let identity;
   let fetchTransactionMock;
   let transactionFixture;
+  let identityRepositoryMock;
 
   beforeEach(function beforeEach() {
     smlEntry = {
@@ -32,15 +32,18 @@ describe('handleUpdatedVotingAddressFactory', () => {
     };
 
     fetchTransactionMock = this.sinon.stub().resolves(transactionFixture);
+
     identity = getIdentityFixture();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinon);
+    identityRepositoryMock = {
+      update: this.sinon.stub(),
+      fetch: this.sinon.stub().resolves(new StorageResult(null, [])),
+    };
+
     createMasternodeIdentityMock = this.sinon.stub();
 
-    stateRepositoryMock.fetchIdentity.resolves(null);
-
     handleUpdatedVotingAddress = handleUpdatedVotingAddressFactory(
-      stateRepositoryMock,
+      identityRepositoryMock,
       createMasternodeIdentityMock,
       fetchTransactionMock,
     );
@@ -62,7 +65,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
   });
 
   it('should not update identity if identity already exists', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(identity);
+    identityRepositoryMock.fetch.resolves(new StorageResult(identity, []));
 
     const result = await handleUpdatedVotingAddress(smlEntry);
 

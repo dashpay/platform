@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "0.24.0-dev.6",
+  "version": "0.24.0-dev.8",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -45,6 +45,7 @@
     "dotenv": "^8.6.0",
     "dotenv-expand": "^5.1.0",
     "dotenv-safe": "^8.2.0",
+    "google-protobuf": "^3.12.2",
     "jayson": "^3.3.4",
     "lodash": "^4.17.19",
     "lru-cache": "^5.1.1",

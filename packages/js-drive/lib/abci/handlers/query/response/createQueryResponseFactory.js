@@ -8,11 +8,11 @@ const {
 const UnavailableAbciError = require('../../../errors/UnavailableAbciError');
 
 /**
- * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  * @return {createQueryResponse}
  */
 function createQueryResponseFactory(
-  blockExecutionContextStack,
+  latestBlockExecutionContext,
 ) {
   /**
    * @typedef {createQueryResponse}
@@ -20,33 +20,38 @@ function createQueryResponseFactory(
    * @param {boolean} [prove=false]
    */
   function createQueryResponse(ResponseClass, prove = false) {
-    const blockExecutionContext = blockExecutionContextStack.getFirst();
-
-    if (!blockExecutionContext) {
+    if (latestBlockExecutionContext.isEmpty()) {
       throw new UnavailableAbciError('data is not available');
     }
 
-    const signedBlockHeight = blockExecutionContext.getHeight();
-    const signedCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
+    const blockHeight = latestBlockExecutionContext.getHeight();
+    const coreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
+    const timeMs = latestBlockExecutionContext.getTimeMs();
+    const version = latestBlockExecutionContext.getVersion();
 
     const response = new ResponseClass();
 
     const metadata = new ResponseMetadata();
-    metadata.setHeight(signedBlockHeight);
-    metadata.setCoreChainLockedHeight(signedCoreChainLockedHeight);
+    metadata.setHeight(blockHeight);
+    metadata.setCoreChainLockedHeight(coreChainLockedHeight);
+    metadata.setTimeMs(timeMs);
+    metadata.setProtocolVersion(version.app);
 
     response.setMetadata(metadata);
 
     if (prove) {
       const {
-        quorumHash: signatureLlmqHash,
-        stateSignature: signature,
-      } = blockExecutionContext.getLastCommitInfo();
+        quorumHash,
+        blockSignature: signature,
+      } = latestBlockExecutionContext.getLastCommitInfo();
+
+      const round = latestBlockExecutionContext.getRound();
 
       const proof = new Proof();
 
-      proof.setSignatureLlmqHash(signatureLlmqHash);
+      proof.setQuorumHash(quorumHash);
       proof.setSignature(signature);
+      proof.setRound(round);
 
       response.setProof(proof);
     }

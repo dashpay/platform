@@ -1,19 +1,19 @@
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
-const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 
-const Document = require('../../../lib/document/Document');
-const DocumentsBatchTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
+const Document = require('@dashevo/dpp/lib/document/Document');
+const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const DataContractNotPresentError = require('../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
-const MissingOptionError = require('../../../lib/errors/MissingOptionError');
+const DataContractNotPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DataContractNotPresentError');
+const MissingOptionError = require('@dashevo/dpp/lib/errors/MissingOptionError');
 
 describe('DocumentFacade', () => {
   let dpp;

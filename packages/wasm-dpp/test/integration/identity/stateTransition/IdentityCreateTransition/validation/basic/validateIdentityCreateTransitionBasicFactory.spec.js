@@ -1,26 +1,26 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('../../../../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
-const getIdentityCreateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const validateIdentityCreateTransitionBasicFactory = require(
-  '../../../../../../../lib/identity/stateTransition/IdentityCreateTransition/validation/basic/validateIdentityCreateTransitionBasicFactory',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/validation/basic/validateIdentityCreateTransitionBasicFactory',
 );
 
 const {
   expectJsonSchemaError,
   expectValidationError,
-} = require('../../../../../../../lib/test/expect/expectError');
+} = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
-const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
-const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const ChainAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;

@@ -12,7 +12,6 @@ const Long = require('long');
 
 const RSDrive = require('@dashevo/rs-drive');
 
-const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
@@ -65,6 +64,7 @@ const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const proveDocumentsFactory = require('./document/proveDocumentsFactory');
 const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
+const ProposalBlockExecutionContextCollection = require('./blockExecution/ProposalBlockExecutionContextCollection');
 
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
@@ -80,8 +80,6 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/
 
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
-const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
-
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
@@ -93,10 +91,13 @@ const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHa
 const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
 const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
 
-const beginBlockFactory = require('./abci/handlers/finalizeBlock/beginBlockFactory');
-const commitFactory = require('./abci/handlers/finalizeBlock/commitFactory');
-const deliverTxFactory = require('./abci/handlers/finalizeBlock/deliverTxFactory');
-const endBlockFactory = require('./abci/handlers/finalizeBlock/endBlockFactory');
+const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
+const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
+const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
+const rotateAndCreateValidatorSetUpdateFactory = require('./abci/handlers/proposal/rotateAndCreateValidatorSetUpdateFactory');
+const createConsensusParamUpdateFactory = require('./abci/handlers/proposal/createConsensusParamUpdateFactory');
+const createCoreChainLockUpdateFactory = require('./abci/handlers/proposal/createCoreChainLockUpdateFactory');
+const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
 
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
@@ -105,7 +106,6 @@ const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMa
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
-const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
@@ -116,9 +116,7 @@ const createValidatorSetUpdate = require('./abci/handlers/validator/createValida
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
-const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
-const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
-const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
+const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -139,6 +137,7 @@ const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
+const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 
 /**
  *
@@ -147,7 +146,8 @@ const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSynced
  * @param {string} options.ABCI_PORT
  * @param {string} options.DB_PATH
  * @param {string} options.GROVEDB_LATEST_FILE
- * @param {string} options.DATA_CONTRACT_CACHE_SIZE
+ * @param {string} options.DATA_CONTRACTS_GLOBAL_CACHE_SIZE
+ * @param {string} options.DATA_CONTRACTS_BLOCK_CACHE_SIZE
  * @param {string} options.CORE_JSON_RPC_HOST
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
@@ -238,7 +238,13 @@ function createDIContainer(options) {
     dbPath: asValue(options.DB_PATH),
 
     groveDBLatestFile: asValue(options.GROVEDB_LATEST_FILE),
-    dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
+
+    dataContractsGlobalCacheSize: asValue(
+      parseInt(options.DATA_CONTRACTS_GLOBAL_CACHE_SIZE, 10),
+    ),
+    dataContractsBlockCacheSize: asValue(
+      parseInt(options.DATA_CONTRACTS_BLOCK_CACHE_SIZE, 10),
+    ),
 
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
@@ -343,9 +349,9 @@ function createDIContainer(options) {
   container.register({
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
-    decodeChainLock: asValue(decodeChainLock),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     getRandomQuorum: asValue(getRandomQuorum),
+    fetchSimplifiedMNList: asFunction(fetchSimplifiedMNListFactory),
     coreZMQClient: asFunction((
       coreZMQHost,
       coreZMQPort,
@@ -436,7 +442,14 @@ function createDIContainer(options) {
    */
 
   container.register({
-    rsDrive: asFunction((groveDBLatestFile) => new RSDrive(groveDBLatestFile))
+    rsDrive: asFunction((
+      groveDBLatestFile,
+      dataContractsGlobalCacheSize,
+      dataContractsBlockCacheSize,
+    ) => new RSDrive(groveDBLatestFile, {
+      dataContractsGlobalCacheSize,
+      dataContractsBlockCacheSize,
+    }))
       // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
         // Flush data on disk
@@ -454,10 +467,6 @@ function createDIContainer(options) {
     rsAbci: asFunction((rsDrive) => rsDrive.getAbci()).singleton(),
 
     groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
-
-    signedGroveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
-
-    rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
   });
 
   /**
@@ -466,18 +475,7 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
-    signedIdentityRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
-
     publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
-
-    signedPublicKeyToIdentitiesRepository: asFunction((
-      signedGroveDBStore,
-    ) => (
-      new PublicKeyToIdentitiesStoreRepository(signedGroveDBStore)
-    )).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
@@ -508,12 +506,6 @@ function createDIContainer(options) {
    */
   container.register({
     spentAssetLockTransactionsRepository: asClass(SpentAssetLockTransactionsRepository).singleton(),
-
-    signedSpentAssetLockTransactionsRepository: asFunction((
-      signedGroveDBStore,
-    ) => (
-      new SpentAssetLockTransactionsRepository(signedGroveDBStore)
-    )).singleton(),
   });
 
   /**
@@ -524,19 +516,6 @@ function createDIContainer(options) {
       groveDBStore,
       decodeProtocolEntity,
     ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
-
-    signedDataContractRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (new DataContractStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
-
-    dataContractCache: asFunction((dataContractCacheSize) => (
-      new LRUCache(dataContractCacheSize)
-    )).singleton(),
-
-    signedDataContractCache: asFunction((dataContractCacheSize) => (
-      new LRUCache(dataContractCacheSize)
-    )).singleton(),
   });
 
   /**
@@ -547,49 +526,20 @@ function createDIContainer(options) {
       groveDBStore,
     ) => new DocumentRepository(groveDBStore)).singleton(),
 
-    signedDocumentRepository: asFunction((
-      signedGroveDBStore,
-    ) => (new DocumentRepository(
-      signedGroveDBStore,
-    ))).singleton(),
-
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
     fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
     proveDocuments: asFunction(proveDocumentsFactory).singleton(),
-    fetchSignedDataContract: asFunction((
-      signedDataContractRepository,
-      signedDataContractCache,
-    ) => (
-      fetchDataContractFactory(
-        signedDataContractRepository,
-        signedDataContractCache,
-      )
-    )).singleton(),
-    fetchSignedDocuments: asFunction((
-      signedDocumentRepository,
-      fetchSignedDataContract,
-    ) => (
-      fetchDocumentsFactory(
-        signedDocumentRepository,
-        fetchSignedDataContract,
-      )
-    )).singleton(),
-    proveSignedDocuments: asFunction((
-      signedDocumentRepository,
-    ) => (
-      proveDocumentsFactory(
-        signedDocumentRepository,
-      )
-    )).singleton(),
   });
 
   /**
    * Register block execution context
    */
   container.register({
-    blockExecutionContext: asClass(BlockExecutionContext).singleton(),
-    blockExecutionContextStack: asClass(BlockExecutionContextStack).singleton(),
-    blockExecutionContextStackRepository: asClass(BlockExecutionContextStackRepository).singleton(),
+    latestBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
+    blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
+    proposalBlockExecutionContextCollection: asClass(
+      ProposalBlockExecutionContextCollection,
+    ).singleton(),
   });
 
   /**
@@ -606,8 +556,7 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      dataContractCache,
-      blockExecutionContext,
+      latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
     ) => {
@@ -619,14 +568,13 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        blockExecutionContext,
+        latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
       );
 
       return new CachedStateRepositoryDecorator(
         stateRepository,
-        dataContractCache,
       );
     }).singleton(),
 
@@ -638,8 +586,7 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      dataContractCache,
-      blockExecutionContext,
+      latestBlockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
       rsDrive,
@@ -652,7 +599,7 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        blockExecutionContext,
+        latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
         {
@@ -661,7 +608,7 @@ function createDIContainer(options) {
       );
 
       const cachedRepository = new CachedStateRepositoryDecorator(
-        stateRepository, dataContractCache,
+        stateRepository,
       );
 
       if (!logStateRepository) {
@@ -670,7 +617,7 @@ function createDIContainer(options) {
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,
-        blockExecutionContext,
+        latestBlockExecutionContext,
       );
     }).singleton(),
 
@@ -756,14 +703,12 @@ function createDIContainer(options) {
     getProofsQueryHandler: asFunction(getProofsQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
-    verifyChainLockQueryHandler: asFunction(verifyChainLockQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
       dataContractQueryHandler,
       documentQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
-      verifyChainLockQueryHandler,
       getProofsQueryHandler,
     ) => {
       const router = findMyWay({
@@ -775,7 +720,6 @@ function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/proofs', getProofsQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
-      router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
 
       return router;
     }).singleton(),
@@ -788,13 +732,8 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       beginBlockHandler,
     ) => enrichErrorWithConsensusError(beginBlockHandler)).singleton(),
-    commitHandler: asFunction(commitFactory).singleton(),
-    commit: asFunction((
-      enrichErrorWithConsensusError,
-      commitHandler,
-    ) => enrichErrorWithConsensusError(commitHandler)).singleton(),
     deliverTxHandler: asFunction(deliverTxFactory).singleton(),
-    deliverTx: asFunction((
+    wrappedDeliverTx: asFunction((
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
       deliverTxHandler,
@@ -807,6 +746,28 @@ function createDIContainer(options) {
       enrichErrorWithConsensusError,
       endBlockHandler,
     ) => enrichErrorWithConsensusError(endBlockHandler)).singleton(),
+    verifyChainLockHandler: asFunction(verifyChainLockFactory).singleton(),
+    verifyChainLock: asFunction((
+      enrichErrorWithConsensusError,
+      verifyChainLockHandler,
+    ) => enrichErrorWithConsensusError(verifyChainLockHandler)).singleton(),
+    rotateAndCreateValidatorSetUpdateHandler: asFunction(
+      rotateAndCreateValidatorSetUpdateFactory,
+    ).singleton(),
+    rotateAndCreateValidatorSetUpdate: asFunction((
+      enrichErrorWithConsensusError,
+      rotateAndCreateValidatorSetUpdateHandler,
+    ) => enrichErrorWithConsensusError(rotateAndCreateValidatorSetUpdateHandler)).singleton(),
+    createConsensusParamUpdateHandler: asFunction(createConsensusParamUpdateFactory).singleton(),
+    createConsensusParamUpdate: asFunction((
+      enrichErrorWithConsensusError,
+      createConsensusParamUpdateHandler,
+    ) => enrichErrorWithConsensusError(createConsensusParamUpdateHandler)).singleton(),
+    createCoreChainLockUpdateHandler: asFunction(createCoreChainLockUpdateFactory).singleton(),
+    createCoreChainLockUpdate: asFunction((
+      enrichErrorWithConsensusError,
+      createCoreChainLockUpdateHandler,
+    ) => enrichErrorWithConsensusError(createCoreChainLockUpdateHandler)).singleton(),
     initChainHandler: asFunction(initChainHandlerFactory).singleton(),
     queryHandler: asFunction(queryHandlerFactory).singleton(),
     extendVoteHandler: asFunction(extendVoteHandlerFactory).singleton(),

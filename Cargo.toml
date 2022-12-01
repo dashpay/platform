@@ -1,0 +1,9 @@
+[workspace]
+
+members = [
+    "packages/rs-dpp",
+    "packages/wasm-dpp",
+    "packages/rs-drive",
+    "packages/rs-drive-abci",
+    "packages/rs-drive-nodejs",
+]

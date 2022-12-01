@@ -9,11 +9,6 @@ const {
       Consensus,
     },
   },
-  google: {
-    protobuf: {
-      Timestamp,
-    },
-  },
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
@@ -52,42 +47,6 @@ class BlockExecutionContext {
    */
   getDataContracts() {
     return this.dataContracts;
-  }
-
-  /**
-   * @return {number}
-   */
-  getCumulativeStorageFee() {
-    return this.cumulativeStorageFee;
-  }
-
-  /**
-   * @return {number}
-   */
-  getCumulativeProcessingFee() {
-    return this.cumulativeProcessingFee;
-  }
-
-  /**
-   * Increment cumulative fees
-   *
-   * @param {number} fee
-   */
-  incrementCumulativeStorageFee(fee) {
-    this.cumulativeStorageFee += fee;
-
-    return this;
-  }
-
-  /**
-   * Increment cumulative fees
-   *
-   * @param {number} fee
-   */
-  incrementCumulativeProcessingFee(fee) {
-    this.cumulativeProcessingFee += fee;
-
-    return this;
   }
 
   /**
@@ -147,22 +106,17 @@ class BlockExecutionContext {
   }
 
   /**
-   *
-   * @param {ITimestamp} time
-   * @return {BlockExecutionContext}
+   * @param {number} timeMs
    */
-  setTime(time) {
-    this.time = time;
-
-    return this;
+  setTimeMs(timeMs) {
+    this.timeMs = timeMs;
   }
 
   /**
-   *
-   * @return {ITimestamp}
+   * @returns {number}
    */
-  getTime() {
-    return this.time;
+  getTimeMs() {
+    return this.timeMs;
   }
 
   /**
@@ -183,46 +137,6 @@ class BlockExecutionContext {
    */
   getLastCommitInfo() {
     return this.lastCommitInfo;
-  }
-
-  /**
-   * Increment number of valid txs processed
-   *
-   * @return {BlockExecutionContext}
-   */
-  incrementValidTxCount() {
-    this.validTxs += 1;
-
-    return this;
-  }
-
-  /**
-   * Increment number of invalid txs processed
-   *
-   * @return {BlockExecutionContext}
-   */
-  incrementInvalidTxCount() {
-    this.invalidTxs += 1;
-
-    return this;
-  }
-
-  /**
-   * Get number of valid txs processed
-   *
-   * @return {number}
-   */
-  getValidTxCount() {
-    return this.validTxs;
-  }
-
-  /**
-   * Get number of invalid txs processed
-   *
-   * @return {number}
-   */
-  getInvalidTxCount() {
-    return this.invalidTxs;
   }
 
   /**
@@ -248,6 +162,20 @@ class BlockExecutionContext {
   }
 
   /**
+   * @param {EpochInfo} epochInfo
+   */
+  setEpochInfo(epochInfo) {
+    this.epochInfo = epochInfo;
+  }
+
+  /**
+   * @returns {EpochInfo}
+   */
+  getEpochInfo() {
+    return this.epochInfo;
+  }
+
+  /**
    * Set withdrawal transactions hash map
    *
    * @param {Object} withdrawalTransactionsMap
@@ -270,21 +198,42 @@ class BlockExecutionContext {
   }
 
   /**
+   * Set committed round
+   *
+   * @param {number} round
+   *
+   * @returns {BlockExecutionContext}
+   */
+  setRound(round) {
+    this.round = round;
+
+    return this;
+  }
+
+  /**
+   * Get committed round
+   *
+   * @return {number}
+   */
+  getRound() {
+    return this.round;
+  }
+
+  /**
    * Reset state
    */
   reset() {
     this.dataContracts = [];
-    this.cumulativeProcessingFee = 0;
-    this.cumulativeStorageFee = 0;
     this.coreChainLockedHeight = null;
     this.height = null;
     this.version = null;
     this.time = null;
     this.lastCommitInfo = null;
-    this.validTxs = 0;
-    this.invalidTxs = 0;
     this.consensusLogger = null;
     this.withdrawalTransactionsMap = {};
+    this.round = null;
+    this.epochInfo = null;
+    this.timeMs = null;
   }
 
   /**
@@ -304,16 +253,15 @@ class BlockExecutionContext {
   populate(blockExecutionContext) {
     this.dataContracts = blockExecutionContext.dataContracts;
     this.lastCommitInfo = blockExecutionContext.lastCommitInfo;
-    this.cumulativeProcessingFee = blockExecutionContext.cumulativeProcessingFee;
-    this.cumulativeStorageFee = blockExecutionContext.cumulativeStorageFee;
     this.time = blockExecutionContext.time;
     this.height = blockExecutionContext.height;
     this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
     this.version = blockExecutionContext.version;
-    this.validTxs = blockExecutionContext.validTxs;
-    this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
     this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
+    this.round = blockExecutionContext.round;
+    this.epochInfo = blockExecutionContext.epochInfo;
+    this.timeMs = blockExecutionContext.timeMs;
   }
 
   /**
@@ -325,22 +273,14 @@ class BlockExecutionContext {
     this.dataContracts = object.dataContracts
       .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
-    this.cumulativeProcessingFee = object.cumulativeProcessingFee;
-    this.cumulativeStorageFee = object.cumulativeStorageFee;
-    this.validTxs = object.validTxs;
-    this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
-
-    if (object.time) {
-      this.time = new Timestamp({
-        seconds: Long.fromNumber(object.time.seconds),
-      });
-    }
-
+    this.epochInfo = object.epochInfo;
+    this.timeMs = object.timeMs;
     this.height = Long.fromNumber(object.height);
     this.coreChainLockedHeight = object.coreChainLockedHeight;
     this.version = Consensus.fromObject(object.version);
     this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
+    this.round = object.round;
   }
 
   /**
@@ -348,16 +288,14 @@ class BlockExecutionContext {
    * @param {boolean} [options.skipConsensusLogger=false]
    * @return {{
    *  dataContracts: Object[],
-   *  invalidTxs: number,
    *  height: number,
    *  version: Object,
-   *  time: Object,
-   *  validTxs: number,
-   *  cumulativeProcessingFee: number,
-   *  cumulativeStorageFee: number,
+   *  timeMs: number,
    *  coreChainLockedHeight: number,
    *  lastCommitInfo: number,
+   *  epochInfo: EpochInfo,
    *  withdrawalTransactionsMap: Object,
+   *  round: number,
    * }}
    */
   toObject(options = {}) {
@@ -370,16 +308,14 @@ class BlockExecutionContext {
 
     const object = {
       dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
-      cumulativeProcessingFee: this.cumulativeProcessingFee,
-      cumulativeStorageFee: this.cumulativeStorageFee,
-      time,
+      timeMs: this.timeMs,
       height: this.height ? this.height.toNumber() : null,
       version: this.version ? this.version.toJSON() : null,
       coreChainLockedHeight: this.coreChainLockedHeight,
-      lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
-      validTxs: this.validTxs,
-      invalidTxs: this.invalidTxs,
+      lastCommitInfo: this.lastCommitInfo ? CommitInfo.toObject(this.lastCommitInfo) : null,
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
+      round: this.round,
+      epochInfo: this.epochInfo,
     };
 
     if (!options.skipConsensusLogger) {

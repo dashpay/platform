@@ -1,12 +1,12 @@
-const UnsupportedProtocolVersionError = require('../../../lib/errors/consensus/basic/UnsupportedProtocolVersionError');
-const CompatibleProtocolVersionIsNotDefinedError = require('../../../lib/errors/CompatibleProtocolVersionIsNotDefinedError');
-const IncompatibleProtocolVersionError = require('../../../lib/errors/consensus/basic/IncompatibleProtocolVersionError');
+const UnsupportedProtocolVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/UnsupportedProtocolVersionError');
+const CompatibleProtocolVersionIsNotDefinedError = require('@dashevo/dpp/lib/errors/CompatibleProtocolVersionIsNotDefinedError');
+const IncompatibleProtocolVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/IncompatibleProtocolVersionError');
 
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const validateProtocolVersionFactory = require('../../../lib/version/validateProtocolVersionFactory');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const validateProtocolVersionFactory = require('@dashevo/dpp/lib/version/validateProtocolVersionFactory');
 
-const { expectValidationError } = require('../../../lib/test/expect/expectError');
-const { latestVersion } = require('../../../lib/version/protocolVersion');
+const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const { latestVersion } = require('@dashevo/dpp/lib/version/protocolVersion');
 
 describe('validateProtocolVersionFactory', () => {
   let validateProtocolVersion;

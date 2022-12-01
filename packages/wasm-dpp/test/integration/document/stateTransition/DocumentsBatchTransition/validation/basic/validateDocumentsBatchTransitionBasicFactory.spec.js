@@ -1,41 +1,41 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('../../../../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const protocolVersion = require('../../../../../../../lib/version/protocolVersion');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
-const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const enrichDataContractWithBaseSchema = require('../../../../../../../lib/dataContract/enrichDataContractWithBaseSchema');
+const enrichDataContractWithBaseSchema = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
 
-const DocumentsBatchTransition = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
+const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 
-const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const validateDocumentsBatchTransitionBasicFactory = require('../../../../../../../lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validateDocumentsBatchTransitionBasicFactory');
+const validateDocumentsBatchTransitionBasicFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validateDocumentsBatchTransitionBasicFactory');
 
-const { expectValidationError, expectJsonSchemaError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectValidationError, expectJsonSchemaError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
-const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const InvalidDocumentTransitionIdError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTransitionIdError');
-const DataContractNotPresentError = require('../../../../../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
-const MissingDataContractIdError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDataContractIdError');
-const MissingDocumentTransitionTypeError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDocumentTransitionTypeError');
-const InvalidDocumentTypeError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTypeError');
-const MissingDocumentTransitionActionError = require('../../../../../../../lib/errors/consensus/basic/document/MissingDocumentTransitionActionError');
-const InvalidDocumentTransitionActionError = require('../../../../../../../lib/errors/consensus/basic/document/InvalidDocumentTransitionActionError');
-const InvalidIdentifierError = require('../../../../../../../lib/errors/consensus/basic/InvalidIdentifierError');
-const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
-const DuplicateDocumentTransitionsWithIdsError = require('../../../../../../../lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIdsError');
-const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
-const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const InvalidDocumentTransitionIdError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTransitionIdError');
+const DataContractNotPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DataContractNotPresentError');
+const MissingDataContractIdError = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDataContractIdError');
+const MissingDocumentTransitionTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTransitionTypeError');
+const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
+const MissingDocumentTransitionActionError = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTransitionActionError');
+const InvalidDocumentTransitionActionError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTransitionActionError');
+const InvalidIdentifierError = require('@dashevo/dpp/lib/errors/consensus/basic/InvalidIdentifierError');
+const DuplicateDocumentTransitionsWithIndicesError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
+const DuplicateDocumentTransitionsWithIdsError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DuplicateDocumentTransitionsWithIdsError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;

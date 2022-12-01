@@ -9,6 +9,7 @@ const createTestDIContainer = require('../../../lib/test/createTestDIContainer')
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 function ucFirst(string) {
   return string.charAt(0).toUpperCase() + string.slice(1);
@@ -653,10 +654,10 @@ const invalidQueries = [
 
 const invalidOperators = ['<<', '<==', '===', '!>', '>>='];
 
-async function createDocuments(documentRepository, documents) {
+async function createDocuments(documentRepository, documents, blockInfo) {
   return Promise.all(
     documents.map(async (o) => {
-      const result = await documentRepository.create(o);
+      const result = await documentRepository.create(o, blockInfo);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
@@ -675,8 +676,9 @@ describe('DocumentRepository', function main() {
   let documents;
   let document;
   let documentSchema;
+  let blockInfo;
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     const now = 86400;
     container = await createTestDIContainer();
 
@@ -734,7 +736,7 @@ describe('DocumentRepository', function main() {
       //   },
       // },
     };
-    //
+
     const documentsSchema = dataContract.getDocuments();
 
     documentSchema = documentsSchema[document.getType()];
@@ -789,6 +791,9 @@ describe('DocumentRepository', function main() {
     queryDataContract = dpp.dataContract.create(generateRandomIdentifier(), queryDocumentSchema);
 
     documentRepository = container.resolve('documentRepository');
+    documentRepository.logger = {
+      info: this.sinon.stub(),
+    };
 
     /**
      * @type {Drive}
@@ -798,8 +803,10 @@ describe('DocumentRepository', function main() {
 
     dataContractRepository = container.resolve('dataContractRepository');
 
-    await dataContractRepository.store(dataContract);
-    await dataContractRepository.store(queryDataContract);
+    blockInfo = new BlockInfo(1, 1, Date.now());
+
+    await dataContractRepository.create(dataContract, blockInfo);
+    await dataContractRepository.create(queryDataContract, blockInfo);
   });
 
   afterEach(async () => {
@@ -810,7 +817,7 @@ describe('DocumentRepository', function main() {
 
   describe('#create', () => {
     beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
+      await createDocuments(documentRepository, documents, blockInfo);
     });
 
     it('should create Document', async () => {
@@ -832,13 +839,18 @@ describe('DocumentRepository', function main() {
     });
 
     it('should create Document in transaction', async () => {
-      await documentRepository.delete(dataContract, document.getType(), document.getId());
+      await documentRepository.delete(
+        dataContract,
+        document.getType(),
+        document.getId(),
+        blockInfo,
+      );
 
       await documentRepository
         .storage
         .startTransaction();
 
-      await documentRepository.create(document, {
+      await documentRepository.create(document, blockInfo, {
         useTransaction: true,
       });
 
@@ -864,7 +876,7 @@ describe('DocumentRepository', function main() {
 
         expect.fail('should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
 
       await documentRepository.storage.commitTransaction();
@@ -879,9 +891,14 @@ describe('DocumentRepository', function main() {
     });
 
     it('should not create Document on dry run', async () => {
-      await documentRepository.delete(dataContract, document.getType(), document.getId());
+      await documentRepository.delete(
+        dataContract,
+        document.getType(),
+        document.getId(),
+        blockInfo,
+      );
 
-      await documentRepository.create(document, {
+      await documentRepository.create(document, blockInfo, {
         dryRun: true,
       });
 
@@ -902,7 +919,7 @@ describe('DocumentRepository', function main() {
 
         expect.fail('should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
     });
   });
@@ -911,7 +928,7 @@ describe('DocumentRepository', function main() {
     let replaceDocument;
 
     beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
+      await createDocuments(documentRepository, documents, blockInfo);
 
       replaceDocument = new Document({
         ...documents[1].toObject(),
@@ -920,7 +937,7 @@ describe('DocumentRepository', function main() {
     });
 
     it('should update Document', async () => {
-      const updateResult = await documentRepository.update(replaceDocument);
+      const updateResult = await documentRepository.update(replaceDocument, blockInfo);
 
       expect(updateResult).to.be.instanceOf(StorageResult);
       expect(updateResult.getOperations().length).to.be.greaterThan(0);
@@ -947,7 +964,7 @@ describe('DocumentRepository', function main() {
         .storage
         .startTransaction();
 
-      const updateResult = await documentRepository.update(replaceDocument, {
+      const updateResult = await documentRepository.update(replaceDocument, blockInfo, {
         useTransaction: true,
       });
 
@@ -986,7 +1003,7 @@ describe('DocumentRepository', function main() {
     });
 
     it('should not update Document on dry run', async () => {
-      const updateResult = await documentRepository.update(replaceDocument, {
+      const updateResult = await documentRepository.update(replaceDocument, blockInfo, {
         dryRun: true,
       });
 
@@ -1013,7 +1030,7 @@ describe('DocumentRepository', function main() {
 
   describe('#find', () => {
     beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
+      await createDocuments(documentRepository, documents, blockInfo);
     });
 
     it('should find all existing documents', async () => {
@@ -1122,7 +1139,7 @@ describe('DocumentRepository', function main() {
           const factory = new DataContractFactory(createDPPMock(), () => {});
           const ownerId = generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
-          await dataContractRepository.store(myDataContract);
+          await dataContractRepository.create(myDataContract, blockInfo);
 
           const result = await documentRepository.find(myDataContract, 'chat', {
             where: [
@@ -1167,7 +1184,7 @@ describe('DocumentRepository', function main() {
           const factory = new DataContractFactory(createDPPMock(), () => {});
           const ownerId = generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
-          await dataContractRepository.store(myDataContract);
+          await dataContractRepository.create(myDataContract, blockInfo);
 
           const result = await documentRepository.find(myDataContract, 'label', {
             where: [
@@ -1214,7 +1231,11 @@ describe('DocumentRepository', function main() {
             where: [['name', '==', 'Dash enthusiast']],
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -1231,7 +1252,11 @@ describe('DocumentRepository', function main() {
             ],
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.an('array');
           expect(result).to.be.lengthOf(1);
@@ -1249,7 +1274,11 @@ describe('DocumentRepository', function main() {
             ],
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.an('array');
           expect(result).to.be.lengthOf(1);
@@ -1368,7 +1397,6 @@ describe('DocumentRepository', function main() {
               await documentRepository.find(queryDataContract, 'documentA', {
                 where:
                   [['a', '==']],
-
               });
 
               expect.fail('should throw an error');
@@ -2452,7 +2480,6 @@ describe('DocumentRepository', function main() {
                     await documentRepository.find(queryDataContract, 'document', {
                       where: [
                         ['arr', 'contains', [value]],
-
                       ],
                     });
 
@@ -2474,7 +2501,11 @@ describe('DocumentRepository', function main() {
             limit: 1,
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), options);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            options,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -2491,7 +2522,7 @@ describe('DocumentRepository', function main() {
             const svDoc = document;
 
             svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
-            await documentRepository.create(svDoc);
+            await documentRepository.create(svDoc, blockInfo);
           }
 
           const result = await documentRepository.find(dataContract, document.getType());
@@ -2707,7 +2738,11 @@ describe('DocumentRepository', function main() {
             startAfter: documents[0].id,
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), options);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            options,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -2782,7 +2817,11 @@ describe('DocumentRepository', function main() {
             ],
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -2806,7 +2845,11 @@ describe('DocumentRepository', function main() {
             ],
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -2823,14 +2866,14 @@ describe('DocumentRepository', function main() {
         it('should sort Documents by $id', async () => {
           await Promise.all(
             documents.map((d) => documentRepository
-              .delete(dataContract, document.getType(), d.getId())),
+              .delete(dataContract, document.getType(), d.getId(), blockInfo)),
           );
 
           const createdIds = [];
           let i = 0;
           for (const svDoc of documents) {
             svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
-            await documentRepository.create(svDoc);
+            await documentRepository.create(svDoc, blockInfo);
             i++;
             createdIds.push(svDoc.id);
           }
@@ -2844,7 +2887,11 @@ describe('DocumentRepository', function main() {
             ],
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            dataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -3051,12 +3098,16 @@ describe('DocumentRepository', function main() {
 
         validOrderByOperators.forEach(({ operator, value, documentType }) => {
           it(`should return valid result if "orderBy" has valid field with valid operator (${operator}) and value (${value})" in "where" clause`, async () => {
-            const result = await documentRepository.find(queryDataContract, documentType, {
-              where: [
-                ['a', operator, value],
-              ],
-              orderBy: [['a', 'asc']],
-            });
+            const result = await documentRepository.find(
+              queryDataContract,
+              documentType,
+              {
+                where: [
+                  ['a', operator, value],
+                ],
+                orderBy: [['a', 'asc']],
+              },
+            );
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -3083,7 +3134,7 @@ describe('DocumentRepository', function main() {
 
   describe('#delete', () => {
     beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
+      await createDocuments(documentRepository, documents, blockInfo);
     });
 
     it('should delete Document', async () => {
@@ -3091,6 +3142,7 @@ describe('DocumentRepository', function main() {
         dataContract,
         document.getType(),
         document.getId(),
+        blockInfo,
       );
 
       expect(result).to.be.instanceOf(StorageResult);
@@ -3117,6 +3169,7 @@ describe('DocumentRepository', function main() {
         dataContract,
         document.getType(),
         document.getId(),
+        blockInfo,
         {
           useTransaction: true,
         },
@@ -3169,6 +3222,7 @@ describe('DocumentRepository', function main() {
         dataContract,
         document.getType(),
         document.getId(),
+        blockInfo,
         {
           useTransaction: true,
         },
@@ -3222,6 +3276,7 @@ describe('DocumentRepository', function main() {
         dataContract,
         document.getType(),
         document.getId(),
+        blockInfo,
         {
           dryRun: true,
         },
@@ -3249,7 +3304,7 @@ describe('DocumentRepository', function main() {
     // TODO do we need to check prove result with every single find test request?
 
     beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
+      await createDocuments(documentRepository, documents, blockInfo);
     });
 
     it('should return proof for all existing documents', async () => {
@@ -3277,7 +3332,7 @@ describe('DocumentRepository', function main() {
 
       await documentRepository
         .storage
-        .stopTransaction();
+        .abortTransaction();
 
       const proof = result.getValue();
 
@@ -3288,7 +3343,7 @@ describe('DocumentRepository', function main() {
 
   describe('#proveManyDocumentsFromDifferentContracts', () => {
     beforeEach(async () => {
-      await createDocuments(documentRepository, documents);
+      await createDocuments(documentRepository, documents, blockInfo);
     });
 
     it('should return proof for all existing documents', async () => {
@@ -3303,7 +3358,7 @@ describe('DocumentRepository', function main() {
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -3323,7 +3378,7 @@ describe('DocumentRepository', function main() {
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
@@ -3349,7 +3404,7 @@ describe('DocumentRepository', function main() {
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const proof = result.getValue();
 
