@@ -1,7 +1,3 @@
-const DataContractCreateTransition = require(
-  '@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition',
-);
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const applyDataContractCreateTransitionFactory = require(
@@ -11,12 +7,21 @@ const applyDataContractCreateTransitionFactory = require(
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
+const { default: loadWasmDpp } = require('../../../../../dist');
+
 describe('applyDataContractCreateTransitionFactory', () => {
   let stateTransition;
   let dataContract;
   let stateRepositoryMock;
   let applyDataContractCreateTransition;
   let executionContext;
+  let DatacontractCreateTransition;
+
+  before(async () => {
+    ({
+      DataContractCreateTransition,
+    } = await loadWasmDpp());   
+  });
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();

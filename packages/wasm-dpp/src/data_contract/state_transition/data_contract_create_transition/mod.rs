@@ -1,3 +1,6 @@
+mod factory;
+pub use factory::*;
+
 use dpp::{
     data_contract::state_transition::DataContractCreateTransition,
     state_transition::{
@@ -82,13 +85,14 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> JsValue {
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        self.0
+        Ok(self
+            .0
             .to_json()
-            .expect("ass")
+            .map_err(from_dpp_err)?
             .serialize(&serializer)
-            .expect("piss")
+            .expect("JSON is a valid object"))
     }
 
     #[wasm_bindgen(js_name=toBuffer)]

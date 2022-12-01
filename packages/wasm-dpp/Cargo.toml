@@ -17,6 +17,8 @@ thiserror = { version = "1.0" }
 serde-wasm-bindgen = "0.4.3"
 dpp = { path = "../rs-dpp" }
 wasm-bindgen-futures = "0.4.33"
+async-trait = "0.1.59"
+anyhow = "1.0.66"
 
 [profile.release]
 lto = true
