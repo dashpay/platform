@@ -13,7 +13,7 @@ rust_decimal_macros = "1.25.0"
 chrono = "0.4.20"
 serde = { version = "1.0.132", features = ["derive"] }
 serde_json = { version="1.0", features=["preserve_order"] }
-drive = { path = "../rs-drive", features["core-rpc-mock"] }
+drive = { path = "../rs-drive", features = ["core-rpc-mock"] }
 thiserror = "1.0.30"
 rand = "0.8.4"
 tempfile = "3"
