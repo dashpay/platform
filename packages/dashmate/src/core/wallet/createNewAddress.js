@@ -6,7 +6,7 @@
  * @return {Promise<{privateKey: *, address: *}>}
  */
 async function createNewAddress(coreService) {
-  const { result: address } = await coreService.getRpcClient().getNewAddress();
+  const { result: address } = await coreService.getRpcClient().setWallet('main').getNewAddress();
   const { result: privateKey } = await coreService.getRpcClient().dumpPrivKey(address);
 
   return {
