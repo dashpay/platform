@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::extra::ArrayFieldType;
 use ciborium::value::Value;
@@ -38,14 +38,23 @@ pub struct DocumentType {
     pub documents_mutable: bool,
 }
 
-
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct IndexLevel {
-    pub indices: BTreeMap<String, IndexLevel>,
+    /// the lower index levels from this level
+    pub sub_index_levels: BTreeMap<String, IndexLevel>,
+    /// did an index terminate at this level
+    pub has_index_with_uniqueness: Option<bool>,
 }
 
 impl DocumentType {
-    pub fn new(name: String, indices: Vec<Index>, properties: BTreeMap<String, DocumentField>, required_fields: BTreeSet<String>, documents_keep_history: bool, documents_mutable: bool) -> Self {
+    pub fn new(
+        name: String,
+        indices: Vec<Index>,
+        properties: BTreeMap<String, DocumentField>,
+        required_fields: BTreeSet<String>,
+        documents_keep_history: bool,
+        documents_mutable: bool,
+    ) -> Self {
         let index_structure = Self::build_index_structure(indices.as_slice());
         DocumentType {
             name,
@@ -54,7 +63,7 @@ impl DocumentType {
             properties,
             required_fields,
             documents_keep_history,
-            documents_mutable
+            documents_mutable,
         }
     }
     // index_names can be in any order
@@ -81,29 +90,24 @@ impl DocumentType {
         best_index
     }
 
-    pub fn build_index_structure(
-        indices: &[Index],
-    ) -> IndexLevel {
-        // let base_path = [];
-        let mut base_level = IndexLevel::default();
-        // let mut lower_level;
-        // let hashmap: HashMap<String, Vec<&Index>> = HashMap::new();
-        // for index in indices.iter() {
-        //     let mut current_level = &mut base_level;
-        //     for property in index.properties.iter() {
-        //         match current_level.indices.entry(property.name.clone()) {
-        //             Entry::Occupied(mut o) => {
-        //                 current_level = o.get_mut();
-        //             }
-        //             Entry::Vacant(e) => {
-        //                 lower_level = IndexLevel::default();
-        //                 e.insert(lower_level);
-        //                 current_level = &mut lower_level;
-        //             }
-        //         }
-        //     }
-        // }
-        base_level
+    pub fn build_index_structure(indices: &[Index]) -> IndexLevel {
+        let mut index_level = IndexLevel::default();
+        for index in indices {
+            let mut current_level = &mut index_level;
+            let mut properties_iter = index.properties.iter().peekable();
+
+            while let Some(index_part) = properties_iter.next() {
+                current_level = current_level
+                    .sub_index_levels
+                    .entry(index_part.name.clone())
+                    .or_insert(IndexLevel::default());
+                if properties_iter.peek().is_none() {
+                    current_level.has_index_with_uniqueness = Some(index.unique);
+                }
+            }
+        }
+
+        index_level
     }
 
     pub fn serialize_value_for_key<'a>(
