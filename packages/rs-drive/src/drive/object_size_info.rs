@@ -443,6 +443,11 @@ impl<'a> DocumentInfo<'a> {
         matches!(self, DocumentInfo::DocumentRefAndSerialization(..))
     }
 
+    /// Returns true if self is a document size.
+    pub fn is_document_size(&self) -> bool {
+        matches!(self, DocumentInfo::DocumentSize(_))
+    }
+
     /// Gets the borrowed document
     pub fn get_borrowed_document(&self) -> Option<&Document> {
         match self {

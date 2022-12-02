@@ -3,7 +3,7 @@ use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TY
 use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
@@ -64,7 +64,7 @@ impl Drive {
         document_type: &DocumentType,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        let top_level_indices = index_level.indices;
+        let top_level_indices = index_level.sub_index_levels;
 
         // we only store the owner_id storage
         let storage_flags = if !contract.readonly() {
@@ -95,12 +95,9 @@ impl Drive {
         document_type: &DocumentType,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-
-        let top_index_level = &document_type.index_structure.indices;
-        let current_path = contract_document_type_path(
-            contract.id.as_bytes(),
-            document_type.name.as_str(),
-        );
+        let top_index_level = &document_type.index_structure.sub_index_levels;
+        let current_path =
+            contract_document_type_path(contract.id.as_bytes(), document_type.name.as_str());
 
         // the top level is different because the storage flags are different
 
@@ -124,11 +121,17 @@ impl Drive {
             ),
         );
 
-        let mut current_path_vec= current_path.to_vec();
+        let mut current_path_vec = current_path.to_vec();
 
         for (path, lower_index_level) in top_index_level {
             current_path_vec.push(path.as_bytes());
-            Self::add_estimated_costs_for_indices_at_index_level(lower_index_level, current_path_vec.as_slice(), contract, document_type, estimated_costs_only_with_layer_info);
+            Self::add_estimated_costs_for_indices_at_index_level(
+                lower_index_level,
+                current_path_vec.as_slice(),
+                contract,
+                document_type,
+                estimated_costs_only_with_layer_info,
+            );
         }
     }
 
@@ -137,10 +140,9 @@ impl Drive {
         contract: &DataContract,
         document_type: &DocumentType,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    )
-        where
-            P: IntoIterator<Item = Vec<u8>>,
-            <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone
+    ) where
+        P: IntoIterator<Item = Vec<u8>>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
         let top_level_indices = document_type.top_level_indices();
 

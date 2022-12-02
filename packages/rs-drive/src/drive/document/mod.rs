@@ -57,6 +57,19 @@ pub(crate) fn contract_document_type_path<'a>(
     ]
 }
 
+/// Returns the path to a contract document type.
+pub(crate) fn contract_document_type_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![1u8],
+        contract_id.to_vec(),
+        vec![1u8],
+        document_type_name.as_bytes().to_vec(),
+    ]
+}
+
 /// Returns the path to the primary keys of a contract document type.
 pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],

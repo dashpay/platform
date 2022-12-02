@@ -48,7 +48,7 @@ use crate::drive::defaults::{
     DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE,
 };
 use crate::drive::document::{
-    contract_document_type_path,
+    contract_document_type_path, contract_document_type_path_vec,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_keeping_history_primary_key_path_for_document_id_size,
     contract_documents_keeping_history_storage_time_reference_path_size,
@@ -76,7 +76,7 @@ use crate::common::encode::encode_unsigned_integer;
 use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::error::document::DocumentError;
-use dpp::data_contract::extra::DriveContractExt;
+use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
 
 impl Drive {
     pub(crate) fn add_estimation_costs_for_add_document_to_primary_storage(
@@ -600,6 +600,274 @@ impl Drive {
         )
     }
 
+    /// Adds the terminal reference.
+    fn add_reference_for_index_level_for_contract_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        contract_document_type_path: Vec<Vec<u8>>,
+        unique: bool,
+        any_fields_null: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        // unique indexes will be stored under key "0"
+        // non unique indices should have a tree at key "0" that has all elements based off of primary key
+        if !unique || any_fields_null {
+            let key_path_info = KeyRef(&[0]);
+
+            let path_key_info = key_path_info.add_path_info(index_path_info.clone());
+            // here we are inserting an empty tree that will have a subtree of all other index properties
+            self.batch_insert_empty_tree_if_not_exists(
+                path_key_info,
+                storage_flags,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                batch_operations,
+            )?;
+
+            index_path_info.push(Key(vec![0]))?;
+
+            let key_element_info = match &document_and_contract_info.document_info {
+                DocumentRefAndSerialization((document, _, storage_flags))
+                | DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    let document_reference = make_document_reference(
+                        document,
+                        document_and_contract_info.document_type,
+                        *storage_flags,
+                    );
+                    KeyElement((document.id.as_slice(), document_reference))
+                }
+                DocumentWithoutSerialization((document, storage_flags)) => {
+                    let document_reference = make_document_reference(
+                        document,
+                        document_and_contract_info.document_type,
+                        storage_flags.as_ref(),
+                    );
+                    KeyElement((document.id.as_slice(), document_reference))
+                }
+                DocumentSize(max_size) => KeyElementSize((
+                    DEFAULT_HASH_SIZE,
+                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                )),
+            };
+
+            let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
+                index_path_info,
+                key_element_info,
+            )?;
+
+            // here we should return an error if the element already exists
+            self.batch_insert(path_key_element_info, batch_operations)?;
+        } else {
+            let key_element_info = match &document_and_contract_info.document_info {
+                DocumentRefAndSerialization((document, _, storage_flags))
+                | DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    let document_reference = make_document_reference(
+                        document,
+                        document_and_contract_info.document_type,
+                        *storage_flags,
+                    );
+                    KeyElement((&[0], document_reference))
+                }
+                DocumentWithoutSerialization((document, storage_flags)) => {
+                    let document_reference = make_document_reference(
+                        document,
+                        document_and_contract_info.document_type,
+                        storage_flags.as_ref(),
+                    );
+                    KeyElement((&[0], document_reference))
+                }
+                DocumentSize(max_size) => KeyElementSize((
+                    1,
+                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                )),
+            };
+
+            let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
+                index_path_info,
+                key_element_info,
+            )?;
+
+            // here we should return an error if the element already exists
+            let inserted = self.batch_insert_if_not_exists(
+                path_key_element_info,
+                estimated_costs_only_with_layer_info
+                    .as_mut()
+                    .map(|_| document_and_contract_info.document_type.max_size()),
+                transaction,
+                batch_operations,
+            )?;
+            if !inserted {
+                return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                    "reference already exists",
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds indices for an index level and recurses.
+    fn add_indices_for_index_level_for_contract_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        contract_document_type_path: Vec<Vec<u8>>,
+        index_level: &IndexLevel,
+        mut any_fields_null: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        if let Some(unique) = index_level.has_index_with_uniqueness {
+            self.add_reference_for_index_level_for_contract_operations(
+                document_and_contract_info,
+                contract_document_type_path,
+                unique,
+                any_fields_null,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+            )?;
+        }
+
+        let document_type = document_and_contract_info.document_type;
+        // fourth we need to store a reference to the document for each index
+        for (name, sub_level) in &index_level.sub_index_levels {
+            let index_property_key = KeyRef(name.as_bytes());
+
+            let document_index_field = document_and_contract_info
+                .document_info
+                .get_raw_for_document_type(
+                    name,
+                    document_type,
+                    document_and_contract_info.owner_id,
+                )?
+                .unwrap_or_default();
+
+            let path_key_info = index_property_key
+                .clone()
+                .add_path_info(index_path_info.clone());
+
+            // here we are inserting an empty tree that will have a subtree of all other index properties
+            self.batch_insert_empty_tree_if_not_exists(
+                path_key_info.clone(),
+                storage_flags,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                batch_operations,
+            )?;
+
+            index_path_info.push(index_property_key)?;
+
+            // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+            // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+
+            let path_key_info = document_index_field
+                .clone()
+                .add_path_info(index_path_info.clone());
+
+            // here we are inserting an empty tree that will have a subtree of all other index properties
+            let inserted = self.batch_insert_empty_tree_if_not_exists(
+                path_key_info.clone(),
+                storage_flags,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                batch_operations,
+            )?;
+            any_fields_null |= document_index_field.is_empty();
+
+            // we push the actual value of the index path
+            index_path_info.push(document_index_field)?;
+            // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+            // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+            self.add_indices_for_index_level_for_contract_operations(
+                &document_and_contract_info,
+                contract_document_type_path,
+                sub_level,
+                any_fields_null,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Adds indices for the top index level and calls for lower levels.
+    fn add_indices_for_top_index_level_for_contract_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        contract_document_type_path: Vec<Vec<u8>>,
+        index_level: &IndexLevel,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        let contract = document_and_contract_info.contract;
+        let document_type = document_and_contract_info.document_type;
+        // fourth we need to store a reference to the document for each index
+        for (name, sub_level) in &index_level.sub_index_levels {
+            // at this point the contract path is to the contract documents
+            // for each index the top index component will already have been added
+            // when the contract itself was created
+            let mut index_path: Vec<Vec<u8>> = contract_document_type_path.clone();
+            index_path.push(Vec::from(name.as_bytes()));
+
+            // with the example of the dashpay contract's first index
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
+            let document_top_field = document_and_contract_info
+                .document_info
+                .get_raw_for_document_type(
+                    &name,
+                    document_type,
+                    document_and_contract_info.owner_id,
+                )?
+                .unwrap_or_default();
+
+            // The zero will not matter here, because the PathKeyInfo is variable
+            let path_key_info = document_top_field.clone().add_path::<0>(index_path.clone());
+            // here we are inserting an empty tree that will have a subtree of all other index properties
+            self.batch_insert_empty_tree_if_not_exists(
+                path_key_info.clone(),
+                storage_flags,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                batch_operations,
+            )?;
+
+            let mut any_fields_null = document_top_field.is_empty();
+
+            let mut index_path_info = if document_and_contract_info.document_info.is_document_size()
+            {
+                // This is a stateless operation
+                PathInfo::PathSize(index_path.iter().map(|x| x.len() as u32).sum())
+            } else {
+                PathInfo::PathIterator::<0>(index_path)
+            };
+
+            // we push the actual value of the index path
+            index_path_info.push(document_top_field)?;
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+            self.add_indices_for_index_level_for_contract_operations(
+                &document_and_contract_info,
+                contract_document_type_path,
+                sub_level,
+                any_fields_null,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Gathers the operations to add a document to a contract.
     pub(crate) fn add_document_for_contract_operations(
         &self,
@@ -617,7 +885,7 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_document_type_path = contract_document_type_path(
+        let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id.as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
         );
@@ -679,235 +947,23 @@ impl Drive {
             .document_info
             .get_storage_flags_ref();
 
-        let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
+        // // if we are trying to get estimated costs we need to add the top index property tree
+        // if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+        //     Self::add_estimated_costs_indices_for_document_type(
+        //         document_and_contract_info.contract,
+        //         document_and_contract_info.document_type,
+        //         estimated_costs_only_with_layer_info,
+        //     );
+        // }
 
-        // if we are trying to get estimated costs we need to add the top index property tree
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimated_costs_indices_for_document_type(
-                document_and_contract_info.contract,
-                document_and_contract_info.document_type,
-                estimated_costs_only_with_layer_info,
-            );
-        }
-
-        // fourth we need to store a reference to the document for each index
-        for index in &document_and_contract_info.document_type.indices {
-            // at this point the contract path is to the contract documents
-            // for each index the top index component will already have been added
-            // when the contract itself was created
-            let mut index_path: Vec<Vec<u8>> = contract_document_type_path
-                .iter()
-                .map(|&x| Vec::from(x))
-                .collect();
-            let top_index_property = index.properties.get(0).ok_or({
-                Error::Drive(DriveError::CorruptedContractIndexes(
-                    "invalid contract indices",
-                ))
-            })?;
-            index_path.push(Vec::from(top_index_property.name.as_bytes()));
-
-            // with the example of the dashpay contract's first index
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_and_contract_info
-                .document_info
-                .get_raw_for_document_type(
-                    &top_index_property.name,
-                    document_and_contract_info.document_type,
-                    document_and_contract_info.owner_id,
-                )?
-                .unwrap_or_default();
-
-            // The zero will not matter here, because the PathKeyInfo is variable
-            let path_key_info = document_top_field.clone().add_path::<0>(index_path.clone());
-
-            if !path_key_info.is_contained_in_cache(&batch_insertion_cache) {
-                // here we are inserting an empty tree that will have a subtree of all other index properties
-                let inserted = self.batch_insert_empty_tree_if_not_exists(
-                    path_key_info.clone(),
-                    storage_flags,
-                    estimated_costs_only_with_layer_info.is_none(),
-                    transaction,
-                    &mut batch_operations,
-                )?;
-                if inserted {
-                    path_key_info.add_to_cache(&mut batch_insertion_cache);
-                }
-            }
-
-            let mut any_fields_null = document_top_field.is_empty();
-
-            let mut index_path_info = if document_and_contract_info
-                .document_info
-                .is_document_and_serialization()
-            {
-                PathInfo::PathIterator::<0>(index_path)
-            } else {
-                PathInfo::PathSize(index_path.iter().map(|x| x.len() as u32).sum())
-            };
-
-            // we push the actual value of the index path
-            index_path_info.push(document_top_field)?;
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
-
-            for i in 1..index.properties.len() {
-                let index_property = index.properties.get(i).ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("invalid contract indices"),
-                ))?;
-
-                let index_property_key = KeyRef(index_property.name.as_bytes());
-
-                let document_index_field = document_and_contract_info
-                    .document_info
-                    .get_raw_for_document_type(
-                        &index_property.name,
-                        document_and_contract_info.document_type,
-                        document_and_contract_info.owner_id,
-                    )?
-                    .unwrap_or_default();
-
-                let path_key_info = index_property_key
-                    .clone()
-                    .add_path_info(index_path_info.clone());
-
-                if !path_key_info.is_contained_in_cache(&batch_insertion_cache) {
-                    // here we are inserting an empty tree that will have a subtree of all other index properties
-                    let inserted = self.batch_insert_empty_tree_if_not_exists(
-                        path_key_info.clone(),
-                        storage_flags,
-                        estimated_costs_only_with_layer_info.is_none(),
-                        transaction,
-                        &mut batch_operations,
-                    )?;
-                    if inserted {
-                        path_key_info.add_to_cache(&mut batch_insertion_cache);
-                    }
-                }
-
-                index_path_info.push(index_property_key)?;
-
-                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
-                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
-
-                let path_key_info = document_index_field
-                    .clone()
-                    .add_path_info(index_path_info.clone());
-
-                if !path_key_info.is_contained_in_cache(&batch_insertion_cache) {
-                    // here we are inserting an empty tree that will have a subtree of all other index properties
-                    let inserted = self.batch_insert_empty_tree_if_not_exists(
-                        path_key_info.clone(),
-                        storage_flags,
-                        estimated_costs_only_with_layer_info.is_none(),
-                        transaction,
-                        &mut batch_operations,
-                    )?;
-                    if inserted {
-                        path_key_info.add_to_cache(&mut batch_insertion_cache);
-                    }
-                }
-
-                any_fields_null |= document_index_field.is_empty();
-
-                // we push the actual value of the index path
-                index_path_info.push(document_index_field)?;
-                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
-                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            }
-
-            // unique indexes will be stored under key "0"
-            // non unique indices should have a tree at key "0" that has all elements based off of primary key
-            if !index.unique || any_fields_null {
-                let key_path_info = KeyRef(&[0]);
-
-                let path_key_info = key_path_info.add_path_info(index_path_info.clone());
-                // here we are inserting an empty tree that will have a subtree of all other index properties
-                self.batch_insert_empty_tree_if_not_exists(
-                    path_key_info,
-                    storage_flags,
-                    estimated_costs_only_with_layer_info.is_none(),
-                    transaction,
-                    &mut batch_operations,
-                )?;
-
-                index_path_info.push(Key(vec![0]))?;
-
-                let key_element_info = match &document_and_contract_info.document_info {
-                    DocumentRefAndSerialization((document, _, storage_flags))
-                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
-                        let document_reference = make_document_reference(
-                            document,
-                            document_and_contract_info.document_type,
-                            *storage_flags,
-                        );
-                        KeyElement((document.id.as_slice(), document_reference))
-                    }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
-                        let document_reference = make_document_reference(
-                            document,
-                            document_and_contract_info.document_type,
-                            storage_flags.as_ref(),
-                        );
-                        KeyElement((document.id.as_slice(), document_reference))
-                    }
-                    DocumentSize(max_size) => KeyElementSize((
-                        DEFAULT_HASH_SIZE,
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                    )),
-                };
-
-                let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
-                    index_path_info,
-                    key_element_info,
-                )?;
-
-                // here we should return an error if the element already exists
-                self.batch_insert(path_key_element_info, &mut batch_operations)?;
-            } else {
-                let key_element_info = match &document_and_contract_info.document_info {
-                    DocumentRefAndSerialization((document, _, storage_flags))
-                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
-                        let document_reference = make_document_reference(
-                            document,
-                            document_and_contract_info.document_type,
-                            *storage_flags,
-                        );
-                        KeyElement((&[0], document_reference))
-                    }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
-                        let document_reference = make_document_reference(
-                            document,
-                            document_and_contract_info.document_type,
-                            storage_flags.as_ref(),
-                        );
-                        KeyElement((&[0], document_reference))
-                    }
-                    DocumentSize(max_size) => KeyElementSize((
-                        1,
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                    )),
-                };
-
-                let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
-                    index_path_info,
-                    key_element_info,
-                )?;
-
-                // here we should return an error if the element already exists
-                let inserted = self.batch_insert_if_not_exists(
-                    path_key_element_info,
-                    estimated_costs_only_with_layer_info
-                        .as_mut()
-                        .map(|_| document_and_contract_info.document_type.max_size()),
-                    transaction,
-                    &mut batch_operations,
-                )?;
-                if !inserted {
-                    return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                        "index already exists",
-                    )));
-                }
-            }
-        }
+        self.add_indices_for_index_level_for_contract_operations(
+            &document_and_contract_info,
+            contract_document_type_path,
+            &document_and_contract_info.document_type.index_structure,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+        )?;
         Ok(batch_operations)
     }
 }
