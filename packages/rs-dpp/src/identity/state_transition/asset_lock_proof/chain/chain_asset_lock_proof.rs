@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
-use crate::identifier::Identifier;
-use crate::util::hash::hash;
-use crate::util::vec::vec_to_array;
+use crate::{
+    identifier::Identifier,
+    util::hash::hash,
+    util::vec::vec_to_array,
+    errors::NonConsensusError,
+};
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,10 +44,8 @@ impl ChainAssetLockProof {
     }
 
     /// Create identifier
-    pub fn create_identifier(&self) -> Identifier {
-        return Identifier::new(
-            vec_to_array(hash(self.out_point()).as_ref())
-                .expect("Expected hash function to give a 32 byte output"),
-        );
+    pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
+        let array = vec_to_array(hash(self.out_point).as_ref())?;
+        Ok(Identifier::new(array))
     }
 }
