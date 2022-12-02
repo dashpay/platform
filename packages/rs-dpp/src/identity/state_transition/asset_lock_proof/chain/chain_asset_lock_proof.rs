@@ -6,6 +6,7 @@ use crate::util::hash::hash;
 use crate::util::vec::vec_to_array;
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
     #[serde(rename = "type")]
     asset_lock_type: u8,
