@@ -2,10 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 use crate::{
-    identifier::Identifier,
-    util::hash::hash,
-    util::vec::vec_to_array,
-    errors::NonConsensusError,
+    errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
