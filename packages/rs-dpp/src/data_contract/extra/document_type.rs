@@ -94,11 +94,15 @@ impl DocumentType {
         let mut index_level = IndexLevel::default();
         for index in indices {
             let mut current_level = &mut index_level;
-            for index_part in &index.properties {
+            let mut properties_iter = index.properties.iter().peekable();
+            while let Some(index_part) = properties_iter.next() {
                 current_level = current_level
                     .sub_index_levels
                     .entry(index_part.name.clone())
                     .or_insert(IndexLevel::default());
+                if properties_iter.peek().is_none() {
+                    current_level.has_index_with_uniqueness = Some(index.unique);
+                }
             }
         }
 
