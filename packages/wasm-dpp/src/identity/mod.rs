@@ -21,7 +21,7 @@ pub use identity_public_key::*;
 
 use state_transition::*;
 
-mod state_transition;
+pub mod state_transition;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]

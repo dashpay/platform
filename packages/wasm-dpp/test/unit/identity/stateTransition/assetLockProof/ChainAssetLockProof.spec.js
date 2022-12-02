@@ -1,28 +1,20 @@
-const crypto = require('crypto');
+const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
-const getRawChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getRawChainAssetLockProofFixture');
-
-function sha256(payload) {
-  return crypto.createHash('sha256')
-    .update(payload)
-    .digest();
-}
 
 describe('ChainAssetLockProof', () => {
   let ChainAssetLockProof;
-  let Identifier;
-  let rawChainAssetLockProof;
   let chainAssetLockProof;
+  let chainAssetLockProofJS;
 
   before(async () => {
-    ({ ChainAssetLockProof, Identifier } = await loadWasmDpp());
+    ({ ChainAssetLockProof } = await loadWasmDpp());
 
-    rawChainAssetLockProof = getRawChainAssetLockProofFixture();
+    chainAssetLockProofJS = getChainAssetLockFixture();
   });
 
   beforeEach(() => {
-    const { coreChainLockedHeight, outPoint } = rawChainAssetLockProof;
+    const { coreChainLockedHeight, outPoint } = chainAssetLockProofJS;
 
     chainAssetLockProof = new ChainAssetLockProof({
       coreChainLockedHeight,
@@ -33,53 +25,45 @@ describe('ChainAssetLockProof', () => {
   describe('#getType', () => {
     it('should return correct type', () => {
       expect(chainAssetLockProof.getType())
-        .to.equal(rawChainAssetLockProof.type);
+        .to.equal(chainAssetLockProofJS.getType());
     });
   });
 
   describe('#getCoreChainLockedHeight', () => {
     it('should return correct coreChainLockedHeight', () => {
       expect(chainAssetLockProof.getCoreChainLockedHeight())
-        .to.equal(rawChainAssetLockProof.coreChainLockedHeight);
+        .to.equal(chainAssetLockProofJS.getCoreChainLockedHeight());
     });
   });
 
   describe('#getOutPoint', () => {
     it('should return correct outPoint', () => {
       expect(chainAssetLockProof.getOutPoint())
-        .to.deep.equal(rawChainAssetLockProof.outPoint);
+        .to.deep.equal(chainAssetLockProofJS.getOutPoint());
     });
   });
 
   describe('#toJSON', () => {
     it('should return correct JSON', () => {
-      const json = {
-        ...rawChainAssetLockProof,
-        outPoint: rawChainAssetLockProof.outPoint.toString('base64'),
-      };
-
       expect(chainAssetLockProof.toJSON())
-        .to.deep.equal(json);
+        .to.deep.equal(chainAssetLockProofJS.toJSON());
     });
   });
 
   describe('#toObject', () => {
     it('should return correct object', () => {
       expect(chainAssetLockProof.toObject())
-        .to.deep.equal(rawChainAssetLockProof);
+        .to.deep.equal(chainAssetLockProofJS.toObject());
     });
   });
 
   describe('#createIdentifier', () => {
     it('should return correct identifier', () => {
       const identifier = chainAssetLockProof.createIdentifier();
-
-      const expectedIdentifier = new Identifier(
-        sha256(sha256(rawChainAssetLockProof.outPoint)),
-      );
+      const identifierJS = chainAssetLockProofJS.createIdentifier();
 
       expect(identifier.toBuffer())
-        .to.deep.equal(expectedIdentifier.toBuffer());
+        .to.deep.equal(identifierJS.toBuffer());
     });
   });
 });
