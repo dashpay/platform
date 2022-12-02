@@ -15,18 +15,6 @@ use dpp::util::string_encoding::Encoding;
 #[wasm_bindgen(js_name=ChainAssetLockProof)]
 pub struct ChainAssetLockProofWasm(ChainAssetLockProof);
 
-impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
-    fn from(v: ChainAssetLockProof) -> Self {
-        ChainAssetLockProofWasm(v)
-    }
-}
-
-impl Into<ChainAssetLockProof> for ChainAssetLockProofWasm {
-    fn into(self) -> ChainAssetLockProof {
-        self.0
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChainAssetLockProofParams {
