@@ -80,4 +80,5 @@ pub const AVERAGE_NUMBER_OF_UPDATES: u8 = 10;
 /// 1 here signifies less than 128
 pub const AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE: u8 = 1;
 
+/// The estimated average document type name size
 pub const ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE: u8 = 12;

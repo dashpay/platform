@@ -604,9 +604,10 @@ impl Drive {
     fn add_reference_for_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        contract_document_type_path: Vec<Vec<u8>>,
+        mut index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
+        storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -622,7 +623,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                storage_flags,
+                storage_flags.clone(),
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 batch_operations,
@@ -713,9 +714,10 @@ impl Drive {
     fn add_indices_for_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        contract_document_type_path: Vec<Vec<u8>>,
+        index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
+        storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -725,9 +727,10 @@ impl Drive {
         if let Some(unique) = index_level.has_index_with_uniqueness {
             self.add_reference_for_index_level_for_contract_operations(
                 document_and_contract_info,
-                contract_document_type_path,
+                index_path_info.clone(),
                 unique,
                 any_fields_null,
+                storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
@@ -737,6 +740,7 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
+            let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 
             let document_index_field = document_and_contract_info
@@ -750,18 +754,18 @@ impl Drive {
 
             let path_key_info = index_property_key
                 .clone()
-                .add_path_info(index_path_info.clone());
+                .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                storage_flags,
+                storage_flags.clone(),
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 batch_operations,
             )?;
 
-            index_path_info.push(index_property_key)?;
+            sub_level_index_path_info.push(index_property_key)?;
 
             // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
             // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
@@ -771,9 +775,9 @@ impl Drive {
                 .add_path_info(index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            let inserted = self.batch_insert_empty_tree_if_not_exists(
+            self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                storage_flags,
+                storage_flags.clone(),
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 batch_operations,
@@ -781,14 +785,15 @@ impl Drive {
             any_fields_null |= document_index_field.is_empty();
 
             // we push the actual value of the index path
-            index_path_info.push(document_index_field)?;
+            sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
             self.add_indices_for_index_level_for_contract_operations(
                 &document_and_contract_info,
-                contract_document_type_path,
+                sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
+                storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
@@ -801,17 +806,34 @@ impl Drive {
     fn add_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        contract_document_type_path: Vec<Vec<u8>>,
-        index_level: &IndexLevel,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         batch_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
+        let index_level = &document_and_contract_info.document_type.index_structure;
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
-        // fourth we need to store a reference to the document for each index
+        let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
+            document_and_contract_info
+                .document_info
+                .get_storage_flags_ref()
+        } else {
+            None //there are no need for storage flags if documents are not mutable and contract can not be deleted
+        };
+
+        // we need to construct the path for documents on the contract
+        // the path is
+        //  * Document and Contract root tree
+        //  * Contract ID recovered from document
+        //  * 0 to signify Documents and not Contract
+        let contract_document_type_path = contract_document_type_path_vec(
+            document_and_contract_info.contract.id.as_bytes(),
+            document_and_contract_info.document_type.name.as_str(),
+        );
+
+        // next we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
@@ -857,9 +879,10 @@ impl Drive {
 
             self.add_indices_for_index_level_for_contract_operations(
                 &document_and_contract_info,
-                contract_document_type_path,
+                index_path_info,
                 sub_level,
                 any_fields_null,
+                &storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
@@ -880,15 +903,6 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
-        // second we need to construct the path for documents on the contract
-        // the path is
-        //  * Document and Contract root tree
-        //  * Contract ID recovered from document
-        //  * 0 to signify Documents and not Contract
-        let contract_document_type_path = contract_document_type_path_vec(
-            document_and_contract_info.contract.id.as_bytes(),
-            document_and_contract_info.document_type.name.as_str(),
-        );
 
         let primary_key_path = contract_documents_primary_key_path(
             document_and_contract_info.contract.id.as_bytes(),
@@ -943,23 +957,8 @@ impl Drive {
             )?;
         }
 
-        let storage_flags = document_and_contract_info
-            .document_info
-            .get_storage_flags_ref();
-
-        // // if we are trying to get estimated costs we need to add the top index property tree
-        // if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-        //     Self::add_estimated_costs_indices_for_document_type(
-        //         document_and_contract_info.contract,
-        //         document_and_contract_info.document_type,
-        //         estimated_costs_only_with_layer_info,
-        //     );
-        // }
-
-        self.add_indices_for_index_level_for_contract_operations(
+        self.add_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
-            contract_document_type_path,
-            &document_and_contract_info.document_type.index_structure,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
