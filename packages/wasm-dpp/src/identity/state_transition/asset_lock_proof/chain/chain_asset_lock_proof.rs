@@ -109,8 +109,9 @@ impl ChainAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name=createIdentifier)]
-    pub fn create_identifier(&self) -> IdentifierWrapper {
-        let identifier = self.0.create_identifier();
-        identifier.into()
+    pub fn create_identifier(&self) -> Result<IdentifierWrapper, JsValue> {
+        let identifier = self.0.create_identifier()
+            .map_err(|e| from_dpp_err(e.into()))?;
+        Ok(identifier.into())
     }
 }
