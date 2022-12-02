@@ -1,15 +1,10 @@
 const chalk = require('chalk');
 
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+const {Flags} = require('@oclif/core');
+const {OUTPUT_FORMATS} = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const CoreService = require('../../core/CoreService');
-const blocksToTime = require('../../util/blocksToTime');
-const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
 const printObject = require('../../printers/printObject');
-
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
 class MasternodeStatusCommand extends ConfigBaseCommand {
   /**
@@ -26,129 +21,64 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
+    outputStatusOverview
   ) {
-    const coreService = new CoreService(
-      config,
-      createRpcClient(
-        {
-          port: config.get('core.rpc.port'),
-          user: config.get('core.rpc.user'),
-          pass: config.get('core.rpc.password'),
-        },
-      ),
-      dockerCompose.docker.getContainer('core'),
-    );
-
     if (config.get('core.masternode.enable') === false) {
       // eslint-disable-next-line no-console
       console.log('This is not a masternode!');
       this.exit();
     }
 
-    // Collect data
-    const { result: mnsyncStatus } = await coreService.getRpcClient().mnsync('status');
-    const {
-      result: {
-        blocks: coreBlocks,
-        verificationprogress: coreVerificationProgress,
-      },
-    } = await coreService.getRpcClient().getBlockchainInfo();
+    const status = await outputStatusOverview(config, ['core', 'masternode'])
 
-    const {
-      result: {
-        enabled: masternodeEnabledCount,
-      },
-    } = await coreService.getRpcClient().masternode('count');
+    const {core, masternode} = status
+    const {verificationProgress} = core
 
-    const {
-      result: {
-        dmnState: masternodeDmnState,
-        state: masternodeState,
-        status: masternodeStatus,
-        proTxHash: masternodeProTxHash,
-      },
-    } = await coreService.getRpcClient().masternode('status');
+    let toPrint = masternode
 
-    let sentinelState = (await dockerCompose.execCommand(
-      config.toEnvs(),
-      'sentinel',
-      'python bin/sentinel.py',
-    )).out.split(/\r?\n/)[0];
+    if (flags.format === OUTPUT_FORMATS.PLAIN) {
+      let masternodeStatus = masternode.status === 'syncing' ?
+        `syncing ${(verificationProgress * 100).toFixed(2)}%` : masternode.status
 
-    // Determine status
-    let status;
-    try {
-      ({
-        State: {
-          Status: status,
-        },
-      } = await dockerCompose.inspectService(config.toEnvs(), 'core'));
-    } catch (e) {
-      if (e instanceof ContainerIsNotPresentError) {
-        status = 'not started';
-      }
-    }
-    if (status === 'running' && mnsyncStatus.AssetName !== 'MASTERNODE_SYNC_FINISHED') {
-      status = `syncing ${(coreVerificationProgress * 100).toFixed(2)}%`;
-    }
-
-    // Determine payment queue position
-    let paymentQueuePosition;
-    let lastPaidTime;
-    if (masternodeState === 'READY') {
-      paymentQueuePosition = getPaymentQueuePosition(
-        masternodeDmnState, masternodeEnabledCount, coreBlocks,
-      );
-
-      // Determine last paid time
-      if (masternodeDmnState.lastPaidHeight === 0) {
-        lastPaidTime = 'Never';
+      if (masternodeStatus === 'running') {
+        masternodeStatus = chalk.green(masternodeStatus);
+      } else if (status.startsWith('syncing')) {
+        masternodeStatus = chalk.yellow(masternodeStatus);
       } else {
-        lastPaidTime = `${blocksToTime(coreBlocks - masternodeDmnState.lastPaidHeight)} ago`;
+        masternodeStatus = chalk.red(masternodeStatus);
+      }
+
+      toPrint = {
+        'Masternode status': (masternode.state === 'READY' ? chalk.green : chalk.red)(masternodeStatus),
+        'Sentinel status': (masternode.sentinelState !== '' ? chalk.red(masternode.sentinelState) : chalk.green('No errors')),
+      };
+
+      if (masternode.state === 'READY') {
+        const {
+          proTxHash, lastPaidBlock, lastPaidTime,
+          paymentQueuePosition, nexPaymentTime
+        } = masternode
+
+        let {poSePenalty, enabledCount} = masternode
+
+        if (poSePenalty === 0) {
+          poSePenalty = chalk.green(poSePenalty);
+        } else if (poSePenalty < enabledCount) {
+          poSePenalty = chalk.yellow(poSePenalty);
+        } else {
+          poSePenalty = chalk.red(poSePenalty);
+        }
+
+        toPrint['ProTx Hash'] = proTxHash;
+        toPrint['PoSe Penalty'] = poSePenalty;
+        toPrint['Last paid block'] = lastPaidBlock;
+        toPrint['Last paid time'] = lastPaidBlock === 0 ? 'Never' : lastPaidTime;
+        toPrint['Payment queue position'] = paymentQueuePosition;
+        toPrint['Next payment time'] = `in ${nexPaymentTime}`;
       }
     }
 
-    // Apply colors
-    if (status === 'running') {
-      status = chalk.green(status);
-    } else if (status.startsWith('syncing')) {
-      status = chalk.yellow(status);
-    } else {
-      status = chalk.red(status);
-    }
-
-    if (sentinelState === '') {
-      sentinelState = chalk.green('No errors');
-    } else {
-      sentinelState = chalk.red(sentinelState);
-    }
-
-    let masternodePoSePenalty;
-    if (masternodeStatus === 'Ready') {
-      if (masternodeDmnState.PoSePenalty === 0) {
-        masternodePoSePenalty = chalk.green(masternodeDmnState.PoSePenalty);
-      } else if (masternodeDmnState.PoSePenalty < masternodeEnabledCount) {
-        masternodePoSePenalty = chalk.yellow(masternodeDmnState.PoSePenalty);
-      } else {
-        masternodePoSePenalty = chalk.red(masternodeDmnState.PoSePenalty);
-      }
-    }
-
-    const outputRows = {
-      'Masternode status': (masternodeState === 'READY' ? chalk.green : chalk.red)(masternodeStatus),
-      'Sentinel status': (sentinelState !== '' ? sentinelState : 'No errors'),
-    };
-
-    if (masternodeState === 'READY') {
-      outputRows['ProTx Hash'] = masternodeProTxHash;
-      outputRows['PoSe Penalty'] = masternodePoSePenalty;
-      outputRows['Last paid block'] = masternodeDmnState.lastPaidHeight;
-      outputRows['Last paid time'] = lastPaidTime;
-      outputRows['Payment queue position'] = `${paymentQueuePosition}/${masternodeEnabledCount}`;
-      outputRows['Next payment time'] = `in ${blocksToTime(paymentQueuePosition)}`;
-    }
-
-    printObject(outputRows, flags.format);
+    printObject(toPrint, flags.format);
   }
 }
 

@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const chalk = require('chalk');
 
 const { Flags } = require('@oclif/core');
@@ -8,8 +7,10 @@ const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const CoreService = require('../../core/CoreService');
 const printObject = require('../../printers/printObject');
 
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
+
+const providers = require('../../status/providers')
+const colors = require("../../status/colors");
 
 class PlatformStatusCommand extends ConfigBaseCommand {
   /**
@@ -26,6 +27,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
+    outputStatusOverview,
   ) {
     if (config.get('network') === 'mainnet') {
       // eslint-disable-next-line no-console
@@ -45,165 +47,70 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       dockerCompose.docker.getContainer('core'),
     );
 
-    const explorerURLs = {
-      testnet: 'https://rpc.cloudwheels.net:26657',
-      mainnet: '',
-    };
-
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
       throw new ServiceIsNotRunningError(config.get('network'), 'drive_tenderdash');
     }
 
-    // Collect core data
-    const {
-      result: {
-        IsSynced: coreIsSynced,
-      },
-    } = await coreService.getRpcClient().mnsync('status');
+    const {core} = await outputStatusOverview(config, ['core'])
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (coreIsSynced === false) {
+    if (core.isSynced === false) {
       // eslint-disable-next-line no-console
       console.log('Platform status is not available until core sync is complete!');
       this.exit();
     }
 
     // Collect platform data
-    const tenderdashStatusRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+    const {platform} = await outputStatusOverview(config, ['platform'])
     const {
-      result: {
-        node_info: {
-          version: platformVersion,
-          network: platformNetwork,
-        },
-        sync_info: {
-          catching_up: platformCatchingUp,
-          latest_app_hash: platformLatestAppHash,
-          latest_block_height: platformLatestBlockHeight,
-        },
-      },
-    } = await tenderdashStatusRes.json();
-
-    const tenderdashNetInfoRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`);
+      status: platformStatus,
+      tenderdash
+    } = platform
     const {
-      result: {
-        n_peers: platformPeers,
-      },
-    } = await tenderdashNetInfoRes.json();
-
-    let explorerLatestBlockHeight;
-    if (explorerURLs[config.get('network')]) {
-      try {
-        const explorerBlockHeightRes = await fetch(`${explorerURLs[config.get('network')]}/status`);
-        ({
-          result: {
-            sync_info: {
-              latest_block_height: explorerLatestBlockHeight,
-            },
-          },
-        } = await explorerBlockHeightRes.json());
-      } catch (e) {
-        if (e.name === 'FetchError') {
-          explorerLatestBlockHeight = 0;
-        } else {
-          throw e;
-        }
-      }
-    }
+      version: tenderdashVersion,
+      lastBlockHeight: platformBlockHeight,
+      latestAppHash: platformLatestAppHash,
+      peers: platformPeers,
+      network: tenderdashNetwork
+    } = tenderdash
 
     // Check ports
-    let httpPortState;
-    let gRpcPortState;
-    let p2pPortState;
-    try {
-      const httpPortStateRes = await fetch(`https://mnowatch.org/${config.get('platform.dapi.envoy.http.port')}/`);
-      httpPortState = await httpPortStateRes.text();
-      const gRpcPortStateRes = await fetch(`https://mnowatch.org/${config.get('platform.dapi.envoy.grpc.port')}/`);
-      gRpcPortState = await gRpcPortStateRes.text();
-      const p2pPortStateRes = await fetch(`https://mnowatch.org/${config.get('platform.drive.tenderdash.p2p.port')}/`);
-      p2pPortState = await p2pPortStateRes.text();
-    } catch (e) {
-      if (e.name === 'FetchError') {
-        httpPortState = 'ERROR';
-        gRpcPortState = 'ERROR';
-        p2pPortState = 'ERROR';
-      } else {
-        throw e;
-      }
-    }
+    const httpState = await providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.http.port'));
+    const gRpcState = await providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.grpc.port'));
+    const p2pState = await providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'));
 
-    // Determine status
-    let status;
-    try {
-      ({
-        State: {
-          Status: status,
-        },
-      } = await dockerCompose.inspectService(config.toEnvs(), 'drive_tenderdash'));
-    } catch (e) {
-      if (e instanceof ContainerIsNotPresentError) {
-        status = 'not started';
-      }
-    }
-    if (status === 'running' && platformCatchingUp === true && explorerURLs[config.get('network')]) {
-      status = `syncing ${((platformLatestBlockHeight / explorerLatestBlockHeight) * 100).toFixed(2)}%`;
-    }
+    const json  = {
+      tenderdashVersion,
+      network: tenderdashNetwork,
+      status: platformStatus,
+      blockHeight: platformBlockHeight,
+      peerCount: platformPeers,
+      appHash: platformLatestAppHash,
+      httpService: `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`,
+      httpPort: httpState,
+      gRPCService: `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`,
+      gRPCPort: gRpcState,
+      p2pService: `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`,
+      p2pPortState: p2pState,
+      rpcService: `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`,
+    };
 
-    // Apply colors
-    if (status === 'running') {
-      status = chalk.green(status);
-    } else if (status.includes('syncing')) {
-      status = chalk.yellow(status);
-    } else {
-      status = chalk.red(status);
-    }
-
-    let blocks;
-    if (explorerURLs[config.get('network')]) {
-      if (platformLatestBlockHeight >= explorerLatestBlockHeight) {
-        blocks = chalk.green(platformLatestBlockHeight);
-      } else {
-        blocks = chalk.red(platformLatestBlockHeight);
-      }
-    } else {
-      blocks = platformLatestBlockHeight;
-    }
-
-    if (httpPortState === 'OPEN') {
-      httpPortState = chalk.green(httpPortState);
-    } else {
-      httpPortState = chalk.red(httpPortState);
-    }
-    if (gRpcPortState === 'OPEN') {
-      gRpcPortState = chalk.green(gRpcPortState);
-    } else {
-      gRpcPortState = chalk.red(gRpcPortState);
-    }
-    if (p2pPortState === 'OPEN') {
-      p2pPortState = chalk.green(p2pPortState);
-    } else {
-      p2pPortState = chalk.red(p2pPortState);
-    }
-
+    let status
     const outputRows = {
-      'Tenderdash Version': platformVersion,
-      Network: platformNetwork,
-      Status: status,
-      'Block height': blocks,
+      'Tenderdash Version': tenderdashVersion,
+      'Network': tenderdashNetwork,
+      'Status': status,
+      'Block height': platformBlockHeight,
       'Peer count': platformPeers,
       'App hash': platformLatestAppHash,
       'HTTP service': `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`,
-      'HTTP port': `${config.get('platform.dapi.envoy.http.port')} ${httpPortState}`,
+      'HTTP port': `${config.get('platform.dapi.envoy.http.port')} ${colors.portState(p2pState)(httpState)}`,
       'gRPC service': `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`,
-      'gRPC port': `${config.get('platform.dapi.envoy.grpc.port')} ${gRpcPortState}`,
+      'gRPC port': `${config.get('platform.dapi.envoy.grpc.port')} ${colors.portState(p2pState)(gRpcState)}`,
       'P2P service': `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`,
-      'P2P port': `${config.get('platform.drive.tenderdash.p2p.port')} ${p2pPortState}`,
+      'P2P port': `${config.get('platform.drive.tenderdash.p2p.port')} ${colors.portState(p2pState)(p2pState)}`,
       'RPC service': `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`,
     };
-
-    if (explorerURLs[config.get('network')]) {
-      outputRows['Remote block height'] = explorerLatestBlockHeight;
-    }
 
     printObject(outputRows, flags.format);
   }

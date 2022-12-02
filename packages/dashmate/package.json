@@ -8,7 +8,7 @@
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": "",
+    "test": "mocha --recursive test/",
     "helper": "node scripts/helper.js"
   },
   "repository": {
@@ -93,11 +93,18 @@
     "table": "^5.4.6"
   },
   "devDependencies": {
+    "chai": "^4.3.6",
+    "chai-as-promised": "^7.1.1",
+    "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "globby": "^11",
-    "oclif": "^3.2.2"
+    "mocha": "^10.0.0",
+    "mocha-sinon": "^2.1.2",
+    "oclif": "^3.2.2",
+    "sinon": "^14.0.1",
+    "sinon-chai": "^3.7.0"
   },
   "files": [
     "bin",

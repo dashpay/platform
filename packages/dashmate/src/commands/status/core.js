@@ -1,14 +1,12 @@
-const fetch = require('node-fetch');
 const chalk = require('chalk');
 
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+const {Flags} = require('@oclif/core');
+const {OUTPUT_FORMATS} = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const CoreService = require('../../core/CoreService');
 const printObject = require('../../printers/printObject');
 
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const providers = require('../../status/providers')
 
 class CoreStatusCommand extends ConfigBaseCommand {
   /**
@@ -25,179 +23,117 @@ class CoreStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
+    outputStatusOverview
   ) {
-    const coreService = new CoreService(
-      config,
-      createRpcClient(
-        {
-          port: config.get('core.rpc.port'),
-          user: config.get('core.rpc.user'),
-          pass: config.get('core.rpc.password'),
-        },
-      ),
-      dockerCompose.docker.getContainer('core'),
-    );
+    const statusOverview = await outputStatusOverview(config, ['core', 'external'])
+    const latestVersion = await providers.github.release('dashpay/dash')
+    const p2pPortState = await providers.mnowatch.checkPortStatus(config.get('core.p2p.port'))
+    const remoteBlockHeight = await providers.insight(config.get('network')).status()
+    const masternodeEnabled = config.get('core.masternode.enable')
 
-    const insightURLs = {
-      testnet: 'https://testnet-insight.dashevo.org/insight-api',
-      mainnet: 'https://insight.dash.org/insight-api',
-    };
+    const {core} = statusOverview
+    const { version, verificationProgress,
+      blockHeight,
+      headerHeight,
+      peersCount,
+      network,
+      status,
+      syncAsset,
+      difficulty
+    } = core
 
-    // Collect data
-    const {
-      result: {
-        blocks: coreBlocks,
-        chain: coreChain,
-        difficulty: coreDifficulty,
-        headers: coreHeaders,
-        verificationprogress: coreVerificationProgress,
-      },
-    } = await coreService.getRpcClient().getBlockchainInfo();
-    const { result: networkInfo } = await coreService.getRpcClient().getNetworkInfo();
-    const { result: mnsyncStatus } = await coreService.getRpcClient().mnsync('status');
-    const { result: peerInfo } = await coreService.getRpcClient().getPeerInfo();
-
-    let latestVersion;
-    try {
-      const latestVersionRes = await fetch('https://api.github.com/repos/dashpay/dash/releases/latest');
-      latestVersion = (await latestVersionRes.json()).tag_name.substring(1);
-    } catch (e) {
-      if (e.name === 'FetchError') {
-        latestVersion = '0';
-      } else {
-        throw e;
-      }
-    }
-
-    let corePortState;
-    try {
-      const corePortStateRes = await fetch(`https://mnowatch.org/${config.get('core.p2p.port')}/`);
-      corePortState = await corePortStateRes.text();
-    } catch (e) {
-      if (e.name === 'FetchError') {
-        corePortState = 'ERROR';
-      } else {
-        throw e;
-      }
-    }
-
-    let coreVersion = networkInfo.subversion.replace(/\/|\(.*?\)|Dash Core:/g, '');
-    let explorerBlockHeight;
-    if (insightURLs[config.get('network')]) {
-      try {
-        const explorerBlockHeightRes = await fetch(`${insightURLs[config.get('network')]}/status`);
-        ({
-          info: {
-            blocks: explorerBlockHeight,
-          },
-        } = await explorerBlockHeightRes.json());
-      } catch (e) {
-        if (e.name === 'FetchError') {
-          explorerBlockHeight = 0;
-        } else {
-          throw e;
+    const json = {
+      version,
+      network,
+      latestVersion,
+      status,
+      syncAsset,
+      peersCount,
+      p2pService: `${config.get('externalIp')}:${config.get('core.p2p.port')}`,
+      p2pPortState,
+      rpcService: `127.0.0.1:${config.get('core.rpc.port')}`,
+      blockHeight,
+      headerHeight,
+      difficulty,
+      verificationProgress,
+      masternode: {
+        enabled: masternodeEnabled,
+        sentinel: {
+          status: null,
+          version: null,
         }
       }
     }
 
-    let sentinelVersion;
-    let sentinelState;
-    if (config.get('core.masternode.enable')) {
-      sentinelVersion = (await dockerCompose.execCommand(
-        config.toEnvs(),
-        'sentinel',
-        'python bin/sentinel.py -v',
-      )).out.split(/\r?\n/)[0].replace(/Dash Sentinel v/, '');
-      // eslint-disable-next-line prefer-destructuring
-      sentinelState = (await dockerCompose.execCommand(
-        config.toEnvs(),
-        'sentinel',
-        'python bin/sentinel.py',
-      )).out.split(/\r?\n/)[0];
+    if (masternodeEnabled) {
+      const {masternode} = await outputStatusOverview(config, ['masternode'])
+      const {sentinelState, sentinelVersion} = masternode
+
+      json.masternode.sentinel.status = sentinelState
+      json.masternode.sentinel.version = sentinelVersion
     }
 
-    // Determine status
-    let status;
-    try {
-      ({
-        State: {
-          Status: status,
-        },
-      } = await dockerCompose.inspectService(config.toEnvs(), 'core'));
-    } catch (e) {
-      if (e instanceof ContainerIsNotPresentError) {
-        status = 'not started';
+    if (flags.format === OUTPUT_FORMATS.PLAIN) {
+      const plain = {
+        'Version': version,
+        'Latest version': latestVersion,
+        'Network': network,
+        'Status': status === 'syncing' ? `syncing ${(verificationProgress * 100).toFixed(2)}%` : status,
+        'Sync asset': syncAsset,
+        'Peer count': peersCount,
+        'P2P service': `${config.get('externalIp')}:${config.get('core.p2p.port')}`,
+        'P2P port': `${config.get('core.p2p.port')} ${p2pPortState}`,
+        'RPC service': `127.0.0.1:${config.get('core.rpc.port')}`,
+        'Block height': blockHeight,
+        'Header height': headerHeight,
+        'Verification Progress': `${verificationProgress}%`,
+        'Remote Block Height': remoteBlockHeight || 'N/A',
+        'Difficulty': difficulty,
       }
-    }
-    if (status === 'running' && mnsyncStatus.AssetName !== 'MASTERNODE_SYNC_FINISHED') {
-      status = `syncing ${(coreVerificationProgress * 100).toFixed(2)}%`;
-    }
 
-    // Apply colors
-    if (status === 'running') {
-      status = chalk.green(status);
-    } else if (status.startsWith('syncing')) {
-      status = chalk.yellow(status);
-    } else {
-      status = chalk.red(status);
-    }
+      // Apply colors
+      switch (status) {
+        case 'running':
+          plain.Status = chalk.green(plain.Status);
+          break;
+        case 'syncing':
+          plain.Status = chalk.yellow(plain.Status);
+          break;
+        default:
+          plain.Status = chalk.red(plain.Status);
+      }
 
-    if (coreVersion === latestVersion) {
-      coreVersion = chalk.green(coreVersion);
-    } else if (coreVersion.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
-      coreVersion = chalk.yellow(coreVersion);
-    } else {
-      coreVersion = chalk.red(coreVersion);
-    }
-
-    if (corePortState === 'OPEN') {
-      corePortState = chalk.green(corePortState);
-    } else {
-      corePortState = chalk.red(corePortState);
-    }
-
-    let blocks;
-    if (coreBlocks === coreHeaders || coreBlocks >= explorerBlockHeight) {
-      blocks = chalk.green(coreBlocks);
-    } else if ((explorerBlockHeight - coreBlocks) < 3) {
-      blocks = chalk.yellow(coreBlocks);
-    } else {
-      blocks = chalk.red(coreBlocks);
-    }
-
-    if (config.get('core.masternode.enable')) {
-      if (sentinelState === '') {
-        sentinelState = chalk.green('No errors');
+      if (version === latestVersion) {
+        plain.Version = chalk.green(plain.Version);
+      } else if (version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
+        plain.Version = chalk.yellow(plain.Version);
       } else {
-        sentinelState = chalk.red(sentinelState);
+        plain.Version = chalk.red(plain.Version);
       }
+
+      if (p2pPortState === 'OPEN') {
+        plain["P2P port"] = chalk.green(plain["P2P port"]);
+      } else {
+        plain["P2P port"] = chalk.red(plain["P2P port"]);
+      }
+
+      if (blockHeight === headerHeight || blockHeight >= remoteBlockHeight) {
+        plain["Block height"] = chalk.green(plain["Block height"]);
+      } else if ((remoteBlockHeight - blockHeight) < 3) {
+        plain["Block height"] = chalk.yellow(plain["Block height"]);
+      } else {
+        plain["Block height"] = chalk.red(plain["Block height"]);
+      }
+
+      if (masternodeEnabled) {
+        plain['Sentinel version'] = json.masternode.sentinel.version;
+        plain['Sentinel status'] = json.masternode.sentinel.status ? chalk.green('No errors') : chalk.red(sentinelState);
+      }
+
+      return printObject(plain, flags.format);
     }
 
-    const outputRows = {
-      Version: coreVersion,
-      'Latest version': latestVersion,
-      Network: coreChain,
-      Status: status,
-      'Sync asset': mnsyncStatus.AssetName,
-      'Peer count': peerInfo.length,
-      'P2P service': `${config.get('externalIp')}:${config.get('core.p2p.port')}`,
-      'P2P port': `${config.get('core.p2p.port')} ${corePortState}`,
-      'RPC service': `127.0.0.1:${config.get('core.rpc.port')}`,
-      'Block height': blocks,
-      'Header height': coreHeaders,
-      Difficulty: coreDifficulty,
-    };
-
-    if (config.get('core.masternode.enable')) {
-      outputRows['Sentinel version'] = sentinelVersion;
-      outputRows['Sentinel status'] = (sentinelState);
-    }
-
-    if (insightURLs[config.get('network')]) {
-      outputRows['Remote block height'] = explorerBlockHeight;
-    }
-
-    printObject(outputRows, flags.format);
+    printObject(json, flags.format);
   }
 }
 

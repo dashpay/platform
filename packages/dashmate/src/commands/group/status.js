@@ -21,7 +21,11 @@ class GroupStatusCommand extends GroupBaseCommand {
       // eslint-disable-next-line no-console
       console.log(`Node ${config.getName()}`);
 
-      await outputStatusOverview(config, flags.format);
+      const status = await outputStatusOverview(config);
+
+      if (flags === OUTPUT_FORMATS.PLAIN) {
+        //draw
+      }
     }
   }
 }

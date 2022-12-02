@@ -1,10 +1,5 @@
-const os = require('os');
-const publicIp = require('public-ip');
-const prettyMs = require('pretty-ms');
-const prettyByte = require('pretty-bytes');
-
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+const {Flags} = require('@oclif/core');
+const {OUTPUT_FORMATS} = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
@@ -13,20 +8,33 @@ class HostStatusCommand extends ConfigBaseCommand {
   /**
    * @return {Promise<void>}
    */
-  async runWithDependencies(args, flags) {
-    const outputRows = {
-      Hostname: os.hostname(),
-      Uptime: prettyMs(os.uptime() * 1000),
-      Platform: os.platform(),
-      Arch: os.arch(),
-      Username: os.userInfo().username,
-      Diskfree: 0, // Waiting for feature: https://github.com/nodejs/node/pull/31351
-      Memory: `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`,
-      CPUs: os.cpus().length,
-      IP: await publicIp.v4(),
-    };
+  async runWithDependencies(args, flags, outputStatusOverview, config) {
+    const status = await outputStatusOverview(config, ['host'])
 
-    printObject(outputRows, flags.format);
+    const json = status.host
+
+    if (flags.format === OUTPUT_FORMATS.PLAIN) {
+      const {
+        hostname, uptime, platform, arch,
+        username, diskFree, memory, cpus, ip
+      } = json
+
+      const plain = {
+        Hostname: hostname,
+        Uptime: uptime,
+        Platform: platform,
+        Arch: arch,
+        Username: username,
+        Diskfree: diskFree,
+        Memory: memory,
+        CPUs: cpus,
+        IP: ip,
+      }
+
+      return printObject(plain, flags.format);
+    }
+
+    printObject(json, flags.format);
   }
 }
 

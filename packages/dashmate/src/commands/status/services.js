@@ -1,13 +1,11 @@
 const chalk = require('chalk');
 
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+const {Flags} = require('@oclif/core');
+const {OUTPUT_FORMATS} = require('../../constants');
 
 const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
 class ServicesStatusCommand extends ConfigBaseCommand {
   /**
@@ -22,61 +20,34 @@ class ServicesStatusCommand extends ConfigBaseCommand {
     flags,
     dockerCompose,
     config,
+    outputStatusOverview
   ) {
-    const serviceHumanNames = {
-      core: 'Core',
-    };
-
-    if (config.get('core.masternode.enable')) {
-      Object.assign(serviceHumanNames, {
-        sentinel: 'Sentinel',
-      });
-    }
-
-    if (config.get('network') !== 'mainnet') {
-      Object.assign(serviceHumanNames, {
-        drive_abci: 'Drive ABCI',
-        drive_tenderdash: 'Drive Tenderdash',
-        dapi_api: 'DAPI API',
-        dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
-        dapi_envoy: 'DAPI Envoy',
-      });
-    }
+    const {services} = await outputStatusOverview(config, ['services'])
 
     const outputRows = [];
 
-    for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
-      let containerId;
-      let status;
-      let image;
-
-      try {
-        ({
-          Id: containerId,
-          State: {
-            Status: status,
-          },
-          Config: {
-            Image: image,
-          },
-        } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
-      } catch (e) {
-        if (e instanceof ContainerIsNotPresentError) {
-          status = 'not started';
+    for (const [serviceName, serviceDescription] of Object.entries(services)) {
+      const {humanName, containerId, image, status} = serviceDescription
+      if (flags.format === OUTPUT_FORMATS.PLAIN) {
+        let statusText;
+        if (status) {
+          statusText = (status === 'running' ? chalk.green : chalk.red)(status);
         }
-      }
 
-      let statusText;
-      if (status) {
-        statusText = (status === 'running' ? chalk.green : chalk.red)(status);
+        outputRows.push({
+          Service: humanName,
+          'Container ID': containerId ? containerId.slice(0, 12) : undefined,
+          Image: image,
+          Status: statusText,
+        });
+      } else {
+        outputRows.push({
+          service: serviceName,
+          containerId,
+          image,
+          status
+        });
       }
-
-      outputRows.push({
-        Service: serviceDescription,
-        'Container ID': containerId ? containerId.slice(0, 12) : undefined,
-        Image: image,
-        Status: statusText,
-      });
     }
 
     printArrayOfObjects(outputRows, flags.format);
