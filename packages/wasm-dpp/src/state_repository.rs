@@ -17,7 +17,7 @@ use crate::identifier::IdentifierWrapper;
 
 #[wasm_bindgen]
 extern "C" {
-    type ExternalStateRepositoryLike;
+    pub type ExternalStateRepositoryLike;
 
     #[wasm_bindgen(structural, method, js_name=fetchDataContract)]
     pub fn fetch_data_contract(
@@ -33,6 +33,12 @@ pub(crate) struct ExternalStateRepositoryLikeWrapper(Pin<Box<Mutex<ExternalState
 
 unsafe impl Send for ExternalStateRepositoryLikeWrapper {}
 unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
+
+impl ExternalStateRepositoryLikeWrapper {
+    pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
+        todo!()
+    }
+}
 
 #[async_trait]
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {

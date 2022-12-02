@@ -1,11 +1,13 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
 const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('applyDataContractCreateTransitionFactory', () => {
   let stateTransition;
   let dataContract;
-  let applyDataContractCreateTransition;
+  let factory;
   let executionContext;
   let DatacontractCreateTransition;
   let ApplyDataContractCreateTransition;
@@ -21,6 +23,7 @@ describe('applyDataContractCreateTransitionFactory', () => {
     dataContract = getDataContractFixture();
 
     stateTransition = new DataContractCreateTransition({
+      protocolVersion: protocolVersion.latestVersion,
       dataContract: dataContract.toObject(),
       entropy: Buffer.alloc(32),
     });
@@ -29,10 +32,12 @@ describe('applyDataContractCreateTransitionFactory', () => {
 
     stateTransition.setExecutionContext(executionContext);
 
-    applyDataContractCreateTransition = new ApplyDataContractCreateTransition(stateRepositoryLike);
+    const stateRepositoryLike = {};
+
+    factory = new ApplyDataContractCreateTransition(stateRepositoryLike);
   });
 
-  it('should store a data contract from state transition in the repository', async () => {
-    await applyDataContractCreateTransition(stateTransition);
+    it('should store a data contract from state transition in the repository', async () => {
+      await factory.applyDataContractCreateTransition(stateTransition);
   });
 });

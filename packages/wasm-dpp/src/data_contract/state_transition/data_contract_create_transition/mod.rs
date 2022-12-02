@@ -14,7 +14,7 @@ use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, RustConversionError},
     identifier::IdentifierWrapper,
-    with_js_error, DataContractParameters, DataContractWasm,
+    with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
@@ -126,5 +126,10 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=setExecutionContext)]
+    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
     }
 }
