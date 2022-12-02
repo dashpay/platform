@@ -179,21 +179,25 @@ function setupRegularPresetTaskFactory(
         title: 'Obtain ZeroSSL certificate',
         enabled: (ctx) => ctx.certificateProvider === 'zerossl',
         task: async (ctx, task) => {
-          const apiKey = await task.prompt({
-            type: 'input',
-            message: 'Enter ZeroSSL API key',
-            validate: async (state) => {
-              try {
-                await listCertificates(state);
+          let apiKey = ctx.zeroSslApiKey;
 
-                return true;
-              } catch (e) {
-                // do nothing
-              }
+          if (!apiKey) {
+            apiKey = await task.prompt({
+              type: 'input',
+              message: 'Enter ZeroSSL API key',
+              validate: async (state) => {
+                try {
+                  await listCertificates(state);
 
-              return 'Please enter a valid ZeroSSL API key';
-            },
-          });
+                  return true;
+                } catch (e) {
+                  // do nothing
+                }
+
+                return 'Please enter a valid ZeroSSL API key';
+              },
+            });
+          }
 
           ctx.config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', apiKey);
 

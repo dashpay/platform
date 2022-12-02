@@ -36,6 +36,7 @@ class SetupCommand extends BaseCommand {
       'debug-logs': debugLogs,
       'miner-interval': minerInterval,
       verbose: isVerbose,
+      'zerossl-apikey': zeroSslApiKey,
     },
     generateBlsKeys,
     setupLocalPresetTask,
@@ -103,6 +104,7 @@ class SetupCommand extends BaseCommand {
         operatorBlsPrivateKey,
         fundingPrivateKeyString,
         isVerbose,
+        zeroSslApiKey,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -135,6 +137,7 @@ SetupCommand.flags = {
   'funding-private-key': Flags.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
   'node-count': Flags.integer({ description: 'number of nodes to setup' }),
   'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
+  'zerossl-apikey': Flags.string({ char: 'z', description: 'ZeroSSL API key' }),
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
