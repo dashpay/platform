@@ -1,7 +1,16 @@
-use std::sync::{Arc, Mutex};
+//! Bindings for state repository -like objects coming from JS.
+
+use std::{pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
-use dpp::{dashcore::InstantLock, data_contract::{DataContract, state_transition::apply_data_contract_create_transition_factory::ApplyDataContractCreateTransition}, document::Document, prelude::{Identifier, Identity}, state_repository::StateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext};
+use dpp::{
+    dashcore::InstantLock,
+    data_contract::DataContract,
+    document::Document,
+    prelude::{Identifier, Identity},
+    state_repository::StateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+};
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -18,9 +27,9 @@ extern "C" {
     ) -> JsValue;
 }
 
-/// Wraps external duck-typed thing into box with mutex to ensure it'll stay at the same
+/// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
 /// place in memory and will have synchronized access.
-struct ExternalStateRepositoryLikeWrapper(Box<Mutex<ExternalStateRepositoryLike>>);
+pub(crate) struct ExternalStateRepositoryLikeWrapper(Pin<Box<Mutex<ExternalStateRepositoryLike>>>); // bruh
 
 unsafe impl Send for ExternalStateRepositoryLikeWrapper {}
 unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
@@ -191,7 +200,3 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 }
-
-pub struct ApplyDataContractCreateTransitionWasm(
-    ApplyDataContractCreateTransition<ExternalStateRepositoryLikeWrapper>,
-);

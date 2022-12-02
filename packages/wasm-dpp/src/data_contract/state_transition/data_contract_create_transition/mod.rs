@@ -1,5 +1,5 @@
-mod factory;
-pub use factory::*;
+mod apply;
+pub use apply::*;
 
 use dpp::{
     data_contract::state_transition::DataContractCreateTransition,

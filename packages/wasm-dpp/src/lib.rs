@@ -9,6 +9,7 @@ pub use identity::*;
 pub use identity_facade::*;
 pub use identity_public_key::*;
 pub use metadata::*;
+pub use state_transition::*;
 
 mod dash_platform_protocol;
 mod data_contract;
@@ -21,6 +22,8 @@ mod identity_facade;
 mod identity_public_key;
 mod metadata;
 pub mod mocks;
+mod state_repository;
+mod state_transition;
 
 mod utils;
 
