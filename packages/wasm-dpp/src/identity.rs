@@ -17,7 +17,7 @@ use crate::MetadataWasm;
 
 use state_transition::*;
 
-mod state_transition;
+pub mod state_transition;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]
