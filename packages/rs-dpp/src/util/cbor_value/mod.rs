@@ -2,15 +2,22 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use ciborium::value::Value as CborValue;
+use itertools::Itertools;
 use serde::Serialize;
 use serde_json::{Map, Value as JsonValue};
+use sha2::digest::typenum::private::IsGreaterOrEqualPrivate;
 
 use crate::identifier::Identifier;
 use crate::util::json_value::ReplaceWith;
 use crate::util::string_encoding::Encoding;
 use crate::ProtocolError;
+
+use super::json_path::{JsonPath, JsonPathLiteral, JsonPathStep};
+mod convert;
+use convert::convert_to;
+pub use convert::FieldType;
 
 pub fn value_to_bytes(value: &CborValue) -> Result<Option<Vec<u8>>, ProtocolError> {
     match value {
@@ -311,6 +318,59 @@ impl CborCanonicalMap {
         }
     }
 
+    pub fn get(&mut self, key: &CborValue) -> Option<&CborValue> {
+        if let Some(index) = self.inner.iter().position(|(el_key, _)| el_key == key) {
+            Some(&self.inner.get(index)?.1)
+        } else {
+            None
+        }
+    }
+
+    fn get_path_mut(&mut self, path: &str) -> Option<&mut CborValue> {
+        let cbor_path = to_path_of_cbors(path).ok()?;
+        self.get_cbor_path_mut(&cbor_path)
+    }
+
+    fn get_cbor_path_mut(&mut self, path: &[CborValue]) -> Option<&mut CborValue> {
+        if path.is_empty() {
+            return None;
+        }
+        if path.len() == 1 {
+            return self.get_mut(&path[0]);
+        }
+
+        let mut current_level: &mut CborValue = self.get_mut(&path[0])?;
+        for step in path.iter().skip(1) {
+            match current_level {
+                CborValue::Map(ref mut cbor_map) => {
+                    current_level = get_from_cbor_map(cbor_map, step)?
+                }
+                CborValue::Array(ref mut cbor_array) => {
+                    if let Some(idx) = step.as_integer() {
+                        let id: usize = idx.try_into().ok()?;
+                        current_level = cbor_array.get_mut(id)?
+                    } else {
+                        return None;
+                    }
+                }
+                _ => {
+                    // do nothing if it's not a container type
+                }
+            }
+        }
+        Some(current_level)
+    }
+
+    pub fn replace_paths<I, C>(&mut self, paths: I, from: FieldType, to: FieldType)
+    where
+        I: IntoIterator<Item = C>,
+        C: AsRef<str>,
+    {
+        for path in paths.into_iter() {
+            self.replace_path(path.as_ref(), from, to);
+        }
+    }
+
     pub fn replace_values<I, C>(&mut self, keys: I, with: ReplaceWith)
     where
         I: IntoIterator<Item = C>,
@@ -321,10 +381,19 @@ impl CborCanonicalMap {
         }
     }
 
+    pub fn replace_path(&mut self, path: &str, from: FieldType, to: FieldType) -> Option<()> {
+        let cbor_value = self.get_path_mut(path)?;
+        let replace_with = convert_to(cbor_value, from, to)?;
+
+        *cbor_value = replace_with;
+
+        Some(())
+    }
+
     pub fn replace_value(&mut self, key: impl Into<CborValue>, with: ReplaceWith) -> Option<()> {
         let k = key.into();
-        let cbor_value = self.get_mut(&k)?;
 
+        let cbor_value = self.get_mut(&k)?;
         let replace_with = match with {
             ReplaceWith::Base58 => {
                 let data_bytes = cbor_value.as_bytes()?;
@@ -525,4 +594,116 @@ pub fn cbor_map_to_json_map(
     }
 
     Ok(serde_json::Value::Object(json_map))
+}
+
+fn to_path_of_cbors(path: &str) -> Result<Vec<CborValue>, anyhow::Error> {
+    let json_path = JsonPath::try_from(JsonPathLiteral(path))?;
+
+    Ok(json_path
+        .into_iter()
+        .map(|step| match step {
+            JsonPathStep::Key(key) => CborValue::Text(key),
+            JsonPathStep::Index(index) => CborValue::Integer(index.into()),
+        })
+        .collect_vec())
+}
+
+fn get_from_cbor_map<'a>(
+    cbor_map: &'a mut [(CborValue, CborValue)],
+    key: &CborValue,
+) -> Option<&'a mut CborValue> {
+    cbor_map.iter_mut().find_map(|(current_key, value)| {
+        if current_key == key {
+            Some(value)
+        } else {
+            None
+        }
+    })
+}
+
+#[cfg(test)]
+mod test {
+    use std::convert::TryInto;
+
+    use super::{CborValue, FieldType};
+    use ciborium::cbor;
+    use serde::{Deserialize, Serialize};
+
+    use super::CborCanonicalMap;
+
+    #[test]
+    fn should_get_path_to_property_from_cbor() {
+        let cbor_value = cbor!( {
+            "alpha"  =>  {
+                "bravo" =>  "bravo_value",
+            }
+        })
+        .expect("valid cbor");
+        let mut canonical: CborCanonicalMap = cbor_value.try_into().expect("valid canonical");
+        let result = canonical.get_path_mut("alpha.bravo").expect("bravo value");
+        assert_eq!(&mut CborValue::Text(String::from("bravo_value")), result);
+    }
+
+    #[test]
+    fn should_get_paths_to_array_from_cbor() {
+        let cbor_value = cbor!( {
+            "alpha"  =>  {
+                "bravo" => ["bravo_first_item", "bravo_second_item" ],
+            }
+        })
+        .expect("valid cbor");
+        let mut canonical: CborCanonicalMap = cbor_value.try_into().expect("valid canonical");
+        let result = canonical
+            .get_path_mut("alpha.bravo[0]")
+            .expect("first item from bravo");
+        assert_eq!(
+            &mut CborValue::Text(String::from("bravo_first_item")),
+            result
+        );
+    }
+
+    #[test]
+    fn should_return_non_when_path_not_exist() {
+        let cbor_value = cbor!( {
+            "alpha"  =>  {
+                "bravo" => ["bravo_first_item", "bravo_second_item" ],
+            }
+        })
+        .expect("valid cbor");
+        let mut canonical: CborCanonicalMap = cbor_value.try_into().expect("valid canonical");
+        let path = vec![
+            CborValue::Text(String::from("alpha")),
+            CborValue::Text(String::from("bravo")),
+            CborValue::Integer((-1).into()),
+        ];
+
+        assert!(canonical.get_cbor_path_mut(&path).is_none())
+    }
+
+    #[test]
+    fn should_replace_cbor_value() {
+        let cbor_value = cbor!({
+            "alpha"  =>  {
+                "array_value" => vec![0_u8;32]
+
+            }
+        })
+        .expect("cbor should be created");
+
+        let mut canonical: CborCanonicalMap = cbor_value.try_into().expect("valid canonical");
+        canonical.replace_path(
+            "alpha.array_value",
+            FieldType::ArrayInt,
+            FieldType::StringBase58,
+        );
+
+        let replaced = canonical
+            .get_path_mut("alpha.array_value")
+            .expect("value should be returned");
+
+        assert_eq!(
+            &mut CborValue::Text(bs58::encode(vec![0_u8; 32]).into_string()),
+            replaced
+        );
+    }
 }

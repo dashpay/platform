@@ -57,6 +57,12 @@ describe('Document', () => {
                     minItems: 32,
                     maxItems: 32,
                   },
+                  binaryData: {
+                    type: 'array',
+                    byteArray: true,
+                    minItems: 32,
+                    maxItems: 32,
+                  },
                 },
               },
             },
@@ -345,28 +351,35 @@ describe('Document', () => {
         expect(jsBuffer).to.deep.equal(buffer);
       });
 
-      // TODO fixme
-      // it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+      it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+        const jsId = new JsIdentifier.from(Buffer.alloc(32));
+        const id = new Identifier(Buffer.alloc(32));
+        const path = "dataObject.binaryObject.identifier";
 
-      //   // we should set the identifier
-      //   const jsId = new JsIdentifier.from(Buffer.alloc(32));
-      //   const id = new Identifier(Buffer.alloc(32));
-      //   const path = "dataObject.binaryObject.identifier";
+        jsDocument.set(path, jsId);
+        document.set(path, id);
 
 
-      //   jsDocument.set(path, jsId);
-      //   document.set(path, id);
+        const jsBuffer = jsDocument.toBuffer();
+        const buffer = document.toBuffer();
 
-      //   console.log(jsDocument);
-      //   console.log("-----------------------")
-      //   console.log(document.toObject());
+        expect(jsBuffer.length).to.equal(buffer.length);
+        expect(jsBuffer).to.deep.equal(buffer);
+      });
 
-      //   const jsBuffer = jsDocument.toBuffer();
-      //   const buffer = document.toBuffer();
+      it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
+        const data = Buffer.alloc(32);
+        const path = "dataObject.binaryObject.binaryData";
 
-      //   expect(jsBuffer.length).to.equal(buffer.length);
-      //   expect(jsBuffer).to.deep.equal(buffer);
-      // });
+        jsDocument.set(path, data);
+        document.set(path, data);
+
+        const jsBuffer = jsDocument.toBuffer();
+        const buffer = document.toBuffer();
+
+        expect(jsBuffer.length).to.equal(buffer.length);
+        expect(jsBuffer).to.deep.equal(buffer);
+      });
     });
 
     describe('#hash', () => {

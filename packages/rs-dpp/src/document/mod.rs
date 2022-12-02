@@ -16,6 +16,7 @@ use crate::identifier;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::util::cbor_value::CborCanonicalMap;
+use crate::util::cbor_value::FieldType;
 use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::{cbor_value, serializer};
@@ -128,21 +129,7 @@ impl Document {
         Ok(value)
     }
 
-    pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
-        let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
-
-        let mut json_value: JsonValue = ciborium::de::from_reader(document_bytes)
-            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
-
-        json_value.parse_and_add_protocol_version("$protocolVersion", protocol_bytes)?;
-
-        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-
-        let document: Document = serde_json::from_value(json_value)?;
-        Ok(document)
-    }
-
-    pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
+    pub fn from_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
         let (protocol_version_bytes, document_cbor_bytes) = cbor_bytes.as_ref().split_at(4);
 
         let cbor_value: CborValue = ciborium::de::from_reader(document_cbor_bytes)
@@ -185,8 +172,20 @@ impl Document {
             canonical_map.remove("$updatedAt");
         }
 
-        let (identifier_paths, _) = self.get_identifiers_and_binary_paths();
-        canonical_map.replace_values(identifier_paths, ReplaceWith::Bytes);
+        let (identifier_paths, binary_paths) = self
+            .data_contract
+            .get_identifiers_and_binary_paths(&self.document_type);
+
+        // the static (part of structure) identifiers are being serialized to the String(bas58)
+        canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
+        // the dynamic identifiers are being serialized to the ArrayInt
+        // the binary fields are also being serialize to the ArrayInt, therefore both need to be
+        // converted to the the Cbor::Bytes
+        canonical_map.replace_paths(
+            identifier_paths.into_iter().chain(binary_paths),
+            FieldType::ArrayInt,
+            FieldType::Bytes,
+        );
 
         let mut document_buffer = canonical_map
             .to_bytes()
@@ -196,6 +195,17 @@ impl Document {
 
         Ok(result_buf)
     }
+
+    // pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    //     let protocol_version = self.protocol_version;
+    //     let mut json_object = self.to_object(false)?;
+
+    //     if let JsonValue::Object(ref mut o) = json_object {
+    //         o.remove("$protocolVersion");
+    //     };
+
+    //     serializer::value_to_cbor(json_object, Some(protocol_version))
+    // }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash(self.to_buffer()?))
@@ -247,10 +257,10 @@ mod test {
     use anyhow::Result;
     use serde_json::{json, Value};
 
+    use super::*;
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
-
-    use super::*;
+    use pretty_assertions::{assert_eq, assert_ne};
 
     fn init() {
         let _ = env_logger::builder()
@@ -323,20 +333,19 @@ mod test {
     }
 
     #[test]
-    fn test_buffer_serialize_deserialize() -> Result<()> {
+    fn test_buffer_serialize_deserialize() {
         init();
         let init_doc = new_example_document();
-        let buffer_document = init_doc.to_buffer()?;
+        let buffer_document = init_doc.to_buffer().expect("no errors");
 
-        let doc = Document::from_buffer(&buffer_document)?;
+        let doc = Document::from_buffer(&buffer_document)
+            .expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at, doc.created_at);
         assert_eq!(init_doc.updated_at, doc.updated_at);
         assert_eq!(init_doc.id, doc.id);
         assert_eq!(init_doc.data_contract_id, doc.data_contract_id);
         assert_eq!(init_doc.owner_id, doc.owner_id);
-
-        Ok(())
     }
 
     #[test]
@@ -380,7 +389,7 @@ mod test {
     fn deserialize_js_cpp_cbor() -> Result<()> {
         let document_cbor = document_cbor_bytes();
 
-        let document = Document::from_cbor(&document_cbor)?;
+        let document = Document::from_buffer(&document_cbor)?;
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(
@@ -415,13 +424,11 @@ mod test {
     #[test]
     fn to_buffer_serialize_to_the_same_format_as_js_dpp() -> Result<()> {
         let document_cbor = document_cbor_bytes();
-
-        let document = Document::from_cbor(&document_cbor)?;
+        let document = Document::from_buffer(&document_cbor)?;
 
         let buffer = document.to_buffer()?;
 
         assert_eq!(document_cbor, buffer);
-
         Ok(())
     }
 

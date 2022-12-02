@@ -5,8 +5,10 @@ use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
+use std::sync::Arc;
 use wasm_bindgen::convert::{FromWasmAbi, IntoWasmAbi};
 use wasm_bindgen::prelude::*;
+use web_sys::console::{log_1, log_2};
 
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
 
@@ -138,20 +140,19 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let (identifier_paths, binary_paths) = self.0.get_identifiers_and_binary_paths();
-
+        let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths();
         for property_path in identifier_paths {
             if property_path == path {
                 // this should be safe as we take the whole value. Additionally we never create an object directly from abi reference
                 // If we ever do we should replace it with serde version
+                //? what if the  js_value_to_set is not an Identifier???
                 let id = unsafe { IdentifierWrapper::from_abi(js_value_to_set.into_abi()) };
                 let new_value = serde_json::to_value(id.inner().as_bytes()).unwrap();
                 return self.0.set(&path, new_value).map_err(from_dpp_err);
             } else if property_path.starts_with(&path) {
-                let (prefix, suffix) = property_path.split_at(path.len() + 1);
+                let (_, suffix) = property_path.split_at(path.len() + 1);
                 let mut value = js_value_to_set.to_serde_json_value()?;
 
-                // the value must be replaced with the identfier
                 if value.get_value(suffix).is_ok() {
                     let id_string = value
                         .remove_path_into::<String>(suffix)
@@ -303,3 +304,4 @@ impl From<Document> for DocumentWasm {
         DocumentWasm(d)
     }
 }
+// impl Send for
