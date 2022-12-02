@@ -2,8 +2,8 @@ mod chain;
 
 pub use chain::*;
 
-use wasm_bindgen::prelude::*;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=AssetLockProof)]
 pub struct AssetLockProofWasm(AssetLockProof);
