@@ -220,7 +220,7 @@ impl Drive {
         let contract_documents_primary_key_path =
             contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
 
-        let stateless = !estimated_costs_only_with_layer_info.is_some();
+        let stateless = estimated_costs_only_with_layer_info.is_some();
         let query_stateless_max_value_size = if stateless {
             Some(document_type.max_size())
         } else {

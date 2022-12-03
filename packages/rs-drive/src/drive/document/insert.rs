@@ -772,7 +772,7 @@ impl Drive {
 
             let path_key_info = document_index_field
                 .clone()
-                .add_path_info(index_path_info.clone());
+                .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
