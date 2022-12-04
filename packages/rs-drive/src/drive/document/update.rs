@@ -1977,9 +1977,6 @@ mod tests {
         person: &Person,
         transaction: TransactionArg,
     ) -> FeeResult {
-        let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
-
         drive
             .delete_document_for_contract(
                 person.id,
