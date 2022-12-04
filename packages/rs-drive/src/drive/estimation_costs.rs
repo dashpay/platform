@@ -1,4 +1,4 @@
-use crate::drive::contract::all_contracts_global_root_path;
+use crate::drive::contract::{all_contracts_global_root_path, contract_root_path};
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
 use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
@@ -47,6 +47,11 @@ impl Drive {
         } else {
             None
         };
+
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(contract_root_path(contract.id.as_bytes())),
+            EstimatedLevel(1, false, AllSubtrees(1, storage_flags)),
+        );
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_documents_path(contract.id.as_bytes())),

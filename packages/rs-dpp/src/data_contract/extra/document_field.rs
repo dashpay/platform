@@ -165,9 +165,9 @@ impl DocumentFieldType {
             DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
             _ => {}
         }
-        let min_size = self.min_byte_size().unwrap();
-        let max_size = self.max_byte_size().unwrap();
-        Some((min_size + max_size + 1) / 2)
+        let min_size = self.min_byte_size().unwrap() as u32;
+        let max_size = self.max_byte_size().unwrap() as u32;
+        Some(((min_size + max_size + 1) / 2) as u16)
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {

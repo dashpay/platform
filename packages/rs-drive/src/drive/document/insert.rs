@@ -76,6 +76,7 @@ use crate::common::encode::encode_unsigned_integer;
 use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::error::document::DocumentError;
+use crate::error::fee::FeeError;
 use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
 
 impl Drive {
@@ -631,6 +632,18 @@ impl Drive {
 
             index_path_info.push(Key(vec![0]))?;
 
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                // On this level we will have a 0 and all the top index paths
+                estimated_costs_only_with_layer_info.insert(
+                    index_path_info.clone().to_key_info_path()?,
+                    PotentiallyAtMaxElements(AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    )),
+                );
+            }
+
             let key_element_info = match &document_and_contract_info.document_info {
                 DocumentRefAndSerialization((document, _, storage_flags))
                 | DocumentRefWithoutSerialization((document, storage_flags)) => {
@@ -738,6 +751,23 @@ impl Drive {
         }
 
         let document_type = document_and_contract_info.document_type;
+
+        let sub_level_index_count = index_level.sub_index_levels.len() as u32;
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            // On this level we will have a 0 and all the top index paths
+            estimated_costs_only_with_layer_info.insert(
+                index_path_info.clone().to_key_info_path()?,
+                ApproximateElements(
+                    sub_level_index_count + 1,
+                    AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    ),
+                ),
+            );
+        }
+
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
             let mut sub_level_index_path_info = index_path_info.clone();
@@ -767,6 +797,27 @@ impl Drive {
 
             sub_level_index_path_info.push(index_property_key)?;
 
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                let document_top_field_estimated_size = document_and_contract_info
+                    .document_info
+                    .get_estimated_size_for_document_type(&name, document_type)?;
+
+                if document_top_field_estimated_size > u8::MAX as u16 {
+                    return Err(Error::Fee(FeeError::Overflow(
+                        "document top field is too big for being an index",
+                    )));
+                }
+
+                estimated_costs_only_with_layer_info.insert(
+                    sub_level_index_path_info.clone().to_key_info_path()?,
+                    PotentiallyAtMaxElements(AllSubtrees(
+                        document_top_field_estimated_size as u8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    )),
+                );
+            }
+
             // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
             // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
@@ -782,6 +833,7 @@ impl Drive {
                 transaction,
                 batch_operations,
             )?;
+
             any_fields_null |= document_index_field.is_empty();
 
             // we push the actual value of the index path
@@ -823,6 +875,8 @@ impl Drive {
             None //there are no need for storage flags if documents are not mutable and contract can not be deleted
         };
 
+        // dbg!(&estimated_costs_only_with_layer_info);
+
         // we need to construct the path for documents on the contract
         // the path is
         //  * Document and Contract root tree
@@ -832,6 +886,22 @@ impl Drive {
             document_and_contract_info.contract.id.as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
         );
+
+        let sub_level_index_count = index_level.sub_index_levels.len() as u32;
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            // On this level we will have a 0 and all the top index paths
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
+                ApproximateElements(
+                    sub_level_index_count + 1,
+                    AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    ),
+                ),
+            );
+        }
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
@@ -862,6 +932,28 @@ impl Drive {
                 transaction,
                 batch_operations,
             )?;
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                let document_top_field_estimated_size = document_and_contract_info
+                    .document_info
+                    .get_estimated_size_for_document_type(&name, document_type)?;
+
+                if document_top_field_estimated_size > u8::MAX as u16 {
+                    return Err(Error::Fee(FeeError::Overflow(
+                        "document top field is too big for being an index",
+                    )));
+                }
+
+                // On this level we will have all the user defined values for the paths
+                estimated_costs_only_with_layer_info.insert(
+                    KeyInfoPath::from_known_owned_path(index_path.clone()),
+                    PotentiallyAtMaxElements(AllSubtrees(
+                        document_top_field_estimated_size as u8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    )),
+                );
+            }
 
             let mut any_fields_null = document_top_field.is_empty();
 
@@ -1200,7 +1292,7 @@ mod tests {
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
         assert_eq!(1414, added_bytes);
-        assert_eq!(1862400, processing_fee);
+        assert_eq!(1870600, processing_fee);
     }
 
     #[test]
@@ -1249,7 +1341,7 @@ mod tests {
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
         assert_eq!(1414, added_bytes);
-        assert_eq!(191877800, processing_fee);
+        assert_eq!(150644400, processing_fee);
     }
 
     #[ignore]
@@ -1460,7 +1552,7 @@ mod tests {
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
         assert_eq!(1966, added_bytes);
-        assert_eq!(2538000, processing_fee);
+        assert_eq!(2572200, processing_fee);
 
         drive
             .grove

@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::option::Option::None;
 
 use anyhow::anyhow;
-use serde_json::{json, Number, Value as JsonValue};
+use serde_json::{json, Number, Value as JsonValue, Value};
 
 use data_contract::state_transition::property_names as st_prop;
 
@@ -37,8 +38,9 @@ impl DataContractFactory {
         &self,
         owner_id: Identifier,
         documents: JsonValue,
+        seed: Option<u64>,
     ) -> Result<DataContract, ProtocolError> {
-        let entropy = entropy_generator::generate();
+        let entropy = entropy_generator::generate(seed);
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
@@ -136,6 +138,7 @@ impl DataContractFactory {
 
 #[cfg(test)]
 mod test {
+    use std::option::Option::None;
     use std::sync::Arc;
 
     use serde_json::Value as JsonValue;
@@ -187,7 +190,7 @@ mod test {
             .clone();
 
         let result = factory
-            .create(data_contract.owner_id.clone(), raw_documents)
+            .create(data_contract.owner_id.clone(), raw_documents, None)
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);

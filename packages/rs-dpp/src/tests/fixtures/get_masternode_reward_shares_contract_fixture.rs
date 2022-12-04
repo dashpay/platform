@@ -1,3 +1,4 @@
+use std::option::Option::None;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
@@ -27,6 +28,6 @@ pub fn get_master_node_reward_shares_contract_fixture() -> DataContract {
     let factory = DataContractFactory::new(1, data_contract_validator);
 
     factory
-        .create(owner_id, MASTERNODE_REWARD_SHARES_DOCUMENTS.clone())
+        .create(owner_id, MASTERNODE_REWARD_SHARES_DOCUMENTS.clone(), None)
         .expect("the contract for masternode reward shares documents should be created")
 }

@@ -258,14 +258,13 @@ impl Drive {
             )));
         }
 
-        if !document_and_contract_info
-            .document_info
-            .is_document_and_serialization()
+        // If we are going for estimated costs do an add instead as it always worse than an update
+        if document_and_contract_info.document_info.is_document_size()
+            || estimated_costs_only_with_layer_info.is_some()
         {
-            // todo: right now let's say the worst case scenario for an update is that all the data must be added again
             return self.add_document_for_contract_operations(
                 document_and_contract_info,
-                false,
+                true, // we say we should override as this skips an unnecessary check
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -275,14 +274,6 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owner_id;
-
-        // if we are trying to get estimated costs we need to add the upper levels
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_levels_up_to_contract_document_type(
-                contract,
-                estimated_costs_only_with_layer_info,
-            );
-        }
 
         if let DocumentRefAndSerialization((document, _serialized_document, storage_flags)) =
             document_and_contract_info.document_info
@@ -1348,7 +1339,7 @@ mod tests {
             //Explanation for 1350
 
             //todo
-            1350
+            1314
         } else {
             //Explanation for 1049
 
@@ -1588,7 +1579,7 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let expected_added_bytes = if using_history { 1350 } else { 1006 };
+        let expected_added_bytes = if using_history { 1314 } else { 1006 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1755,7 +1746,7 @@ mod tests {
             //Explanation for 1350
 
             //todo
-            1350
+            1314
         } else {
             //Explanation for 1049
 
@@ -1897,7 +1888,7 @@ mod tests {
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        let expected_added_bytes = if using_history { 1351 } else { 1007 };
+        let expected_added_bytes = if using_history { 1315 } else { 1007 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -2250,7 +2241,7 @@ mod tests {
         let factory = DataContractFactory::new(1, data_contract_validator);
 
         let contract = factory
-            .create(owner_id.clone(), documents)
+            .create(owner_id.clone(), documents, Some(15))
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

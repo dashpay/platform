@@ -241,6 +241,7 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
+            // dbg!(&estimated_layer_info);
             self.grove_batch_operations_costs(
                 batch_operations,
                 estimated_layer_info,

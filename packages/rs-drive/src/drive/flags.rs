@@ -336,12 +336,33 @@ impl StorageFlags {
         }
     }
 
+    fn maybe_epoch_map_size(&self) -> u32 {
+        let mut size = 0;
+        match self {
+            MultiEpoch(_, epoch_map) | MultiEpochOwned(_, epoch_map, _) => {
+                epoch_map.iter().for_each(|(epoch_index, bytes_added)| {
+                    size += 2;
+                    size += bytes_added.encode_var_vec().len() as u32;
+                })
+            }
+            _ => {}
+        }
+        size
+    }
+
     fn maybe_append_to_vec_owner_id(&self, buffer: &mut Vec<u8>) {
         match self {
             SingleEpochOwned(_, owner_id) | MultiEpochOwned(_, _, owner_id) => {
                 buffer.extend(owner_id);
             }
             _ => {}
+        }
+    }
+
+    fn maybe_owner_id_size(&self) -> u32 {
+        match self {
+            SingleEpochOwned(..) | MultiEpochOwned(..) => DEFAULT_HASH_SIZE,
+            _ => 0,
         }
     }
 
@@ -369,6 +390,14 @@ impl StorageFlags {
         self.append_to_vec_base_epoch(&mut buffer);
         self.maybe_append_to_vec_epoch_map(&mut buffer);
         buffer
+    }
+
+    /// Serialize storage flags
+    pub fn serialized_size(&self) -> u32 {
+        let mut buffer_len = 3; //for type byte and base epoch
+        buffer_len += self.maybe_owner_id_size();
+        buffer_len += self.maybe_epoch_map_size();
+        buffer_len
     }
 
     /// Deserialize single epoch storage flags from bytes

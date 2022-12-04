@@ -1,3 +1,4 @@
+use std::option::Option::None;
 use chrono::Utc;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
@@ -83,7 +84,7 @@ impl DocumentFactory {
             });
         }
 
-        let document_entropy = entropy_generator::generate();
+        let document_entropy = entropy_generator::generate(None);
 
         let document_required_fields = data_contract
             .get_document_schema(&document_type)?

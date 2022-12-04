@@ -32,6 +32,8 @@
 //! This module defines enums and implements functions relevant to the sizes of objects.
 //!
 
+use grovedb::batch::key_info::KeyInfo::KnownKey;
+use grovedb::batch::KeyInfoPath;
 use grovedb::Element;
 use std::collections::HashSet;
 use std::ops::AddAssign;
@@ -44,12 +46,13 @@ use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, Pa
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::defaults::DEFAULT_HASH_SIZE;
+use crate::drive::defaults::{DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_U16};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::extra::DocumentType;
 
+use crate::error::fee::FeeError;
 use dpp::data_contract::extra::ContractError;
 
 /// Info about a path.
@@ -116,6 +119,23 @@ impl<'a, const N: usize> PathInfo<'a, N> {
             },
         }
         Ok(())
+    }
+
+    /// Get the KeyInfoPath for grovedb estimated costs
+    pub(crate) fn to_key_info_path(self) -> Result<KeyInfoPath, Error> {
+        match self {
+            PathFixedSizeIterator(path) => {
+                let mut key_info_path = KeyInfoPath::from_known_path(path);
+                Ok(key_info_path)
+            }
+            PathIterator(path) => {
+                let mut key_info_path = KeyInfoPath::from_known_owned_path(path);
+                Ok(key_info_path)
+            }
+            PathSize(_) => Err(Error::Fee(FeeError::CorruptedCodeExecution(
+                "attempting to mix worst case document types and average case costs",
+            ))),
+        }
     }
 }
 
@@ -309,6 +329,35 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
             PathKeySize(_) => true,
         }
     }
+
+    /// Get the KeyInfoPath for grovedb estimated costs
+    pub(crate) fn to_key_info_path(self) -> Result<KeyInfoPath, Error> {
+        match self {
+            PathKey((path, key)) => {
+                let mut key_info_path = KeyInfoPath::from_known_owned_path(path);
+                key_info_path.push(KnownKey(key));
+                Ok(key_info_path)
+            }
+            PathKeyRef((path, key)) => {
+                let mut key_info_path = KeyInfoPath::from_known_owned_path(path);
+                key_info_path.push(KnownKey(key.to_vec()));
+                Ok(key_info_path)
+            }
+            PathFixedSizeKey((path, key)) => {
+                let mut key_info_path = KeyInfoPath::from_known_path(path);
+                key_info_path.push(KnownKey(key));
+                Ok(key_info_path)
+            }
+            PathFixedSizeKeyRef((path, key)) => {
+                let mut key_info_path = KeyInfoPath::from_known_path(path);
+                key_info_path.push(KnownKey(key.to_vec()));
+                Ok(key_info_path)
+            }
+            PathKeySize(_) => Err(Error::Fee(FeeError::CorruptedCodeExecution(
+                "attempting to mix worst case document types and average case costs",
+            ))),
+        }
+    }
 }
 
 /// Element info
@@ -470,6 +519,33 @@ impl<'a> DocumentInfo<'a> {
             }
             DocumentInfo::DocumentSize(document_max_size) => {
                 KeyValueMaxSize((32, *document_max_size))
+            }
+        }
+    }
+
+    /// Gets the raw path for the given document type
+    pub fn get_estimated_size_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: &DocumentType,
+    ) -> Result<u16, Error> {
+        match key_path {
+            "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
+            _ => {
+                let document_field_type = document_type.properties.get(key_path).ok_or({
+                    Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                        "incorrect key path for document type for estimated sizes",
+                    ))
+                })?;
+                let estimated_size = document_field_type
+                    .document_type
+                    .middle_byte_size_ceil()
+                    .ok_or({
+                        Error::Drive(DriveError::CorruptedCodeExecution(
+                            "document type must have a max size",
+                        ))
+                    })?;
+                Ok(estimated_size)
             }
         }
     }

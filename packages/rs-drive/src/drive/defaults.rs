@@ -52,6 +52,8 @@ pub const BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH: u32 = 35;
 pub const DEFAULT_HASH_SIZE: u32 = 32;
 /// Default hash size as u8
 pub const DEFAULT_HASH_SIZE_U8: u8 = 32;
+/// Default hash size as u16
+pub const DEFAULT_HASH_SIZE_U16: u16 = 32;
 /// Default float size
 pub const SOME_TREE_SIZE: Option<u16> = Some(32);
 /// Some optimized document reference size

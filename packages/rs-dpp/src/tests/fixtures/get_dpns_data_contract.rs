@@ -1,3 +1,4 @@
+use std::option::Option::None;
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
@@ -32,7 +33,7 @@ pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContr
     dpns_schema["domain"]["properties"]["normalizedParentDomainName"]["pattern"] = json!(".*");
 
     let mut data_contract = factory
-        .create(owner_id, dpns_schema)
+        .create(owner_id, dpns_schema, None)
         .expect("data in fixture should be correct");
 
     data_contract
