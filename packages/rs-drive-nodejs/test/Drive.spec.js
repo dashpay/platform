@@ -15,6 +15,8 @@ const {
 
 const Drive = require('../Drive');
 
+const FeeResult = require('../FeeResult');
+
 const TEST_DATA_PATH = './test_data';
 
 describe('Drive', () => {
@@ -85,9 +87,7 @@ describe('Drive', () => {
 
       expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
 
-      expect(feeResult).to.have.property('processingFee');
-      expect(feeResult).to.have.property('storageFee');
-      expect(feeResult).to.have.property('removedFromIdentities');
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
 
       expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
       expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -263,9 +263,7 @@ describe('Drive', () => {
 
       const result = await drive.updateDocument(documentWithoutIndices, blockInfo, undefined, true);
 
-      expect(result).to.have.property('processingFee');
-      expect(result).to.have.property('storageFee');
-      expect(result).to.have.property('removedFromIdentities');
+      expect(result).to.be.an.instanceOf(FeeResult);
 
       expect(result.processingFee).to.be.greaterThan(0);
       expect(result.storageFee).to.be.greaterThan(0, 'storage fee must be higher than 0');
@@ -299,9 +297,7 @@ describe('Drive', () => {
           blockInfo,
         );
 
-        expect(result).to.have.property('processingFee');
-        expect(result).to.have.property('storageFee');
-        expect(result).to.have.property('removedFromIdentities');
+        expect(result).to.be.an.instanceOf(FeeResult);
 
         expect(result.processingFee).to.be.greaterThan(0, 'processing fee must be higher than 0');
         expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -326,9 +322,7 @@ describe('Drive', () => {
           blockInfo,
         );
 
-        expect(result).to.have.property('processingFee');
-        expect(result).to.have.property('storageFee');
-        expect(result).to.have.property('removedFromIdentities');
+        expect(result).to.be.an.instanceOf(FeeResult);
 
         expect(result.processingFee).to.be.greaterThan(0, 'processing fee must be higher than 0');
         expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -354,9 +348,7 @@ describe('Drive', () => {
         true,
       );
 
-      expect(result).to.have.property('processingFee');
-      expect(result).to.have.property('storageFee');
-      expect(result).to.have.property('removedFromIdentities');
+      expect(result).to.be.an.instanceOf(FeeResult);
 
       expect(result.processingFee).to.be.greaterThan(0, 'processing fee must be higher than 0');
       expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');

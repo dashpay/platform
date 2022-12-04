@@ -51,7 +51,7 @@ pub struct FeeResult {
     /// Processing fee
     pub processing_fee: u64,
     /// Removed bytes from identities
-    pub removed_bytes_from_identities: RemovedBytesFromEpochsByIdentities,
+    pub removed_bytes_from_epochs_by_identities: RemovedBytesFromEpochsByIdentities,
     /// Removed bytes not needing to be refunded to identities
     pub removed_bytes_from_system: u32,
 }
@@ -98,8 +98,8 @@ impl FeeResult {
                 .ok_or(Error::Fee(FeeError::Overflow(
                     "processing fee overflow error",
                 )))?;
-        self.removed_bytes_from_identities
-            .checked_add_assign(rhs.removed_bytes_from_identities)?;
+        self.removed_bytes_from_epochs_by_identities
+            .checked_add_assign(rhs.removed_bytes_from_epochs_by_identities)?;
         self.removed_bytes_from_system = self
             .removed_bytes_from_system
             .checked_add(rhs.removed_bytes_from_system)

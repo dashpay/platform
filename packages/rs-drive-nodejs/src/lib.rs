@@ -1,7 +1,10 @@
 mod converter;
+mod fee_result;
 
+use neon::object::PropertyKey;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
+use crate::fee_result::FeeResultWrapper;
 use drive::dpp::identity::Identity;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -409,6 +412,7 @@ impl PlatformWrapper {
                         Ok(maybe_contract_fetch_info) => {
                             let js_result = task_context.empty_array();
 
+                            // TODO: Fee result should be present even if data contract wasn't found
                             if let Some(contract_fetch_info) = maybe_contract_fetch_info {
                                 let contract_cbor =
                                     contract_fetch_info.contract.to_buffer().or_else(|_| {
@@ -421,10 +425,8 @@ impl PlatformWrapper {
                                 js_result.set(&mut task_context, 0, contract_buffer)?;
 
                                 if let Some(fee_result) = &contract_fetch_info.fee {
-                                    let js_fee_result = converter::fee_result_to_js_object(
-                                        &mut task_context,
-                                        fee_result.clone(),
-                                    )?;
+                                    let js_fee_result = task_context
+                                        .boxed(FeeResultWrapper::new(fee_result.clone()));
 
                                     js_result.set(&mut task_context, 1, js_fee_result)?;
                                 }
@@ -496,7 +498,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                converter::fee_result_to_js_object(&mut task_context, fee_result)?;
+                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -566,7 +568,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                converter::fee_result_to_js_object(&mut task_context, fee_result)?;
+                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -649,7 +651,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                converter::fee_result_to_js_object(&mut task_context, fee_result)?;
+                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -729,7 +731,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                converter::fee_result_to_js_object(&mut task_context, fee_result)?;
+                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -803,7 +805,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                converter::fee_result_to_js_object(&mut task_context, fee_result)?;
+                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -879,7 +881,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                converter::fee_result_to_js_object(&mut task_context, fee_result)?;
+                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -2325,6 +2327,14 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         "abciAfterFinalizeBlock",
         PlatformWrapper::js_abci_after_finalize_block,
     )?;
+
+    cx.export_function(
+        "feeResultGetProcessingFee",
+        FeeResultWrapper::get_processing_fee,
+    )?;
+    cx.export_function("feeResultGetStorageFee", FeeResultWrapper::get_storage_fee)?;
+    cx.export_function("feeResultAdd", FeeResultWrapper::add)?;
+    cx.export_function("feeResultAddFees", FeeResultWrapper::add_fees)?;
 
     Ok(())
 }
