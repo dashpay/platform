@@ -1,6 +1,6 @@
-use std::option::Option::None;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
+use std::option::Option::None;
 use std::sync::Arc;
 
 lazy_static! {

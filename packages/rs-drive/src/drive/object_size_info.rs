@@ -122,7 +122,7 @@ impl<'a, const N: usize> PathInfo<'a, N> {
     }
 
     /// Get the KeyInfoPath for grovedb estimated costs
-    pub(crate) fn to_key_info_path(self) -> Result<KeyInfoPath, Error> {
+    pub(crate) fn convert_to_key_info_path(self) -> Result<KeyInfoPath, Error> {
         match self {
             PathFixedSizeIterator(path) => {
                 let key_info_path = KeyInfoPath::from_known_path(path);
@@ -331,7 +331,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
     }
 
     /// Get the KeyInfoPath for grovedb estimated costs
-    pub(crate) fn to_key_info_path(self) -> Result<KeyInfoPath, Error> {
+    pub(crate) fn convert_to_key_info_path(self) -> Result<KeyInfoPath, Error> {
         match self {
             PathKey((path, key)) => {
                 let mut key_info_path = KeyInfoPath::from_known_owned_path(path);

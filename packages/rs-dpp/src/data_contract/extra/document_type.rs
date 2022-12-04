@@ -1,4 +1,3 @@
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::extra::ArrayFieldType;
@@ -99,7 +98,7 @@ impl DocumentType {
                 current_level = current_level
                     .sub_index_levels
                     .entry(index_part.name.clone())
-                    .or_insert(IndexLevel::default());
+                    .or_default();
                 if properties_iter.peek().is_none() {
                     current_level.has_index_with_uniqueness = Some(index.unique);
                 }
@@ -320,7 +319,7 @@ impl DocumentType {
                 }
                 _ => {
                     field_type = string_to_field_type(type_value)
-                        .ok_or_else(|| ContractError::ValueWrongType("invalid type"))?;
+                        .ok_or(ContractError::ValueWrongType("invalid type"))?;
                     document_properties.insert(
                         prefixed_property_key,
                         DocumentField {

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
-use super::document_type::{DocumentType, IndexLevel};
+use super::document_type::DocumentType;
 use super::errors::ContractError;
 use super::mutability;
 use super::root_tree::RootTree;

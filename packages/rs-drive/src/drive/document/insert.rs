@@ -631,7 +631,7 @@ impl Drive {
             {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
-                    index_path_info.clone().to_key_info_path()?,
+                    index_path_info.clone().convert_to_key_info_path()?,
                     PotentiallyAtMaxElements(AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
                         storage_flags.map(|s| s.serialized_size()),
@@ -752,7 +752,7 @@ impl Drive {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
-                index_path_info.clone().to_key_info_path()?,
+                index_path_info.clone().convert_to_key_info_path()?,
                 ApproximateElements(
                     sub_level_index_count + 1,
                     AllSubtrees(
@@ -805,7 +805,9 @@ impl Drive {
                 }
 
                 estimated_costs_only_with_layer_info.insert(
-                    sub_level_index_path_info.clone().to_key_info_path()?,
+                    sub_level_index_path_info
+                        .clone()
+                        .convert_to_key_info_path()?,
                     PotentiallyAtMaxElements(AllSubtrees(
                         document_top_field_estimated_size as u8,
                         storage_flags.map(|s| s.serialized_size()),

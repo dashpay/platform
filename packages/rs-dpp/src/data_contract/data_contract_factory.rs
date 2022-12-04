@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
-use std::option::Option::None;
 
 use anyhow::anyhow;
-use serde_json::{json, Number, Value as JsonValue, Value};
+use serde_json::{json, Number, Value as JsonValue};
 
 use data_contract::state_transition::property_names as st_prop;
 
@@ -138,7 +137,6 @@ impl DataContractFactory {
 
 #[cfg(test)]
 mod test {
-    use std::option::Option::None;
     use std::sync::Arc;
 
     use serde_json::Value as JsonValue;

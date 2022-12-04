@@ -1,7 +1,7 @@
-use std::option::Option::None;
 use chrono::Utc;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
+use std::option::Option::None;
 
 use crate::{
     data_contract::DataContract,
