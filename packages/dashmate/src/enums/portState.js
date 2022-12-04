@@ -1,7 +1,7 @@
 const PortStateEnum = {
-  OPEN: "OPEN",
-  CLOSED: "CLOSED",
-  ERROR: "ERROR",
-}
+  OPEN: 'OPEN',
+  CLOSED: 'CLOSED',
+  ERROR: 'ERROR',
+};
 
-module.exports = PortStateEnum
+module.exports = PortStateEnum;

@@ -1,12 +1,12 @@
-const {Flags} = require('@oclif/core');
-const {OUTPUT_FORMATS} = require('../../constants');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
 
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
-const colors = require("../../status/colors");
+const colors = require('../../status/colors');
 
 class PlatformStatusCommand extends ConfigBaseCommand {
   /**
@@ -37,7 +37,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
 
     // Collect platform data
-    const scope = await statusProvider.getPlatformScope()
+    const scope = await statusProvider.getPlatformScope();
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (!scope.coreIsSynced) {
@@ -58,11 +58,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       p2pPort,
       p2pPortState,
       rpcService,
-      tenderdash
-    } = scope
+      tenderdash,
+    } = scope;
 
     const plain = {
-      'Status': status,
+      Status: status,
       'HTTP service': httpService,
       'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
       'GRPC service': gRPCService,
@@ -78,22 +78,22 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         lastBlockHeight: platformBlockHeight,
         latestAppHash: platformLatestAppHash,
         peers: platformPeers,
-        network: tenderdashNetwork
-      } = tenderdash
+        network: tenderdashNetwork,
+      } = tenderdash;
 
       const plain = {
         'Tenderdash Version': tenderdashVersion,
-        'Network': tenderdashNetwork,
+        Network: tenderdashNetwork,
         'Block height': platformBlockHeight,
         'Peer count': platformPeers,
         'App hash': platformLatestAppHash,
       };
 
-      plain['Tenderdash Version'] = tenderdashVersion
-      plain['Network'] = tenderdashNetwork
-      plain['Block height'] = platformBlockHeight
-      plain['Peer count'] = platformPeers
-      plain['App hash'] = platformLatestAppHash
+      plain['Tenderdash Version'] = tenderdashVersion;
+      plain.Network = tenderdashNetwork;
+      plain['Block height'] = platformBlockHeight;
+      plain['Peer count'] = platformPeers;
+      plain['App hash'] = platformLatestAppHash;
     }
 
     return printObject(plain, flags.format);

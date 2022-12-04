@@ -1,4 +1,4 @@
-const os = require("os");
+const os = require('os');
 const publicIp = require('public-ip');
 const prettyMs = require('pretty-ms');
 const prettyByte = require('pretty-bytes');
@@ -13,4 +13,4 @@ module.exports = async () => ({
   memory: `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`,
   cpus: os.cpus().length,
   ip: await publicIp.v4(),
-})
+});

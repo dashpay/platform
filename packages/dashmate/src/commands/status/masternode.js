@@ -1,12 +1,12 @@
 const chalk = require('chalk');
 
-const {Flags} = require('@oclif/core');
-const {OUTPUT_FORMATS} = require('../../constants');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
-const colors = require("../../status/colors");
-const MasternodeStateEnum = require("../../enums/masternodeState");
+const colors = require('../../status/colors');
+const MasternodeStateEnum = require('../../enums/masternodeState');
 
 class MasternodeStatusCommand extends ConfigBaseCommand {
   /**
@@ -23,7 +23,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    statusProvider
+    statusProvider,
   ) {
     if (config.get('core.masternode.enable') === false) {
       // eslint-disable-next-line no-console
@@ -31,26 +31,25 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const scope = await statusProvider.getMasternodeScope()
+    const scope = await statusProvider.getMasternodeScope();
 
-    const {core, masternode} = scope
-    const {verificationProgress} = core
+    const { core, masternode } = scope;
+    const { verificationProgress } = core;
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
-      const plain = {}
+      const plain = {};
 
-      plain['Masternode Status'] = colors.status(masternode.status)(masternode.status)
-      plain['Masternode State'] = (masternode.state === 'READY' ? chalk.green : chalk.red)(masternode.state)
-      plain['Verification Progress'] = `${verificationProgress * 100}%`
-      plain['Sentinel Status'] = (masternode.sentinelState !== '' ? chalk.red(masternode.sentinelState) : chalk.green('No errors'))
-
+      plain['Masternode Status'] = colors.status(masternode.status)(masternode.status);
+      plain['Masternode State'] = (masternode.state === 'READY' ? chalk.green : chalk.red)(masternode.state);
+      plain['Verification Progress'] = `${verificationProgress * 100}%`;
+      plain['Sentinel Status'] = (masternode.sentinelState !== '' ? chalk.red(masternode.sentinelState) : chalk.green('No errors'));
 
       if (masternode.state === MasternodeStateEnum.READY) {
         const {
           proTxHash, lastPaidBlock, lastPaidTime,
           paymentQueuePosition, nexPaymentTime,
-          poSePenalty, enabledCount
-        } = masternode
+          poSePenalty, enabledCount,
+        } = masternode;
 
         plain['ProTx Hash'] = proTxHash;
         plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(poSePenalty);
@@ -60,7 +59,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
         plain['Next payment time'] = `in ${nexPaymentTime}`;
       }
 
-      return printObject(plain, flags.format)
+      return printObject(plain, flags.format);
     }
 
     printObject(scope, flags.format);

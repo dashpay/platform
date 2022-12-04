@@ -1,6 +1,6 @@
-const getPaymentQueuePosition = require("../../util/getPaymentQueuePosition");
-const blocksToTime = require("../../util/blocksToTime");
-const MasternodeStateEnum = require("../../enums/masternodeState");
+const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
+const blocksToTime = require('../../util/blocksToTime');
+const MasternodeStateEnum = require('../../enums/masternodeState');
 
 module.exports = async (coreService, dockerCompose, config) => {
   const sentinelState = (await dockerCompose.execCommand(
@@ -18,13 +18,15 @@ module.exports = async (coreService, dockerCompose, config) => {
   let position = 0;
 
   const blockchainInfo = await coreService.getRpcClient().getBlockchainInfo();
-  const {blocks: coreBlocks} = blockchainInfo.result
+  const { blocks: coreBlocks } = blockchainInfo.result;
 
   const masternodeStatus = await coreService.getRpcClient().masternode('status');
-  const {dmnState, state, status, proTxHash} = masternodeStatus.result
+  const {
+    dmnState, state, status, proTxHash,
+  } = masternodeStatus.result;
 
-  const countInfo = await coreService.getRpcClient().masternode('count')
-  const {enabled} = countInfo.result
+  const countInfo = await coreService.getRpcClient().masternode('count');
+  const { enabled } = countInfo.result;
 
   const nodeState = {
     dmnState: null,
@@ -32,24 +34,24 @@ module.exports = async (coreService, dockerCompose, config) => {
     lastPaidHeight: null,
     lastPaidTime: null,
     paymentQueuePosition: null,
-    nextPaymentTime: null
-  }
+    nextPaymentTime: null,
+  };
 
   if (masternodeStatus === MasternodeStateEnum.READY) {
     position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
 
     const poSePenalty = dmnState.PoSePenalty;
-    const lastPaidHeight = dmnState.lastPaidHeight;
+    const { lastPaidHeight } = dmnState;
     const lastPaidTime = blocksToTime(coreBlocks - dmnState.lastPaidHeight);
     const paymentQueuePosition = position / enabled;
     const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
-    nodeState.dmnState = dmnState
-    nodeState.poSePenalty = poSePenalty
-    nodeState.lastPaidHeight = lastPaidHeight
-    nodeState.lastPaidTime = lastPaidTime
-    nodeState.paymentQueuePosition = paymentQueuePosition
-    nodeState.nextPaymentTime = nextPaymentTime
+    nodeState.dmnState = dmnState;
+    nodeState.poSePenalty = poSePenalty;
+    nodeState.lastPaidHeight = lastPaidHeight;
+    nodeState.lastPaidTime = lastPaidTime;
+    nodeState.paymentQueuePosition = paymentQueuePosition;
+    nodeState.nextPaymentTime = nextPaymentTime;
   }
 
   return {
@@ -59,6 +61,6 @@ module.exports = async (coreService, dockerCompose, config) => {
     proTxHash,
     sentinelState,
     sentinelVersion,
-    nodeState
-  }
-}
+    nodeState,
+  };
+};

@@ -1,12 +1,12 @@
 const chalk = require('chalk');
 
-const {Flags} = require('@oclif/core');
-const {OUTPUT_FORMATS} = require('../../constants');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
 
-const colors = require("../../status/colors");
+const colors = require('../../status/colors');
 
 class CoreStatusCommand extends ConfigBaseCommand {
   /**
@@ -24,9 +24,9 @@ class CoreStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    statusProvider
+    statusProvider,
   ) {
-    const scope = await statusProvider.getCoreScope()
+    const scope = await statusProvider.getCoreScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
@@ -45,15 +45,15 @@ class CoreStatusCommand extends ConfigBaseCommand {
         headerHeight,
         difficulty,
         verificationProgress,
-        masternode
-      } = scope
+        masternode,
+      } = scope;
 
       const plain = {
-        'Version': colors.status(version, latestVersion)(version),
+        Version: colors.status(version, latestVersion)(version),
         'Latest version': latestVersion,
-        'Network': network,
-        'Chain': chain,
-        'Status': colors.status(status)(status),
+        Network: network,
+        Chain: chain,
+        Status: colors.status(status)(status),
         'Sync asset': syncAsset,
         'Peer count': peersCount,
         'P2P service': p2pService,
@@ -63,8 +63,8 @@ class CoreStatusCommand extends ConfigBaseCommand {
         'Header height': headerHeight,
         'Verification Progress': `${verificationProgress * 100}%`,
         'Remote Block Height': remoteBlockHeight || 'N/A',
-        'Difficulty': difficulty,
-      }
+        Difficulty: difficulty,
+      };
 
       if (masternode.enabled) {
         plain['Sentinel version'] = masternode.sentinelVersion;

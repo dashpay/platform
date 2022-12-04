@@ -1,11 +1,10 @@
-const chalk = require('chalk')
-const {Flags} = require('@oclif/core');
-const {OUTPUT_FORMATS} = require('../../constants');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const printObject = require("../../printers/printObject");
-const MasternodeStateEnum = require("../../enums/masternodeState");
-const colors = require('../../status/colors')
+const printObject = require('../../printers/printObject');
+const MasternodeStateEnum = require('../../enums/masternodeState');
+const colors = require('../../status/colors');
 
 class StatusCommand extends ConfigBaseCommand {
   /**
@@ -21,31 +20,34 @@ class StatusCommand extends ConfigBaseCommand {
     statusProvider,
     config,
   ) {
-
-    const scope = await statusProvider.getOverviewScope()
+    const scope = await statusProvider.getOverviewScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
-      const {network, core, masternode, platform} = scope
-      const {status, version, verificationProgress, sizeOnDisk, blockHeight} = core
+      const {
+        network, core, masternode, platform,
+      } = scope;
+      const {
+        status, version, verificationProgress, sizeOnDisk, blockHeight,
+      } = core;
 
       const plain = {
-        'Network': network,
+        Network: network,
         'Core Version': version,
         'Core Status': colors.status(status)(status),
         'Core Size': `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB`,
         'Core Height': blockHeight,
-      }
+      };
 
       if (status === 'syncing') {
-        plain['Core Sync Progress'] = `${verificationProgress * 100}%`
+        plain['Core Sync Progress'] = `${verificationProgress * 100}%`;
       }
 
-      plain["Masternode Enabled"] = masternode.enabled;
+      plain['Masternode Enabled'] = masternode.enabled;
 
       if (masternode.enabled) {
-        plain["Masternode Status"] = masternode.status;
-        plain["Masternode State"] = masternode.state;
-        plain["Masternode ProTX"] = masternode.protx;
+        plain['Masternode Status'] = masternode.status;
+        plain['Masternode State'] = masternode.state;
+        plain['Masternode ProTX'] = masternode.protx;
 
         if (masternode.state === MasternodeStateEnum.READY) {
           const {
@@ -53,29 +55,29 @@ class StatusCommand extends ConfigBaseCommand {
             lastPaidHeight,
             lastPaidTime,
             paymentQueuePosition,
-            nextPaymentTime
-          } = masternode.state
+            nextPaymentTime,
+          } = masternode.state;
 
           plain['PoSe Penalty'] = PoSePenalty;
           plain['Last paid block'] = lastPaidHeight;
-          plain['Last paid time'] = lastPaidTime
+          plain['Last paid time'] = lastPaidTime;
           plain['Payment queue position'] = paymentQueuePosition;
           plain['Next payment time'] = nextPaymentTime;
         }
 
-        plain["Sentinel Version"] = version
-        plain["Sentinel State"] = masternode;
+        plain['Sentinel Version'] = version;
+        plain['Sentinel State'] = masternode;
       }
 
-      plain['Platform enabled'] = platform.enabled;
+      plain['Platform Enabled'] = platform.enabled;
 
       if (platform.enabled) {
-        //todo syncing
+        // todo syncing
         plain['Platform Status'] = colors.status(platform.status)(platform.status);
 
-        if (platform.tenderdash) {
-          plain['Platform Version'] = platform.tenderdash.version
-          plain['Platform Block Height'] = platform.blockHeight;
+        if (platform.status === 'running') {
+          plain['Platform Version'] = platform.tenderdash.version;
+          plain['Platform Block Height'] = platform.tenderdash.blockHeight;
           plain['Platform Peers'] = platform.tenderdash.peers;
           plain['Platform Network'] = platform.tenderdash.network;
         }
@@ -84,11 +86,7 @@ class StatusCommand extends ConfigBaseCommand {
       return printObject(plain, flags.format);
     }
 
-    printObject(scope, flags
-
-      .format
-    )
-    ;
+    printObject(scope, flags.format);
   }
 }
 

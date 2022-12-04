@@ -1,7 +1,7 @@
 const chalk = require('chalk');
 
-const {Flags} = require('@oclif/core');
-const {OUTPUT_FORMATS} = require('../../constants');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 
@@ -21,14 +21,16 @@ class ServicesStatusCommand extends ConfigBaseCommand {
     flags,
     dockerCompose,
     config,
-    statusProvider
+    statusProvider,
   ) {
-    const scope = await statusProvider.getServicesScope()
+    const scope = await statusProvider.getServicesScope();
 
     const outputRows = [];
 
     for (const [serviceName, serviceDescription] of Object.entries(scope)) {
-      const {humanName, containerId, image, status} = serviceDescription
+      const {
+        humanName, containerId, image, status,
+      } = serviceDescription;
       if (flags.format === OUTPUT_FORMATS.PLAIN) {
         let statusText;
         if (status) {
@@ -46,7 +48,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
           service: serviceName,
           containerId,
           image,
-          status
+          status,
         });
       }
     }

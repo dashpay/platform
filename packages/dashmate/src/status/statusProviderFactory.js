@@ -1,6 +1,6 @@
 const CoreService = require('../core/CoreService');
 
-const scopes = require('./scopes')
+const scopes = require('./scopes');
 
 /**
  *
@@ -11,9 +11,8 @@ const scopes = require('./scopes')
 function statusProviderFactory(
   dockerCompose,
   createRpcClient,
-  config) {
-
-
+  config,
+) {
   const coreService = new CoreService(
     config,
     createRpcClient(
@@ -26,7 +25,6 @@ function statusProviderFactory(
     dockerCompose.docker.getContainer('core'),
   );
 
-
   return {
     getCoreScope: async () => scopes.core(coreService, dockerCompose, config),
     getMasternodeScope: async () => scopes.masternode(coreService, dockerCompose, config),
@@ -34,9 +32,9 @@ function statusProviderFactory(
     getHostScope: async () => scopes.host(coreService, dockerCompose, config),
     getServicesScope: async () => scopes.services(coreService, dockerCompose, config),
     getOverviewScope: async () => scopes.overview(coreService, dockerCompose, config),
-  }
+  };
 
-  return statusProviderFactory
+  return statusProviderFactory;
 }
 
 module.exports = statusProviderFactory;

@@ -1,36 +1,36 @@
-const getPaymentQueuePosition = require("../../util/getPaymentQueuePosition");
-const blocksToTime = require("../../util/blocksToTime");
+const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
+const blocksToTime = require('../../util/blocksToTime');
 
-const getMasternodeScope = require('./masternode')
-const getPlatformScope = require('./platform')
-const extractCoreVersion = require("../../util/extractCoreVersion");
-const determineStatus = require("../determineStatus");
+const getMasternodeScope = require('./masternode');
+const getPlatformScope = require('./platform');
+const extractCoreVersion = require('../../util/extractCoreVersion');
+const determineStatus = require('../determineStatus');
 
 module.exports = async (coreService, dockerCompose, config) => {
   const [blockchainInfo, networkInfo, status] = await Promise.all([
     coreService.getRpcClient().getBlockchainInfo(),
     coreService.getRpcClient().getNetworkInfo(),
-    determineStatus(dockerCompose, config, 'core')
-  ])
+    determineStatus(dockerCompose, config, 'core'),
+  ]);
 
-  const network = config.get('network')
-  const masternodeEnabled = config.get('core.masternode.enable')
-  const platformEnabled = config.get('network') !== 'mainnet' && config.name !== 'local_seed'
+  const network = config.get('network');
+  const masternodeEnabled = config.get('core.masternode.enable');
+  const platformEnabled = config.get('network') !== 'mainnet' && config.name !== 'local_seed';
 
-  const sizeOnDisk = blockchainInfo.result.size_on_disk
-  const blockHeight = blockchainInfo.result.blocks
-  const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4)
+  const sizeOnDisk = blockchainInfo.result.size_on_disk;
+  const blockHeight = blockchainInfo.result.blocks;
+  const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4);
 
-  const {subversion} = networkInfo.result;
-  const version = extractCoreVersion(subversion)
+  const { subversion } = networkInfo.result;
+  const version = extractCoreVersion(subversion);
 
   const core = {
     version,
     status,
     verificationProgress,
     blockHeight,
-    sizeOnDisk
-  }
+    sizeOnDisk,
+  };
 
   const masternode = {
     enabled: masternodeEnabled,
@@ -40,9 +40,9 @@ module.exports = async (coreService, dockerCompose, config) => {
       lastPaidHeight: null,
       lastPaidTime: null,
       paymentQueuePosition: null,
-      nextPaymentTime: null
-    }
-  }
+      nextPaymentTime: null,
+    },
+  };
 
   const platform = {
     enabled: platformEnabled,
@@ -53,29 +53,28 @@ module.exports = async (coreService, dockerCompose, config) => {
       catchingUp: null,
       peers: null,
       network: null,
-      latestAppHash: null
-    }
-  }
+      latestAppHash: null,
+    },
+  };
 
   if (masternodeEnabled) {
-    const {masternode: masternodeStatus, state} = await getMasternodeScope(config, ['masternode'])
+    const { masternode: masternodeStatus, state } = await getMasternodeScope(config, ['masternode']);
 
-    masternode.status = masternodeStatus
-    masternode.state = state
+    masternode.status = masternodeStatus;
+    masternode.state = state;
   }
 
   if (platformEnabled) {
-    const platformScope = await getPlatformScope(coreService, dockerCompose, config)
+    const platformScope = await getPlatformScope(coreService, dockerCompose, config);
 
-    platform.status = platformScope.status
-    platform.tenderdash = platformScope.tenderdash
+    platform.status = platformScope.status;
+    platform.tenderdash = platformScope.tenderdash;
   }
 
   return {
     network,
     core,
     platform,
-    masternode
-  }
-}
-
+    masternode,
+  };
+};

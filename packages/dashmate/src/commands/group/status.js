@@ -24,7 +24,7 @@ class GroupStatusCommand extends GroupBaseCommand {
       const status = await outputStatusOverview(config);
 
       if (flags === OUTPUT_FORMATS.PLAIN) {
-        //draw
+        // draw
       }
     }
   }

@@ -1,5 +1,5 @@
-const {Flags} = require('@oclif/core');
-const {OUTPUT_FORMATS} = require('../../constants');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
@@ -9,13 +9,13 @@ class HostStatusCommand extends ConfigBaseCommand {
    * @return {Promise<void>}
    */
   async runWithDependencies(args, flags, statusProvider, config) {
-    const scope = await statusProvider.getHostScope()
+    const scope = await statusProvider.getHostScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
         hostname, uptime, platform, arch,
-        username, diskFree, memory, cpus, ip
-      } = scope
+        username, diskFree, memory, cpus, ip,
+      } = scope;
 
       const plain = {
         Hostname: hostname,
@@ -27,7 +27,7 @@ class HostStatusCommand extends ConfigBaseCommand {
         Memory: memory,
         CPUs: cpus,
         IP: ip,
-      }
+      };
 
       return printObject(plain, flags.format);
     }

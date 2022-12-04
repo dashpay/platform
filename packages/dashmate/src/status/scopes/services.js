@@ -1,7 +1,7 @@
-const ContainerIsNotPresentError = require("../../docker/errors/ContainerIsNotPresentError");
+const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
 module.exports = async (coreService, dockerCompose, config) => {
-  const services = {}
+  const services = {};
 
   const serviceHumanNames = {
     core: 'Core',
@@ -49,8 +49,8 @@ module.exports = async (coreService, dockerCompose, config) => {
       containerId: containerId ? containerId.slice(0, 12) : null,
       image,
       status,
-    }
+    };
   }
 
-  return services
-}
+  return services;
+};

@@ -1,6 +1,6 @@
-const chalk = require('chalk')
-const PortStateEnum = require("../enums/portState");
-const ServiceStatusEnum = require("../enums/serviceStatus");
+const chalk = require('chalk');
+const PortStateEnum = require('../enums/portState');
+const ServiceStatusEnum = require('../enums/serviceStatus');
 
 module.exports = {
 
@@ -10,47 +10,43 @@ module.exports = {
    */
   portState: (portStateEnum) => {
     if (portStateEnum === PortStateEnum.OPEN) {
-      return chalk.green
-    } else {
-      return chalk.red
+      return chalk.green;
     }
+    return chalk.red;
   },
   status: (status) => {
     switch (status) {
       case ServiceStatusEnum.running:
-        return chalk.green
+        return chalk.green;
       case ServiceStatusEnum.syncing:
       case ServiceStatusEnum.wait_for_core:
-        return chalk.yellow
+        return chalk.yellow;
       default:
-        return chalk.red
+        return chalk.red;
     }
   },
   version: (version, latestVersion) => {
     if (version === latestVersion) {
       return chalk.green;
-    } else if (version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
-      return chalk.yellow
-    } else {
-      return chalk.red
+    } if (version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
+      return chalk.yellow;
     }
+    return chalk.red;
   },
   blockHeight: (blockHeight, headerHeight, remoteBlockHeight) => {
     if (blockHeight === headerHeight || blockHeight >= remoteBlockHeight) {
-      return chalk.green
-    } else if ((remoteBlockHeight - blockHeight) < 3) {
-      return chalk.yellow
-    } else {
-      return chalk.green
+      return chalk.green;
+    } if ((remoteBlockHeight - blockHeight) < 3) {
+      return chalk.yellow;
     }
+    return chalk.green;
   },
   poSePenalty: (poSePenalty, enabledCount) => {
     if (poSePenalty === 0) {
       return chalk.green;
-    } else if (poSePenalty < enabledCount) {
+    } if (poSePenalty < enabledCount) {
       return chalk.yellow;
-    } else {
-      return chalk.red;
     }
-  }
-}
+    return chalk.red;
+  },
+};

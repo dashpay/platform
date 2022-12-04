@@ -9,7 +9,7 @@ const ServiceStatusEnum = {
   // extension (used in status command)
   syncing: 'syncing',
   not_started: 'not_started',
-  wait_for_core: 'wait_for_core'
-}
+  wait_for_core: 'wait_for_core',
+};
 
-module.exports = ServiceStatusEnum
+module.exports = ServiceStatusEnum;
