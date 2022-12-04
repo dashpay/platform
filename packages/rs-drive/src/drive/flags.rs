@@ -340,7 +340,7 @@ impl StorageFlags {
         let mut size = 0;
         match self {
             MultiEpoch(_, epoch_map) | MultiEpochOwned(_, epoch_map, _) => {
-                epoch_map.iter().for_each(|(epoch_index, bytes_added)| {
+                epoch_map.iter().for_each(|(_epoch_index, bytes_added)| {
                     size += 2;
                     size += bytes_added.encode_var_vec().len() as u32;
                 })

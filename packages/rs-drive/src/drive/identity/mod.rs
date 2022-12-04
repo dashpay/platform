@@ -105,7 +105,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut batch = GroveDbOpBatch::new();
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())

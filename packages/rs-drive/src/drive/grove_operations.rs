@@ -868,7 +868,6 @@ impl Drive {
         &'a self,
         path: P,
         key: &'c [u8],
-        only_delete_tree_if_empty: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,

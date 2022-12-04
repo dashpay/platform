@@ -34,12 +34,10 @@
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::EstimatedLayerInformation::{
-    ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements,
-};
+use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::contract::Contract;
@@ -48,7 +46,7 @@ use crate::drive::defaults::{
     DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE,
 };
 use crate::drive::document::{
-    contract_document_type_path, contract_document_type_path_vec,
+    contract_document_type_path_vec,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_keeping_history_primary_key_path_for_document_id_size,
     contract_documents_keeping_history_storage_time_reference_path_size,
@@ -955,7 +953,7 @@ impl Drive {
                 );
             }
 
-            let mut any_fields_null = document_top_field.is_empty();
+            let any_fields_null = document_top_field.is_empty();
 
             let mut index_path_info = if document_and_contract_info.document_info.is_document_size()
             {
@@ -1225,8 +1223,8 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_identities,
-            removed_bytes_from_system,
+            removed_bytes_from_identities: _,
+            removed_bytes_from_system: _,
         } = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
@@ -1274,8 +1272,8 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_identities,
-            removed_bytes_from_system,
+            removed_bytes_from_identities: _,
+            removed_bytes_from_system: _,
         } = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
@@ -1323,8 +1321,8 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_identities,
-            removed_bytes_from_system,
+            removed_bytes_from_identities: _,
+            removed_bytes_from_system: _,
         } = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
@@ -1529,8 +1527,8 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_identities,
-            removed_bytes_from_system,
+            removed_bytes_from_identities: _,
+            removed_bytes_from_system: _,
         } = drive
             .add_document_for_contract(
                 DocumentAndContractInfo {

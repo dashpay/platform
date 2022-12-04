@@ -125,11 +125,11 @@ impl<'a, const N: usize> PathInfo<'a, N> {
     pub(crate) fn to_key_info_path(self) -> Result<KeyInfoPath, Error> {
         match self {
             PathFixedSizeIterator(path) => {
-                let mut key_info_path = KeyInfoPath::from_known_path(path);
+                let key_info_path = KeyInfoPath::from_known_path(path);
                 Ok(key_info_path)
             }
             PathIterator(path) => {
-                let mut key_info_path = KeyInfoPath::from_known_owned_path(path);
+                let key_info_path = KeyInfoPath::from_known_owned_path(path);
                 Ok(key_info_path)
             }
             PathSize(_) => Err(Error::Fee(FeeError::CorruptedCodeExecution(
@@ -503,7 +503,7 @@ impl<'a> DocumentInfo<'a> {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),
             DocumentInfo::DocumentWithoutSerialization((document, _)) => Some(document),
-            DocumentInfo::DocumentSize(document_max_size) => None,
+            DocumentInfo::DocumentSize(_) => None,
         }
     }
 

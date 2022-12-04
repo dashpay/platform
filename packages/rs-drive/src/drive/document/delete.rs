@@ -67,7 +67,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
@@ -122,7 +122,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
@@ -258,7 +258,6 @@ impl Drive {
         self.batch_delete(
             contract_documents_primary_key_path,
             document_id.as_slice(),
-            true,
             true, // not a tree, irrelevant
             transaction,
             &mut batch_operations,

@@ -1,9 +1,9 @@
 use crate::drive::contract::{all_contracts_global_root_path, contract_root_path};
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
-use crate::drive::document::contract_document_type_path;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
-use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
+use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;

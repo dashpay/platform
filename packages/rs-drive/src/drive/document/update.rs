@@ -105,7 +105,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
@@ -188,7 +188,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
@@ -1979,20 +1979,6 @@ mod tests {
     ) -> FeeResult {
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("document should be properly deserialized");
-        let document_type = contract
-            .document_type_for_name("person")
-            .expect("expected to get document type");
-
-        let storage_flags = Some(StorageFlags::SingleEpochOwned(
-            0,
-            person
-                .owner_id
-                .clone()
-                .try_into()
-                .expect("expected to get owner_id"),
-        ));
 
         drive
             .delete_document_for_contract(
