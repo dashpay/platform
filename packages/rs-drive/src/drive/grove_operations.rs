@@ -253,7 +253,7 @@ impl Drive {
                     push_drive_operation_result_optional(cost_context, drive_operations)?
                 } else {
                     if let Some(drive_operations) = drive_operations {
-                        let path_clone = path.clone();
+                        let path_clone = path;
                         let path_items: Vec<Vec<u8>> =
                             path_clone.into_iter().map(Vec::from).collect();
                         drive_operations.push(DriveOperation::for_empty_tree(

@@ -106,10 +106,7 @@ impl Drive {
             };
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
-                PotentiallyAtMaxElements(AllSubtrees(
-                    DEFAULT_HASH_SIZE_U8,
-                    average_flags_size.clone(),
-                )),
+                PotentiallyAtMaxElements(AllSubtrees(DEFAULT_HASH_SIZE_U8, average_flags_size)),
             );
             let document_id_in_primary_path =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -132,7 +129,7 @@ impl Drive {
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             document_type.estimated_size() as u32,
-                            average_flags_size.clone(),
+                            average_flags_size,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),
                         references_size: Some((1, reference_size, average_flags_size, 1)),
@@ -622,7 +619,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                storage_flags.clone(),
+                *storage_flags,
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 batch_operations,
@@ -787,7 +784,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                storage_flags.clone(),
+                *storage_flags,
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 batch_operations,
@@ -799,7 +796,7 @@ impl Drive {
             {
                 let document_top_field_estimated_size = document_and_contract_info
                     .document_info
-                    .get_estimated_size_for_document_type(&name, document_type)?;
+                    .get_estimated_size_for_document_type(name, document_type)?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
@@ -826,7 +823,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                storage_flags.clone(),
+                *storage_flags,
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 batch_operations,
@@ -839,7 +836,7 @@ impl Drive {
             // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
             self.add_indices_for_index_level_for_contract_operations(
-                &document_and_contract_info,
+                document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
@@ -914,7 +911,7 @@ impl Drive {
             let document_top_field = document_and_contract_info
                 .document_info
                 .get_raw_for_document_type(
-                    &name,
+                    name,
                     document_type,
                     document_and_contract_info.owner_id,
                 )?
@@ -935,7 +932,7 @@ impl Drive {
             {
                 let document_top_field_estimated_size = document_and_contract_info
                     .document_info
-                    .get_estimated_size_for_document_type(&name, document_type)?;
+                    .get_estimated_size_for_document_type(name, document_type)?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
@@ -968,7 +965,7 @@ impl Drive {
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             self.add_indices_for_index_level_for_contract_operations(
-                &document_and_contract_info,
+                document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,

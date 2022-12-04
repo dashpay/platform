@@ -1076,8 +1076,8 @@ mod tests {
            "$revision": 1,
            "firstName": "myName",
            "lastName": "lastName",
-           "$createdAt":1647535750329 as u64,
-           "$updatedAt":1647535750329 as u64,
+           "$createdAt":1647535750329_u64,
+           "$updatedAt":1647535750329_u64,
         });
 
         let serialized_document = value_to_cbor(document, Some(defaults::PROTOCOL_VERSION));
@@ -1085,7 +1085,7 @@ mod tests {
         drive
             .add_serialized_document_for_serialized_contract(
                 serialized_document.as_slice(),
-                &contract.as_slice(),
+                contract.as_slice(),
                 "indexedDocument",
                 None,
                 true,
@@ -1107,8 +1107,8 @@ mod tests {
            "$revision": 2,
            "firstName": "updatedName",
            "lastName": "lastName",
-           "$createdAt":1647535750329 as u64,
-           "$updatedAt":1647535754556 as u64,
+           "$createdAt":1647535750329_u64,
+           "$updatedAt":1647535754556_u64,
         });
 
         let serialized_document = value_to_cbor(document, Some(defaults::PROTOCOL_VERSION));
@@ -1116,7 +1116,7 @@ mod tests {
         drive
             .update_document_for_contract_cbor(
                 serialized_document.as_slice(),
-                &contract.as_slice(),
+                contract.as_slice(),
                 "indexedDocument",
                 None,
                 BlockInfo::default(),
@@ -1724,8 +1724,8 @@ mod tests {
         };
 
         let person_0_updated = Person {
-            id: id.clone(),
-            owner_id: owner_id.clone(),
+            id,
+            owner_id,
             first_name: "Samuel".to_string(),
             middle_name: "Abraham".to_string(),
             last_name: "Westrich2".to_string(),
@@ -1945,7 +1945,6 @@ mod tests {
             0,
             person
                 .owner_id
-                .clone()
                 .try_into()
                 .expect("expected to get owner_id"),
         ));
@@ -1958,7 +1957,7 @@ mod tests {
                         &document_cbor,
                         storage_flags.as_ref(),
                     )),
-                    contract: &contract,
+                    contract: contract,
                     document_type,
                     owner_id: None,
                 },
@@ -1980,7 +1979,7 @@ mod tests {
         drive
             .delete_document_for_contract(
                 person.id,
-                &contract,
+                contract,
                 "person",
                 Some(person.owner_id),
                 block_info,
@@ -2284,7 +2283,7 @@ mod tests {
                 &document_type,
                 Some(owner_id.to_buffer()),
                 false,
-                block_info.clone(),
+                block_info,
                 true,
                 Some(&storage_flags),
                 None,

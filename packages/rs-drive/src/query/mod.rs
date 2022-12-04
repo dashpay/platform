@@ -1518,7 +1518,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
         query
             .execute_no_proof(&drive, None, None)
@@ -1599,7 +1599,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
         query
             .execute_no_proof(&drive, None, None)
@@ -1625,7 +1625,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query should be valid for empty array");
 
         query
@@ -1656,7 +1656,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query is valid for too many elements");
 
         query
@@ -1687,7 +1687,7 @@ mod tests {
         // The is actually valid, however executing it is not
         // This is in order to optimize query execution
 
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("the query should be created");
 
         query
