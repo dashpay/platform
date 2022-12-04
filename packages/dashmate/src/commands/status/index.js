@@ -4,139 +4,91 @@ const {OUTPUT_FORMATS} = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require("../../printers/printObject");
+const MasternodeStateEnum = require("../../enums/masternodeState");
+const colors = require('../../status/colors')
 
 class StatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {outputStatusOverview} outputStatusOverview
+   * @param {statusProvider} statusProvider
    * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     flags,
-    outputStatusOverview,
+    statusProvider,
     config,
   ) {
-    const statusOverview = await outputStatusOverview(config, ['core']);
 
-    const network = config.get('network')
-    const masternodeEnabled = config.get('core.masternode.enable')
-
-    const {core} = statusOverview
-    const {
-      version: coreVersion,
-      status: coreStatus,
-      isSynced,
-      verificationProgress
-    } = core
-
-    const json = {
-      network,
-      coreVersion,
-      coreStatus,
-      platform: null,
-      masternode: {
-        enabled: masternodeEnabled,
-        status: null,
-        state: {
-          poSePenalty: null,
-          lastPaidHeight: null,
-          lastPaidTime: null,
-          paymentQueuePosition: null,
-          nextPaymentTime: null
-        }
-      }
-    }
-
-    if (masternodeEnabled) {
-      const {masternode: masternodeStatus, state} = await outputStatusOverview(config, ['masternode'])
-
-      json.masternode.status = masternodeStatus
-      json.masternode.state = state
-    }
-
-    if (config.get('network') !== 'mainnet' && config.name !== 'local_seed') {
-      const {platform} = await outputStatusOverview(config, ['platform'])
-      const {status: platformStatus} = platform
-
-      json.platform = {
-        status: platformStatus,
-        version: null
-      }
-
-      if (isSynced === true && platformStatus !== 'not_started' && platformStatus !== 'restarting') {
-        const {tenderdash} = platform
-        const {version: tenderdashVersion} = tenderdash
-
-        json.platform.version = tenderdashVersion;
-      }
-    }
+    const scope = await statusProvider.getOverviewScope()
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
+      const {network, core, masternode, platform} = scope
+      const {status, version, verificationProgress, sizeOnDisk, blockHeight} = core
+
       const plain = {
         'Network': network,
-        'Core Version': coreVersion,
-        'Core Status': coreStatus,
+        'Core Version': version,
+        'Core Status': colors.status(status)(status),
+        'Core Size': `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB`,
+        'Core Height': blockHeight,
       }
 
-      if (coreStatus === 'syncing') {
+      if (status === 'syncing') {
         plain['Core Sync Progress'] = `${verificationProgress * 100}%`
       }
 
-      // Colors
-      switch (coreStatus) {
-        case 'running':
-          plain["Core Status"] = chalk.green(plain["Core Status"])
-          break;
-        case 'syncing':
-          plain["Core Status"] = chalk.yellow(plain["Core Status"])
-          break;
-        default:
-          plain["Core Status"] = chalk.red(plain["Core Status"])
-      }
+      plain["Masternode Enabled"] = masternode.enabled;
 
+      if (masternode.enabled) {
+        plain["Masternode Status"] = masternode.status;
+        plain["Masternode State"] = masternode.state;
+        plain["Masternode ProTX"] = masternode.protx;
 
-      if (json.masternode.enabled) {
-        if (json.masternode.status === 'Ready') {
-          plain["Masternode Status"] = chalk.green(json.masternode.status);
-
+        if (masternode.state === MasternodeStateEnum.READY) {
           const {
             PoSePenalty,
             lastPaidHeight,
             lastPaidTime,
             paymentQueuePosition,
             nextPaymentTime
-          } = json.masternode.state
+          } = masternode.state
 
           plain['PoSe Penalty'] = PoSePenalty;
           plain['Last paid block'] = lastPaidHeight;
           plain['Last paid time'] = lastPaidTime
           plain['Payment queue position'] = paymentQueuePosition;
           plain['Next payment time'] = nextPaymentTime;
-        } else {
-          plain["Masternode Status"] = chalk.red(json.masternode.status);
         }
+
+        plain["Sentinel Version"] = version
+        plain["Sentinel State"] = masternode;
       }
 
-      if (json.platform) {
-        //todo syncing
-        if (json.platform.status === 'running') {
-          plain['Platform Status'] = chalk.green(json.platform.status);
-        } else {
-          plain['Platform Status'] = chalk.red(json.platform.status);
-        }
+      plain['Platform enabled'] = platform.enabled;
 
-        if (json.platform.status.version) {
-          plain['Platform Version'] = json.platform.version;
+      if (platform.enabled) {
+        //todo syncing
+        plain['Platform Status'] = colors.status(platform.status)(platform.status);
+
+        if (platform.tenderdash) {
+          plain['Platform Version'] = platform.tenderdash.version
+          plain['Platform Block Height'] = platform.blockHeight;
+          plain['Platform Peers'] = platform.tenderdash.peers;
+          plain['Platform Network'] = platform.tenderdash.network;
         }
       }
 
       return printObject(plain, flags.format);
     }
 
-    printObject(json, flags.format);
+    printObject(scope, flags
+
+      .format
+    )
+    ;
   }
 }
 

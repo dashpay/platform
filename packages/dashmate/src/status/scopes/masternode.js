@@ -1,5 +1,6 @@
 const getPaymentQueuePosition = require("../../util/getPaymentQueuePosition");
 const blocksToTime = require("../../util/blocksToTime");
+const MasternodeStateEnum = require("../../enums/masternodeState");
 
 module.exports = async (coreService, dockerCompose, config) => {
   const sentinelState = (await dockerCompose.execCommand(
@@ -34,7 +35,7 @@ module.exports = async (coreService, dockerCompose, config) => {
     nextPaymentTime: null
   }
 
-  if (masternodeStatus === 'READY') {
+  if (masternodeStatus === MasternodeStateEnum.READY) {
     position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
 
     const poSePenalty = dmnState.PoSePenalty;

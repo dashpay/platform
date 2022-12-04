@@ -8,16 +8,14 @@ class HostStatusCommand extends ConfigBaseCommand {
   /**
    * @return {Promise<void>}
    */
-  async runWithDependencies(args, flags, outputStatusOverview, config) {
-    const status = await outputStatusOverview(config, ['host'])
-
-    const json = status.host
+  async runWithDependencies(args, flags, statusProvider, config) {
+    const scope = await statusProvider.getHostScope()
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
         hostname, uptime, platform, arch,
         username, diskFree, memory, cpus, ip
-      } = json
+      } = scope
 
       const plain = {
         Hostname: hostname,
@@ -34,7 +32,7 @@ class HostStatusCommand extends ConfigBaseCommand {
       return printObject(plain, flags.format);
     }
 
-    printObject(json, flags.format);
+    printObject(scope, flags.format);
   }
 }
 

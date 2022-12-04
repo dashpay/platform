@@ -6,7 +6,7 @@ const {OUTPUT_FORMATS} = require('../../constants');
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
 
-const providers = require('../../status/providers')
+const colors = require("../../status/colors");
 
 class CoreStatusCommand extends ConfigBaseCommand {
   /**
@@ -15,6 +15,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {createRpcClient} createRpcClient
    * @param {Config} config
+   * @param statusProvider statusProvider
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -23,117 +24,57 @@ class CoreStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    outputStatusOverview
+    statusProvider
   ) {
-    const statusOverview = await outputStatusOverview(config, ['core', 'external'])
-    const latestVersion = await providers.github.release('dashpay/dash')
-    const p2pPortState = await providers.mnowatch.checkPortStatus(config.get('core.p2p.port'))
-    const remoteBlockHeight = await providers.insight(config.get('network')).status()
-    const masternodeEnabled = config.get('core.masternode.enable')
-
-    const {core} = statusOverview
-    const { version, verificationProgress,
-      blockHeight,
-      headerHeight,
-      peersCount,
-      network,
-      status,
-      syncAsset,
-      difficulty
-    } = core
-
-    const json = {
-      version,
-      network,
-      latestVersion,
-      status,
-      syncAsset,
-      peersCount,
-      p2pService: `${config.get('externalIp')}:${config.get('core.p2p.port')}`,
-      p2pPortState,
-      rpcService: `127.0.0.1:${config.get('core.rpc.port')}`,
-      blockHeight,
-      headerHeight,
-      difficulty,
-      verificationProgress,
-      masternode: {
-        enabled: masternodeEnabled,
-        sentinel: {
-          status: null,
-          version: null,
-        }
-      }
-    }
-
-    if (masternodeEnabled) {
-      const {masternode} = await outputStatusOverview(config, ['masternode'])
-      const {sentinelState, sentinelVersion} = masternode
-
-      json.masternode.sentinel.status = sentinelState
-      json.masternode.sentinel.version = sentinelVersion
-    }
+    const scope = await statusProvider.getCoreScope()
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
+      const {
+        version,
+        network,
+        chain,
+        latestVersion,
+        status,
+        syncAsset,
+        peersCount,
+        p2pService,
+        p2pPortState,
+        rpcService,
+        blockHeight,
+        remoteBlockHeight,
+        headerHeight,
+        difficulty,
+        verificationProgress,
+        masternode
+      } = scope
+
       const plain = {
-        'Version': version,
+        'Version': colors.status(version, latestVersion)(version),
         'Latest version': latestVersion,
         'Network': network,
-        'Status': status === 'syncing' ? `syncing ${(verificationProgress * 100).toFixed(2)}%` : status,
+        'Chain': chain,
+        'Status': colors.status(status)(status),
         'Sync asset': syncAsset,
         'Peer count': peersCount,
-        'P2P service': `${config.get('externalIp')}:${config.get('core.p2p.port')}`,
-        'P2P port': `${config.get('core.p2p.port')} ${p2pPortState}`,
-        'RPC service': `127.0.0.1:${config.get('core.rpc.port')}`,
-        'Block height': blockHeight,
+        'P2P service': p2pService,
+        'P2P port': colors.portState(p2pPortState)(p2pPortState),
+        'RPC service': rpcService,
+        'Block height': colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight),
         'Header height': headerHeight,
-        'Verification Progress': `${verificationProgress}%`,
+        'Verification Progress': `${verificationProgress * 100}%`,
         'Remote Block Height': remoteBlockHeight || 'N/A',
         'Difficulty': difficulty,
       }
 
-      // Apply colors
-      switch (status) {
-        case 'running':
-          plain.Status = chalk.green(plain.Status);
-          break;
-        case 'syncing':
-          plain.Status = chalk.yellow(plain.Status);
-          break;
-        default:
-          plain.Status = chalk.red(plain.Status);
-      }
-
-      if (version === latestVersion) {
-        plain.Version = chalk.green(plain.Version);
-      } else if (version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
-        plain.Version = chalk.yellow(plain.Version);
-      } else {
-        plain.Version = chalk.red(plain.Version);
-      }
-
-      if (p2pPortState === 'OPEN') {
-        plain["P2P port"] = chalk.green(plain["P2P port"]);
-      } else {
-        plain["P2P port"] = chalk.red(plain["P2P port"]);
-      }
-
-      if (blockHeight === headerHeight || blockHeight >= remoteBlockHeight) {
-        plain["Block height"] = chalk.green(plain["Block height"]);
-      } else if ((remoteBlockHeight - blockHeight) < 3) {
-        plain["Block height"] = chalk.yellow(plain["Block height"]);
-      } else {
-        plain["Block height"] = chalk.red(plain["Block height"]);
-      }
-
-      if (masternodeEnabled) {
-        plain['Sentinel version'] = json.masternode.sentinel.version;
-        plain['Sentinel status'] = json.masternode.sentinel.status ? chalk.green('No errors') : chalk.red(sentinelState);
+      if (masternode.enabled) {
+        plain['Sentinel version'] = masternode.sentinelVersion;
+        plain['Sentinel status'] = masternode.sentinel.status ? chalk.green('No errors') : chalk.red(masternode.sentinelState);
       }
 
       return printObject(plain, flags.format);
     }
 
-    printObject(json, flags.format);
+    printObject(scope, flags.format);
   }
 }
 

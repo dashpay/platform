@@ -13,6 +13,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
    * @param {Object} flags
    * @param {DockerCompose} dockerCompose
    * @param {Config} config
+   * @param statusProvider statusProvider
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -20,13 +21,13 @@ class ServicesStatusCommand extends ConfigBaseCommand {
     flags,
     dockerCompose,
     config,
-    outputStatusOverview
+    statusProvider
   ) {
-    const {services} = await outputStatusOverview(config, ['services'])
+    const scope = await statusProvider.getServicesScope()
 
     const outputRows = [];
 
-    for (const [serviceName, serviceDescription] of Object.entries(services)) {
+    for (const [serviceName, serviceDescription] of Object.entries(scope)) {
       const {humanName, containerId, image, status} = serviceDescription
       if (flags.format === OUTPUT_FORMATS.PLAIN) {
         let statusText;

@@ -1,15 +1,11 @@
-const chalk = require('chalk');
-
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+const {Flags} = require('@oclif/core');
+const {OUTPUT_FORMATS} = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const CoreService = require('../../core/CoreService');
 const printObject = require('../../printers/printObject');
 
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
-const providers = require('../../status/providers')
 const colors = require("../../status/colors");
 
 class PlatformStatusCommand extends ConfigBaseCommand {
@@ -19,6 +15,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {createRpcClient} createRpcClient
    * @param {Config} config
+   * @param statusProvider
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -27,7 +24,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    outputStatusOverview,
+    statusProvider,
   ) {
     if (config.get('network') === 'mainnet') {
       // eslint-disable-next-line no-console
@@ -35,84 +32,71 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const coreService = new CoreService(
-      config,
-      createRpcClient(
-        {
-          port: config.get('core.rpc.port'),
-          user: config.get('core.rpc.user'),
-          pass: config.get('core.rpc.password'),
-        },
-      ),
-      dockerCompose.docker.getContainer('core'),
-    );
-
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
       throw new ServiceIsNotRunningError(config.get('network'), 'drive_tenderdash');
     }
 
-    const {core} = await outputStatusOverview(config, ['core'])
+    // Collect platform data
+    const scope = await statusProvider.getPlatformScope()
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (core.isSynced === false) {
+    if (!scope.coreIsSynced) {
       // eslint-disable-next-line no-console
       console.log('Platform status is not available until core sync is complete!');
       this.exit();
     }
 
-    // Collect platform data
-    const {platform} = await outputStatusOverview(config, ['platform'])
     const {
-      status: platformStatus,
+      status,
+      httpService,
+      httpPort,
+      httpPortState,
+      gRPCService,
+      gRPCPort,
+      gRPCPortState,
+      p2pService,
+      p2pPort,
+      p2pPortState,
+      rpcService,
       tenderdash
-    } = platform
-    const {
-      version: tenderdashVersion,
-      lastBlockHeight: platformBlockHeight,
-      latestAppHash: platformLatestAppHash,
-      peers: platformPeers,
-      network: tenderdashNetwork
-    } = tenderdash
+    } = scope
 
-    // Check ports
-    const httpState = await providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.http.port'));
-    const gRpcState = await providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.grpc.port'));
-    const p2pState = await providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'));
-
-    const json  = {
-      tenderdashVersion,
-      network: tenderdashNetwork,
-      status: platformStatus,
-      blockHeight: platformBlockHeight,
-      peerCount: platformPeers,
-      appHash: platformLatestAppHash,
-      httpService: `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`,
-      httpPort: httpState,
-      gRPCService: `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`,
-      gRPCPort: gRpcState,
-      p2pService: `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`,
-      p2pPortState: p2pState,
-      rpcService: `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`,
-    };
-
-    let status
-    const outputRows = {
-      'Tenderdash Version': tenderdashVersion,
-      'Network': tenderdashNetwork,
+    const plain = {
       'Status': status,
-      'Block height': platformBlockHeight,
-      'Peer count': platformPeers,
-      'App hash': platformLatestAppHash,
-      'HTTP service': `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`,
-      'HTTP port': `${config.get('platform.dapi.envoy.http.port')} ${colors.portState(p2pState)(httpState)}`,
-      'gRPC service': `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`,
-      'gRPC port': `${config.get('platform.dapi.envoy.grpc.port')} ${colors.portState(p2pState)(gRpcState)}`,
-      'P2P service': `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`,
-      'P2P port': `${config.get('platform.drive.tenderdash.p2p.port')} ${colors.portState(p2pState)(p2pState)}`,
-      'RPC service': `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`,
+      'HTTP service': httpService,
+      'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
+      'GRPC service': gRPCService,
+      'GRPC port': `${gRPCPort} ${colors.portState(gRPCPortState)(gRPCPortState)}`,
+      'P2P service': p2pService,
+      'P2P port': `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}`,
+      'RPC service': rpcService,
     };
 
-    printObject(outputRows, flags.format);
+    if (tenderdash.version) {
+      const {
+        version: tenderdashVersion,
+        lastBlockHeight: platformBlockHeight,
+        latestAppHash: platformLatestAppHash,
+        peers: platformPeers,
+        network: tenderdashNetwork
+      } = tenderdash
+
+      const plain = {
+        'Tenderdash Version': tenderdashVersion,
+        'Network': tenderdashNetwork,
+        'Block height': platformBlockHeight,
+        'Peer count': platformPeers,
+        'App hash': platformLatestAppHash,
+      };
+
+      plain['Tenderdash Version'] = tenderdashVersion
+      plain['Network'] = tenderdashNetwork
+      plain['Block height'] = platformBlockHeight
+      plain['Peer count'] = platformPeers
+      plain['App hash'] = platformLatestAppHash
+    }
+
+    return printObject(plain, flags.format);
   }
 }
 

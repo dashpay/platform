@@ -5,6 +5,8 @@ const {OUTPUT_FORMATS} = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
+const colors = require("../../status/colors");
+const MasternodeStateEnum = require("../../enums/masternodeState");
 
 class MasternodeStatusCommand extends ConfigBaseCommand {
   /**
@@ -21,7 +23,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    outputStatusOverview
+    statusProvider
   ) {
     if (config.get('core.masternode.enable') === false) {
       // eslint-disable-next-line no-console
@@ -29,56 +31,39 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const status = await outputStatusOverview(config, ['core', 'masternode'])
+    const scope = await statusProvider.getMasternodeScope()
 
-    const {core, masternode} = status
+    const {core, masternode} = scope
     const {verificationProgress} = core
 
-    let toPrint = masternode
-
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
-      let masternodeStatus = masternode.status === 'syncing' ?
-        `syncing ${(verificationProgress * 100).toFixed(2)}%` : masternode.status
+      const plain = {}
 
-      if (masternodeStatus === 'running') {
-        masternodeStatus = chalk.green(masternodeStatus);
-      } else if (status.startsWith('syncing')) {
-        masternodeStatus = chalk.yellow(masternodeStatus);
-      } else {
-        masternodeStatus = chalk.red(masternodeStatus);
-      }
+      plain['Masternode Status'] = colors.status(masternode.status)(masternode.status)
+      plain['Masternode State'] = (masternode.state === 'READY' ? chalk.green : chalk.red)(masternode.state)
+      plain['Verification Progress'] = `${verificationProgress * 100}%`
+      plain['Sentinel Status'] = (masternode.sentinelState !== '' ? chalk.red(masternode.sentinelState) : chalk.green('No errors'))
 
-      toPrint = {
-        'Masternode status': (masternode.state === 'READY' ? chalk.green : chalk.red)(masternodeStatus),
-        'Sentinel status': (masternode.sentinelState !== '' ? chalk.red(masternode.sentinelState) : chalk.green('No errors')),
-      };
 
-      if (masternode.state === 'READY') {
+      if (masternode.state === MasternodeStateEnum.READY) {
         const {
           proTxHash, lastPaidBlock, lastPaidTime,
-          paymentQueuePosition, nexPaymentTime
+          paymentQueuePosition, nexPaymentTime,
+          poSePenalty, enabledCount
         } = masternode
 
-        let {poSePenalty, enabledCount} = masternode
-
-        if (poSePenalty === 0) {
-          poSePenalty = chalk.green(poSePenalty);
-        } else if (poSePenalty < enabledCount) {
-          poSePenalty = chalk.yellow(poSePenalty);
-        } else {
-          poSePenalty = chalk.red(poSePenalty);
-        }
-
-        toPrint['ProTx Hash'] = proTxHash;
-        toPrint['PoSe Penalty'] = poSePenalty;
-        toPrint['Last paid block'] = lastPaidBlock;
-        toPrint['Last paid time'] = lastPaidBlock === 0 ? 'Never' : lastPaidTime;
-        toPrint['Payment queue position'] = paymentQueuePosition;
-        toPrint['Next payment time'] = `in ${nexPaymentTime}`;
+        plain['ProTx Hash'] = proTxHash;
+        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(poSePenalty);
+        plain['Last paid block'] = lastPaidBlock;
+        plain['Last paid time'] = lastPaidBlock === 0 ? 'Never' : lastPaidTime;
+        plain['Payment queue position'] = paymentQueuePosition;
+        plain['Next payment time'] = `in ${nexPaymentTime}`;
       }
+
+      return printObject(plain, flags.format)
     }
 
-    printObject(toPrint, flags.format);
+    printObject(scope, flags.format);
   }
 }
 
