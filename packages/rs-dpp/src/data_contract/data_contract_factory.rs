@@ -37,9 +37,9 @@ impl DataContractFactory {
         &self,
         owner_id: Identifier,
         documents: JsonValue,
-        seed: Option<u64>,
+        entropy_seed: Option<u64>,
     ) -> Result<DataContract, ProtocolError> {
-        let entropy = entropy_generator::generate(seed);
+        let entropy = entropy_generator::generate(entropy_seed);
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
