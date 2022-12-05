@@ -39,7 +39,7 @@ class StatusCommand extends ConfigBaseCommand {
       };
 
       if (status === 'syncing') {
-        plain['Core Sync Progress'] = `${verificationProgress * 100}%`;
+        plain['Core Sync Progress'] = `${(verificationProgress * 100).toFixed(2)}%`;
       }
 
       plain['Masternode Enabled'] = masternode.enabled;
