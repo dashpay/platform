@@ -1,3 +1,16 @@
+## [0.23.0-alpha.10](https://github.com/dashpay/platform/compare/v0.23.0-alpha.9...v0.23.0-alpha.10) (2022-12-05)
+
+
+### Features
+
+* **wallet-lib:** implement headers first synchronization ([#428](https://github.com/dashpay/platform/issues/428))
+
+
+### Miscellaneous Chores
+
+* add yarn cache ([#637](https://github.com/dashpay/platform/issues/637))
+* update protoc builder to upstream image ([#647](https://github.com/dashpay/platform/issues/647))
+
 ## [0.23.0-alpha.9](https://github.com/dashpay/platform/compare/v0.23.0-alpha.8...v0.23.0-alpha.9) (2022-11-21)
 
 
