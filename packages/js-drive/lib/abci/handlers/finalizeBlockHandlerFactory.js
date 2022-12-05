@@ -11,21 +11,23 @@ const {
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
+ * @param {processProposalHandler} processProposalHandler
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  proposalBlockExecutionContextCollection,
   coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
+  proposalBlockExecutionContext,
+  processProposalHandler,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -48,7 +50,37 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    if (proposalBlockExecutionContext.getRound() !== round) {
+      consensusLogger.warn(
+        `Finalizing previously executed round ${round} instead of the last known ${proposalBlockExecutionContext.getRound()}`,
+      );
+
+      const {
+        block: {
+          header: {
+            time,
+            version,
+            proposerProTxHash,
+            coreChainLockedHeight,
+          },
+          data: {
+            txs,
+          },
+        },
+      } = request;
+
+      await processProposalHandler({
+        height,
+        txs,
+        coreChainLockedHeight,
+        version,
+        proposedLastCommit: commitInfo,
+        time,
+        proposerProTxHash,
+        round,
+      });
+    }
+
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
     // Store block execution context
@@ -88,7 +120,7 @@ function finalizeBlockHandlerFactory(
       }
     }
 
-    proposalBlockExecutionContextCollection.clear();
+    proposalBlockExecutionContext.reset();
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 

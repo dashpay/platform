@@ -9,7 +9,6 @@ const GroveDBStoreMock = require('../../../../../lib/test/mock/GroveDBStoreMock'
 describe('endBlockFactory', () => {
   let endBlock;
   let height;
-  let blockExecutionContextMock;
   let dpnsContractBlockHeight;
   let loggerMock;
   let createValidatorSetUpdateMock;
@@ -27,7 +26,7 @@ describe('endBlockFactory', () => {
   let processingFees;
   let storageFees;
   let executionTimerMock;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
   let round;
   let coreChainLockedHeight;
 
@@ -42,12 +41,12 @@ describe('endBlockFactory', () => {
       stopTimer: this.sinon.stub(),
     };
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    blockExecutionContextMock.hasDataContract.returns(true);
-    blockExecutionContextMock.getTimeMs.returns(time);
+    proposalBlockExecutionContextMock.hasDataContract.returns(true);
+    proposalBlockExecutionContextMock.getTimeMs.returns(time);
 
-    blockExecutionContextMock.getEpochInfo.returns({
+    proposalBlockExecutionContextMock.getEpochInfo.returns({
       currentEpochIndex: 42,
       isEpochChange: true,
     });
@@ -89,12 +88,8 @@ describe('endBlockFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHashFixture);
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
-
     endBlock = endBlockFactory(
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionContextMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       getFeatureFlagForHeightMock,
@@ -119,10 +114,7 @@ describe('endBlockFactory', () => {
       appHash: appHashFixture,
     });
 
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
-    expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
+    expect(proposalBlockExecutionContextMock.hasDataContract).to.not.have.been.called();
     expect(createConsensusParamUpdateMock).to.be.calledOnceWithExactly(height, round, loggerMock);
     expect(rotateAndCreateValidatorSetUpdateMock).to.be.calledOnceWithExactly(
       height,

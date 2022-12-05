@@ -32,12 +32,11 @@ describe('deliverTxFactory', () => {
   let dataContractCreateTransitionFixture;
   let dpp;
   let unserializeStateTransitionMock;
-  let blockExecutionContextMock;
   let validationResult;
   let executionTimerMock;
   let loggerMock;
   let round;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
 
   beforeEach(async function beforeEach() {
     round = 42;
@@ -79,12 +78,8 @@ describe('deliverTxFactory', () => {
 
     unserializeStateTransitionMock = this.sinon.stub();
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeight.returns(42);
-
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock.getHeight.returns(42);
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -97,7 +92,7 @@ describe('deliverTxFactory', () => {
     deliverTx = deliverTxFactory(
       unserializeStateTransitionMock,
       dppMock,
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionContextMock,
       executionTimerMock,
     );
   });
@@ -122,10 +117,8 @@ describe('deliverTxFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       documentsBatchTransitionFixture,
     );
-    expect(blockExecutionContextMock.addDataContract).to.not.be.called();
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
+    expect(proposalBlockExecutionContextMock.addDataContract).to.not.be.called();
+
     const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
 
     // TODO: enable once fee calculation is done
@@ -159,10 +152,7 @@ describe('deliverTxFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       dataContractCreateTransitionFixture,
     );
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
-    expect(blockExecutionContextMock.addDataContract).to.be.calledOnceWith(
+    expect(proposalBlockExecutionContextMock.addDataContract).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.getDataContract(),
     );
 

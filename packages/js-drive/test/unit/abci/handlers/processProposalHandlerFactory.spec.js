@@ -18,7 +18,6 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 describe('processProposalHandlerFactory', () => {
   let processProposalHandler;
   let request;
-  let blockExecutionContextMock;
   let loggerMock;
   let beginBlockMock;
   let endBlockMock;
@@ -28,14 +27,14 @@ describe('processProposalHandlerFactory', () => {
   let validatorSetUpdate;
   let consensusParamUpdates;
   let coreChainLockUpdate;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
   let round;
 
   beforeEach(function beforeEach() {
     round = 0;
     appHash = Buffer.alloc(1, 1);
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -69,14 +68,10 @@ describe('processProposalHandlerFactory', () => {
     beginBlockMock = this.sinon.stub();
     verifyChainLockMock = this.sinon.stub().resolves(true);
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
-
     processProposalHandler = processProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionContextMock,
       beginBlockMock,
       endBlockMock,
       verifyChainLockMock,
@@ -124,8 +119,6 @@ describe('processProposalHandlerFactory', () => {
     expect(result.txResults).to.be.deep.equal(new Array(3).fill({ code: 0 }));
     expect(result.consensusParamUpdates).to.be.equal(consensusParamUpdates);
     expect(result.validatorSetUpdate).to.be.equal(validatorSetUpdate);
-
-    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
 
     expect(beginBlockMock).to.be.calledOnceWithExactly(
       {

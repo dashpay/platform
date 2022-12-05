@@ -1,7 +1,7 @@
 /**
  * Begin block ABCI
  *
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
@@ -14,7 +14,7 @@
  * @return {endBlock}
  */
 function endBlockFactory(
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
@@ -53,8 +53,6 @@ function endBlockFactory(
     } = request;
 
     consensusLogger.debug('EndBlock ABCI method requested');
-
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     // Call RS ABCI
 
