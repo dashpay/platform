@@ -18,6 +18,7 @@ class DriveStateRepository {
    * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
+   * @param {BlockExecutionContext} latestBlockExecutionContext
    * @param {BlockExecutionContext} proposalBlockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
@@ -32,6 +33,7 @@ class DriveStateRepository {
     documentRepository,
     spentAssetLockTransactionsRepository,
     coreRpcClient,
+    latestBlockExecutionContext,
     proposalBlockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
@@ -44,7 +46,8 @@ class DriveStateRepository {
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionContext = proposalBlockExecutionContext;
+    this.latestBlockExecutionContext = latestBlockExecutionContext;
+    this.proposalBlockExecutionContext = proposalBlockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
     this.#options = options;
@@ -210,7 +213,7 @@ class DriveStateRepository {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.proposalBlockExecutionContext);
 
     const result = await this.dataContractRepository.fetch(
       id,
@@ -241,7 +244,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDataContract(dataContract, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
 
     const result = await this.dataContractRepository.create(
       dataContract,
@@ -263,7 +266,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDataContract(dataContract, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.proposalBlockExecutionContext);
 
     const result = await this.dataContractRepository.update(
       dataContract,
@@ -287,7 +290,7 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.proposalBlockExecutionContext);
 
     const result = await this.fetchDocumentsFunction(
       contractId,
@@ -315,7 +318,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDocument(document, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.proposalBlockExecutionContext);
 
     const result = await this.documentRepository.create(
       document,
@@ -337,7 +340,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDocument(document, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.proposalBlockExecutionContext);
 
     const result = await this.documentRepository.update(
       document,
@@ -361,7 +364,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(dataContract, type, id, executionContext = undefined) {
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.proposalBlockExecutionContext);
 
     const result = await this.documentRepository.delete(
       dataContract,
@@ -428,7 +431,7 @@ class DriveStateRepository {
    * @return {Promise<Long>}
    */
   async fetchLatestPlatformBlockHeight() {
-    return this.blockExecutionContext.getHeight();
+    return this.latestBlockExecutionContext.getHeight();
   }
 
   /**
@@ -437,7 +440,7 @@ class DriveStateRepository {
    * @return {number}
    */
   fetchLatestPlatformBlockTime() {
-    const timeMs = this.blockExecutionContext.getTimeMs();
+    const timeMs = this.latestBlockExecutionContext.getTimeMs();
 
     if (!timeMs) {
       throw new Error('Time is not set');
@@ -452,7 +455,7 @@ class DriveStateRepository {
    * @return {Promise<number>}
    */
   async fetchLatestPlatformCoreChainLockedHeight() {
-    return this.blockExecutionContext.getCoreChainLockedHeight();
+    return this.latestBlockExecutionContext.getCoreChainLockedHeight();
   }
 
   /**
@@ -465,7 +468,7 @@ class DriveStateRepository {
    */
   // eslint-disable-next-line no-unused-vars
   async verifyInstantLock(instantLock, executionContext = undefined) {
-    const coreChainLockedHeight = this.blockExecutionContext.getCoreChainLockedHeight();
+    const coreChainLockedHeight = this.proposalBlockExecutionContext.getCoreChainLockedHeight();
 
     if (coreChainLockedHeight === null) {
       return false;
