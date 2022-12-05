@@ -1160,6 +1160,33 @@ mod tests {
             .expect("expected to insert a document successfully");
     }
 
+    #[test]
+    fn test_create_reference_contract_without_apply() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_path = "tests/supporting_files/contract/references/references.json";
+
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+        drive
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                false,
+                StorageFlags::optional_default_as_ref(),
+                None,
+            )
+            .expect("expected to apply contract successfully");
+    }
+
     mod get_contract_with_fetch_info_and_add_to_operations {
         use super::*;
 
