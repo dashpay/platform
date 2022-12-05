@@ -53,7 +53,7 @@ describe('DataContractCreateTransition', () => {
 
   describe('#toJSON', () => {
     it('should return State Transition as plain JS object', () => {
-      expect(stateTransition.toJSON()).to.deep.equal({
+      expect(stateTransition.toJSON(true)).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DATA_CONTRACT_CREATE,
         dataContract: dataContract.toJSON(),

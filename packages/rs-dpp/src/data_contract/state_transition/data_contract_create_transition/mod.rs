@@ -32,16 +32,10 @@ pub struct DataContractCreateTransition {
     #[serde(skip_serializing)]
     pub data_contract: DataContract,
     pub entropy: [u8; 32],
-    #[serde(skip_serializing_if = "is_zero")]
     pub signature_public_key_id: KeyID,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub signature: Vec<u8>,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
-}
-
-fn is_zero(x: &u64) -> bool {
-    *x == 0
 }
 
 impl std::default::Default for DataContractCreateTransition {
@@ -162,8 +156,17 @@ impl StateTransitionConvert for DataContractCreateTransition {
         vec![SIGNATURE, ENTROPY]
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
         json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
         json_value
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
@@ -258,7 +261,7 @@ mod test {
         let data = get_test_data();
         let mut json_object = data
             .state_transition
-            .to_json()
+            .to_json(false)
             .expect("conversion to JSON shouldn't fail");
 
         assert_eq!(

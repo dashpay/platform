@@ -85,11 +85,11 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+    pub fn to_json(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         Ok(self
             .0
-            .to_json()
+            .to_json(skip_signature.unwrap_or(false))
             .map_err(from_dpp_err)?
             .serialize(&serializer)
             .expect("JSON is a valid object"))
