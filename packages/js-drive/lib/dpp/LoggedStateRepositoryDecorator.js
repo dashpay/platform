@@ -4,14 +4,14 @@
 class LoggedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
-   * @param {BlockExecutionContext} blockExecutionContext
+   * @param {BlockExecutionContext} proposalBlockExecutionContext
    */
   constructor(
     stateRepository,
-    blockExecutionContext,
+    proposalBlockExecutionContext,
   ) {
     this.stateRepository = stateRepository;
-    this.blockExecutionContext = blockExecutionContext;
+    this.blockExecutionContext = proposalBlockExecutionContext;
   }
 
   /**
