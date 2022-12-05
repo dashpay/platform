@@ -20,6 +20,8 @@
  * @method setEpochInfo
  * @method setTimeMs
  * @method getTimeMs
+ * @method getRound
+ * @method setRound
  */
 class BlockExecutionContextMock {
   /**
@@ -51,6 +53,8 @@ class BlockExecutionContextMock {
     this.getEpochInfo = sinon.stub();
     this.setTimeMs = sinon.stub();
     this.getTimeMs = sinon.stub();
+    this.setRound = sinon.stub();
+    this.getRound = sinon.stub();
   }
 }
 
