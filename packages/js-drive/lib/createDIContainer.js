@@ -583,7 +583,7 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      latestBlockExecutionContext,
+      proposalBlockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
       rsDrive,
@@ -596,7 +596,7 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        latestBlockExecutionContext,
+        proposalBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
         {
