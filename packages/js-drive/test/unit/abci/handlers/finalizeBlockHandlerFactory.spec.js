@@ -161,24 +161,6 @@ describe('finalizeBlockHandlerFactory', () => {
     expect(processProposalHandlerMock).to.be.not.called();
   });
 
-  it('should call processProposalHandler if height is not equal to execution context', async () => {
-    proposalBlockExecutionContextMock.getHeight.returns(new Long(43));
-
-    const result = await finalizeBlockHandler(requestMock);
-
-    expect(result).to.be.an.instanceOf(ResponseFinalizeBlock);
-    expect(processProposalHandlerMock).to.be.calledOnceWithExactly({
-      height: requestMock.height,
-      txs: block.data.txs,
-      coreChainLockedHeight: block.header.coreChainLockedHeight,
-      version: block.header.version,
-      proposedLastCommit: requestMock.commit,
-      time: block.header.time,
-      proposerProTxHash: block.header.proposerProTxHash,
-      round,
-    });
-  });
-
   it('should call processProposalHandler if round is not equal to execution context', async () => {
     proposalBlockExecutionContextMock.getRound.returns(round + 1);
 

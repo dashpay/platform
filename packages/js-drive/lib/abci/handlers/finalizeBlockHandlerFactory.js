@@ -50,11 +50,10 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    if (
-      proposalBlockExecutionContext.getHeight().toNumber() !== height.toNumber()
-      || proposalBlockExecutionContext.getRound() !== round
-    ) {
-      consensusLogger.warn('Height or round in execution context do not equal request values.');
+    if (proposalBlockExecutionContext.getRound() !== round) {
+      consensusLogger.warn(
+        `Finalizing previously executed round ${round} instead of the last known ${proposalBlockExecutionContext.getRound()}`,
+      );
 
       const {
         block: {
