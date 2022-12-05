@@ -1,5 +1,3 @@
-use crate::identity::purpose::Purpose;
-use crate::identity::security_level::SecurityLevel;
 use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use rand::rngs::StdRng;
 use rand::Rng;

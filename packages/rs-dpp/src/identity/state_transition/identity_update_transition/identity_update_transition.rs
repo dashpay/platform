@@ -85,7 +85,7 @@ impl IdentityUpdateTransition {
             .unwrap_or_default();
         let signature_public_key_id = raw_object
             .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-            .unwrap_or_default();
+            .unwrap_or_default() as KeyID;
         let identity_id =
             Identifier::from_bytes(&raw_object.get_bytes(property_names::IDENTITY_ID)?)?;
         let revision = raw_object.get_u64(property_names::REVISION)?;

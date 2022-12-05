@@ -8,12 +8,13 @@ use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
-use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
+use crate::identity::{IdentityPublicKey, KeyID, KeyType};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{
     BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
 };
 
+use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 
@@ -175,7 +176,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     }
 }
 
-pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
+pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<KeyID> {
     let mut keys_count = HashMap::<Vec<u8>, usize>::new();
     let mut duplicated_key_ids = vec![];
 
@@ -193,9 +194,9 @@ pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
     duplicated_key_ids
 }
 
-pub(crate) fn duplicated_key_ids(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
-    let mut duplicated_ids = Vec::<u64>::new();
-    let mut ids_count = HashMap::<u64, usize>::new();
+pub(crate) fn duplicated_key_ids(public_keys: &[IdentityPublicKey]) -> Vec<KeyID> {
+    let mut duplicated_ids = Vec::<KeyID>::new();
+    let mut ids_count = HashMap::<KeyID, usize>::new();
 
     for public_key in public_keys.iter() {
         let id = public_key.id;

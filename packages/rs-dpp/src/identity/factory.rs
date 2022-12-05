@@ -1,5 +1,6 @@
 use crate::identifier::Identifier;
 use crate::identity::{Identity, IdentityPublicKey, CURRENT_IDENTITY_VERSION};
+use dashcore::network::constants::PROTOCOL_VERSION;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -14,7 +15,7 @@ impl Identity {
             .collect();
 
         Identity {
-            version: CURRENT_IDENTITY_VERSION,
+            protocol_version: PROTOCOL_VERSION,
             id,
             revision,
             asset_lock_proof: None,
