@@ -2,12 +2,11 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use itertools::Itertools;
 use serde::Serialize;
 use serde_json::{Map, Value as JsonValue};
-use sha2::digest::typenum::private::IsGreaterOrEqualPrivate;
 
 use crate::identifier::Identifier;
 use crate::util::json_value::ReplaceWith;
@@ -313,14 +312,6 @@ impl CborCanonicalMap {
     pub fn get_mut(&mut self, key: &CborValue) -> Option<&mut CborValue> {
         if let Some(index) = self.inner.iter().position(|(el_key, _)| el_key == key) {
             Some(&mut self.inner.get_mut(index)?.1)
-        } else {
-            None
-        }
-    }
-
-    pub fn get(&mut self, key: &CborValue) -> Option<&CborValue> {
-        if let Some(index) = self.inner.iter().position(|(el_key, _)| el_key == key) {
-            Some(&self.inner.get(index)?.1)
         } else {
             None
         }
