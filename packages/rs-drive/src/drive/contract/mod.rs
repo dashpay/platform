@@ -682,15 +682,19 @@ impl Drive {
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+    ) -> Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error> {
         let mut drive_operations: Vec<DriveOperation> = Vec::new();
 
-        self.get_contract_with_fetch_info_and_add_to_operations(
+        let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations(
             contract_id,
             epoch,
             transaction,
             &mut drive_operations,
-        )
+        )?;
+        let fee_result = epoch.map_or(Ok(None), |epoch| {
+            calculate_fee(None, Some(drive_operations), epoch).map(Some)
+        })?;
+        Ok((fee_result, contract_fetch_info))
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
@@ -1182,6 +1186,7 @@ mod tests {
             let fetch_info_from_database = drive
                 .get_contract_with_fetch_info(contract.id().to_buffer(), None, None)
                 .expect("should get contract")
+                .1
                 .expect("should be present");
 
             assert_eq!(fetch_info_from_database.contract.version(), 1);
@@ -1189,6 +1194,7 @@ mod tests {
             let fetch_info_from_cache = drive
                 .get_contract_with_fetch_info(contract.id().to_buffer(), None, Some(&transaction))
                 .expect("should get contract")
+                .1
                 .expect("should be present");
 
             assert_eq!(fetch_info_from_cache.contract.version(), 2);
@@ -1209,7 +1215,27 @@ mod tests {
                 .get_contract_with_fetch_info(contract_id, None, None)
                 .expect("should get contract");
 
-            assert!(result.is_none());
+            assert!(result.1.is_none());
+        }
+
+        #[test]
+        fn test_get_non_existent_contract_has_fees() {
+            let tmp_dir = TempDir::new().unwrap();
+            let drive: Drive =
+                Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+            drive
+                .create_initial_state_structure(None)
+                .expect("expected to create state structure");
+            let contract_id = rand::thread_rng().gen::<[u8; 32]>();
+
+            let result = drive
+                .get_contract_with_fetch_info(contract_id, Some(&Epoch::new(0)), None)
+                .expect("should get contract");
+
+            let fees = result.0;
+            assert!(fees.is_some());
+            assert_eq!(fees.unwrap().processing_fee, 6000)
         }
     }
 }
