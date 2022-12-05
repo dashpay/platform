@@ -32,7 +32,6 @@ impl ApplyDataContractCreateTransitionWasm {
         state_repository: ExternalStateRepositoryLike,
     ) -> ApplyDataContractCreateTransitionWasm {
         let pinned_js_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-
         ApplyDataContractCreateTransition::new(pinned_js_state_repository).into()
     }
 

@@ -13,6 +13,8 @@ describe('applyDataContractCreateTransitionFactory', () => {
   let ApplyDataContractCreateTransition;
   let StateTransitionExecutionContext;
 
+  let dataContractStored;
+
   before(async () => {
     ({
       DataContractCreateTransition, ApplyDataContractCreateTransition, StateTransitionExecutionContext,
@@ -32,12 +34,19 @@ describe('applyDataContractCreateTransitionFactory', () => {
 
     stateTransition.setExecutionContext(executionContext);
 
-    const stateRepositoryLike = {};
+    const stateRepositoryLike = {
+      storeDataContract: () => {
+        dataContractStored = true;
+      }
+    };
 
     factory = new ApplyDataContractCreateTransition(stateRepositoryLike);
+
+    dataContractStored = false;
   });
 
     it('should store a data contract from state transition in the repository', async () => {
       await factory.applyDataContractCreateTransition(stateTransition);
+      expect(dataContractStored).to.be.true;
   });
 });

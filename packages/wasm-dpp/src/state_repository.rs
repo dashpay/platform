@@ -13,18 +13,20 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
-use crate::identifier::IdentifierWrapper;
+use crate::{DataContractWasm, StateTransitionExecutionContextWasm};
 
 #[wasm_bindgen]
 extern "C" {
     pub type ExternalStateRepositoryLike;
 
-    #[wasm_bindgen(structural, method, js_name=fetchDataContract)]
-    pub fn fetch_data_contract(
+    #[wasm_bindgen(structural, method, js_name=storeDataContract)]
+    pub fn store_data_contract(
         this: &ExternalStateRepositoryLike,
-        data_contract_id: IdentifierWrapper,
-        // execution_context: &StateTransitionExecutionContextWasm,
+        data_contract: DataContractWasm,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
+
+    // TODO add missing declarations
 }
 
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
@@ -36,7 +38,7 @@ unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
 
 impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
-        todo!()
+        ExternalStateRepositoryLikeWrapper(Box::pin(Mutex::new(state_repository)))
     }
 }
 
@@ -58,7 +60,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         data_contract: DataContract,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        self.0
+            .lock()
+            .unwrap()
+            .store_data_contract(data_contract.into(), execution_context.clone().into());
+        Ok(())
     }
 
     async fn fetch_documents<T>(

@@ -17,14 +17,6 @@ impl<SR: StateRepositoryLike> ApplyDataContractCreateTransition<SR> {
     }
 }
 
-// ???
-pub fn fetch_documents_factory<SR>(state_repository: SR) -> ApplyDataContractCreateTransition<SR>
-where
-    SR: StateRepositoryLike,
-{
-    ApplyDataContractCreateTransition::new(state_repository)
-}
-
 impl<SR> ApplyDataContractCreateTransition<SR>
 where
     SR: StateRepositoryLike,
