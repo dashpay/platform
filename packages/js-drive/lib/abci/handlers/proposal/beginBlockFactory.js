@@ -5,14 +5,13 @@ const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVe
 
 const BlockInfo = require('../../../blockExecution/BlockInfo');
 const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
-const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
 
 /**
  * Begin Block
  *
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} latestBlockExecutionContext
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
  * @param {DashPlatformProtocol} transactionalDpp
@@ -27,7 +26,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
 function beginBlockFactory(
   groveDBStore,
   latestBlockExecutionContext,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -61,7 +60,7 @@ function beginBlockFactory(
       round,
     } = request;
 
-    if (proposalBlockExecutionContextCollection.isEmpty()) {
+    if (proposalBlockExecutionContext.isEmpty()) {
       executionTimer.clearTimer('blockExecution');
       executionTimer.startTimer('blockExecution');
     }
@@ -86,11 +85,9 @@ function beginBlockFactory(
 
     await waitForChainLockedHeight(coreChainLockedHeight);
 
-    // Set block execution context
+    // Reset block execution context
 
-    const proposalBlockExecutionContext = new BlockExecutionContext();
-
-    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
+    proposalBlockExecutionContext.reset();
 
     // Set block execution context params
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);

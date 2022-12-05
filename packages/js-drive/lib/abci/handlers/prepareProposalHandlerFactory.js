@@ -16,7 +16,7 @@ const txAction = {
 /**
  * @param {deliverTx} wrappedDeliverTx
  * @param {BaseLogger} logger
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
@@ -25,7 +25,7 @@ const txAction = {
 function prepareProposalHandlerFactory(
   wrappedDeliverTx,
   logger,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   beginBlock,
   endBlock,
   createCoreChainLockUpdate,
@@ -73,8 +73,6 @@ function prepareProposalHandlerFactory(
       },
       consensusLogger,
     );
-
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     let totalSizeBytes = 0;
 

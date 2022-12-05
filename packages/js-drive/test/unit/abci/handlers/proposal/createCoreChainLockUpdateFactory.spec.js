@@ -11,13 +11,12 @@ const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
 describe('createCoreChainLockUpdateFactory', () => {
   let createCoreChainLockUpdate;
-  let blockExecutionContextMock;
   let latestCoreChainLockMock;
   let chainLockMock;
   let coreChainLockedHeight;
   let loggerMock;
   let round;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -31,21 +30,17 @@ describe('createCoreChainLockUpdateFactory', () => {
 
     coreChainLockedHeight = 2;
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    blockExecutionContextMock.hasDataContract.returns(true);
-    blockExecutionContextMock.getCoreChainLockedHeight.returns(coreChainLockedHeight);
+    proposalBlockExecutionContextMock.hasDataContract.returns(true);
+    proposalBlockExecutionContextMock.getCoreChainLockedHeight.returns(coreChainLockedHeight);
 
     latestCoreChainLockMock = {
       getChainLock: this.sinon.stub().returns(chainLockMock),
     };
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
-
     createCoreChainLockUpdate = createCoreChainLockUpdateFactory(
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionContextMock,
       latestCoreChainLockMock,
     );
   });
@@ -55,9 +50,6 @@ describe('createCoreChainLockUpdateFactory', () => {
 
     const response = await createCoreChainLockUpdate(round, loggerMock);
 
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
     const expectedCoreChainLock = new CoreChainLock({
@@ -74,9 +66,6 @@ describe('createCoreChainLockUpdateFactory', () => {
 
     const response = await createCoreChainLockUpdate(round, loggerMock);
 
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
     expect(response).to.be.undefined();

@@ -22,7 +22,6 @@ describe('prepareProposalHandlerFactory', () => {
   let request;
   let deliverTxMock;
   let loggerMock;
-  let blockExecutionContextMock;
   let beginBlockMock;
   let endBlockMock;
   let updateCoreChainLockMock;
@@ -31,7 +30,7 @@ describe('prepareProposalHandlerFactory', () => {
   let validatorSetUpdate;
   let coreChainLockUpdate;
   let endBlockResult;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionMock;
   let round;
 
   beforeEach(function beforeEach() {
@@ -59,7 +58,7 @@ describe('prepareProposalHandlerFactory', () => {
     });
     validatorSetUpdate = new ValidatorSetUpdate();
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -81,14 +80,10 @@ describe('prepareProposalHandlerFactory', () => {
 
     updateCoreChainLockMock = this.sinon.stub().resolves(coreChainLockUpdate);
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
-
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionMock,
       beginBlockMock,
       endBlockMock,
       updateCoreChainLockMock,
@@ -160,7 +155,6 @@ describe('prepareProposalHandlerFactory', () => {
     expect(deliverTxMock).to.be.calledThrice();
 
     expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(round, loggerMock);
-    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
 
     expect(endBlockMock).to.be.calledOnceWithExactly(
       {
