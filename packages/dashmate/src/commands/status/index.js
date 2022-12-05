@@ -11,6 +11,7 @@ class StatusCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {statusProvider} statusProvider
+   * @param {dockerCompose} dockerCompose
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -18,8 +19,15 @@ class StatusCommand extends ConfigBaseCommand {
     args,
     flags,
     statusProvider,
+    dockerCompose,
     config,
   ) {
+    if (!(await dockerCompose.isServiceRunning(config.toEnvs()))) {
+      // eslint-disable-next-line no-console
+      console.log('Regular node is not running! Start it with `dashmate start`');
+      this.exit();
+    }
+
     const scope = await statusProvider.getOverviewScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {

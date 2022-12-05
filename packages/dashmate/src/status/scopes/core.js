@@ -1,14 +1,20 @@
 const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../util/extractCoreVersion');
-const ServiceStatusEnum = require('../../enums/serviceStatus');
+const createRpcClient = require('../../core/createRpcClient')
 
-module.exports = async (coreService, dockerCompose, config) => {
+module.exports = async (dockerCompose, config) => {
+  const rpcClient = createRpcClient({
+    port: config.get('core.rpc.port'),
+    user: config.get('core.rpc.user'),
+    pass: config.get('core.rpc.password'),
+  })
+
   const [mnsyncStatus, networkInfo, blockchainInfo, peerInfo, status] = await Promise.all([
-    coreService.getRpcClient().mnsync('status'),
-    coreService.getRpcClient().getNetworkInfo(),
-    coreService.getRpcClient().getBlockchainInfo(),
-    coreService.getRpcClient().getPeerInfo(),
+    rpcClient.mnsync('status'),
+    rpcClient.getNetworkInfo(),
+    rpcClient.getBlockchainInfo(),
+    rpcClient.getPeerInfo(),
     determineStatus(dockerCompose, config, 'core'),
   ]);
 
@@ -26,14 +32,14 @@ module.exports = async (coreService, dockerCompose, config) => {
   const blockHeight = blockchainInfo.result.blocks;
   const headerHeight = blockchainInfo.result.headers;
   const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4);
-  const { chain, difficulty } = blockchainInfo.result;
+  const {chain, difficulty} = blockchainInfo.result;
 
   const peersCount = peerInfo.result.length;
 
-  const { subversion } = networkInfo.result;
+  const {subversion} = networkInfo.result;
   const version = extractCoreVersion(subversion);
 
-  const { AssetName: syncAsset } = mnsyncStatus.result;
+  const {AssetName: syncAsset} = mnsyncStatus.result;
 
   const masternode = {
     enabled: masternodeEnabled,
@@ -44,7 +50,7 @@ module.exports = async (coreService, dockerCompose, config) => {
   };
 
   if (masternodeEnabled) {
-    const { sentinelState, sentinelVersion } = masternode;
+    const {sentinelState, sentinelVersion} = masternode;
 
     masternode.sentinel.status = sentinelState;
     masternode.sentinel.version = sentinelVersion;

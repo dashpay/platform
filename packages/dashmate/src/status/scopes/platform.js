@@ -2,13 +2,20 @@ const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
 const providers = require('../providers');
+const createRpcClient = require("../../core/createRpcClient");
 
-module.exports = async (coreService, dockerCompose, config) => {
+module.exports = async (dockerCompose, config) => {
+  const rpcClient = createRpcClient({
+    port: config.get('core.rpc.port'),
+    user: config.get('core.rpc.user'),
+    pass: config.get('core.rpc.password'),
+  })
+
   const {
     result: {
       IsSynced: coreIsSynced,
     },
-  } = await coreService.getRpcClient().mnsync('status');
+  } = await rpcClient.mnsync('status');
 
   let status = await determineStatus(dockerCompose, config, 'drive_tenderdash');
 

@@ -1,15 +1,19 @@
-const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
-const blocksToTime = require('../../util/blocksToTime');
-
 const getMasternodeScope = require('./masternode');
 const getPlatformScope = require('./platform');
 const extractCoreVersion = require('../../util/extractCoreVersion');
 const determineStatus = require('../determineStatus');
+const createRpcClient = require("../../core/createRpcClient");
 
-module.exports = async (coreService, dockerCompose, config) => {
+module.exports = async (dockerCompose, config) => {
+  const rpcClient = createRpcClient({
+    port: config.get('core.rpc.port'),
+    user: config.get('core.rpc.user'),
+    pass: config.get('core.rpc.password'),
+  })
+
   const [blockchainInfo, networkInfo, status] = await Promise.all([
-    coreService.getRpcClient().getBlockchainInfo(),
-    coreService.getRpcClient().getNetworkInfo(),
+    rpcClient.getBlockchainInfo(),
+    rpcClient.getNetworkInfo(),
     determineStatus(dockerCompose, config, 'core'),
   ]);
 
@@ -58,14 +62,14 @@ module.exports = async (coreService, dockerCompose, config) => {
   };
 
   if (masternodeEnabled) {
-    const { masternode: masternodeStatus, state } = await getMasternodeScope(config, ['masternode']);
+    const { masternode: masternodeStatus, state } = await getMasternodeScope(dockerCompose, config);
 
     masternode.status = masternodeStatus;
     masternode.state = state;
   }
 
   if (platformEnabled) {
-    const platformScope = await getPlatformScope(coreService, dockerCompose, config);
+    const platformScope = await getPlatformScope(dockerCompose, config);
 
     platform.status = platformScope.status;
     platform.tenderdash = platformScope.tenderdash;
