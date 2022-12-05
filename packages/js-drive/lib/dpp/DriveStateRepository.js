@@ -18,7 +18,7 @@ class DriveStateRepository {
    * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
-   * @param {BlockExecutionContext} latestBlockExecutionContext
+   * @param {BlockExecutionContext} proposalBlockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
    * @param {Object} [options]
@@ -32,7 +32,7 @@ class DriveStateRepository {
     documentRepository,
     spentAssetLockTransactionsRepository,
     coreRpcClient,
-    latestBlockExecutionContext,
+    proposalBlockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
     options = {},
@@ -44,7 +44,7 @@ class DriveStateRepository {
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionContext = latestBlockExecutionContext;
+    this.blockExecutionContext = proposalBlockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
     this.#options = options;
