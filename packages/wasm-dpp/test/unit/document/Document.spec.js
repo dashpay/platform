@@ -352,13 +352,12 @@ describe('Document', () => {
       });
 
       it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
-        const jsId = new JsIdentifier.from(Buffer.alloc(32));
+        const jsId = JsIdentifier.from(Buffer.alloc(32));
         const id = new Identifier(Buffer.alloc(32));
-        const path = "dataObject.binaryObject.identifier";
+        const path = 'dataObject.binaryObject.identifier';
 
         jsDocument.set(path, jsId);
         document.set(path, id);
-
 
         const jsBuffer = jsDocument.toBuffer();
         const buffer = document.toBuffer();
@@ -369,7 +368,7 @@ describe('Document', () => {
 
       it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
         const data = Buffer.alloc(32);
-        const path = "dataObject.binaryObject.binaryData";
+        const path = 'dataObject.binaryObject.binaryData';
 
         jsDocument.set(path, data);
         document.set(path, data);

@@ -9,7 +9,7 @@ authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 [dependencies]
 bs58 = "0.4.0"
 base64 = "0.13.0"
-anyhow = { version = "1.0.61"}
+anyhow = { version = "1.0"}
 thiserror = { version = "1.0"}
 lazy_static = { version ="1.4"}
 serde = { version="1.0", features=["derive"]}
