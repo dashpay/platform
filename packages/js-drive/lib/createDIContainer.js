@@ -614,7 +614,7 @@ function createDIContainer(options) {
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,
-        latestBlockExecutionContext,
+        proposalBlockExecutionContext,
       );
     }).singleton(),
 
