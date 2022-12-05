@@ -84,3 +84,6 @@ pub const AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE: u8 = 1;
 
 /// The estimated average document type name size
 pub const ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE: u8 = 12;
+
+/// The estimated average index name size
+pub const ESTIMATED_AVERAGE_INDEX_NAME_SIZE: u8 = 16;

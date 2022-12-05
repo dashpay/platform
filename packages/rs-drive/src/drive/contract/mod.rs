@@ -136,6 +136,14 @@ impl Drive {
             let storage_flags =
                 StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
 
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+                    contract,
+                    estimated_costs_only_with_layer_info,
+                );
+            }
+
             self.batch_insert_empty_tree(
                 contract_root_path,
                 KeyRef(&[0]),
@@ -290,6 +298,7 @@ impl Drive {
         >,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
+
         let storage_flags =
             StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
 
@@ -371,6 +380,14 @@ impl Drive {
                 }
             }
         }
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_contract_insertion(
+                contract,
+                estimated_costs_only_with_layer_info,
+            );
+        }
+
         Ok(batch_operations)
     }
 
@@ -1170,6 +1187,34 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
+
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+        drive
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                false,
+                StorageFlags::optional_default_as_ref(),
+                None,
+            )
+            .expect("expected to apply contract successfully");
+    }
+
+    #[test]
+    fn test_create_reference_contract_with_history_without_apply() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_path =
+            "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor = json_document_to_cbor(contract_path, Some(1));

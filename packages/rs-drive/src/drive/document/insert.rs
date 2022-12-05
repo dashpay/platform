@@ -1030,7 +1030,7 @@ impl Drive {
             // if we are trying to get estimated costs we need to add the upper levels
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                Self::add_estimation_costs_for_levels_up_to_contract_document_type(
+                Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
                     document_and_contract_info.contract,
                     estimated_costs_only_with_layer_info,
                 );
