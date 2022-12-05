@@ -97,10 +97,10 @@ class Drive {
 
   /**
    * @param {Buffer|Identifier} id
-   * @param {number} epochIndex
+   * @param {number} [epochIndex]
    * @param {boolean} [useTransaction=false]
    *
-   * @returns {Promise<[DataContract, FeeResult]>}
+   * @returns {Promise<[DataContract|null, FeeResult]>}
    */
   async fetchContract(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchContractAsync.call(
