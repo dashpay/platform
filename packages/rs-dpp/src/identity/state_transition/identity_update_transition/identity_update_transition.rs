@@ -68,14 +68,7 @@ impl Default for IdentityUpdateTransition {
         Self {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityUpdate,
-            signature: Default::default(),
-            signature_public_key_id: Default::default(),
-            identity_id: Default::default(),
-            revision: Default::default(),
-            add_public_keys: Default::default(),
-            disable_public_keys: Default::default(),
-            public_keys_disabled_at: Default::default(),
-            execution_context: Default::default(),
+            ..Default::default()
         }
     }
 }
@@ -210,8 +203,8 @@ fn get_list_of_timestamps(
     property_name: &str,
 ) -> Result<Vec<TimestampMillis>, ProtocolError> {
     if let Ok(maybe_timestamps) = value.remove(property_name) {
-        let key_ids: Vec<KeyID> = serde_json::from_value(maybe_timestamps)?;
-        Ok(key_ids)
+        let timestamps: Vec<TimestampMillis> = serde_json::from_value(maybe_timestamps)?;
+        Ok(timestamps)
     } else {
         Ok(vec![])
     }

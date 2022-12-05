@@ -198,7 +198,7 @@ impl Drive {
             }
 
             self.apply_batch_drive_operations(
-                None,
+                true,
                 transaction,
                 batch_operations,
                 &mut drive_operations,

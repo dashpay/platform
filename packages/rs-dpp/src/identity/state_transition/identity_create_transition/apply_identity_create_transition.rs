@@ -45,9 +45,9 @@ where
                 .cloned()
                 .map(|mut pk| {
                     pk.set_signature(vec![]);
-                    pk
+                    (pk.id, pk)
                 })
-                .collect_vec(),
+                .collect(),
             balance: credits_amount,
             revision: 0,
             asset_lock_proof: None,
@@ -61,7 +61,7 @@ where
         let public_key_hashes = identity
             .get_public_keys()
             .iter()
-            .map(|public_key| public_key.hash())
+            .map(|(_, public_key)| public_key.hash())
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
 
         self.state_repository

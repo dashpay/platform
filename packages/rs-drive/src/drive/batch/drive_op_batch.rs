@@ -38,6 +38,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use dpp::data_contract::extra::DriveContractExt;
+use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -425,36 +426,42 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
         }
     }
 }
-//
-// /// Operations on Identities
-// pub enum IdentityOperationType<'a> {
-//     /// Inserts a new identity to the `Identities` subtree.
-//     InsertIdentity {
-//         /// The identity we wish to insert
-//         identity: Identity,
-//         /// Add storage flags (like epoch, owner id, etc)
-//         storage_flags: Option<&'a StorageFlags>,
-//     },
-// }
-//
-// impl DriveOperationConverter for IdentityOperationType<'_> {
-//     fn to_grove_db_operations(
-//         self,
-//         drive: &Drive,
-//         apply: bool,
-//         block_info: &BlockInfo,
-//         transaction: TransactionArg,
-//     ) -> Result<Vec<DriveOperation>, Error> {
-//         match self {
-//             IdentityOperationType::InsertIdentity {
-//                 identity,
-//                 storage_flags,
-//             } => {
-//                 drive.insert_identity(identity, block_info, apply, storage_flags, transaction)
-//             }
-//         }
-//     }
-// }
+
+/// Operations on Identities
+pub enum IdentityOperationType<'a> {
+    /// Inserts a new identity to the `Identities` subtree.
+    InsertIdentity {
+        /// The identity we wish to insert
+        identity: Identity,
+        /// Add storage flags (like epoch, owner id, etc)
+        storage_flags: Option<&'a StorageFlags>,
+    },
+}
+
+impl DriveOperationConverter for IdentityOperationType<'_> {
+    fn to_drive_operations(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        match self {
+            IdentityOperationType::InsertIdentity {
+                identity,
+                storage_flags,
+            } => drive.add_insert_identity_operations(
+                identity,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                storage_flags,
+                transaction,
+            ),
+        }
+    }
+}
 
 /// All types of Drive Operations
 pub enum DriveOperationType<'a> {
@@ -462,8 +469,8 @@ pub enum DriveOperationType<'a> {
     ContractOperation(ContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
-    // /// An identity operation
-    // IdentityOperation(IdentityOperationType<'a>),
+    /// An identity operation
+    IdentityOperation(IdentityOperationType<'a>),
 }
 
 impl DriveOperationConverter for DriveOperationType<'_> {
@@ -492,14 +499,15 @@ impl DriveOperationConverter for DriveOperationType<'_> {
                     block_info,
                     transaction,
                 )
-            } // DriveOperationType::IdentityOperation(identity_operation_type) => {
-              //     identity_operation_type.to_grove_db_operations(
-              //         drive,
-              //         apply,
-              //         block_info,
-              //         transaction,
-              //     )
-              // }
+            }
+            DriveOperationType::IdentityOperation(identity_operation_type) => {
+                identity_operation_type.to_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                )
+            }
         }
     }
 }

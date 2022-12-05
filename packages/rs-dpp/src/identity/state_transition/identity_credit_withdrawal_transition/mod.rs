@@ -60,16 +60,8 @@ pub struct IdentityCreditWithdrawalTransition {
 impl std::default::Default for IdentityCreditWithdrawalTransition {
     fn default() -> Self {
         IdentityCreditWithdrawalTransition {
-            protocol_version: Default::default(),
             transition_type: StateTransitionType::IdentityCreditWithdrawal,
-            identity_id: Default::default(),
-            amount: Default::default(),
-            core_fee: Default::default(),
-            pooling: Default::default(),
-            output_script: Default::default(),
-            signature_public_key_id: Default::default(),
-            signature: Default::default(),
-            execution_context: Default::default(),
+            ..Default::default()
         }
     }
 }

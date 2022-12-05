@@ -136,6 +136,21 @@ impl From<RootTree> for &'static [u8; 1] {
     }
 }
 
+/// Returns the path to the identities
+pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities)]
+}
+
+/// Returns the path to the key hashes.
+pub(crate) fn key_hashes_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::KeyHashes)]
+}
+
+/// Returns the path to the masternode key hashes.
+pub(crate) fn masternode_key_hashes_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::MasternodeKeyHashes)]
+}
+
 /// Returns the path to a contract's document types.
 fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [

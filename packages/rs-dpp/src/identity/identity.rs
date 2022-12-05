@@ -24,7 +24,7 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
 pub struct Identity {
     pub protocol_version: u32,
     pub id: Identifier,
-    pub public_keys: Vec<IdentityPublicKey>,
+    pub public_keys: BTreeMap<u16, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
     #[serde(skip)]
@@ -45,32 +45,33 @@ impl Identity {
     }
 
     /// Set Identity public key
-    pub fn set_public_keys(&mut self, pub_key: Vec<IdentityPublicKey>) {
+    pub fn set_public_keys(mut self, pub_key: BTreeMap<u16, IdentityPublicKey>) -> Self {
         self.public_keys = pub_key;
+        self
     }
 
     /// Get Identity public keys revision
-    pub fn get_public_keys(&self) -> &[IdentityPublicKey] {
+    pub fn get_public_keys(&self) -> &BTreeMap<u16, IdentityPublicKey> {
         &self.public_keys
     }
 
     /// Get Identity public keys revision
-    pub fn get_public_keys_mut(&mut self) -> &mut [IdentityPublicKey] {
+    pub fn get_public_keys_mut(&mut self) -> &mut BTreeMap<u16, IdentityPublicKey> {
         &mut self.public_keys
     }
 
-    // Returns a public key for a given id
+    /// Returns a public key for a given id
     pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey> {
-        self.public_keys.iter().find(|i| i.id == key_id)
+        self.public_keys.get(&key_id)
     }
 
-    // Returns a public key for a given id
+    /// Returns a public key for a given id
     pub fn get_public_key_by_id_mut(&mut self, key_id: KeyID) -> Option<&mut IdentityPublicKey> {
-        self.public_keys.iter_mut().find(|i| i.id == key_id)
+        self.public_keys.get_mut(&key_id)
     }
 
     /// Add identity public keys
-    pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
+    pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = (KeyID, IdentityPublicKey)>) {
         self.public_keys.extend(keys);
     }
 
@@ -129,16 +130,18 @@ impl Identity {
     /// Get the biggest public KeyID
     pub fn get_public_key_max_id(&self) -> KeyID {
         self.public_keys
-            .iter()
-            .map(|pk| pk.id)
+            .keys()
+            .map(|pk| *pk)
             .max()
             .unwrap_or_default()
     }
 
+    /// Converts the identity to a cbor buffer (same as to_cbor)
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         self.to_cbor()
     }
 
+    /// Converts the identity to a cbor buffer
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
         let mut buf = self.get_protocol_version().to_le_bytes().to_vec();
@@ -152,7 +155,7 @@ impl Identity {
             "publicKeys",
             self.get_public_keys()
                 .iter()
-                .map(|pk| pk.into())
+                .map(|(_, pk)| pk.into())
                 .collect::<Vec<CborValue>>(),
         );
 
@@ -196,8 +199,8 @@ impl Identity {
 
         let public_keys = keys_cbor
             .iter()
-            .map(IdentityPublicKey::from_cbor_value)
-            .collect::<Result<Vec<IdentityPublicKey>, ProtocolError>>()?;
+            .map(|k| IdentityPublicKey::from_cbor_value(k).map(|d| (d.id, d)))
+            .collect::<Result<BTreeMap<KeyID, IdentityPublicKey>, ProtocolError>>()?;
 
         Ok(Self {
             protocol_version,
@@ -210,6 +213,7 @@ impl Identity {
         })
     }
 
+    /// Creates an identity from a json structure
     pub fn from_json(mut json_object: JsonValue) -> Result<Identity, ProtocolError> {
         if let Some(public_keys_value) = json_object.get_mut("publicKeys") {
             if let Some(public_keys_array) = public_keys_value.as_array_mut() {
@@ -227,6 +231,7 @@ impl Identity {
         Ok(identity)
     }
 
+    /// Creates an identity from a raw object
     pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
         raw_object.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Base58)?;
 
@@ -235,6 +240,7 @@ impl Identity {
         Ok(identity)
     }
 
+    /// Creates an identity from a json object
     pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
         let pks = raw_object.get("publicKeys").unwrap().as_array().unwrap();
 
@@ -248,6 +254,7 @@ impl Identity {
         Ok(identity)
     }
 
+    /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(&self.to_buffer()?))
     }
