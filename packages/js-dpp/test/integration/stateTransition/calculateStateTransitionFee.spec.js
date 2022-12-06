@@ -3,9 +3,8 @@ const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/ca
 const getIdentityCreateTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 const ReadOperation = require('../../../lib/stateTransition/fee/operations/ReadOperation');
-const WriteOperation = require('../../../lib/stateTransition/fee/operations/WriteOperation');
-const DeleteOperation = require('../../../lib/stateTransition/fee/operations/DeleteOperation');
 const PreCalculatedOperation = require('../../../lib/stateTransition/fee/operations/PreCalculatedOperation');
+const DummyFeeResult = require('../../../lib/stateTransition/fee/DummyFeeResult');
 
 describe('calculateStateTransitionFee', () => {
   let stateTransition;
@@ -23,13 +22,11 @@ describe('calculateStateTransitionFee', () => {
 
     executionContext.addOperation(
       new ReadOperation(10),
-      new WriteOperation(5, 5),
-      new DeleteOperation(6, 6),
-      new PreCalculatedOperation(12, 12),
+      new PreCalculatedOperation(new DummyFeeResult(12, 12)),
     );
 
     const result = calculateStateTransitionFee(stateTransition);
 
-    expect(result).to.equal(13616);
+    expect(result).to.equal(17088);
   });
 });
