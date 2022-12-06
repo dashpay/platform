@@ -35,9 +35,11 @@ pub(super) fn remove_path(path: &[JsonPathStep], value: &mut Value) -> Option<Va
     None
 }
 
+#[cfg(test)]
 mod test {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn should_remove_data_from_path_to_object() {

@@ -662,6 +662,4 @@ mod test {
             JsonValue::String(String::from("123"))
         );
     }
-
-    // TODO write the test - for remove_into()
 }

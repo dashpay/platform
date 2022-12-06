@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
-use crate::utils::to_serde_json_value;
+use crate::utils::with_serde_to_json_value;
 use crate::DataContractWasm;
 
 #[wasm_bindgen(js_name=DataContractFactory)]
@@ -32,7 +32,7 @@ impl DataContractFactoryWasm {
         owner_id: IdentifierWrapper,
         documents: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
-        let documents = to_serde_json_value(&documents)?;
+        let documents = with_serde_to_json_value(&documents)?;
 
         let data_contract = self
             .0

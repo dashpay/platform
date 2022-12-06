@@ -1,7 +1,6 @@
 use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
-use itertools::Either;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -12,14 +11,13 @@ pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
-use crate::identifier;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
+use crate::util::cbor_value;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::cbor_value::FieldType;
 use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::{cbor_value, serializer};
 
 pub mod document_factory;
 pub mod document_validator;
@@ -195,17 +193,6 @@ impl Document {
 
         Ok(result_buf)
     }
-
-    // pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-    //     let protocol_version = self.protocol_version;
-    //     let mut json_object = self.to_object(false)?;
-
-    //     if let JsonValue::Object(ref mut o) = json_object {
-    //         o.remove("$protocolVersion");
-    //     };
-
-    //     serializer::value_to_cbor(json_object, Some(protocol_version))
-    // }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash(self.to_buffer()?))
