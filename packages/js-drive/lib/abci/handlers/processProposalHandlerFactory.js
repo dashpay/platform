@@ -15,7 +15,7 @@ const proposalStatus = {
 /**
  * @param {deliverTx} wrappedDeliverTx
  * @param {BaseLogger} logger
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {verifyChainLock} verifyChainLock
@@ -24,7 +24,7 @@ const proposalStatus = {
 function processProposalHandlerFactory(
   wrappedDeliverTx,
   logger,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   beginBlock,
   endBlock,
   verifyChainLock,
@@ -82,8 +82,6 @@ function processProposalHandlerFactory(
       },
       consensusLogger,
     );
-
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     const txResults = [];
     let validTxCount = 0;
