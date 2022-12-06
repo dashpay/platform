@@ -4,7 +4,7 @@ const DummyFeeResult = require('../DummyFeeResult');
 
 class PreCalculatedOperation extends AbstractOperation {
   /**
-   * @param {FeeResult|StaticFeeResult} feeResult
+   * @param {FeeResult|DummyFeeResult} feeResult
    */
   constructor(feeResult) {
     super();

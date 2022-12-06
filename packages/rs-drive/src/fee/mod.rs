@@ -27,10 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use costs::storage_cost::removal::Identifier;
 use enum_map::EnumMap;
-use intmap::IntMap;
-use std::collections::BTreeMap;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -86,6 +83,15 @@ pub fn calculate_fee(
 }
 
 impl FeeResult {
+    /// Creates a FeeResult instance with specified storage and processing fees
+    pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
+        FeeResult {
+            storage_fee,
+            processing_fee,
+            ..Default::default()
+        }
+    }
+
     /// Adds and self assigns result between two Fee Results
     pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), Error> {
         self.storage_fee = self

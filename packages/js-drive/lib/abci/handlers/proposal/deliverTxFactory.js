@@ -6,6 +6,7 @@ const AbstractDocumentTransition = require(
 );
 
 const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+const aggregateOperationFees = require('./fees/aggregateOperationFees');
 
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
@@ -42,7 +43,7 @@ function deliverTxFactory(
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
    * @param {BaseLogger} consensusLogger
-   * @return {Promise<{ code: number }>}
+   * @return {Promise<{ code: number, fees: FeeResult }>}
    */
   async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
@@ -257,8 +258,7 @@ function deliverTxFactory(
 
     return {
       code: 0,
-      processingFees,
-      storageFees,
+      fees: aggregateOperationFees(actualStateTransitionOperations),
     };
   }
 

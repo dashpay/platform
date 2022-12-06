@@ -5,6 +5,7 @@ const {
   feeResultGetStorageFee,
   feeResultGetProcessingFee,
   feeResultAddFees,
+  feeResultCreate,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -15,6 +16,7 @@ const feeResultAddWithStack = appendStack(feeResultAdd);
 const feeResultAddFeesWithStack = appendStack(feeResultAddFees);
 const feeResultGetStorageFeeWithStack = appendStack(feeResultGetStorageFee);
 const feeResultGetProcessingFeeWithStack = appendStack(feeResultGetProcessingFee);
+const feeResultCreateWithStack = appendStack(feeResultCreate);
 
 class FeeResult {
   constructor(inner) {
@@ -49,11 +51,22 @@ class FeeResult {
   }
 
   /**
-   * @param {number} storageFees
-   * @param {number} processingFees
+   * @param {number} storageFee
+   * @param {number} processingFee
    */
-  addFees(storageFees, processingFees) {
-    feeResultAddFeesWithStack.call(this.inner, storageFees, processingFees);
+  addFees(storageFee, processingFee) {
+    feeResultAddFeesWithStack.call(this.inner, storageFee, processingFee);
+  }
+
+  /**
+   * Create new fee result
+   *
+   * @returns {FeeResult}
+   */
+  static create(storageFee = 0, processingFee = 0) {
+    const inner = feeResultCreateWithStack(storageFee, processingFee);
+
+    return new FeeResult(inner);
   }
 }
 

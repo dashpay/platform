@@ -556,10 +556,7 @@ describe('Drive', () => {
 
       it('should process a block', async () => {
         const request = {
-          fees: {
-            storageFees: 100,
-            processingFees: 100,
-          },
+          fees: FeeResult.create(100, 10),
         };
 
         const response = await drive.getAbci().blockEnd(request);
@@ -584,10 +581,7 @@ describe('Drive', () => {
           validatorSetQuorumHash: Buffer.alloc(32, 2),
         });
         await drive.getAbci().blockEnd({
-          fees: {
-            storageFees: 100,
-            processingFees: 100,
-          },
+          fees: FeeResult.create(100, 10),
         });
       });
 

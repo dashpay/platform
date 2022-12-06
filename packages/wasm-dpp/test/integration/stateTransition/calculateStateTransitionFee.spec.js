@@ -3,9 +3,8 @@ const calculateStateTransitionFee = require('@dashevo/dpp/lib/stateTransition/fe
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/WriteOperation');
-const DeleteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/DeleteOperation');
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
+const DummyFeeResult = require('@dashevo/dpp/lib/stateTransition/fee/DummyFeeResult');
 
 describe('calculateStateTransitionFee', () => {
   let stateTransition;
@@ -23,9 +22,7 @@ describe('calculateStateTransitionFee', () => {
 
     executionContext.addOperation(
       new ReadOperation(10),
-      new WriteOperation(5, 5),
-      new DeleteOperation(6, 6),
-      new PreCalculatedOperation(12, 12),
+      new PreCalculatedOperation(new DummyFeeResult(12, 12)),
     );
 
     const result = calculateStateTransitionFee(stateTransition);

@@ -1,13 +1,21 @@
 use drive::fee::FeeResult;
 use neon::prelude::*;
-use std::borrow::{Borrow, BorrowMut};
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 pub struct FeeResultWrapper(FeeResult);
 
 impl FeeResultWrapper {
     pub fn new(fee_result: FeeResult) -> Self {
         FeeResultWrapper(fee_result)
+    }
+
+    pub fn create(mut cx: FunctionContext) -> JsResult<JsBox<FeeResultWrapper>> {
+        let storage_fee = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
+        let processing_fee = cx.argument::<JsNumber>(1)?.value(&mut cx) as u64;
+
+        let fee_result = FeeResult::from_fees(storage_fee, processing_fee);
+
+        Ok(cx.boxed(Self::new(fee_result)))
     }
 
     pub fn get_storage_fee(mut cx: FunctionContext) -> JsResult<JsNumber> {
@@ -60,11 +68,7 @@ impl FeeResultWrapper {
         // TODO: Figure out how to get mutable link from JsBox
         let mut fee_result_sum = fee_result_wrapper_self.deref().deref().deref().clone();
 
-        let fee_result_to_add = FeeResult {
-            storage_fee,
-            processing_fee,
-            ..Default::default()
-        };
+        let fee_result_to_add = FeeResult::from_fees(storage_fee, processing_fee);
 
         fee_result_sum
             .checked_add_assign(fee_result_to_add)
