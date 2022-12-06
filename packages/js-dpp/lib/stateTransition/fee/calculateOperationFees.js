@@ -14,8 +14,8 @@ function calculateOperationFees(operations) {
   let processingFee = 0;
 
   operations.forEach((operation) => {
-    storageFee += operation.getProcessingCost();
-    processingFee += operation.getStorageCost();
+    storageFee += operation.getStorageCost();
+    processingFee += operation.getProcessingCost();
   });
 
   // TODO: Do we need to multiply pre calculated fees?

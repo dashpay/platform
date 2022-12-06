@@ -218,8 +218,8 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageFee: storageFees,
-      processingFee: processingFees,
+      storageFee: actualStorageFees,
+      processingFee: actualProcessingFees,
     } = calculateOperationFees(actualStateTransitionOperations);
 
     const {
@@ -245,8 +245,8 @@ function deliverTxFactory(
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
-            storage: storageFees,
-            processing: processingFees,
+            storage: actualStorageFees,
+            processing: actualProcessingFees,
             final: actualStateTransitionFee,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },

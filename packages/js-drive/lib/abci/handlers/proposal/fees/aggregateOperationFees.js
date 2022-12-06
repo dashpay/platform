@@ -18,15 +18,14 @@ function aggregateOperationFees(operations) {
 
   const rootFeeResult = FeeResult.create();
 
-  // TODO: All operations must have the same interface (must based on FeeResult?)
   operations.forEach((operation) => {
-    if (operation instanceof PreCalculatedOperation) {
-      // Add all subsequent ones to the root fee result
+    if (operation instanceof PreCalculatedOperation && operation.feeResult instanceof FeeResult) {
       rootFeeResult.add(operation.feeResult);
     } else {
       // Collect fees from operation which are not based on FeeResult
-      storageFee += operation.getProcessingCost();
-      processingFee += operation.getStorageCost();
+      // and add to the root fee result later
+      storageFee += operation.getStorageCost();
+      processingFee += operation.getProcessingCost();
     }
   });
 
