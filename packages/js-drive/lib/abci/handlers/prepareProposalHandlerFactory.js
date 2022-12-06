@@ -148,8 +148,6 @@ function prepareProposalHandlerFactory(
       txResults,
       consensusParamUpdates,
       validatorSetUpdate,
-      coreChainLockUpdate,
-      txRecords,
     });
 
     return new ResponsePrepareProposal({

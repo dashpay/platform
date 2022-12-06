@@ -82,15 +82,6 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
         },
       }),
       validatorSetUpdate: new ValidatorSetUpdate(),
-      coreChainLockUpdate: {
-        coreBlockHeight: 42,
-        coreBlockHash: '1528e523f4c20fa84ba70dd96372d34e00ce260f357d53ad1a8bc892ebf20e2d',
-        signature: '1897ce8f54d2070f44ca5c29983b68b391e8137c25e44f67416e579f3e3bdfef7b4fd22db7818399147e52907998857b0fbc8edfdc40a64f2c7df0e88544d31d12ca8c15e73d50dda25ca23f754ed3f789ed4bcb392161995f464017c10df404',
-      },
-      txRecords: [{
-        tx: Buffer.alloc(5, 0),
-        action: 1,
-      }],
     },
   };
 }
