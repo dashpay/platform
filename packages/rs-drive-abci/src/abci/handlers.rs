@@ -185,12 +185,12 @@ mod tests {
         use chrono::{Duration, Utc};
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee::FeeResult;
         use rust_decimal::prelude::ToPrimitive;
         use std::ops::Div;
 
         use crate::abci::messages::{
-            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, FeesAggregate,
-            InitChainRequest,
+            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest,
         };
         use crate::common::helpers::setup::setup_platform;
 
@@ -357,10 +357,7 @@ mod tests {
                     }
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
-                        },
+                        fees: FeeResult::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform
@@ -512,10 +509,7 @@ mod tests {
                     );
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
-                        },
+                        fees: FeeResult::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform

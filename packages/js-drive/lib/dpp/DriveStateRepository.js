@@ -221,6 +221,7 @@ class DriveStateRepository {
         dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
+        // TODO: We don't need this anymore
         useTransaction: false,
       },
     );

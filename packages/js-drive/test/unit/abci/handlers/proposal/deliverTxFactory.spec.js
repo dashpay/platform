@@ -10,13 +10,14 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const FeeResult = require('@dashevo/rs-drive/FeeResult');
+
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
-
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
-const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 
+const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const PredictedFeeLowerThanActualError = require('../../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
 const NegativeBalanceError = require('../../../../../lib/abci/handlers/errors/NegativeBalanceError');
@@ -104,8 +105,7 @@ describe('deliverTxFactory', () => {
 
     expect(response).to.deep.equal({
       code: 0,
-      processingFees: 0,
-      storageFees: 0,
+      fees: FeeResult.create(),
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
@@ -139,8 +139,7 @@ describe('deliverTxFactory', () => {
 
     expect(response).to.deep.equal({
       code: 0,
-      processingFees: 0,
-      storageFees: 0,
+      fees: FeeResult.create(),
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(

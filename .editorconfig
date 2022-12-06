@@ -8,5 +8,8 @@ trim_trailing_whitespace = true
 insert_final_newline = true
 end_of_line = lf
 
+[*.rs]
+indent_size = 4
+
 [*.{md,markdown}]
 trim_trailing_whitespace = false

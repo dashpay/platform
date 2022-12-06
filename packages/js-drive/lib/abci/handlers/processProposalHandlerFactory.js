@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const aggregateFees = require('./proposal/fees/aggregateFees');
+
 const proposalStatus = {
   UNKNOWN: 0, // Unknown status. Returning this from the application is always an error.
   ACCEPT: 1, // Status that signals that the application finds the proposal valid.
@@ -84,24 +86,21 @@ function processProposalHandlerFactory(
     );
 
     const txResults = [];
+    const feeResults = [];
     let validTxCount = 0;
     let invalidTxCount = 0;
-    let storageFeesTotal = 0;
-    let processingFeesTotal = 0;
 
     for (const tx of txs) {
       const {
         code,
         info,
-        processingFees,
-        storageFees,
+        fees,
       } = await wrappedDeliverTx(tx, round, consensusLogger);
 
       if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        storageFeesTotal += storageFees;
-        processingFeesTotal += processingFees;
+        feeResults.push(fees);
       } else {
         invalidTxCount += 1;
       }
@@ -124,8 +123,7 @@ function processProposalHandlerFactory(
     } = await endBlock({
       height,
       round,
-      processingFees: processingFeesTotal,
-      storageFees: storageFeesTotal,
+      fees: aggregateFees(feeResults),
       coreChainLockedHeight,
     }, consensusLogger);
 

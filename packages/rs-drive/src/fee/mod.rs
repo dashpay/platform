@@ -27,10 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use costs::storage_cost::removal::Identifier;
 use enum_map::EnumMap;
-use intmap::IntMap;
-use std::collections::BTreeMap;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -51,7 +48,7 @@ pub struct FeeResult {
     /// Processing fee
     pub processing_fee: u64,
     /// Removed bytes from identities
-    pub removed_bytes_from_identities: RemovedBytesFromEpochsByIdentities,
+    pub removed_bytes_from_epochs_by_identities: RemovedBytesFromEpochsByIdentities,
     /// Removed bytes not needing to be refunded to identities
     pub removed_bytes_from_system: u32,
 }
@@ -86,6 +83,15 @@ pub fn calculate_fee(
 }
 
 impl FeeResult {
+    /// Creates a FeeResult instance with specified storage and processing fees
+    pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
+        FeeResult {
+            storage_fee,
+            processing_fee,
+            ..Default::default()
+        }
+    }
+
     /// Adds and self assigns result between two Fee Results
     pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), Error> {
         self.storage_fee = self
@@ -98,8 +104,8 @@ impl FeeResult {
                 .ok_or(Error::Fee(FeeError::Overflow(
                     "processing fee overflow error",
                 )))?;
-        self.removed_bytes_from_identities
-            .checked_add_assign(rhs.removed_bytes_from_identities)?;
+        self.removed_bytes_from_epochs_by_identities
+            .checked_add_assign(rhs.removed_bytes_from_epochs_by_identities)?;
         self.removed_bytes_from_system = self
             .removed_bytes_from_system
             .checked_add(rhs.removed_bytes_from_system)
