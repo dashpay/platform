@@ -18,7 +18,7 @@ PLATFORM_OBJ_C_OUT_PATH="$PLATFORM_CLIENTS_PATH/objective-c"
 CORE_PYTHON_OUT_PATH="$CORE_CLIENTS_PATH/python"
 PLATFORM_PYTHON_OUT_PATH="$PLATFORM_CLIENTS_PATH/python"
 
-PROTOC_IMAGE="strophy/protoc:4.1.0"
+PROTOC_IMAGE="rvolosatovs/protoc:4.0.0"
 
 #################################################
 # Generate JavaScript client for `Core` service #
