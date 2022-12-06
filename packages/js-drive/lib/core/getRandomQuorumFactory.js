@@ -2,6 +2,7 @@ const BufferWriter = require('@dashevo/dashcore-lib/lib/encoding/bufferwriter');
 const Hash = require('@dashevo/dashcore-lib/lib/crypto/hash');
 const QuorumsNotFoundError = require('./errors/QuorumsNotFoundError');
 const ValidatorSet = require('../validator/ValidatorSet');
+const llmqMap = require('./llmqMap');
 
 const MIN_QUORUM_VALID_MEMBERS = 90;
 
@@ -48,7 +49,17 @@ function getRandomQuorumFactory(coreRpcClient) {
       throw new QuorumsNotFoundError(sml, quorumType);
     }
 
-    const validatorQuorumsInfo = await coreRpcClient.quorum('listextended', quorumType);
+    const allValidatorQuorumsExtendedInfo = await coreRpcClient.quorum('listextended');
+
+    // convert to object
+    const validatorQuorumsInfo = (allValidatorQuorumsExtendedInfo[llmqMap[quorumType]] || [])
+      .reduce(
+        (obj, item) => ({
+          ...obj,
+          [item.key]: item.value,
+        }),
+        {},
+      );
 
     const numberOfQuorums = sml.getQuorumsOfType(quorumType).length;
     const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3;
