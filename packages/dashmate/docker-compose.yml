@@ -13,6 +13,8 @@ services:
     command:
       - dashd
     stop_grace_period: 30s
+    environment:
+      - WSL2_FIX=${CORE_WSL2_FIX}
 
 volumes:
   core_data:

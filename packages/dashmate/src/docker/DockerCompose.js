@@ -399,6 +399,7 @@ class DockerCompose {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      CORE_WSL2_FIX: (new Date()).getTime(),
     };
 
     return {
