@@ -30,7 +30,7 @@ describe('prepareProposalHandlerFactory', () => {
   let validatorSetUpdate;
   let coreChainLockUpdate;
   let endBlockResult;
-  let proposalBlockExecutionMock;
+  let proposalBlockExecutionContextMock;
   let round;
 
   beforeEach(function beforeEach() {
@@ -58,7 +58,7 @@ describe('prepareProposalHandlerFactory', () => {
     });
     validatorSetUpdate = new ValidatorSetUpdate();
 
-    proposalBlockExecutionMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -83,7 +83,7 @@ describe('prepareProposalHandlerFactory', () => {
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
-      proposalBlockExecutionMock,
+      proposalBlockExecutionContextMock,
       beginBlockMock,
       endBlockMock,
       updateCoreChainLockMock,
@@ -166,6 +166,15 @@ describe('prepareProposalHandlerFactory', () => {
       },
       loggerMock,
     );
+
+    expect(proposalBlockExecutionContextMock.setPrepareProposalResult).to.be.calledOnceWithExactly({
+      appHash,
+      txResults: new Array(3).fill({ code: 0 }),
+      consensusParamUpdates,
+      validatorSetUpdate,
+      coreChainLockUpdate,
+      txRecords,
+    });
   });
 
   it('should cut txs that are not fit into the size limit', async () => {

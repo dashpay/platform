@@ -60,6 +60,29 @@ function processProposalHandlerFactory(
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
+    if (proposalBlockExecutionContext.getHeight()
+      && proposalBlockExecutionContext.getHeight().toNumber() === height.toNumber()
+      && proposalBlockExecutionContext.getRound() === round) {
+      consensusLogger.debug('Returning cached result');
+
+      const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
+
+      const {
+        appHash,
+        txResults,
+        consensusParamUpdates,
+        validatorSetUpdate,
+      } = prepareProposalResult;
+
+      return new ResponseProcessProposal({
+        status: proposalStatus.ACCEPT,
+        appHash,
+        txResults,
+        consensusParamUpdates,
+        validatorSetUpdate,
+      });
+    }
+
     if (coreChainLockUpdate) {
       const chainLockIsValid = await verifyChainLock(coreChainLockUpdate);
 
