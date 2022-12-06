@@ -105,6 +105,7 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
     }
 
+    // We don't know yet whether we already have header at fromBlockHeight
     let lastKnownChainHeight = fromBlockHeight - 1;
 
     const stream = await this.createContinuousSyncStream(fromBlockHeight);
@@ -133,11 +134,10 @@ class BlockHeadersReader extends EventEmitter {
          *
          * @param e
          */
-        const rejectHeaders = (e) => {
-          this.cancelStream(stream);
-          // Call ReconnectableStream error handler to
-          // trigger retry logic
-          stream.errorHandler(e);
+        const rejectHeaders = async (e) => {
+          // Don't use cancelStream there because it's going to unsubscribe from events
+          stream.cancel();
+          stream.retryOnError(e);
         };
 
         this.emit(EVENTS.BLOCK_HEADERS, {
@@ -150,6 +150,7 @@ class BlockHeadersReader extends EventEmitter {
     const beforeReconnectHandler = (updateArguments) => {
       updateArguments({
         fromBlockHeight: lastKnownChainHeight,
+        count: 0,
       });
 
       lastKnownChainHeight -= 1;
@@ -181,6 +182,8 @@ class BlockHeadersReader extends EventEmitter {
     }
   }
 
+  // TODO: refactor whole thing with ReconnectableStream that supports
+  // retry on error logic
   /**
    * A HOF that returns a function to subscribe to historical block headers and chain locks
    * and handles retry logic
@@ -251,6 +254,8 @@ class BlockHeadersReader extends EventEmitter {
            */
           const rejectHeaders = (e) => {
             rejected = true;
+            // Cancel stream and unsubscribe from all data events
+            // because they are going th be re-created in errorHandler
             this.cancelStream(stream);
             errorHandler(e);
           };

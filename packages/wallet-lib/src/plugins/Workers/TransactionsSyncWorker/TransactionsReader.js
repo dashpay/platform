@@ -88,6 +88,7 @@ class TransactionsReader extends EventEmitter {
     this.logger.debug(`[TransactionsReader] Started syncing blocks from ${fromBlockHeight} to ${toBlockHeight}`);
   }
 
+  // TODO: rework with ReconnectableStream because it supports retry internally
   /**
    * A HOF that returns a function to subscribe to historical block headers and chain locks
    * and handles retry logic
@@ -342,8 +343,8 @@ class TransactionsReader extends EventEmitter {
 
           if (merkleBlockHeight < fromBlockHeight) {
             const error = new Error(`Merkle block height is lesser than expected startBlockHeight: ${merkleBlockHeight} < ${fromBlockHeight}`);
-            this.cancelStream(stream);
-            stream.errorHandler(error);
+            stream.cancel(stream);
+            stream.retryOnError(error);
             return;
           }
 
@@ -357,8 +358,9 @@ class TransactionsReader extends EventEmitter {
             throw new Error('Unable to reject accepted merkle block');
           }
           rejected = true;
-          this.cancelStream(stream);
-          stream.errorHandler(e);
+          // Do not use cancelStream otherwise it will unsubscribe from events
+          stream.cancel();
+          stream.retryOnError(e);
         };
 
         this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });

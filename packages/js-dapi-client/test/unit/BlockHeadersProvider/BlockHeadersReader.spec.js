@@ -315,8 +315,12 @@ describe('BlockHeadersReader - unit', () => {
       );
     });
 
-    it('[data] should cancel stream in case headers batch was rejected', async () => {
+    it('[data] should cancel stream in case headers batch was rejected', async function () {
       await blockHeadersReader.subscribeToNew(startFrom);
+
+      continuousSyncStream.retryOnError = this.sinon.stub().callsFake((e) => {
+        continuousSyncStream.emit('error', e);
+      });
 
       const rejectWith = new Error('Stream error');
       blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (_, rejectHeaders) => {

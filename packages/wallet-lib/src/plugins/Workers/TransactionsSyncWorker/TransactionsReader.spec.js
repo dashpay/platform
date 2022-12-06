@@ -761,10 +761,15 @@ describe('TransactionsReader - unit', () => {
               .to.have.not.been.calledWith('error');
           });
 
-          it('should throw an error if invalid Merkle Block height provided', async () => {
+          it('should throw an error if invalid Merkle Block height provided', async function () {
             await transactionsReader.startContinuousSync(
               fromBlockHeight, DEFAULT_ADDRESSES,
             );
+
+            continuousSyncStream.retryOnError = this.sinon.stub()
+              .callsFake((e) => {
+                continuousSyncStream.emit('error', e);
+              });
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -793,10 +798,15 @@ describe('TransactionsReader - unit', () => {
             merkleBlock = mockMerkleBlock([]);
           });
 
-          it('should emit error if Merkle Block rejected', async () => {
+          it('should emit error if Merkle Block rejected', async function () {
             await transactionsReader.startContinuousSync(
               fromBlockHeight, DEFAULT_ADDRESSES,
             );
+
+            continuousSyncStream.retryOnError = this.sinon.stub()
+              .callsFake((e) => {
+                continuousSyncStream.emit('error', e);
+              });
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ rejectMerkleBlock }) => {

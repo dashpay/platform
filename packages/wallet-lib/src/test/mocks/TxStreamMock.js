@@ -67,6 +67,9 @@ class TxStreamMock extends EventEmitter {
   errorHandler(e) {
     this.emit('error', e);
   }
+
+  // eslint-disable-next-line class-methods-use-this
+  retryOnError() {}
 }
 
 TxStreamMock.EVENTS = {
