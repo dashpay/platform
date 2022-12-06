@@ -162,6 +162,7 @@ function setupRegularPresetTaskFactory(
       },
       {
         title: 'Set SSL certificate',
+        enabled: (ctx) => !ctx.certificateProvider,
         task: async (ctx, task) => {
           const sslProviders = [...SSL_PROVIDERS].filter((item) => item !== 'selfSigned');
 
@@ -208,33 +209,37 @@ function setupRegularPresetTaskFactory(
         title: 'Set SSL certificate',
         enabled: (ctx) => ctx.certificateProvider === 'manual',
         task: async (ctx, task) => {
-          const bundleFilePath = await task.prompt({
-            type: 'input',
-            message: 'Enter the path to your certificate chain file',
-            validate: (state) => {
-              if (fs.existsSync(state)) {
-                return true;
-              }
+          if (!ctx.sslCertificateFilePath) {
+            ctx.sslCertificateFilePath = await task.prompt({
+              type: 'input',
+              message: 'Enter the path to your certificate chain file',
+              validate: (state) => {
+                if (fs.existsSync(state)) {
+                  return true;
+                }
 
-              return 'Please enter a valid path to your certificate chain file';
-            },
-          });
+                return 'Please enter a valid path to your certificate chain file';
+              },
+            });
+          }
 
-          const privateKeyFilePath = await task.prompt({
-            type: 'input',
-            message: 'Enter the path to your private key file',
-            validate: (state) => {
-              if (fs.existsSync(state)) {
-                return true;
-              }
+          if (!ctx.sslCertificatePrivateKeyFilePath) {
+            ctx.sslCertificatePrivateKeyFilePath = await task.prompt({
+              type: 'input',
+              message: 'Enter the path to your private key file',
+              validate: (state) => {
+                if (fs.existsSync(state)) {
+                  return true;
+                }
 
-              return 'Please enter a valid path to your private key file';
-            },
-          });
+                return 'Please enter a valid path to your private key file';
+              },
+            });
+          }
 
-          ctx.certificate = fs.readFileSync(bundleFilePath, 'utf8');
+          ctx.certificate = fs.readFileSync(ctx.sslCertificateFilePath, 'utf8');
           ctx.keyPair = {
-            privateKey: fs.readFileSync(privateKeyFilePath, 'utf8'),
+            privateKey: fs.readFileSync(ctx.sslCertificatePrivateKeyFilePath, 'utf8'),
           };
 
           return saveCertificateTask(ctx.config);
