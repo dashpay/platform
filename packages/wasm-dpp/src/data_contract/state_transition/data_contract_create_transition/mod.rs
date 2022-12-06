@@ -1,5 +1,8 @@
 mod apply;
+mod validation;
+
 pub use apply::*;
+pub use validation::*;
 
 use dpp::{
     data_contract::state_transition::DataContractCreateTransition,
