@@ -44,6 +44,7 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 use dpp::errors::DataTriggerError;
+use crate::errors::consensus::basic::data_contract::InvalidDataContractIdErrorWasm;
 
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm, InvalidDataContractVersionErrorWasm,
@@ -318,29 +319,73 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             code,
         )
         .into(),
-        BasicError::InvalidJsonSchemaRefError { .. } => {}
-        BasicError::IndexError(_) => {}
-        BasicError::JsonSchemaCompilationError(_) => {}
-        BasicError::InconsistentCompoundIndexDataError { .. } => {}
-        BasicError::MissingDocumentTypeError => {}
-        BasicError::MissingDocumentTransitionActionError => {}
+        BasicError::InvalidJsonSchemaRefError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::IndexError(_) => {
+            "Not implemented".into()
+        }
+        BasicError::JsonSchemaCompilationError(_) => {
+            "Not implemented".into()
+        }
+        BasicError::InconsistentCompoundIndexDataError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::MissingDocumentTypeError => {
+            "Not implemented".into()
+        }
+        BasicError::MissingDocumentTransitionActionError => {
+            "Not implemented".into()
+        }
 
-        BasicError::InvalidDocumentTransitionActionError { .. } => {}
-        BasicError::InvalidDocumentTransitionIdError { .. } => {}
-        BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => {}
-        BasicError::MissingDataContractIdError => {}
-        BasicError::InvalidIdentifierError { .. } => {}
-        BasicError::DataContractUniqueIndicesChangedError { .. } => {}
-        BasicError::DataContractInvalidIndexDefinitionUpdateError { .. } => {}
-        BasicError::DataContractHaveNewUniqueIndexError { .. } => {}
-        BasicError::IdentityNotFoundError { .. } => {}
-        BasicError::MissingStateTransitionTypeError => {}
-        BasicError::InvalidStateTransitionTypeError { .. } => {}
-        BasicError::StateTransitionMaxSizeExceededError { .. } => {}
-        BasicError::DataContractImmutablePropertiesUpdateError { .. } => {}
-        BasicError::IncompatibleDataContractSchemaError { .. } => {}
-        BasicError::InvalidIdentityPublicKeySignatureError { .. } => {}
-        BasicError::InvalidDataContractId { .. } => {}
+        BasicError::InvalidDocumentTransitionActionError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::InvalidDocumentTransitionIdError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::MissingDataContractIdError => {
+            "Not implemented".into()
+        }
+        BasicError::InvalidIdentifierError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::DataContractUniqueIndicesChangedError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::DataContractInvalidIndexDefinitionUpdateError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::DataContractHaveNewUniqueIndexError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::IdentityNotFoundError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::MissingStateTransitionTypeError => {
+            "Not implemented".into()
+        }
+        BasicError::InvalidStateTransitionTypeError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::StateTransitionMaxSizeExceededError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::DataContractImmutablePropertiesUpdateError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::IncompatibleDataContractSchemaError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::InvalidIdentityPublicKeySignatureError { .. } => {
+            "Not implemented".into()
+        }
+        BasicError::InvalidDataContractIdError { expected_id, invalid_id } => {
+            InvalidDataContractIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code).into()
+        }
     }
 }
 
