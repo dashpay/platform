@@ -40,7 +40,6 @@
   "homepage": "https://github.com/dashevo/rs-drive#readme",
   "dependencies": {
     "@dashevo/dpp": "workspace:*",
-    "@dashevo/wasm-dpp": "workspace:*",
     "cargo-cp-artifact": "^0.1.6",
     "cbor": "^8.0.0",
     "neon-load-or-build": "^2.2.2",

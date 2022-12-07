@@ -1843,7 +1843,6 @@ __metadata:
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
     "@dashevo/dpp": "workspace:*"
-    "@dashevo/wasm-dpp": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
     chai: ^4.3.4
@@ -1910,7 +1909,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/wasm-dpp@workspace:*, @dashevo/wasm-dpp@workspace:packages/wasm-dpp":
+"@dashevo/wasm-dpp@workspace:packages/wasm-dpp":
   version: 0.0.0-use.local
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
