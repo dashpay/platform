@@ -104,11 +104,15 @@ class Account extends EventEmitter {
     this.storage.on(EVENTS.CONFIGURED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_FAILED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_SUCCESS, (ev) => this.emit(ev.type, ev));
-    this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => this.emit(ev.type, ev));
+    this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => {
+      this.emit(ev.type, ev);
+      wallet.emit(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ev.payload.transaction);
+    });
     this.storage.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.TX_METADATA, (ev) => {
       this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
+      wallet.emit(EVENTS.TX_METADATA, ev.payload);
     });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
 
