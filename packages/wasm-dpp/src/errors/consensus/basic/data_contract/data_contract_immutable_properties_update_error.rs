@@ -10,11 +10,7 @@ pub struct DataContractImmutablePropertiesUpdateErrorWasm {
 }
 
 impl DataContractImmutablePropertiesUpdateErrorWasm {
-    pub fn new(
-        operation: String,
-        field_path: String,
-        code: u32,
-    ) -> Self {
+    pub fn new(operation: String, field_path: String, code: u32) -> Self {
         DataContractImmutablePropertiesUpdateErrorWasm {
             operation,
             field_path,

@@ -34,4 +34,3 @@ impl UniqueIndicesLimitReachedErrorWasm {
         self.code
     }
 }
-

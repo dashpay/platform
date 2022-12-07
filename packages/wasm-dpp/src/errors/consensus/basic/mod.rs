@@ -1,7 +1,6 @@
 pub mod data_contract;
 pub mod document;
 pub mod identity;
-pub mod state_transition;
 mod incompatible_protocol_version_error;
 mod invalid_signature_public_key_security_level_error;
 mod invalid_state_transition_signature_error;
@@ -9,6 +8,7 @@ mod json_schema_compilation_error;
 mod json_schema_error;
 mod public_key_is_disabled_error;
 mod public_key_security_level_not_met_error;
+pub mod state_transition;
 mod unsupported_protocol_version_error;
 mod wrong_public_key_purpose_error;
 
