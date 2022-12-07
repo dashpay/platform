@@ -46,7 +46,8 @@ use crate::errors::consensus::state::identity::{
 use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
-    DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm, InvalidDataContractVersionErrorWasm,
+    DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm,
+    InvalidDataContractVersionErrorWasm, InvalidJsonSchemaRefErrorWasm,
 };
 use super::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InvalidDocumentTypeErrorWasm,
@@ -318,7 +319,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             code,
         )
         .into(),
-        BasicError::InvalidJsonSchemaRefError { .. } => {}
+        BasicError::InvalidJsonSchemaRefError { ref_error } => {
+            InvalidJsonSchemaRefErrorWasm::new(ref_error.clone(), code).into()
+        }
         BasicError::IndexError(_) => {}
         BasicError::JsonSchemaCompilationError(_) => {}
         BasicError::InconsistentCompoundIndexDataError { .. } => {}
