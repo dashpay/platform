@@ -1324,7 +1324,6 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
-    "@grpc/grpc-js": ^1.3.7
     assert-browserify: ^2.0.0
     axios: ^0.27.2
     babel-loader: ^8.2.2
@@ -1374,6 +1373,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/protobufjs": 6.10.5
     "@grpc/grpc-js": ^1.3.7
+    "@improbable-eng/grpc-web": ^0.15.0
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
     dirty-chai: ^2.0.1
@@ -1381,7 +1381,6 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     google-protobuf: ^3.12.2
-    grpc-web: 1.2.1
     long: ^5.2.0
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
@@ -2062,6 +2061,17 @@ __metadata:
   version: 3.0.2
   resolution: "@hutson/parse-repository-url@npm:3.0.2"
   checksum: 39992c5f183c5ca3d761d6ed9dfabcb79b5f3750bf1b7f3532e1dc439ca370138bbd426ee250fdaba460bc948e6761fbefd484b8f4f36885d71ded96138340d1
+  languageName: node
+  linkType: hard
+
+"@improbable-eng/grpc-web@npm:^0.15.0":
+  version: 0.15.0
+  resolution: "@improbable-eng/grpc-web@npm:0.15.0"
+  dependencies:
+    browser-headers: ^0.4.1
+  peerDependencies:
+    google-protobuf: ^3.14.0
+  checksum: 8c6322e681965be4fcadf58fde0571f7972c36b48290474e87c7d12bed09b27163fd6ed73c6c36e896885da782abf1835bbeaf65b35bcdb65d9114ea8a0e6ba5
   languageName: node
   linkType: hard
 
@@ -4226,6 +4236,13 @@ __metadata:
   version: 1.1.0
   resolution: "brorand@npm:1.1.0"
   checksum: 8a05c9f3c4b46572dec6ef71012b1946db6cae8c7bb60ccd4b7dd5a84655db49fe043ecc6272e7ef1f69dc53d6730b9e2a3a03a8310509a3d797a618cbee52be
+  languageName: node
+  linkType: hard
+
+"browser-headers@npm:^0.4.1":
+  version: 0.4.1
+  resolution: "browser-headers@npm:0.4.1"
+  checksum: 28b927dd90e4882eeb0625cd4a20a8e868f892144bca794a9b027fad9d2094656daf46473cb9084d650590504c581dd6a711146243035b66e75ade61bbe4d3cf
   languageName: node
   linkType: hard
 
@@ -7556,13 +7573,6 @@ fsevents@~2.3.2:
   version: 1.10.5
   resolution: "growl@npm:1.10.5"
   checksum: 4b86685de6831cebcbb19f93870bea624afee61124b0a20c49017013987cd129e73a8c4baeca295728f41d21265e1f859d25ef36731b142ca59c655fea94bb1a
-  languageName: node
-  linkType: hard
-
-"grpc-web@npm:1.2.1":
-  version: 1.2.1
-  resolution: "grpc-web@npm:1.2.1"
-  checksum: 3860a3761793ccff10db513126957acf2794bcdb0fb82fc20fc4ffbc16e25b9742500d966acc88fbb258bf1d88ef7a4014189287bffbc79177560d7d83eadec1
   languageName: node
   linkType: hard
 

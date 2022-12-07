@@ -86,7 +86,7 @@ class BlockHeadersReader extends EventEmitter {
   stopReadingHistorical() {
     while (this.historicalStreams.length) {
       const stream = this.historicalStreams.shift();
-      stream.cancel();
+      this.cancelStream(stream);
     }
   }
 
@@ -105,11 +105,20 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
     }
 
+    // We don't know yet whether we already have header at fromBlockHeight
     let lastKnownChainHeight = fromBlockHeight - 1;
 
     const stream = await this.createContinuousSyncStream(fromBlockHeight);
 
-    stream.on('data', (data) => {
+    const errorHandler = (e) => {
+      this.continuousSyncStream = null;
+      if (e.code === GrpcErrorCodes.CANCELLED) {
+        return;
+      }
+      this.emit(EVENTS.ERROR, e);
+    };
+
+    const dataHandler = (data) => {
       const blockHeadersResponse = data.getBlockHeaders();
 
       if (blockHeadersResponse) {
@@ -125,35 +134,42 @@ class BlockHeadersReader extends EventEmitter {
          *
          * @param e
          */
-        const rejectHeaders = (e) => {
-          stream.destroy(e);
+        const rejectHeaders = async (e) => {
+          // Don't use cancelStream there because it's going to unsubscribe from events
+          stream.cancel();
+          stream.retryOnError(e);
         };
+
         this.emit(EVENTS.BLOCK_HEADERS, {
           headers,
           headHeight: batchHeadHeight,
         }, rejectHeaders);
       }
-    });
+    };
 
-    stream.on('beforeReconnect', (updateArguments) => {
+    const beforeReconnectHandler = (updateArguments) => {
       updateArguments({
         fromBlockHeight: lastKnownChainHeight,
+        count: 0,
       });
 
       lastKnownChainHeight -= 1;
-    });
+    };
 
-    stream.on('error', (e) => {
+    const endHandler = () => {
       this.continuousSyncStream = null;
-      if (e.code === GrpcErrorCodes.CANCELLED) {
-        return;
-      }
-      this.emit(EVENTS.ERROR, e);
-    });
+    };
 
-    stream.on('end', () => {
-      this.continuousSyncStream = null;
-    });
+    stream.on('data', dataHandler);
+    stream.on('beforeReconnect', beforeReconnectHandler);
+    stream.on('error', errorHandler);
+    stream.on('end', endHandler);
+
+    stream.removeAllListeners = () => {
+      stream.removeListener('data', dataHandler);
+      stream.removeListener('end', endHandler);
+      stream.removeListener('beforeReconnect', beforeReconnectHandler);
+    };
 
     this.continuousSyncStream = stream;
     return stream;
@@ -161,11 +177,13 @@ class BlockHeadersReader extends EventEmitter {
 
   unsubscribeFromNew() {
     if (this.continuousSyncStream) {
-      this.continuousSyncStream.cancel();
+      this.cancelStream(this.continuousSyncStream);
       this.continuousSyncStream = null;
     }
   }
 
+  // TODO: refactor whole thing with ReconnectableStream that supports
+  // retry on error logic
   /**
    * A HOF that returns a function to subscribe to historical block headers and chain locks
    * and handles retry logic
@@ -188,37 +206,6 @@ class BlockHeadersReader extends EventEmitter {
       let headersObtained = 0;
 
       const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
-
-      const dataHandler = (data) => {
-        const blockHeaders = data.getBlockHeaders();
-
-        if (blockHeaders) {
-          const headersList = blockHeaders.getHeadersList()
-            .map((header) => new BlockHeader(Buffer.from(header)));
-
-          let rejected = false;
-
-          /**
-           * Kills stream in case of deliberate rejection from the outside
-           *
-           * @param e
-           */
-          const rejectHeaders = (e) => {
-            rejected = true;
-            stream.destroy(e);
-          };
-
-          const batchHeadHeight = fromBlockHeight + headersObtained;
-          this.emit(EVENTS.BLOCK_HEADERS, {
-            headers: headersList,
-            headHeight: batchHeadHeight,
-          }, rejectHeaders);
-
-          if (!rejected) {
-            headersObtained += headersList.length;
-          }
-        }
-      };
 
       const errorHandler = (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
@@ -251,6 +238,40 @@ class BlockHeadersReader extends EventEmitter {
         }
       };
 
+      const dataHandler = (data) => {
+        const blockHeaders = data.getBlockHeaders();
+
+        if (blockHeaders) {
+          const headersList = blockHeaders.getHeadersList()
+            .map((header) => new BlockHeader(Buffer.from(header)));
+
+          let rejected = false;
+
+          /**
+           * Kills stream in case of deliberate rejection from the outside
+           *
+           * @param e
+           */
+          const rejectHeaders = (e) => {
+            rejected = true;
+            // Cancel stream and unsubscribe from all data events
+            // because they are going th be re-created in errorHandler
+            this.cancelStream(stream);
+            errorHandler(e);
+          };
+
+          const batchHeadHeight = fromBlockHeight + headersObtained;
+          this.emit(EVENTS.BLOCK_HEADERS, {
+            headers: headersList,
+            headHeight: batchHeadHeight,
+          }, rejectHeaders);
+
+          if (!rejected) {
+            headersObtained += headersList.length;
+          }
+        }
+      };
+
       const endHandler = () => {
         const index = this.historicalStreams.indexOf(stream);
         this.historicalStreams.splice(index, 1);
@@ -267,10 +288,21 @@ class BlockHeadersReader extends EventEmitter {
       stream.on('error', errorHandler);
       stream.on('end', endHandler);
 
+      stream.removeAllListeners = () => {
+        stream.removeListener('data', dataHandler);
+        stream.removeListener('end', endHandler);
+      };
+
       return stream;
     };
 
     return subscribeWithRetries;
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  cancelStream(stream) {
+    stream.removeAllListeners();
+    stream.cancel();
   }
 }
 

@@ -31,7 +31,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            --rm \
            "$PROTOC_IMAGE" \
            --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
-           --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$CORE_WEB_OUT_PATH" \
+           --ts_out="service=grpc-web:$CORE_WEB_OUT_PATH" \
            -I="$CORE_PROTO_PATH" \
            "core.proto"
 
@@ -63,7 +63,7 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            --rm \
            "$PROTOC_IMAGE" \
            --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
-           --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$PLATFORM_WEB_OUT_PATH" \
+           --ts_out="service=grpc-web:$PLATFORM_WEB_OUT_PATH" \
            -I="$PLATFORM_PROTO_PATH" \
            "platform.proto"
 

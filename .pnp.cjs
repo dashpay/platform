@@ -2356,7 +2356,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
-            ["@grpc/grpc-js", "npm:1.4.4"],\
             ["assert-browserify", "npm:2.0.0"],\
             ["axios", "npm:0.27.2"],\
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],\
@@ -2408,6 +2407,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
+            ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
@@ -2415,7 +2415,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["google-protobuf", "npm:3.19.1"],\
-            ["grpc-web", "npm:1.2.1"],\
             ["long", "npm:5.2.0"],\
             ["mocha", "npm:9.2.2"],\
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
@@ -3105,6 +3104,29 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@hutson-parse-repository-url-npm-3.0.2-ae5ef1b671-39992c5f18.zip/node_modules/@hutson/parse-repository-url/",\
           "packageDependencies": [\
             ["@hutson/parse-repository-url", "npm:3.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@improbable-eng/grpc-web", [\
+        ["npm:0.15.0", {\
+          "packageLocation": "./.yarn/cache/@improbable-eng-grpc-web-npm-0.15.0-b5e59cba5e-8c6322e681.zip/node_modules/@improbable-eng/grpc-web/",\
+          "packageDependencies": [\
+            ["@improbable-eng/grpc-web", "npm:0.15.0"]\
+          ],\
+          "linkType": "SOFT"\
+        }],\
+        ["virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0", {\
+          "packageLocation": "./.yarn/__virtual__/@improbable-eng-grpc-web-virtual-69d4d21791/0/cache/@improbable-eng-grpc-web-npm-0.15.0-b5e59cba5e-8c6322e681.zip/node_modules/@improbable-eng/grpc-web/",\
+          "packageDependencies": [\
+            ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
+            ["@types/google-protobuf", null],\
+            ["browser-headers", "npm:0.4.1"],\
+            ["google-protobuf", "npm:3.19.1"]\
+          ],\
+          "packagePeers": [\
+            "@types/google-protobuf",\
+            "google-protobuf"\
           ],\
           "linkType": "HARD"\
         }]\
@@ -5911,6 +5933,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/brorand-npm-1.1.0-ea86634c4b-8a05c9f3c4.zip/node_modules/brorand/",\
           "packageDependencies": [\
             ["brorand", "npm:1.1.0"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["browser-headers", [\
+        ["npm:0.4.1", {\
+          "packageLocation": "./.yarn/cache/browser-headers-npm-0.4.1-a7f333378b-28b927dd90.zip/node_modules/browser-headers/",\
+          "packageDependencies": [\
+            ["browser-headers", "npm:0.4.1"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -9788,15 +9819,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/growl-npm-1.10.5-2d1da54198-4b86685de6.zip/node_modules/growl/",\
           "packageDependencies": [\
             ["growl", "npm:1.10.5"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["grpc-web", [\
-        ["npm:1.2.1", {\
-          "packageLocation": "./.yarn/cache/grpc-web-npm-1.2.1-3d331ff494-3860a37617.zip/node_modules/grpc-web/",\
-          "packageDependencies": [\
-            ["grpc-web", "npm:1.2.1"]\
           ],\
           "linkType": "HARD"\
         }]\
