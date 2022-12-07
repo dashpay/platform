@@ -29,6 +29,7 @@ use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
+use crate::errors::consensus::basic::data_contract::InvalidDataContractIdErrorWasm;
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -58,8 +59,8 @@ use super::consensus::basic::identity::{
 };
 use super::consensus::basic::{
     InvalidSignaturePublicKeySecurityLevelErrorWasm, InvalidStateTransitionSignatureErrorWasm,
-    PublicKeyIsDisabledErrorWasm, PublicKeySecurityLevelNotMetErrorWasm,
-    WrongPublicKeyPurposeErrorWasm,
+    JsonSchemaCompilationErrorWasm, PublicKeyIsDisabledErrorWasm,
+    PublicKeySecurityLevelNotMetErrorWasm, WrongPublicKeyPurposeErrorWasm,
 };
 
 pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
@@ -323,70 +324,36 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidJsonSchemaRefError { ref_error } => {
             InvalidJsonSchemaRefErrorWasm::new(ref_error.clone(), code).into()
         }
-        BasicError::IndexError(_) => {
-            "Not implemented".into()
+        BasicError::IndexError(_) => "Not implemented".into(),
+        BasicError::JsonSchemaCompilationError(error) => {
+            JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
         }
-        BasicError::JsonSchemaCompilationError(_) => {
-            "Not implemented".into()
-        }
-        BasicError::InconsistentCompoundIndexDataError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::MissingDocumentTypeError => {
-            "Not implemented".into()
-        }
-        BasicError::MissingDocumentTransitionActionError => {
-            "Not implemented".into()
-        }
+        BasicError::InconsistentCompoundIndexDataError { .. } => "Not implemented".into(),
+        BasicError::MissingDocumentTypeError => "Not implemented".into(),
+        BasicError::MissingDocumentTransitionActionError => "Not implemented".into(),
 
-        BasicError::InvalidDocumentTransitionActionError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::InvalidDocumentTransitionIdError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::MissingDataContractIdError => {
-            "Not implemented".into()
-        }
-        BasicError::InvalidIdentifierError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::DataContractUniqueIndicesChangedError { .. } => {
-            "Not implemented".into()
-        }
+        BasicError::InvalidDocumentTransitionActionError { .. } => "Not implemented".into(),
+        BasicError::InvalidDocumentTransitionIdError { .. } => "Not implemented".into(),
+        BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => "Not implemented".into(),
+        BasicError::MissingDataContractIdError => "Not implemented".into(),
+        BasicError::InvalidIdentifierError { .. } => "Not implemented".into(),
+        BasicError::DataContractUniqueIndicesChangedError { .. } => "Not implemented".into(),
         BasicError::DataContractInvalidIndexDefinitionUpdateError { .. } => {
             "Not implemented".into()
         }
-        BasicError::DataContractHaveNewUniqueIndexError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::IdentityNotFoundError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::MissingStateTransitionTypeError => {
-            "Not implemented".into()
-        }
-        BasicError::InvalidStateTransitionTypeError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::StateTransitionMaxSizeExceededError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::DataContractImmutablePropertiesUpdateError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::IncompatibleDataContractSchemaError { .. } => {
-            "Not implemented".into()
-        }
-        BasicError::InvalidIdentityKeySignatureError { public_key_id } => {
-            InvalidIdentityKeySignatureErrorWasm::new(*public_key_id as u32, code).into()
-        }
-        BasicError::InvalidDataContractIdError { expected_id, invalid_id } => {
-            InvalidDataContractIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code).into()
-        }
+        BasicError::DataContractHaveNewUniqueIndexError { .. } => "Not implemented".into(),
+        BasicError::IdentityNotFoundError { .. } => "Not implemented".into(),
+        BasicError::MissingStateTransitionTypeError => "Not implemented".into(),
+        BasicError::InvalidStateTransitionTypeError { .. } => "Not implemented".into(),
+        BasicError::StateTransitionMaxSizeExceededError { .. } => "Not implemented".into(),
+        BasicError::DataContractImmutablePropertiesUpdateError { .. } => "Not implemented".into(),
+        BasicError::IncompatibleDataContractSchemaError { .. } => "Not implemented".into(),
+        BasicError::InvalidIdentityPublicKeySignatureError { .. } => "Not implemented".into(),
+        BasicError::InvalidDataContractIdError {
+            expected_id,
+            invalid_id,
+        } => InvalidDataContractIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code)
+            .into(),
     }
 }
 
