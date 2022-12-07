@@ -6,7 +6,6 @@ const {
   },
 } = require('@dashevo/abci/types');
 const createCoreChainLockUpdateFactory = require('../../../../../lib/abci/handlers/proposal/createCoreChainLockUpdateFactory');
-const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
 describe('createCoreChainLockUpdateFactory', () => {
@@ -16,7 +15,6 @@ describe('createCoreChainLockUpdateFactory', () => {
   let coreChainLockedHeight;
   let loggerMock;
   let round;
-  let proposalBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -30,17 +28,11 @@ describe('createCoreChainLockUpdateFactory', () => {
 
     coreChainLockedHeight = 2;
 
-    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-
-    proposalBlockExecutionContextMock.hasDataContract.returns(true);
-    proposalBlockExecutionContextMock.getCoreChainLockedHeight.returns(coreChainLockedHeight);
-
     latestCoreChainLockMock = {
       getChainLock: this.sinon.stub().returns(chainLockMock),
     };
 
     createCoreChainLockUpdate = createCoreChainLockUpdateFactory(
-      proposalBlockExecutionContextMock,
       latestCoreChainLockMock,
     );
   });
@@ -48,7 +40,7 @@ describe('createCoreChainLockUpdateFactory', () => {
   it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
     chainLockMock.height = 3;
 
-    const response = await createCoreChainLockUpdate(round, loggerMock);
+    const response = await createCoreChainLockUpdate(coreChainLockedHeight, round, loggerMock);
 
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
@@ -64,7 +56,7 @@ describe('createCoreChainLockUpdateFactory', () => {
   it('should return undefined', async () => {
     chainLockMock.height = 1;
 
-    const response = await createCoreChainLockUpdate(round, loggerMock);
+    const response = await createCoreChainLockUpdate(coreChainLockedHeight, round, loggerMock);
 
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 

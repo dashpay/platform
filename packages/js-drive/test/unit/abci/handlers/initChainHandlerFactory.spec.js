@@ -18,7 +18,6 @@ const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const protoTimestampToMillis = require('../../../../lib/util/protoTimestampToMillis');
 const millisToProtoTimestamp = require('../../../../lib/util/millisToProtoTimestamp');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('initChainHandlerFactory', () => {
   let initChainHandler;
@@ -35,7 +34,6 @@ describe('initChainHandlerFactory', () => {
   let rsAbciMock;
   let createCoreChainLockUpdateMock;
   let coreChainLockUpdate;
-  let proposalBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     initialCoreChainLockedHeight = 1;
@@ -81,8 +79,6 @@ describe('initChainHandlerFactory', () => {
 
     createCoreChainLockUpdateMock = this.sinon.stub().resolves(coreChainLockUpdate);
 
-    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-
     initChainHandler = initChainHandlerFactory(
       updateSimplifiedMasternodeListMock,
       initialCoreChainLockedHeight,
@@ -94,7 +90,6 @@ describe('initChainHandlerFactory', () => {
       groveDBStoreMock,
       rsAbciMock,
       createCoreChainLockUpdateMock,
-      proposalBlockExecutionContextMock,
     );
   });
 
@@ -150,8 +145,7 @@ describe('initChainHandlerFactory', () => {
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
 
-    expect(createCoreChainLockUpdateMock).to.be.calledOnceWithExactly(0, loggerMock);
-    expect(proposalBlockExecutionContextMock.setCoreChainLockedHeight)
-      .to.be.calledOnceWithExactly(initialCoreChainLockedHeight);
+    expect(createCoreChainLockUpdateMock)
+      .to.be.calledOnceWithExactly(initialCoreChainLockedHeight, 0, loggerMock);
   });
 });
