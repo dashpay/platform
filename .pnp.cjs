@@ -2279,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-7acd001b9d-86504da08f.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-68c73a1420-9f404e8177.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2650,7 +2650,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
@@ -2681,7 +2681,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["find-my-way", "npm:2.2.5"],\
-            ["google-protobuf", "npm:3.19.1"],\
             ["js-merkle", "npm:0.1.5"],\
             ["levelup", "npm:4.4.0"],\
             ["lodash.clonedeep", "npm:4.5.0"],\
@@ -6005,7 +6004,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["http-errors", "npm:1.7.2"],\
             ["iconv-lite", "npm:0.4.24"],\
             ["on-finished", "npm:2.3.0"],\
-            ["qs", "npm:6.7.0"],\
+            ["qs", "npm:6.11.0"],\
             ["raw-body", "npm:2.4.0"],\
             ["type-is", "npm:1.6.18"]\
           ],\
@@ -14905,13 +14904,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["qs", "npm:6.11.0"],\
             ["side-channel", "npm:1.0.4"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:6.7.0", {\
-          "packageLocation": "./.yarn/cache/qs-npm-6.7.0-15161a344c-dfd5f6adef.zip/node_modules/qs/",\
-          "packageDependencies": [\
-            ["qs", "npm:6.7.0"]\
           ],\
           "linkType": "HARD"\
         }]\

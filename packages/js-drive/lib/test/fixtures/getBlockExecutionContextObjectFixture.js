@@ -2,6 +2,10 @@ const {
   tendermint: {
     abci: {
       CommitInfo,
+      ValidatorSetUpdate,
+    },
+    types: {
+      ConsensusParams,
     },
   },
 } = require('@dashevo/abci/types');
@@ -60,6 +64,25 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     },
     round: 42,
+    prepareProposalResult: {
+      appHash: Buffer.alloc(32, 3),
+      txResults: new Array(3).fill({ code: 0 }),
+      consensusParamUpdates: new ConsensusParams({
+        block: {
+          maxBytes: 1,
+          maxGas: 2,
+        },
+        evidence: {
+          maxAgeDuration: null,
+          maxAgeNumBlocks: 1,
+          maxBytes: 2,
+        },
+        version: {
+          appVersion: 1,
+        },
+      }),
+      validatorSetUpdate: new ValidatorSetUpdate(),
+    },
   };
 }
 

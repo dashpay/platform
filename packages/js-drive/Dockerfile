@@ -58,7 +58,7 @@ WORKDIR /platform
 # Copy yarn and Cargo files
 COPY .yarn /platform/.yarn
 COPY .cargo /platform/.cargo
-COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.toml rust-toolchain.toml ./
+COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.toml Cargo.lock rust-toolchain.toml ./
 
 # Copy only necessary packages from monorepo
 COPY packages/js-drive packages/js-drive

@@ -420,7 +420,7 @@ impl DriveOperation {
                     Ok(FeeResult {
                         storage_fee,
                         processing_fee,
-                        removed_bytes_from_identities: RemovedBytesFromEpochsByIdentities(
+                        removed_bytes_from_epochs_by_identities: RemovedBytesFromEpochsByIdentities(
                             removed_bytes_from_identities,
                         ),
                         removed_bytes_from_system,

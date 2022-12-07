@@ -24,6 +24,7 @@ class BlockExecutionContextRepository {
       BlockExecutionContextRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(blockExecutionContext.toObject({
         skipConsensusLogger: true,
+        skipPrepareProposalResult: true,
       })),
       options,
     );
