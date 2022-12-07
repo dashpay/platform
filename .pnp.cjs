@@ -2882,6 +2882,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
             ["chai", "npm:4.3.4"],\
