@@ -16,9 +16,9 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityAssetLockTransactionOutputErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm,
-    InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm,
-    InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm,
-    MissingMasterPublicKeyErrorWasm,
+    InvalidIdentityKeySignatureErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
+    InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
+    InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
 };
 use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::identity::{
@@ -29,8 +29,9 @@ use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
-use crate::errors::consensus::basic::data_contract::InvalidDataContractIdErrorWasm;
-use crate::errors::consensus::basic::data_contract::InvalidIdentityKeySignatureErrorWasm;
+use crate::errors::consensus::basic::data_contract::{
+    IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
+};
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -403,7 +404,21 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidStateTransitionTypeError { .. } => "Not implemented".into(),
         BasicError::StateTransitionMaxSizeExceededError { .. } => "Not implemented".into(),
         BasicError::DataContractImmutablePropertiesUpdateError { .. } => "Not implemented".into(),
-        BasicError::IncompatibleDataContractSchemaError { .. } => "Not implemented".into(),
+        BasicError::IncompatibleDataContractSchemaError {
+            data_contract_id,
+            operation,
+            field_path,
+            old_schema,
+            new_schema,
+        } => IncompatibleDataContractSchemaErrorWasm::new(
+            data_contract_id.clone(),
+            operation.clone(),
+            field_path.clone(),
+            old_schema.clone(),
+            new_schema.clone(),
+            code,
+        )
+        .into(),
         BasicError::InvalidIdentityKeySignatureError { public_key_id } => {
             InvalidIdentityKeySignatureErrorWasm::new(*public_key_id as u32, code).into()
         }
