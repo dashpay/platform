@@ -45,6 +45,15 @@ use crate::errors::consensus::state::identity::{
 };
 use dpp::errors::DataTriggerError;
 
+use super::consensus::basic::identity::{
+    IdentityNotFoundErrorWasm, InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
+};
+use super::consensus::basic::{
+    InvalidSignaturePublicKeySecurityLevelErrorWasm, InvalidStateTransitionSignatureErrorWasm,
+    PublicKeyIsDisabledErrorWasm, PublicKeySecurityLevelNotMetErrorWasm,
+    WrongPublicKeyPurposeErrorWasm,
+};
+
 pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     match e {
         DPPConsensusError::JsonSchemaError(e) => {
@@ -305,16 +314,50 @@ fn from_basic_error(basic_error: &Box<BasicError>) {
     }
 }
 
-fn from_signature_error(signature_error: &SignatureError) {
-    match signature_error {
-        SignatureError::MissingPublicKeyError { .. } => {}
-        SignatureError::InvalidIdentityPublicKeyTypeError { .. } => {}
-        SignatureError::InvalidStateTransitionSignatureError => {}
-        SignatureError::IdentityNotFoundError { .. } => {}
-        SignatureError::InvalidSignaturePublicKeySecurityLevelError { .. } => {}
-        SignatureError::PublicKeyIsDisabledError { .. } => {}
-        SignatureError::PublicKeySecurityLevelNotMetError { .. } => {}
-        SignatureError::WrongPublicKeyPurposeError { .. } => {}
+fn from_signature_error(signature_error: &SignatureError) -> JsValue {
+    let code = signature_error.get_code();
+
+    match signature_error.deref() {
+        SignatureError::MissingPublicKeyError { public_key_id } => {
+            MissingPublicKeyErrorWasm::new(*public_key_id, code).into()
+        }
+        SignatureError::InvalidIdentityPublicKeyTypeError { public_key_type } => {
+            InvalidIdentityPublicKeyTypeErrorWasm::new(*public_key_type, code).into()
+        }
+        SignatureError::InvalidStateTransitionSignatureError => {
+            InvalidStateTransitionSignatureErrorWasm::new(code).into()
+        }
+        SignatureError::IdentityNotFoundError { identity_id } => {
+            IdentityNotFoundErrorWasm::new(identity_id.clone(), code).into()
+        }
+        SignatureError::InvalidSignaturePublicKeySecurityLevelError {
+            public_key_security_level,
+            required_key_security_level,
+        } => InvalidSignaturePublicKeySecurityLevelErrorWasm::new(
+            *public_key_security_level,
+            *required_key_security_level,
+            code,
+        )
+        .into(),
+        SignatureError::PublicKeyIsDisabledError { public_key_id } => {
+            PublicKeyIsDisabledErrorWasm::new(*public_key_id, code).into()
+        }
+        SignatureError::PublicKeySecurityLevelNotMetError {
+            public_key_security_level,
+            required_security_level,
+        } => PublicKeySecurityLevelNotMetErrorWasm::new(
+            *public_key_security_level,
+            *required_security_level,
+            code,
+        )
+        .into(),
+        SignatureError::WrongPublicKeyPurposeError {
+            public_key_purpose,
+            key_purpose_requirement,
+        } => {
+            WrongPublicKeyPurposeErrorWasm::new(*public_key_purpose, *key_purpose_requirement, code)
+                .into()
+        }
     }
 }
 
