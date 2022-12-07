@@ -20,13 +20,11 @@ describe('ValidatorSet', () => {
   let coreHeight;
   let coreRpcClientMock;
   let validatorNetworkPort;
-  let validateQuorumTtlMock;
-  let scoredQuorumHashes;
 
   let validatorSetLLMQType;
 
   let validatorSet;
-  let getScoredQuorumHashesMock;
+  let getRandomQuorumMock;
   let fetchQuorumMembersMock;
 
   beforeEach(function beforeEach() {
@@ -36,13 +34,8 @@ describe('ValidatorSet', () => {
 
     quorumEntry = new QuorumEntry(getSmlFixture()[0].newQuorums[0]);
 
-    scoredQuorumHashes = [{
-      hash: Buffer.alloc(32, 1),
-    }];
-
     smlDiffMock = {
       blockHash: 'some block hash',
-      getQuorum: this.sinon.stub().returns(quorumEntry),
     };
 
     smlMock = {
@@ -102,7 +95,7 @@ describe('ValidatorSet', () => {
       },
     ];
 
-    getScoredQuorumHashesMock = this.sinon.stub().returns(scoredQuorumHashes);
+    getRandomQuorumMock = this.sinon.stub().resolves(quorumEntry);
 
     fetchQuorumMembersMock = this.sinon.stub().resolves(quorumMembers);
 
@@ -115,16 +108,13 @@ describe('ValidatorSet', () => {
 
     validatorNetworkPort = 26656;
 
-    validateQuorumTtlMock = this.sinon.stub().resolves(true);
-
     validatorSet = new ValidatorSet(
       simplifiedMasternodeListMock,
-      getScoredQuorumHashesMock,
+      getRandomQuorumMock,
       fetchQuorumMembersMock,
       validatorSetLLMQType,
       coreRpcClientMock,
       validatorNetworkPort,
-      validateQuorumTtlMock,
     );
   });
 
@@ -134,10 +124,11 @@ describe('ValidatorSet', () => {
 
       expect(smlStoreMock.getSMLbyHeight).to.be.calledOnceWithExactly(coreHeight);
 
-      expect(getScoredQuorumHashesMock).to.be.calledOnceWithExactly(
+      expect(getRandomQuorumMock).to.be.calledOnceWithExactly(
         smlMock,
         validatorSetLLMQType,
         Buffer.from(smlDiffMock.blockHash, 'hex'),
+        coreHeight,
       );
 
       expect(fetchQuorumMembersMock).to.be.calledOnceWithExactly(
@@ -182,10 +173,11 @@ describe('ValidatorSet', () => {
 
       expect(smlStoreMock.getSMLbyHeight).to.be.calledOnceWithExactly(coreHeight);
 
-      expect(getScoredQuorumHashesMock).to.be.calledOnceWithExactly(
+      expect(getRandomQuorumMock).to.be.calledOnceWithExactly(
         smlMock,
         validatorSetLLMQType,
         rotationEntropy,
+        coreHeight,
       );
 
       expect(fetchQuorumMembersMock).to.be.calledOnceWithExactly(
@@ -194,14 +186,6 @@ describe('ValidatorSet', () => {
       );
 
       expect(smlStoreMock.getCurrentSML().getValidMasternodesList).to.be.calledOnce();
-
-      expect(validateQuorumTtlMock).to.be.calledOnceWithExactly(
-        smlMock,
-        validatorSetLLMQType,
-        quorumEntry,
-        coreHeight,
-        ValidatorSet.ROTATION_BLOCK_INTERVAL,
-      );
     });
 
     it('should not rotate validator set if height not divisible by ROTATION_BLOCK_INTERVAL', async () => {
@@ -217,51 +201,9 @@ describe('ValidatorSet', () => {
 
       expect(smlStoreMock.getSMLbyHeight).to.be.calledOnceWithExactly(coreHeight);
 
-      expect(getScoredQuorumHashesMock).to.not.be.called();
+      expect(getRandomQuorumMock).to.not.be.called();
 
       expect(fetchQuorumMembersMock).to.not.be.called();
-
-      expect(validateQuorumTtlMock).to.not.be.called();
-    });
-
-    it('should choose validator if quorum ttl is not enough', async () => {
-      const height = Long.fromInt(ValidatorSet.ROTATION_BLOCK_INTERVAL);
-
-      validateQuorumTtlMock.resolves(false);
-
-      const result = await validatorSet.rotate(
-        height,
-        coreHeight,
-        rotationEntropy,
-      );
-
-      expect(result).to.be.true();
-
-      expect(validateQuorumTtlMock).to.be.calledOnceWithExactly(
-        smlMock,
-        validatorSetLLMQType,
-        quorumEntry,
-        coreHeight,
-        ValidatorSet.ROTATION_BLOCK_INTERVAL,
-      );
-      expect(smlStoreMock.getSMLbyHeight).to.be.calledOnceWithExactly(coreHeight);
-
-      expect(getScoredQuorumHashesMock).to.be.calledOnce();
-
-      expect(fetchQuorumMembersMock).to.be.calledOnceWithExactly(
-        validatorSetLLMQType,
-        quorumEntry.quorumHash,
-      );
-
-      expect(smlStoreMock.getCurrentSML().getValidMasternodesList).to.be.calledOnce();
-
-      expect(validateQuorumTtlMock).to.be.calledOnceWithExactly(
-        smlMock,
-        validatorSetLLMQType,
-        quorumEntry,
-        coreHeight,
-        ValidatorSet.ROTATION_BLOCK_INTERVAL,
-      );
     });
   });
 
