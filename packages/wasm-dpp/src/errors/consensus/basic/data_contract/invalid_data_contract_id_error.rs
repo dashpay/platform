@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use crate::buffer::Buffer;
 
-#[wasm_bindgen(js_name=InvalidDataContractIdErrorError)]
+#[wasm_bindgen(js_name=InvalidDataContractIdError)]
 pub struct InvalidDataContractIdErrorWasm {
     expected_id: Vec<u8>,
     invalid_id: Vec<u8>,
@@ -18,7 +18,7 @@ impl InvalidDataContractIdErrorWasm {
     }
 }
 
-#[wasm_bindgen(js_class=InvalidDataContractVersionError)]
+#[wasm_bindgen(js_class=InvalidDataContractIdError)]
 impl InvalidDataContractIdErrorWasm {
     #[wasm_bindgen(js_name=getExpectedId)]
     pub fn get_expected_id(&self) -> Buffer {

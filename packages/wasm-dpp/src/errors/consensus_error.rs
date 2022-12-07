@@ -44,7 +44,7 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 use dpp::errors::DataTriggerError;
-use crate::errors::consensus::basic::data_contract::InvalidDataContractIdErrorWasm;
+use crate::errors::consensus::basic::data_contract::{InvalidDataContractIdErrorWasm, InvalidIdentityKeySignatureErrorWasm};
 
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm,
@@ -381,8 +381,8 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::IncompatibleDataContractSchemaError { .. } => {
             "Not implemented".into()
         }
-        BasicError::InvalidIdentityPublicKeySignatureError { .. } => {
-            "Not implemented".into()
+        BasicError::InvalidIdentityKeySignatureError { public_key_id } => {
+            InvalidIdentityKeySignatureErrorWasm::new(*public_key_id as u32, code).into()
         }
         BasicError::InvalidDataContractIdError { expected_id, invalid_id } => {
             InvalidDataContractIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code).into()

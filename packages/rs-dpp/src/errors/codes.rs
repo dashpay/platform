@@ -136,7 +136,7 @@ impl ErrorWithCode for BasicError {
             Self::StateTransitionMaxSizeExceededError { .. } => 1045,
 
             // Identity
-            Self::InvalidIdentityPublicKeySignatureError { .. } => 1056,
+            Self::InvalidIdentityKeySignatureError { .. } => 1056,
         }
     }
 }
