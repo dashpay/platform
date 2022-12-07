@@ -1,21 +1,20 @@
 const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../util/extractCoreVersion');
-const createRpcClient = require('../../core/createRpcClient')
 
-module.exports = async (dockerCompose, config) => {
+module.exports = async (createRpcClient, dockerCompose, config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
     pass: config.get('core.rpc.password'),
   })
 
-  const [mnsyncStatus, networkInfo, blockchainInfo, peerInfo, status] = await Promise.all([
+  const [mnsyncStatus, networkInfo, blockchainInfo, peerInfo, dockerStatus] = await Promise.all([
     rpcClient.mnsync('status'),
     rpcClient.getNetworkInfo(),
     rpcClient.getBlockchainInfo(),
     rpcClient.getPeerInfo(),
-    determineStatus(dockerCompose, config, 'core'),
+    determineStatus.docker(dockerCompose, config, 'core'),
   ]);
 
   const [latestVersion, p2pPortState, remoteBlockHeight] = await Promise.all([
@@ -41,27 +40,19 @@ module.exports = async (dockerCompose, config) => {
 
   const {AssetName: syncAsset} = mnsyncStatus.result;
 
+  const serviceStatus = determineStatus.core(dockerStatus, syncAsset)
+
   const masternode = {
     enabled: masternodeEnabled,
-    sentinel: {
-      status: null,
-      version: null,
-    },
   };
-
-  if (masternodeEnabled) {
-    const {sentinelState, sentinelVersion} = masternode;
-
-    masternode.sentinel.status = sentinelState;
-    masternode.sentinel.version = sentinelVersion;
-  }
 
   return {
     version,
     network,
     chain,
     latestVersion,
-    status,
+    dockerStatus,
+    serviceStatus,
     syncAsset,
     peersCount,
     p2pService,

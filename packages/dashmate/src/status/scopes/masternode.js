@@ -1,9 +1,9 @@
 const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
 const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
-const createRpcClient = require("../../core/createRpcClient");
+const determineStatus = require("../determineStatus");
 
-module.exports = async (dockerCompose, config) => {
+module.exports = async (createRpcClient, dockerCompose, config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
@@ -31,6 +31,9 @@ module.exports = async (dockerCompose, config) => {
   const {
     dmnState, state, status, proTxHash,
   } = masternodeStatus.result;
+
+  const dockerStatus = await determineStatus.docker(dockerCompose, config, 'core')
+  const serviceStatus = determineStatus.core(dockerStatus, syncAsset)
 
   const countInfo = await rpcClient.masternode('count');
   const { enabled } = countInfo.result;
@@ -64,6 +67,8 @@ module.exports = async (dockerCompose, config) => {
   return {
     status,
     state,
+    dockerStatus,
+    serviceStatus,
     enabledCount: enabled,
     proTxHash,
     sentinelState,

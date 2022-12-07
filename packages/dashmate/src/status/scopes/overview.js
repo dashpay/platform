@@ -2,20 +2,23 @@ const getMasternodeScope = require('./masternode');
 const getPlatformScope = require('./platform');
 const extractCoreVersion = require('../../util/extractCoreVersion');
 const determineStatus = require('../determineStatus');
-const createRpcClient = require("../../core/createRpcClient");
 
-module.exports = async (dockerCompose, config) => {
+module.exports = async (createRpcClient, dockerCompose, config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
     pass: config.get('core.rpc.password'),
   })
 
-  const [blockchainInfo, networkInfo, status] = await Promise.all([
+  const [mnSync, blockchainInfo, networkInfo, dockerStatus] = await Promise.all([
+    rpcClient.mnsync('status'),
     rpcClient.getBlockchainInfo(),
     rpcClient.getNetworkInfo(),
-    determineStatus(dockerCompose, config, 'core'),
+    determineStatus.docker(dockerCompose, config, 'core'),
   ]);
+
+  const {AssetName: syncAsset} = mnSync.result;
+  const serviceStatus = determineStatus.core(dockerStatus, syncAsset)
 
   const network = config.get('network');
   const masternodeEnabled = config.get('core.masternode.enable');
@@ -25,12 +28,13 @@ module.exports = async (dockerCompose, config) => {
   const blockHeight = blockchainInfo.result.blocks;
   const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4);
 
-  const { subversion } = networkInfo.result;
+  const {subversion} = networkInfo.result;
   const version = extractCoreVersion(subversion);
 
   const core = {
     version,
-    status,
+    dockerStatus,
+    serviceStatus:
     verificationProgress,
     blockHeight,
     sizeOnDisk,
@@ -38,7 +42,6 @@ module.exports = async (dockerCompose, config) => {
 
   const masternode = {
     enabled: masternodeEnabled,
-    status,
     state: {
       poSePenalty: null,
       lastPaidHeight: null,
@@ -50,7 +53,8 @@ module.exports = async (dockerCompose, config) => {
 
   const platform = {
     enabled: platformEnabled,
-    status: null,
+    dockerStatus,
+    serviceStatus,
     tenderdash: {
       version: null,
       lastBlockHeight: null,
@@ -62,14 +66,13 @@ module.exports = async (dockerCompose, config) => {
   };
 
   if (masternodeEnabled) {
-    const { masternode: masternodeStatus, state } = await getMasternodeScope(dockerCompose, config);
+    const masternodeScope = await getMasternodeScope(createRpcClient, dockerCompose, config);
 
-    masternode.status = masternodeStatus;
-    masternode.state = state;
+    masternode.state = masternodeScope.state;
   }
 
   if (platformEnabled) {
-    const platformScope = await getPlatformScope(dockerCompose, config);
+    const platformScope = await getPlatformScope(createRpcClient, dockerCompose, config);
 
     platform.status = platformScope.status;
     platform.tenderdash = platformScope.tenderdash;

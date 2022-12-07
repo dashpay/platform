@@ -1,0 +1,59 @@
+{
+  "version": 170003,
+  "buildversion": "v0.17.0.3-649273e70",
+  "subversion": "/Dash Core:0.17.0.3/",
+  "protocolversion": 70220,
+  "localservices": "0000000000000445",
+  "localservicesnames": [
+    "NETWORK",
+    "BLOOM",
+    "COMPACT_FILTERS",
+    "NETWORK_LIMITED"
+  ],
+  "localrelay": true,
+  "timeoffset": 0,
+  "networkactive": true,
+  "connections": 8,
+  "socketevents": "epoll",
+  "networks": [
+    {
+      "name": "ipv4",
+      "limited": false,
+      "reachable": true,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    },
+    {
+      "name": "ipv6",
+      "limited": false,
+      "reachable": true,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    },
+    {
+      "name": "onion",
+      "limited": true,
+      "reachable": false,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    },
+    {
+      "name": "",
+      "limited": false,
+      "reachable": true,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    },
+    {
+      "name": "",
+      "limited": false,
+      "reachable": true,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    }
+  ],
+  "relayfee": 0.00001000,
+  "incrementalfee": 0.00001000,
+  "localaddresses": [],
+  "warnings": "Warning: unknown new rules activated (versionbit 3)"
+}

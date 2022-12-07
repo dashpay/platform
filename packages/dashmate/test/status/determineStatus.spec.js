@@ -1,6 +1,8 @@
 const sinon = require('sinon');
+const MasternodeSyncAssetEnum = require('../../src/enums/masternodeSyncAsset');
+const ServiceStatusEnum = require('../../src/enums/serviceStatus');
+const DockerStatusEnum = require('../../src/enums/dockerStatus');
 const determineStatus = require('../../src/status/determineStatus');
-const ContainerIsNotPresentError = require('../../src/docker/errors/ContainerIsNotPresentError');
 
 describe('determineStatus', () => {
   let dockerComposeMock;
@@ -12,36 +14,22 @@ describe('determineStatus', () => {
   });
 
   it('should return status from Docker', async () => {
-    const mockDockerStatus = 'mock_status';
+    const mockDockerStatus = 'running';
 
     dockerComposeMock.inspectService.resolves({ State: { Status: mockDockerStatus } });
 
-    const status = await determineStatus(dockerComposeMock, config, 'sample_service');
+    const status = await determineStatus.docker(dockerComposeMock, config, 'sample_service');
 
     expect(status).to.equal(mockDockerStatus);
   });
 
-  it('should return not_started in case ContainerIsNotPresent', async () => {
-    const error = new ContainerIsNotPresentError();
+  it('should return syncing', async () => {
+    const syncing = determineStatus.core(DockerStatusEnum.running, MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
+    const up = determineStatus.core(DockerStatusEnum.running, MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED);
+    const error = determineStatus.core(DockerStatusEnum.restarting, MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
 
-    dockerComposeMock.inspectService.throws(error);
-
-    const status = await determineStatus(dockerComposeMock, config, 'sample_service');
-
-    expect(status).to.equal('not_started');
-  });
-
-  it('should throw in case unknown error', async () => {
-    const error = new Error('unknown');
-
-    dockerComposeMock.inspectService.throws(error);
-
-    try {
-      await determineStatus(dockerComposeMock, config, 'sample_service');
-
-      expect.fail('should throw an error');
-    } catch (e) {
-      expect(e.message).to.equal('unknown');
-    }
+    expect(syncing).to.be.equal(ServiceStatusEnum.syncing);
+    expect(up).to.be.equal(ServiceStatusEnum.up);
+    expect(error).to.be.equal(ServiceStatusEnum.error);
   });
 });

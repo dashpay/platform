@@ -1,15 +1,8 @@
 const ServiceStatusEnum = {
-  // all possible Docker statuses
-  created: 'created',
-  restarting: 'restarting',
-  running: 'running',
-  removing: 'removing',
-  exited: 'exited',
-  dead: 'dead',
-  // extension (used in status command)
+  up: 'up',
   syncing: 'syncing',
-  not_started: 'not_started',
   wait_for_core: 'wait_for_core',
+  error: 'error',
 };
 
 module.exports = ServiceStatusEnum;

@@ -1,0 +1,7 @@
+{
+  "AssetID": 999,
+  "AssetName": "MASTERNODE_SYNC_FINISHED",
+  "Attempt": 0,
+  "IsBlockchainSynced": true,
+  "IsSynced": true
+}

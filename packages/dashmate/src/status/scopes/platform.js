@@ -2,9 +2,9 @@ const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
 const providers = require('../providers');
-const createRpcClient = require("../../core/createRpcClient");
+const DockerStatusEnum = require("../../enums/dockerStatus");
 
-module.exports = async (dockerCompose, config) => {
+module.exports = async (createRpcClient, dockerCompose, config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
@@ -17,7 +17,7 @@ module.exports = async (dockerCompose, config) => {
     },
   } = await rpcClient.mnsync('status');
 
-  let status = await determineStatus(dockerCompose, config, 'drive_tenderdash');
+  const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
 
   const httpService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`;
   const httpPort = config.get('platform.dapi.envoy.http.port');
@@ -41,37 +41,47 @@ module.exports = async (dockerCompose, config) => {
     network: null,
   };
 
-  if (coreIsSynced && status !== ServiceStatusEnum.not_started && status !== ServiceStatusEnum.restarting) {
-    // Collecting platform data fails if Tenderdash is waiting for core to sync
-    try {
-      const tenderdashStatus = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+  let serviceStatus
 
-      const { node_info, sync_info } = await tenderdashStatus.json();
-      const { version, network } = node_info;
-      const { catching_up, latest_block_height, latest_app_hash } = sync_info;
-
-      const tenderdashNetInfoRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`);
-      const {
-        n_peers: platformPeers,
-      } = await tenderdashNetInfoRes.json();
-
-      tenderdash.version = version;
-      tenderdash.lastBlockHeight = latest_block_height;
-      tenderdash.catchingUp = catching_up;
-      tenderdash.peers = platformPeers;
-      tenderdash.network = network;
-      tenderdash.latestAppHash = latest_app_hash;
-    } catch (e) {
-      if (e.name !== 'FetchError') {
-        throw e;
-      }
+  if (dockerStatus === DockerStatusEnum.running) {
+    if (coreIsSynced) {
+      serviceStatus = ServiceStatusEnum.up
+    } else {
+      serviceStatus = ServiceStatusEnum.wait_for_core
     }
   } else {
-    status = ServiceStatusEnum.wait_for_core;
+    return ServiceStatusEnum.error
+  }
+
+  // Collecting platform data fails if Tenderdash is waiting for core to sync
+  try {
+    const tenderdashStatus = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+
+    const {node_info, sync_info} = await tenderdashStatus.json();
+    const {version, network} = node_info;
+    const {catching_up, latest_block_height, latest_app_hash} = sync_info;
+
+    const tenderdashNetInfoRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`);
+    const {
+      n_peers: platformPeers,
+    } = await tenderdashNetInfoRes.json();
+
+    tenderdash.version = version;
+    tenderdash.lastBlockHeight = latest_block_height;
+    tenderdash.catchingUp = catching_up;
+    tenderdash.peers = platformPeers;
+    tenderdash.network = network;
+    tenderdash.latestAppHash = latest_app_hash;
+  } catch (e) {
+    if (e.name !== 'FetchError') {
+      throw e;
+    }
+    serviceStatus = ServiceStatusEnum.error
   }
 
   return {
-    status,
+    dockerStatus,
+    serviceStatus,
     httpService,
     httpPort,
     httpPortState,
