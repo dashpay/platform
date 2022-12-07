@@ -1,7 +1,6 @@
-const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
+const getPaymentQueuePosition = require('../../util/getPaymentQueueposition');
 const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
-const determineStatus = require("../determineStatus");
 
 module.exports = async (createRpcClient, dockerCompose, config) => {
   const rpcClient = createRpcClient({
@@ -10,33 +9,25 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
     pass: config.get('core.rpc.password'),
   })
 
-  const sentinelState = (await dockerCompose.execCommand(
-    config.toEnvs(),
-    'sentinel',
-    'python bin/sentinel.py',
-  )).out.split(/\r?\n/)[0];
+  const [sentinelStateResponse, sentinelVersionResponse, blockchainInfo, masternodeStatus, masternodeCount] =
+    await Promise.all([
+      dockerCompose.execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py',),
+      dockerCompose.execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v'),
+      rpcClient.getBlockchainInfo(),
+      rpcClient.masternode('status'),
+      rpcClient.masternode('count')
+    ])
 
-  const sentinelVersion = (await dockerCompose.execCommand(
-    config.toEnvs(),
-    'sentinel',
-    'python bin/sentinel.py -v',
-  )).out.split(/\r?\n/)[0].replace(/Dash Sentinel v/, '');
+  const sentinelState = sentinelStateResponse.out.split(/\r?\n/)[0]
+  const sentinelVersion = sentinelVersionResponse.replace(/Dash Sentinel v/, '')
 
-  let position = 0;
-
-  const blockchainInfo = await rpcClient.getBlockchainInfo();
-  const { blocks: coreBlocks } = blockchainInfo.result;
-
-  const masternodeStatus = await rpcClient.masternode('status');
+  const {blocks: coreBlocks} = blockchainInfo.result;
   const {
     dmnState, state, status, proTxHash,
   } = masternodeStatus.result;
 
-  const dockerStatus = await determineStatus.docker(dockerCompose, config, 'core')
-  const serviceStatus = determineStatus.core(dockerStatus, syncAsset)
-
   const countInfo = await rpcClient.masternode('count');
-  const { enabled } = countInfo.result;
+  const {enabled} = countInfo.result;
 
   const nodeState = {
     dmnState: null,
@@ -48,10 +39,10 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
   };
 
   if (masternodeStatus === MasternodeStateEnum.READY) {
-    position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
+    const position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
 
     const poSePenalty = dmnState.PoSePenalty;
-    const { lastPaidHeight } = dmnState;
+    const {lastPaidHeight} = dmnState;
     const lastPaidTime = blocksToTime(coreBlocks - dmnState.lastPaidHeight);
     const paymentQueuePosition = position / enabled;
     const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
@@ -67,8 +58,6 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
   return {
     status,
     state,
-    dockerStatus,
-    serviceStatus,
     enabledCount: enabled,
     proTxHash,
     sentinelState,

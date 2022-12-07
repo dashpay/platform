@@ -55,16 +55,21 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
 
   // Collecting platform data fails if Tenderdash is waiting for core to sync
   try {
-    const tenderdashStatus = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`);
+    const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
+      fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
+      fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`)
+    ])
 
-    const {node_info, sync_info} = await tenderdashStatus.json();
+    const [tenderdashNetInfo, tenderdashStatus] = await Promise.all([
+      tenderdashNetInfoResponse.json(),
+      tenderdashStatusResponse.json()
+    ])
+
+    const {n_peers: platformPeers} = tenderdashNetInfo
+    const {node_info, sync_info} = tenderdashStatus
+
     const {version, network} = node_info;
     const {catching_up, latest_block_height, latest_app_hash} = sync_info;
-
-    const tenderdashNetInfoRes = await fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`);
-    const {
-      n_peers: platformPeers,
-    } = await tenderdashNetInfoRes.json();
 
     tenderdash.version = version;
     tenderdash.lastBlockHeight = latest_block_height;
