@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
@@ -15,13 +17,11 @@ use crate::{
 pub trait StateRepositoryLike: Send + Sync {
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
-    async fn fetch_data_contract<T>(
+    async fn fetch_data_contract<T: 'static>( // 'static is required to satisfy automock and I don't like it
         &self,
         data_contract_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Option<T>> where DataContract: TryFrom<T>;
 
     /// Store Data Contract
     async fn store_data_contract(

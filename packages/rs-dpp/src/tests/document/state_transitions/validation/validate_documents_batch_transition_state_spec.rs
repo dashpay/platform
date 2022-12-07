@@ -68,7 +68,7 @@ fn setup_test() -> TestData {
     let data_contract_to_return = data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
-        .returning(move |_, _| Ok(data_contract_to_return.clone()));
+        .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()

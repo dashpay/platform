@@ -1,14 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{
-    data_contract::state_transition::DataContractCreateTransition,
-    errors::StateError,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
-    ProtocolError,
-};
+use crate::{ProtocolError, data_contract::{DataContract, state_transition::DataContractCreateTransition}, errors::StateError, state_repository::StateRepositoryLike, state_transition::StateTransitionLike, validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult}};
 
 pub struct DataContractCreateTransitionStateValidator<SR>
 where
@@ -51,7 +44,7 @@ pub async fn validate_data_contract_create_transition_state(
     let mut result = ValidationResult::default();
 
     // Data contract shouldn't exist
-    let maybe_existing_data_contract: Option<Vec<u8>> = state_repository
+    let maybe_existing_data_contract: Option<DataContract> = state_repository
         .fetch_data_contract(
             &state_transition.data_contract.id,
             state_transition.get_execution_context(),
@@ -90,7 +83,7 @@ mod test {
         };
 
         state_repository_mock
-            .expect_fetch_data_contract::<Option<Vec<u8>>>()
+            .expect_fetch_data_contract::<Vec<u8>>()
             .return_once(|_, _| Ok(Some(vec![])));
         state_transition.execution_context.enable_dry_run();
 

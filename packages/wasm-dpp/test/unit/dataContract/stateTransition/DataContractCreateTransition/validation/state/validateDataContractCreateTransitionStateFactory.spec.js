@@ -4,6 +4,8 @@
 // const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
 // const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 
 // const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
@@ -19,6 +21,8 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
   let stateTransition;
   let stateRepositoryMock;
   let executionContext;
+  let ValidationResult;
+  let fetchDataContract;
 
   let DataContractCreateTransition;
   let ApplyDataContractCreateTransition;
@@ -27,7 +31,7 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
 
   before(async () => {
     ({
-      DataContractCreateTransition, StateTransitionExecutionContext, validateDataContractCreateTransitionState,
+      DataContractCreateTransition, StateTransitionExecutionContext, validateDataContractCreateTransitionState, ValidationResult
     } = await loadWasmDpp());
   });
 
@@ -43,9 +47,11 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
 
     stateTransition.setExecutionContext(executionContext);
 
+    dataContractFetched = false;
+
     const stateRepositoryLike = {
-      storeDataContract: () => {
-        //        dataContractStored = true;
+      fetchDataContract: () => {
+        dataContractFetched = true;
       }
     };
 
@@ -73,7 +79,10 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
   // });
 
   it('should return valid result', async () => {
-    const result = await validateDataContractCreateTransitionState(stateTransition);
+    const result = await factory(stateTransition);
+    console.log(result);
+
+    expect(dataContractFetched).to.be.true();
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

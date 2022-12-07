@@ -78,7 +78,7 @@ fn setup_test(action: Action) -> TestData {
     let contract_to_return = data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract()
-        .returning(move |_, _| Ok(contract_to_return.clone()));
+        .returning(move |_, _| Ok(Some(contract_to_return.clone())));
 
     TestData {
         data_contract,

@@ -78,9 +78,9 @@ pub async fn validate_document_transitions(
 
     // Data Contract must exist
     let data_contract = state_repository
-        .fetch_data_contract::<DataContract>(data_contract_id, &tmp_execution_context)
-        .await
-        .map_err(|_| ProtocolError::DataContractNotPresentError {
+        .fetch_data_contract(data_contract_id, &tmp_execution_context)
+        .await?
+        .ok_or_else(|| ProtocolError::DataContractNotPresentError {
             data_contract_id: data_contract_id.clone(),
         })?;
 

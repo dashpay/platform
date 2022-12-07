@@ -407,6 +407,22 @@ impl TryFrom<&str> for DataContract {
     }
 }
 
+impl<'a> TryFrom<&'a [u8]> for DataContract {
+    type Error = ProtocolError;
+
+    fn try_from(v: &[u8]) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
+impl TryFrom<Vec<u8>> for DataContract {
+    type Error = ProtocolError;
+
+    fn try_from(v: Vec<u8>) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use anyhow::Result;

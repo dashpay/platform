@@ -47,6 +47,6 @@ describe('applyDataContractCreateTransitionFactory', () => {
 
     it('should store a data contract from state transition in the repository', async () => {
       await factory.applyDataContractCreateTransition(stateTransition);
-      expect(dataContractStored).to.be.true;
+      expect(dataContractStored).to.be.true();
   });
 });

@@ -13,11 +13,18 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
-use crate::{DataContractWasm, StateTransitionExecutionContextWasm};
+use crate::{identifier::IdentifierWrapper, DataContractWasm, StateTransitionExecutionContextWasm};
 
 #[wasm_bindgen]
 extern "C" {
     pub type ExternalStateRepositoryLike;
+
+    #[wasm_bindgen(structural, method, js_name=fetchDataContract)]
+    pub fn fetch_data_contract(
+        this: &ExternalStateRepositoryLike,
+        data_contract_id: IdentifierWrapper,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> DataContractWasm;
 
     #[wasm_bindgen(structural, method, js_name=storeDataContract)]
     pub fn store_data_contract(
@@ -44,15 +51,19 @@ impl ExternalStateRepositoryLikeWrapper {
 
 #[async_trait]
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
-    async fn fetch_data_contract<T>(
+    async fn fetch_data_contract(
         &self,
         data_contract_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
-        todo!()
+    ) -> anyhow::Result<DataContract> {
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_data_contract(
+                data_contract_id.clone().into(),
+                execution_context.clone().into(),
+            ).into())
     }
 
     async fn store_data_contract(
@@ -62,7 +73,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         self.0
             .lock()
-            .unwrap()
+            .expect("unexpected concurrency issue!")
             .store_data_contract(data_contract.into(), execution_context.clone().into());
         Ok(())
     }

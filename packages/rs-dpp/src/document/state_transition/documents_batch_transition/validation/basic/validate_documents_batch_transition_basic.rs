@@ -120,21 +120,21 @@ pub async fn validate_documents_batch_transition_basic(
 
     for (data_contract_id, transitions) in document_transitions_by_contracts {
         let maybe_data_contract = state_repository
-            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
-            .await;
+            .fetch_data_contract(&data_contract_id, execution_context)
+            .await?;
 
         if execution_context.is_dry_run() {
             return Ok(result);
         }
 
         let data_contract = match maybe_data_contract {
-            Err(_) => {
+            None => {
                 result.add_error(BasicError::DataContractNotPresent {
                     data_contract_id: data_contract_id.clone(),
                 });
                 continue;
             }
-            Ok(data_contract) => data_contract,
+            Some(data_contract) => data_contract,
         };
 
         let owner_id = Identifier::from_bytes(&raw_state_transition.get_bytes("ownerId")?)?;
