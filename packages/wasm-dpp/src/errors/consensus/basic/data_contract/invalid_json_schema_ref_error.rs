@@ -16,7 +16,7 @@ impl InvalidJsonSchemaRefErrorWasm {
 impl InvalidJsonSchemaRefErrorWasm {
     #[wasm_bindgen(js_name=getRefError)]
     pub fn get_ref_error(&self) -> String {
-        self.ref_error
+        self.ref_error.clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]

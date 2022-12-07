@@ -323,14 +323,6 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidJsonSchemaRefError { ref_error } => {
             InvalidJsonSchemaRefErrorWasm::new(ref_error.clone(), code).into()
         }
-        BasicError::IndexError(_) => {}
-        BasicError::JsonSchemaCompilationError(_) => {}
-        BasicError::InconsistentCompoundIndexDataError { .. } => {}
-        BasicError::MissingDocumentTypeError => {}
-        BasicError::MissingDocumentTransitionActionError => {}
-        BasicError::InvalidJsonSchemaRefError { .. } => {
-            "Not implemented".into()
-        }
         BasicError::IndexError(_) => {
             "Not implemented".into()
         }
