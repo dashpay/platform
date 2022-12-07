@@ -5,30 +5,29 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
  *
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
+ * @param {processProposalHandler} processProposalHandler
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  proposalBlockExecutionContextCollection,
-  dataContractCache,
   coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
+  proposalBlockExecutionContext,
+  processProposalHandler,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -51,7 +50,37 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    if (proposalBlockExecutionContext.getRound() !== round) {
+      consensusLogger.warn(
+        `Finalizing previously executed round ${round} instead of the last known ${proposalBlockExecutionContext.getRound()}`,
+      );
+
+      const {
+        block: {
+          header: {
+            time,
+            version,
+            proposerProTxHash,
+            coreChainLockedHeight,
+          },
+          data: {
+            txs,
+          },
+        },
+      } = request;
+
+      await processProposalHandler({
+        height,
+        txs,
+        coreChainLockedHeight,
+        version,
+        proposedLastCommit: commitInfo,
+        time,
+        proposerProTxHash,
+        round,
+      });
+    }
+
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
     // Store block execution context
@@ -66,18 +95,6 @@ function finalizeBlockHandlerFactory(
     await groveDBStore.commitTransaction();
 
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
-
-    // Update data contract cache with new version of
-    // committed data contract
-    for (const dataContract of proposalBlockExecutionContext.getDataContracts()) {
-      const operations = [new ReadOperation(dataContract.toBuffer().length)];
-
-      const cacheItem = new DataContractCacheItem(dataContract, operations);
-
-      if (dataContractCache.has(cacheItem.getKey())) {
-        dataContractCache.set(cacheItem.getKey(), cacheItem);
-      }
-    }
 
     // Send withdrawal transactions to Core
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
@@ -103,7 +120,7 @@ function finalizeBlockHandlerFactory(
       }
     }
 
-    proposalBlockExecutionContextCollection.clear();
+    proposalBlockExecutionContext.reset();
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 

@@ -32,9 +32,9 @@ describe('DPNS', () => {
   before(async () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
-    client = await createClientWithFundedWallet(undefined, 1000000);
+    client = await createClientWithFundedWallet(1000000);
 
-    await client.platform.identities.topUp(dpnsOwnerId, 200000);
+    await client.platform.identities.topUp(dpnsOwnerId, 300000);
   });
 
   after(async () => {
@@ -57,6 +57,7 @@ describe('DPNS', () => {
 
     before(async () => {
       ownerClient = await createClientWithFundedWallet(
+        10000,
         process.env.DPNS_OWNER_PRIVATE_KEY,
       );
 
@@ -64,7 +65,7 @@ describe('DPNS', () => {
       identity = await ownerClient.platform.identities.get(dpnsOwnerId);
 
       expect(identity).to.exist();
-      await ownerClient.platform.identities.topUp(dpnsOwnerId, 5);
+      await ownerClient.platform.identities.topUp(dpnsOwnerId, 500);
     });
 
     after(async () => {
@@ -124,7 +125,7 @@ describe('DPNS', () => {
 
   describe('Any Identity', () => {
     before(async () => {
-      identity = await client.platform.identities.register(200000);
+      identity = await client.platform.identities.register(600000);
 
       await waitForSTPropagated();
     });

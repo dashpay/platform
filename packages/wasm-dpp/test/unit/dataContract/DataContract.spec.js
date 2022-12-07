@@ -246,7 +246,7 @@ describe('DataContract', () => {
   });
 
   describe('#toJSON', () => {
-    it('should return JataContract as plain object', () => {
+    it('should return DataContract as plain object', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({

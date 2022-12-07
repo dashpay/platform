@@ -1,0 +1,50 @@
+[package]
+name = "drive"
+description = "Dash drive built on top of GroveDB"
+version = "0.24.0-dev.1"
+edition = "2021"
+license = "MIT"
+private = true
+
+[dependencies]
+serde = { version = "1.0.132", features = ["derive"] }
+ciborium = "0.2.0"
+integer-encoding = "3.0.3"
+bs58 = "0.4.0"
+base64 = "0.13.0"
+rand = "0.8.4"
+byteorder = "1.4.3"
+indexmap = "1.8.0"
+hex = "0.4.3"
+array_tool = "1.0.3"
+rand_distr = "0.4.3"
+tempfile = "3"
+serde_json = { version="1.0", features=["preserve_order"] }
+sqlparser = "0.13.0"
+enum-map = "2.0.3"
+thiserror = "1.0.30"
+moka = "0.8.1"
+intmap = { version="2.0.0", features=["serde"] }
+chrono = "0.4.20"
+bincode = "1.3.3"
+dpp = { path = "../rs-dpp" }
+dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
+
+[dependencies.grovedb]
+git = "https://github.com/dashpay/grovedb"
+rev = "df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+
+[dependencies.storage]
+git = "https://github.com/dashpay/grovedb"
+rev = "df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+
+[dependencies.costs]
+git = "https://github.com/dashpay/grovedb"
+rev = "df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+
+[dev-dependencies]
+criterion = "0.3.5"
+
+[[bench]]
+name = "benchmarks"
+harness = false

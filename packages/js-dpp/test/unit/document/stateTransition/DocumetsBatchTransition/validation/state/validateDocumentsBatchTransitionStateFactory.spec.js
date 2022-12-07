@@ -66,11 +66,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-    blockTime = new Date().getTime() / 1000;
+    blockTime = Date.now();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
-      seconds: blockTime,
-    });
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
 
@@ -476,12 +474,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     let timeWindowEnd;
 
     beforeEach(() => {
-      timeWindowStart = new Date(blockTime * 1000);
+      timeWindowStart = new Date(blockTime);
       timeWindowStart.setMinutes(
         timeWindowStart.getMinutes() - 5,
       );
 
-      timeWindowEnd = new Date(blockTime * 1000);
+      timeWindowEnd = new Date(blockTime);
       timeWindowEnd.setMinutes(
         timeWindowEnd.getMinutes() + 5,
       );

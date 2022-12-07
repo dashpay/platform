@@ -13,6 +13,8 @@ const {
 
 const Long = require('long');
 
+const FeeResult = require('@dashevo/rs-drive/FeeResult');
+
 const prepareProposalHandlerFactory = require('../../../../lib/abci/handlers/prepareProposalHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
@@ -22,7 +24,6 @@ describe('prepareProposalHandlerFactory', () => {
   let request;
   let deliverTxMock;
   let loggerMock;
-  let blockExecutionContextMock;
   let beginBlockMock;
   let endBlockMock;
   let updateCoreChainLockMock;
@@ -31,7 +32,7 @@ describe('prepareProposalHandlerFactory', () => {
   let validatorSetUpdate;
   let coreChainLockUpdate;
   let endBlockResult;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionMock;
   let round;
 
   beforeEach(function beforeEach() {
@@ -59,7 +60,7 @@ describe('prepareProposalHandlerFactory', () => {
     });
     validatorSetUpdate = new ValidatorSetUpdate();
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -70,25 +71,22 @@ describe('prepareProposalHandlerFactory', () => {
     };
 
     beginBlockMock = this.sinon.stub();
+
     deliverTxMock = this.sinon.stub().resolves({
       code: 0,
-      processingFees: 1,
-      storageFees: 2,
+      fees: FeeResult.create(1, 2),
     });
+
     endBlockMock = this.sinon.stub().resolves(
       endBlockResult,
     );
 
     updateCoreChainLockMock = this.sinon.stub().resolves(coreChainLockUpdate);
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
-
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionMock,
       beginBlockMock,
       endBlockMock,
       updateCoreChainLockMock,
@@ -160,18 +158,21 @@ describe('prepareProposalHandlerFactory', () => {
     expect(deliverTxMock).to.be.calledThrice();
 
     expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(round, loggerMock);
-    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
 
     expect(endBlockMock).to.be.calledOnceWithExactly(
       {
         height: request.height,
         round,
-        processingFees: 3,
-        storageFees: 6,
+        fees: FeeResult.create(),
         coreChainLockedHeight: request.coreChainLockedHeight,
       },
       loggerMock,
     );
+
+    const { fees } = endBlockMock.getCall(0).args[0];
+
+    expect(fees.storageFee).to.equal(3);
+    expect(fees.processingFee).to.equal(6);
   });
 
   it('should cut txs that are not fit into the size limit', async () => {

@@ -2,6 +2,7 @@ const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
+const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
  * @implements StateRepository
@@ -17,7 +18,7 @@ class DriveStateRepository {
    * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
-   * @param {BlockExecutionContext} latestBlockExecutionContext
+   * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
    * @param {Object} [options]
@@ -31,7 +32,7 @@ class DriveStateRepository {
     documentRepository,
     spentAssetLockTransactionsRepository,
     coreRpcClient,
-    latestBlockExecutionContext,
+    blockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
     options = {},
@@ -43,7 +44,7 @@ class DriveStateRepository {
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionContext = latestBlockExecutionContext;
+    this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
     this.#options = options;
@@ -209,12 +210,18 @@ class DriveStateRepository {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.dataContractRepository.fetch(
       id,
       {
-        dryRun: executionContext ? executionContext.isDryRun() : false,
+        blockInfo,
+        // This method doesn't implement dry run because we need a contract
+        // to proceed dry run validation and collect further operations
+        dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
+        // TODO: We don't need this anymore
         useTransaction: false,
       },
     );
@@ -227,16 +234,41 @@ class DriveStateRepository {
   }
 
   /**
-   * Store Data Contract
+   * Create Data Contract
    *
    * @param {DataContract} dataContract
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
-    const result = await this.dataContractRepository.store(
+  async createDataContract(dataContract, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.dataContractRepository.create(
       dataContract,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.dataContractRepository.update(
+      dataContract,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -256,10 +288,13 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.fetchDocumentsFunction(
       contractId,
       type,
       {
+        blockInfo,
         ...options,
         ...this.#createRepositoryOptions(executionContext),
       },
@@ -281,8 +316,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDocument(document, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.documentRepository.create(
       document,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -300,8 +338,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDocument(document, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.documentRepository.update(
       document,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -321,10 +362,13 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(dataContract, type, id, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.documentRepository.delete(
       dataContract,
       type,
       id,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -344,6 +388,7 @@ class DriveStateRepository {
   async fetchTransaction(id, executionContext = undefined) {
     if (executionContext && executionContext.isDryRun()) {
       executionContext.addOperation(
+        // TODO: Revisit this value
         new ReadOperation(512),
       );
 
@@ -390,10 +435,16 @@ class DriveStateRepository {
   /**
    * Fetch the latest platform block time
    *
-   * @return {Promise<protobuf.Timestamp>}
+   * @return {number}
    */
-  async fetchLatestPlatformBlockTime() {
-    return this.blockExecutionContext.getTime();
+  fetchLatestPlatformBlockTime() {
+    const timeMs = this.blockExecutionContext.getTimeMs();
+
+    if (!timeMs) {
+      throw new Error('Time is not set');
+    }
+
+    return timeMs;
   }
 
   /**

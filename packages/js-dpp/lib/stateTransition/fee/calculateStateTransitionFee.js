@@ -16,10 +16,7 @@ function calculateStateTransitionFee(stateTransition) {
     executionContext.getOperations(),
   );
 
-  // Is not implemented yet
-  const storageRefund = 0;
-
-  return (storageFee + processingFee) + DEFAULT_USER_TIP - storageRefund;
+  return (storageFee + processingFee) + DEFAULT_USER_TIP;
 }
 
 module.exports = calculateStateTransitionFee;

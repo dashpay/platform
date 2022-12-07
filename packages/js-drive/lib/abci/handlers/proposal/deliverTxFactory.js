@@ -6,6 +6,7 @@ const AbstractDocumentTransition = require(
 );
 
 const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+const aggregateOperationFees = require('./fees/aggregateOperationFees');
 
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
@@ -25,7 +26,7 @@ const TIMERS = require('../timers');
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTx}
@@ -33,7 +34,7 @@ const TIMERS = require('../timers');
 function deliverTxFactory(
   transactionalUnserializeStateTransition,
   transactionalDpp,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   executionTimer,
 ) {
   /**
@@ -42,10 +43,9 @@ function deliverTxFactory(
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
    * @param {BaseLogger} consensusLogger
-   * @return {Promise<{ code: number }>}
+   * @return {Promise<{ code: number, fees: FeeResult }>}
    */
   async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const blockHeight = proposalBlockExecutionContext.getHeight();
 
     // Start execution timer
@@ -124,17 +124,20 @@ function deliverTxFactory(
     //   );
     // }
 
-    // const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-    //   stateTransition.getOwnerId(),
-    // );
+    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
+      stateTransition.getOwnerId(),
+    );
 
-    // const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
+    // TODO: We should increment identity balance debt in case if it goes negative
+    let updatedBalance = identity.getBalance() - actualStateTransitionFee;
 
-    // if (updatedBalance < 0) {
-    //   throw new NegativeBalanceError(identity);
-    // }
+    if (updatedBalance < 0) {
+      updatedBalance = 0;
+    }
 
-    // await transactionalDpp.getStateRepository().updateIdentity(identity);
+    identity.setBalance(updatedBalance);
+
+    await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
     /* istanbul ignore next */
@@ -215,8 +218,8 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageFee: storageFees,
-      processingFee: processingFees,
+      storageFee: actualStorageFees,
+      processingFee: actualProcessingFees,
     } = calculateOperationFees(actualStateTransitionOperations);
 
     const {
@@ -242,8 +245,8 @@ function deliverTxFactory(
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
-            storage: storageFees,
-            processing: processingFees,
+            storage: actualStorageFees,
+            processing: actualProcessingFees,
             final: actualStateTransitionFee,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
@@ -255,8 +258,7 @@ function deliverTxFactory(
 
     return {
       code: 0,
-      processingFees,
-      storageFees,
+      fees: aggregateOperationFees(actualStateTransitionOperations),
     };
   }
 

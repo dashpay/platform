@@ -24,7 +24,8 @@ describe('BlockExecutionContext', () => {
   let height;
   let coreChainLockedHeight;
   let version;
-  let time;
+  let epochInfo;
+  let timeMs;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -39,10 +40,8 @@ describe('BlockExecutionContext', () => {
     height = Long.fromNumber(plainObject.height);
     coreChainLockedHeight = plainObject.coreChainLockedHeight;
     version = Consensus.fromObject(plainObject.version);
-    time = plainObject.time;
-    time.seconds = Long.fromNumber(time.seconds);
-    plainObject.time = plainObject.time.toJSON();
-    plainObject.time.seconds = Number(plainObject.time.seconds);
+    epochInfo = plainObject.epochInfo;
+    timeMs = plainObject.timeMs;
   });
 
   describe('#addDataContract', () => {
@@ -99,7 +98,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.getHeight()).to.be.null();
       expect(blockExecutionContext.getCoreChainLockedHeight()).to.be.null();
       expect(blockExecutionContext.getVersion()).to.be.null();
-      expect(blockExecutionContext.getTime()).to.be.null();
+      expect(blockExecutionContext.getTimeMs()).to.be.null();
       expect(blockExecutionContext.getLastCommitInfo()).to.be.null();
       expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal({});
     });
@@ -156,24 +155,6 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.version = version;
 
       expect(blockExecutionContext.getVersion()).to.deep.equal(version);
-    });
-  });
-
-  describe('#setTime', () => {
-    it('should set time', async () => {
-      const result = blockExecutionContext.setTime(time);
-
-      expect(result).to.equal(blockExecutionContext);
-
-      expect(blockExecutionContext.time).to.deep.equal(time);
-    });
-  });
-
-  describe('#getTime', () => {
-    it('should get time', async () => {
-      blockExecutionContext.time = time;
-
-      expect(blockExecutionContext.getTime()).to.deep.equal(time);
     });
   });
 
@@ -243,6 +224,30 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setTimeMs', () => {
+    it('should set time', async () => {
+      blockExecutionContext.setTimeMs(timeMs);
+
+      expect(blockExecutionContext.timeMs).to.deep.equal(timeMs);
+    });
+  });
+
+  describe('#getTimeMs', () => {
+    it('should get time', async () => {
+      blockExecutionContext.timeMs = timeMs;
+
+      expect(blockExecutionContext.getTimeMs()).to.deep.equal(timeMs);
+    });
+  });
+
+  describe('#setEpochInfo', () => {
+    it('should set epoch info');
+  });
+
+  describe('#getEpochInfo', () => {
+    it('should return epoch info');
+  });
+
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -250,12 +255,13 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.dataContracts = [dataContract];
       anotherBlockExecutionContext.lastCommitInfo = lastCommitInfo;
       anotherBlockExecutionContext.height = height;
-      anotherBlockExecutionContext.time = time;
       anotherBlockExecutionContext.version = version;
       anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       anotherBlockExecutionContext.consensusLogger = logger;
       anotherBlockExecutionContext.withdrawalTransactionsMap = plainObject
         .withdrawalTransactionsMap;
+      anotherBlockExecutionContext.epochInfo = epochInfo;
+      anotherBlockExecutionContext.timeMs = timeMs;
 
       blockExecutionContext.populate(anotherBlockExecutionContext);
 
@@ -267,9 +273,6 @@ describe('BlockExecutionContext', () => {
       );
       expect(blockExecutionContext.height).to.equal(
         anotherBlockExecutionContext.height,
-      );
-      expect(blockExecutionContext.time).to.equal(
-        anotherBlockExecutionContext.time,
       );
       expect(blockExecutionContext.version).to.equal(
         anotherBlockExecutionContext.version,
@@ -283,6 +286,12 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.withdrawalTransactionsMap).to.equal(
         anotherBlockExecutionContext.withdrawalTransactionsMap,
       );
+      expect(blockExecutionContext.epochInfo).to.equal(
+        anotherBlockExecutionContext.epochInfo,
+      );
+      expect(blockExecutionContext.timeMs).to.equal(
+        anotherBlockExecutionContext.timeMs,
+      );
     });
   });
 
@@ -292,9 +301,10 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
-      blockExecutionContext.time = time;
       blockExecutionContext.version = version;
       blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.epochInfo = epochInfo;
+      blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
 
@@ -306,12 +316,12 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
-      blockExecutionContext.time = time;
-      blockExecutionContext.time.seconds = time.seconds;
       blockExecutionContext.version = version;
       blockExecutionContext.consensusLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
+      blockExecutionContext.epochInfo = epochInfo;
+      blockExecutionContext.timeMs = timeMs;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 
@@ -335,12 +345,12 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
       expect(blockExecutionContext.height).to.deep.equal(height);
       expect(blockExecutionContext.version).to.deep.equal(version);
-      expect(blockExecutionContext.time).to.deep.equal(time);
       expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);
       expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
         plainObject.withdrawalTransactionsMap,
       );
+      expect(blockExecutionContext.timeMs).to.equal(timeMs);
     });
   });
 });

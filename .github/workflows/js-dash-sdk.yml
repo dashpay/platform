@@ -1,4 +1,4 @@
-name: Dash SDK
+name: JS Dash SDK
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/js-dash-sdk.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
       - packages/js-dash-sdk/**
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
@@ -20,11 +20,17 @@ on:
       - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
       - packages/dash-spv/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  js-dash-sdk-tests:
-    name: Run Dash SDK tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: 'dash'
       start-local-network: true

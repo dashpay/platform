@@ -1,9 +1,7 @@
-const timeToMillis = require('../../../util/timeToMillis');
-
 /**
  * Begin block ABCI
  *
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
@@ -16,7 +14,7 @@ const timeToMillis = require('../../../util/timeToMillis');
  * @return {endBlock}
  */
 function endBlockFactory(
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
@@ -32,8 +30,7 @@ function endBlockFactory(
    * @param {Object} request
    * @param {number} [request.height]
    * @param {number} [request.round]
-   * @param {number} [request.processingFees]
-   * @param {number} [request.storageFees]
+   * @param {FeeResult} [request.fees]
    * @param {number} [request.coreChainLockedHeight]
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
@@ -49,21 +46,16 @@ function endBlockFactory(
     const {
       height,
       round,
-      processingFees,
-      storageFees,
+      fees,
       coreChainLockedHeight,
     } = request;
 
     consensusLogger.debug('EndBlock ABCI method requested');
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     // Call RS ABCI
 
     const rsRequest = {
-      fees: {
-        processingFees,
-        storageFees,
-      },
+      fees,
     };
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
@@ -72,22 +64,12 @@ function endBlockFactory(
 
     consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
-    const { currentEpochIndex, isEpochChange } = rsResponse;
+    const { currentEpochIndex } = proposalBlockExecutionContext.getEpochInfo();
 
-    if (isEpochChange) {
-      const time = proposalBlockExecutionContext.getTime();
-
-      const blockTime = timeToMillis(time.seconds, time.nanos);
-
-      const debugData = {
-        currentEpochIndex,
-        blockTime,
-      };
-
-      const blockTimeFormatted = new Date(blockTime).toUTCString();
-
-      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
-    }
+    const {
+      processingFee: processingFees,
+      storageFee: storageFees,
+    } = fees;
 
     if (processingFees > 0 || storageFees > 0) {
       consensusLogger.debug({

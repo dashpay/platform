@@ -18,8 +18,17 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
   let identity;
 
   beforeEach(async () => {
-    rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, logger, 'blockchainStateTestStore');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
+    });
+
+    store = new GroveDBStore(rsDrive, logger, {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
+    });
+
+    await rsDrive.createInitialStateStructure();
 
     const decodeProtocolEntity = decodeProtocolEntityFactory();
 
@@ -38,11 +47,6 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
   });
 
   describe('#store', () => {
-    beforeEach(async () => {
-      await store.createTree([], PublicKeyToIdentitiesStoreRepository.TREE_PATH[0]);
-      await identityRepository.createTree();
-    });
-
     it('should store public key to identities', async () => {
       await identityRepository.create(identity);
 
@@ -52,7 +56,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const fetchedIdentityResult = await store.get(
         PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
@@ -75,8 +79,8 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       );
 
       const emptyIdentitiesResult = await store.get(
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
-        identity.getId().toBuffer(),
+        PublicKeyToIdentitiesStoreRepository.TREE_PATH,
+        publicKeyHash,
       );
 
       expect(emptyIdentitiesResult).to.be.instanceOf(StorageResult);
@@ -104,11 +108,6 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
   });
 
   describe('#fetch', () => {
-    beforeEach(async () => {
-      await store.createTree([], PublicKeyToIdentitiesStoreRepository.TREE_PATH[0]);
-      await identityRepository.createTree();
-    });
-
     it('should fetch empty array if public key to identities not found', async () => {
       const result = await publicKeyRepository.fetch(publicKeyHash);
 
@@ -126,7 +125,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       const result = await publicKeyRepository.fetch(publicKeyHash);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.deep.have.lengthOf(1);
 
@@ -171,9 +170,6 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
     let publicKeyHash2;
 
     beforeEach(async () => {
-      await store.createTree([], PublicKeyToIdentitiesStoreRepository.TREE_PATH[0]);
-      await identityRepository.createTree();
-
       publicKeyHash2 = Buffer.alloc(20).fill(2);
     });
 
@@ -200,7 +196,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       const result = await publicKeyRepository.fetchMany([publicKeyHash, publicKeyHash2]);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.deep.equal([identity, identity]);
     });
@@ -250,32 +246,10 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
     });
   });
 
-  describe('#createTree', () => {
-    it('should create a tree', async () => {
-      const result = await publicKeyRepository.createTree();
-
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
-
-      const data = await store.db.get(
-        [],
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH[0],
-      );
-
-      expect(data).to.deep.equal({
-        type: 'tree',
-        value: Buffer.alloc(32),
-      });
-    });
-  });
-
   describe('#prove', () => {
     let publicKeyHash2;
 
     beforeEach(async () => {
-      await store.createTree([], PublicKeyToIdentitiesStoreRepository.TREE_PATH[0]);
-      await identityRepository.createTree();
-
       publicKeyHash2 = Buffer.alloc(20).fill(2);
     });
 
@@ -305,7 +279,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
 
       expect(result).to.be.instanceOf(StorageResult);
 
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.an.instanceOf(Buffer);
       expect(result.getValue().length).to.be.greaterThan(0);
@@ -345,7 +319,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
 
       expect(result).to.be.instanceOf(StorageResult);
 
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.an.instanceOf(Buffer);
       expect(result.getValue().length).to.be.greaterThan(0);
@@ -357,7 +331,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
 
       expect(result).to.be.instanceOf(StorageResult);
 
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.an.instanceOf(Buffer);
       expect(result.getValue().length).to.be.greaterThan(0);

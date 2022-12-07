@@ -15,12 +15,16 @@ describe('SpentAssetLockTransactionsRepository', () => {
   beforeEach(async () => {
     outPointBuffer = Buffer.from([42]);
 
-    rsDrive = new Drive('./db/grovedb_test');
+    rsDrive = new Drive('./db/grovedb_test', {
+      dataContractsGlobalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
+    });
+
     store = new GroveDBStore(rsDrive, logger);
 
-    repository = new SpentAssetLockTransactionsRepository(store);
+    await rsDrive.createInitialStateStructure();
 
-    await store.createTree([], SpentAssetLockTransactionsRepository.TREE_PATH[0]);
+    repository = new SpentAssetLockTransactionsRepository(store);
   });
 
   afterEach(async () => {
@@ -30,12 +34,10 @@ describe('SpentAssetLockTransactionsRepository', () => {
 
   describe('#store', () => {
     it('should store outpoint', async () => {
-      const result = await repository.store(outPointBuffer, {
-        useTransaction: true,
-      });
+      const result = await repository.store(outPointBuffer);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       const placeholderResult = await store.get(
         SpentAssetLockTransactionsRepository.TREE_PATH,
@@ -51,7 +53,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
       const result = await repository.fetch(outPointBuffer);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.null();
     });
@@ -66,7 +68,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
       const result = await repository.fetch(outPointBuffer);
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.be.greaterThan(0);
+      expect(result.getOperations().length).to.equal(0);
 
       expect(result.getValue()).to.be.deep.equal(Buffer.from([0]));
     });

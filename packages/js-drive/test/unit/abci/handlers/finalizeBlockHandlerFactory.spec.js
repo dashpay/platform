@@ -19,23 +19,24 @@ const BlockExecutionContextRepositoryMock = require('../../../../lib/test/mock/B
 describe('finalizeBlockHandlerFactory', () => {
   let finalizeBlockHandler;
   let executionTimerMock;
-  let blockExecutionContextMock;
   let latestBlockExecutionContextMock;
   let loggerMock;
   let requestMock;
   let appHash;
   let groveDBStoreMock;
   let coreRpcClientMock;
-  let dataContractCacheMock;
   let blockExecutionContextRepositoryMock;
   let dataContract;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
   let round;
+  let block;
+  let processProposalHandlerMock;
 
   beforeEach(function beforeEach() {
     round = 0;
     appHash = Buffer.alloc(0);
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
     latestBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
     loggerMock = new LoggerMock(this.sinon);
     executionTimerMock = {
@@ -54,24 +55,34 @@ describe('finalizeBlockHandlerFactory', () => {
 
     const coreChainLockedHeight = 10;
 
+    block = {
+      header: {
+        time,
+        version: {
+          app: Long.fromInt(1),
+        },
+        proposerProTxHash: Uint8Array.from([1, 2, 3, 4]),
+        coreChainLockedHeight,
+      },
+      data: {
+        txs: new Array(3).fill(Buffer.alloc(5, 0)),
+      },
+    };
+
     requestMock = {
       commit,
       height,
       time,
       coreChainLockedHeight,
       round,
+      block,
     };
 
     dataContract = getDataContractFixture();
 
-    blockExecutionContextMock.getHeight.returns(42);
-    blockExecutionContextMock.getDataContracts.returns([dataContract]);
-
-    dataContractCacheMock = {
-      set: this.sinon.stub(),
-      get: this.sinon.stub(),
-      has: this.sinon.stub(),
-    };
+    proposalBlockExecutionContextMock.getHeight.returns(new Long(42));
+    proposalBlockExecutionContextMock.getRound.returns(round);
+    proposalBlockExecutionContextMock.getDataContracts.returns([dataContract]);
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
@@ -84,20 +95,17 @@ describe('finalizeBlockHandlerFactory', () => {
       this.sinon,
     );
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-      clear: this.sinon.stub(),
-    };
+    processProposalHandlerMock = this.sinon.stub();
 
     finalizeBlockHandler = finalizeBlockHandlerFactory(
       groveDBStoreMock,
       blockExecutionContextRepositoryMock,
-      proposalBlockExecutionContextCollectionMock,
-      dataContractCacheMock,
       coreRpcClientMock,
       loggerMock,
       executionTimerMock,
       latestBlockExecutionContextMock,
+      proposalBlockExecutionContextMock,
+      processProposalHandlerMock,
     );
   });
 
@@ -108,11 +116,10 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('blockExecution');
 
-    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
-    expect(proposalBlockExecutionContextCollectionMock.clear).to.be.calledOnce();
+    expect(proposalBlockExecutionContextMock.reset).to.be.calledOnce();
 
     expect(blockExecutionContextRepositoryMock.store).to.be.calledOnceWithExactly(
-      blockExecutionContextMock,
+      proposalBlockExecutionContextMock,
       {
         useTransaction: true,
       },
@@ -120,8 +127,8 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
     expect(latestBlockExecutionContextMock.populate).to.be.calledOnce();
+    expect(processProposalHandlerMock).to.be.not.called();
   });
 
   it('should send withdrawal transaction if vote extensions are present', async () => {
@@ -130,7 +137,7 @@ describe('finalizeBlockHandlerFactory', () => {
       Buffer.alloc(32, 1),
     ];
 
-    blockExecutionContextMock.getWithdrawalTransactionsMap.returns({
+    proposalBlockExecutionContextMock.getWithdrawalTransactionsMap.returns({
       [hash(txOneBytes).toString('hex')]: txOneBytes,
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     });
@@ -151,5 +158,24 @@ describe('finalizeBlockHandlerFactory', () => {
     await finalizeBlockHandler(requestMock);
 
     expect(coreRpcClientMock.sendRawTransaction).to.have.been.calledTwice();
+    expect(processProposalHandlerMock).to.be.not.called();
+  });
+
+  it('should call processProposalHandler if round is not equal to execution context', async () => {
+    proposalBlockExecutionContextMock.getRound.returns(round + 1);
+
+    const result = await finalizeBlockHandler(requestMock);
+
+    expect(result).to.be.an.instanceOf(ResponseFinalizeBlock);
+    expect(processProposalHandlerMock).to.be.calledOnceWithExactly({
+      height: requestMock.height,
+      txs: block.data.txs,
+      coreChainLockedHeight: block.header.coreChainLockedHeight,
+      version: block.header.version,
+      proposedLastCommit: requestMock.commit,
+      time: block.header.time,
+      proposerProTxHash: block.header.proposerProTxHash,
+      round,
+    });
   });
 });

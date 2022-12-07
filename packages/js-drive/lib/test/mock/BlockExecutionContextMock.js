@@ -5,8 +5,6 @@
  * @method reset
  * @method setHeight
  * @method getHeight
- * @method setTime
- * @method getTime
  * @method setVersion
  * @method getVersion
  * @method setLastCommitInfo
@@ -18,6 +16,12 @@
  * @method getRound
  * @method fromObject
  * @method toObject
+ * @method getEpochInfo
+ * @method setEpochInfo
+ * @method setTimeMs
+ * @method getTimeMs
+ * @method getRound
+ * @method setRound
  */
 class BlockExecutionContextMock {
   /**
@@ -31,8 +35,6 @@ class BlockExecutionContextMock {
     this.getCoreChainLockedHeight = sinon.stub();
     this.setHeight = sinon.stub();
     this.getHeight = sinon.stub();
-    this.setTime = sinon.stub();
-    this.getTime = sinon.stub();
     this.reset = sinon.stub();
     this.setVersion = sinon.stub();
     this.getVersion = sinon.stub();
@@ -47,6 +49,12 @@ class BlockExecutionContextMock {
     this.isEmpty = sinon.stub();
     this.fromObject = sinon.stub();
     this.toObject = sinon.stub();
+    this.setEpochInfo = sinon.stub();
+    this.getEpochInfo = sinon.stub();
+    this.setTimeMs = sinon.stub();
+    this.getTimeMs = sinon.stub();
+    this.setRound = sinon.stub();
+    this.getRound = sinon.stub();
   }
 }
 

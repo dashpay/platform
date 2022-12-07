@@ -8,17 +8,22 @@ const getMasternodeRewardShareDocumentsFixture = require('@dashevo/dpp/lib/test/
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const FeeResult = require('@dashevo/rs-drive/FeeResult');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('Fee Pools', () => {
   let container;
   let rsDrive;
   let mnDatas;
   let identityRepository;
+  let blockInfo;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
+
+    blockInfo = new BlockInfo(1, 0, Date.now());
 
     const dataContractRepository = container.resolve('dataContractRepository');
     const documentRepository = container.resolve('documentRepository');
@@ -34,7 +39,7 @@ describe('Fee Pools', () => {
     const mnSharesContract = getMasternodeRewardSharesContractFixture();
     mnSharesContract.id = Identifier.from(masternodeRewardSharesSystemIds.contractId);
 
-    await dataContractRepository.store(mnSharesContract);
+    await dataContractRepository.create(mnSharesContract, blockInfo);
 
     mnDatas = [];
     const mnCount = 1;
@@ -52,7 +57,7 @@ describe('Fee Pools', () => {
 
       await identityRepository.create(mnIdentity);
       await identityRepository.create(payToIdentity);
-      await documentRepository.create(payToDocument);
+      await documentRepository.create(payToDocument, blockInfo);
 
       mnDatas.push({
         mnIdentity,
@@ -99,10 +104,7 @@ describe('Fee Pools', () => {
       await rsDrive.getAbci().blockBegin(blockBeginRequest);
 
       const blockEndRequest = {
-        fees: {
-          processingFees: 10000,
-          storageFees: 10000,
-        },
+        fees: FeeResult.create(10000, 1000),
       };
 
       await rsDrive.getAbci().blockEnd(blockEndRequest);
@@ -114,7 +116,7 @@ describe('Fee Pools', () => {
     const fetchedMnIdentity = fetchedMnIdentityResult.getValue();
     const fetchedShareIdentity = fetchedShareIdentityResult.getValue();
 
-    expect(fetchedMnIdentity.getBalance()).to.equal(180510);
-    expect(fetchedShareIdentity.getBalance()).to.equal(9510);
+    expect(fetchedMnIdentity.getBalance()).to.equal(18060);
+    expect(fetchedShareIdentity.getBalance()).to.equal(960);
   });
 });

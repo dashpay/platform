@@ -3,6 +3,7 @@ const { createHash } = require('crypto');
 const lodashCloneDeep = require('lodash.clonedeep');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
+const DummyFeeResult = require('@dashevo/dpp/lib/stateTransition/fee/DummyFeeResult');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
 const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
@@ -25,21 +26,21 @@ class DocumentRepository {
    * Create document
    *
    * @param {Document} document
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async create(document, options = {}) {
-    let processingCost;
-    let storageCost;
+  async create(document, blockInfo, options = {}) {
+    let feeResult;
 
     try {
-      ([storageCost, processingCost] = await this.storage.getDrive()
+      (feeResult = await this.storage.getDrive()
         .createDocument(
           document,
-          new Date('2022-03-17T15:08:26.132Z'),
+          blockInfo,
           Boolean(options.useTransaction),
           Boolean(options.dryRun),
         ));
@@ -61,7 +62,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(storageCost, processingCost),
+        new PreCalculatedOperation(feeResult),
       ],
     );
   }
@@ -70,21 +71,21 @@ class DocumentRepository {
    * Update document
    *
    * @param {Document} document
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async update(document, options = {}) {
-    let processingCost;
-    let storageCost;
+  async update(document, blockInfo, options = {}) {
+    let feeResult;
 
     try {
-      ([storageCost, processingCost] = await this.storage.getDrive()
+      (feeResult = await this.storage.getDrive()
         .updateDocument(
           document,
-          new Date('2022-03-17T15:08:26.132Z'),
+          blockInfo,
           Boolean(options.useTransaction),
           Boolean(options.dryRun),
         ));
@@ -106,7 +107,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(storageCost, processingCost),
+        new PreCalculatedOperation(feeResult),
       ],
     );
   }
@@ -124,6 +125,7 @@ class DocumentRepository {
    * @param {Array} [options.orderBy]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
+   * @param {BlockInfo} [options.blockInfo]
    *
    * @throws InvalidQueryError
    *
@@ -137,6 +139,7 @@ class DocumentRepository {
       ({ useTransaction } = query);
       delete query.useTransaction;
       delete query.dryRun;
+      delete query.blockInfo;
 
       // Remove undefined options before we pass them to RS Drive
       Object.keys(query)
@@ -149,10 +152,17 @@ class DocumentRepository {
     }
 
     try {
-      const [documents, , processingCost] = await this.storage.getDrive()
+      let epochIndex;
+
+      if (options && options.blockInfo) {
+        epochIndex = options.blockInfo.epoch;
+      }
+
+      const [documents, processingCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
+          epochIndex,
           query,
           useTransaction,
         );
@@ -160,7 +170,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(0, processingCost),
+          new PreCalculatedOperation(new DummyFeeResult(0, processingCost)),
         ],
       );
     } catch (e) {
@@ -184,18 +194,20 @@ class DocumentRepository {
    * @param {DataContract} dataContract
    * @param {string} documentType
    * @param {Identifier} id
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
-  async delete(dataContract, documentType, id, options = { }) {
+  async delete(dataContract, documentType, id, blockInfo, options = { }) {
     try {
-      const [storageCost, processingCost] = await this.storage.getDrive()
+      const feeResult = await this.storage.getDrive()
         .deleteDocument(
-          dataContract,
+          dataContract.getId(),
           documentType,
           id,
+          blockInfo,
           Boolean(options.useTransaction),
           Boolean(options.dryRun),
         );
@@ -203,7 +215,7 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(storageCost, processingCost),
+          new PreCalculatedOperation(feeResult),
         ],
       );
     } finally {
@@ -257,7 +269,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new PreCalculatedOperation(0, processingCost),
+          new PreCalculatedOperation(new DummyFeeResult(0, processingCost)),
         ],
       );
     } catch (e) {

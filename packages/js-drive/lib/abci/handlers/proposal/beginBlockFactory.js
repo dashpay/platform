@@ -3,15 +3,15 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
 const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
-const timeToMillis = require('../../../util/timeToMillis');
-const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
+const BlockInfo = require('../../../blockExecution/BlockInfo');
+const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
 
 /**
  * Begin Block
  *
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} latestBlockExecutionContext
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
  * @param {DashPlatformProtocol} transactionalDpp
@@ -26,7 +26,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
 function beginBlockFactory(
   groveDBStore,
   latestBlockExecutionContext,
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -60,7 +60,7 @@ function beginBlockFactory(
       round,
     } = request;
 
-    if (proposalBlockExecutionContextCollection.isEmpty()) {
+    if (proposalBlockExecutionContext.isEmpty()) {
       executionTimer.clearTimer('blockExecution');
       executionTimer.startTimer('blockExecution');
     }
@@ -85,17 +85,15 @@ function beginBlockFactory(
 
     await waitForChainLockedHeight(coreChainLockedHeight);
 
-    // Set block execution context
+    // Reset block execution context
 
-    const proposalBlockExecutionContext = new BlockExecutionContext();
-
-    proposalBlockExecutionContextCollection.add(round, proposalBlockExecutionContext);
+    proposalBlockExecutionContext.reset();
 
     // Set block execution context params
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
     proposalBlockExecutionContext.setHeight(height);
     proposalBlockExecutionContext.setVersion(version);
-    proposalBlockExecutionContext.setTime(time);
+    proposalBlockExecutionContext.setTimeMs(protoTimestampToMillis(time));
     proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
     proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
     proposalBlockExecutionContext.setRound(round);
@@ -118,25 +116,21 @@ function beginBlockFactory(
      */
     const rsRequest = {
       blockHeight: height.toNumber(),
-      blockTimeMs: timeToMillis(time.seconds, time.nanos),
+      blockTimeMs: proposalBlockExecutionContext.getTimeMs(),
       proposerProTxHash,
       // TODO replace with real value
       validatorSetQuorumHash: Buffer.alloc(32),
     };
 
     if (!latestBlockExecutionContext.isEmpty()) {
-      const previousTime = latestBlockExecutionContext.getTime();
-
-      rsRequest.previousBlockTimeMs = timeToMillis(
-        previousTime.seconds, previousTime.nanos,
-      );
+      rsRequest.previousBlockTimeMs = latestBlockExecutionContext.getTimeMs();
     }
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    const { unsignedWithdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
+    const rsResponse = await rsAbci.blockBegin(rsRequest, true);
 
-    const withdrawalTransactionsMap = (unsignedWithdrawalTransactions || []).reduce(
+    const withdrawalTransactionsMap = (rsResponse.unsignedWithdrawalTransactions || []).reduce(
       (map, transactionBytes) => ({
         ...map,
         [hash(transactionBytes).toString('hex')]: transactionBytes,
@@ -145,6 +139,24 @@ function beginBlockFactory(
     );
 
     proposalBlockExecutionContext.setWithdrawalTransactionsMap(withdrawalTransactionsMap);
+    proposalBlockExecutionContext.setEpochInfo(rsResponse.epochInfo);
+
+    const { currentEpochIndex, isEpochChange } = rsResponse;
+
+    if (isEpochChange) {
+      const debugData = {
+        currentEpochIndex,
+        blockTime: proposalBlockExecutionContext.getTimeMs(),
+      };
+
+      if (rsRequest.previousBlockTimeMs) {
+        debugData.previousBlockTimeMs = rsRequest.previousBlockTimeMs;
+      }
+
+      const blockTimeFormatted = new Date(proposalBlockExecutionContext.getTimeMs()).toUTCString();
+
+      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
+    }
 
     // Update SML
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
@@ -155,8 +167,11 @@ function beginBlockFactory(
     );
 
     if (isSimplifiedMasternodeListUpdated) {
+      const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
+
       const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
         coreChainLockedHeight,
+        blockInfo,
       );
 
       const {

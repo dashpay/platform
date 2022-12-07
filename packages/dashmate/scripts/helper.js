@@ -38,5 +38,8 @@ const createDIContainer = require('../src/createDIContainer');
   if (provider === 'zerossl') {
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
     await scheduleRenewZeroSslCertificate(config);
+  } else {
+    // prevent infinite restarts
+    setInterval(() => {}, 60 * 1000);
   }
 }());
