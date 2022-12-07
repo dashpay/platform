@@ -34,13 +34,17 @@
 //!
 
 use crate::contract::document::Document;
+use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
 use dpp::data_contract::extra::DocumentType;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::Element;
 
 mod delete;
+mod estimation_costs;
 mod insert;
 mod update;
 
@@ -98,6 +102,22 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
         &[0],
         document_id,
     ]
+}
+
+/// Returns the path to a contract document when the document id isn't known.
+fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
+    contract_id: &[u8],
+    document_type: &DocumentType,
+) -> KeyInfoPath {
+    let mut key_info_path = KeyInfoPath::from_known_path(contract_documents_primary_key_path(
+        contract_id,
+        document_type.name.as_str(),
+    ));
+    key_info_path.push(KeyInfo::MaxKeySize {
+        unique_id: document_type.unique_id_for_storage().to_vec(),
+        max_size: DEFAULT_HASH_SIZE_U8,
+    });
+    key_info_path
 }
 
 /// Returns the size of the path to a contract document.

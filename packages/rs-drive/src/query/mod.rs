@@ -525,7 +525,7 @@ impl<'a> DriveQuery<'a> {
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path,
-                        KeyValueInfo::KeyRefRequest(&start_at_document_key),
+                        &start_at_document_key,
                         None,
                         transaction,
                         drive_operations,

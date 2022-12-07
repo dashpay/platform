@@ -32,27 +32,40 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
+use grovedb::Error::MerkError;
+use grovedb::EstimatedLayerInformation::PotentiallyAtMaxElements;
+use grovedb::EstimatedLayerSizes::AllItems;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use intmap::IntMap;
+use itertools::Itertools;
 use std::collections::HashMap;
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::defaults::{
+    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
+    CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
+};
 use crate::drive::document::{contract_document_type_path, contract_documents_primary_key_path};
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{DocumentSize, DocumentWithoutSerialization};
+use crate::drive::object_size_info::DocumentInfo::{
+    DocumentEstimatedAverageSize, DocumentWithoutSerialization,
+};
 use crate::drive::object_size_info::DriveKeyInfo;
-use crate::drive::object_size_info::DriveKeyInfo::Key;
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
-use dpp::data_contract::extra::DriveContractExt;
+use dpp::data_contract::extra::{DocumentType, DriveContractExt};
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -183,6 +196,69 @@ impl Drive {
         )
     }
 
+    fn add_estimation_costs_for_remove_document_to_primary_storage(
+        primary_key_path: [&[u8]; 5],
+        document_type: &DocumentType,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    ) {
+        // we just have the elements
+        let approximate_size = if document_type.documents_mutable {
+            //todo: have the contract say how often we expect documents to mutate
+            Some((
+                AVERAGE_NUMBER_OF_UPDATES as u16,
+                AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
+            ))
+        } else {
+            None
+        };
+        let flags_size = StorageFlags::approximate_size(true, approximate_size);
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(primary_key_path),
+            PotentiallyAtMaxElements(AllItems(
+                DEFAULT_HASH_SIZE_U8,
+                document_type.estimated_size() as u32,
+                Some(flags_size),
+            )),
+        );
+    }
+
+    /// Removes the document from primary storage.
+    fn remove_document_from_primary_storage(
+        &self,
+        document_id: [u8; 32],
+        document_type: &DocumentType,
+        contract_documents_primary_key_path: [&[u8]; 5],
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        let stateless_delete_for_costs_with_estimated_value_size =
+            if estimated_costs_only_with_layer_info.is_some() {
+                Some(document_type.estimated_size())
+            } else {
+                None
+            };
+        self.batch_delete(
+            contract_documents_primary_key_path,
+            document_id.as_slice(),
+            stateless_delete_for_costs_with_estimated_value_size,
+            transaction,
+            batch_operations,
+        )?;
+
+        // if we are trying to get estimated costs we should add this level
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_remove_document_to_primary_storage(
+                contract_documents_primary_key_path,
+                document_type,
+                estimated_costs_only_with_layer_info,
+            );
+        }
+        Ok(())
+    }
+
     /// Prepares the operations for deleting a document.
     pub(crate) fn delete_document_for_contract_operations(
         &self,
@@ -222,7 +298,7 @@ impl Drive {
 
         let stateless = estimated_costs_only_with_layer_info.is_some();
         let query_stateless_max_value_size = if stateless {
-            Some(document_type.max_size())
+            Some(document_type.estimated_size())
         } else {
             None
         };
@@ -230,14 +306,14 @@ impl Drive {
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_direct(
             contract_documents_primary_key_path,
-            KeyRefRequest(document_id.as_slice()),
+            document_id.as_slice(),
             query_stateless_max_value_size,
             transaction,
             &mut batch_operations,
         )?;
 
-        let document_info = if let Some(max_value_size) = query_stateless_max_value_size {
-            DocumentSize(max_value_size as u32)
+        let document_info = if let Some(estimated_value_size) = query_stateless_max_value_size {
+            DocumentEstimatedAverageSize(estimated_value_size as u32)
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
                 let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
@@ -255,10 +331,11 @@ impl Drive {
         };
 
         // third we need to delete the document for it's primary key
-        self.batch_delete(
+        self.remove_document_from_primary_storage(
+            document_id,
+            document_type,
             contract_documents_primary_key_path,
-            document_id.as_slice(),
-            true, // not a tree, irrelevant
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
         )?;
@@ -310,27 +387,50 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
             }
 
+            let mut key_info_path = KeyInfoPath::from_vec(
+                index_path
+                    .into_iter()
+                    .map(|key_info| match key_info {
+                        Key(key) => KnownKey(key),
+                        KeyRef(key_ref) => KnownKey(key_ref.to_vec()),
+                        KeySize(key_info) => key_info,
+                    })
+                    .collect::<Vec<KeyInfo>>(),
+            );
+
             // unique indexes will be stored under key "0"
             // non unique indices should have a tree at key "0" that has all elements based off of primary key
             if !index.unique {
-                index_path.push(Key(vec![0]));
+                key_info_path.push(KnownKey(vec![0]));
+
+                let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                    1,
+                    &key_info_path,
+                    estimated_costs_only_with_layer_info,
+                )?;
 
                 // here we should return an error if the element already exists
                 self.batch_delete_up_tree_while_empty(
-                    index_path,
+                    key_info_path,
                     document_id.as_slice(),
                     Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                    estimated_costs_only_with_layer_info.is_none(),
+                    stateless_delete_for_costs,
                     transaction,
                     &mut batch_operations,
                 )?;
             } else {
+                let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                    1,
+                    &key_info_path,
+                    estimated_costs_only_with_layer_info,
+                )?;
+
                 // here we should return an error if the element already exists
                 self.batch_delete_up_tree_while_empty(
-                    index_path,
+                    key_info_path,
                     &[0],
                     Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                    estimated_costs_only_with_layer_info.is_none(),
+                    stateless_delete_for_costs,
                     transaction,
                     &mut batch_operations,
                 )?;
@@ -1070,6 +1170,78 @@ mod tests {
                 Some(random_owner_id),
                 BlockInfo::default_with_epoch(Epoch::new(3)),
                 true,
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to delete the document");
+
+        let removed_bytes = fee_result
+            .removed_bytes_from_identities
+            .get(&random_owner_id)
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(added_bytes, *removed_bytes as u64);
+    }
+
+    #[test]
+    fn test_delete_dashpay_documents_without_apply() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let dashpay_profile_serialized_document = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(1),
+        );
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
+        let fee_result = drive
+            .add_serialized_document_for_contract(
+                &dashpay_profile_serialized_document,
+                &contract,
+                "profile",
+                Some(random_owner_id),
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&storage_flags),
+                Some(&db_transaction),
+            )
+            .expect("expected to insert a document successfully");
+
+        let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        // We added 1756 bytes
+        assert_eq!(added_bytes, 1668);
+
+        let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Let's delete the document at the third epoch
+        let fee_result = drive
+            .delete_document_for_contract(
+                document_id,
+                &contract,
+                "profile",
+                Some(random_owner_id),
+                BlockInfo::default_with_epoch(Epoch::new(3)),
+                false,
                 Some(&db_transaction),
             )
             .expect("expected to be able to delete the document");

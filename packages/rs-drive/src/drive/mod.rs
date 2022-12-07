@@ -35,7 +35,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
 use object_size_info::DocumentAndContractInfo;
-use object_size_info::DocumentInfo::DocumentSize;
+use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
@@ -269,7 +269,7 @@ impl Drive {
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentSize(document_type.max_size() as u32),
+                document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
                 contract,
                 document_type,
                 owner_id: None,

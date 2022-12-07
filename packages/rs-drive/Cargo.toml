@@ -28,19 +28,20 @@ intmap = { version="2.0.0", features=["serde"] }
 chrono = "0.4.20"
 bincode = "1.3.3"
 dpp = { path = "../rs-dpp" }
+itertools = { version = "0.10.5" }
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "master"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "master"
 
 [dependencies.costs]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "master"
 
 [dev-dependencies]
 criterion = "0.3.5"

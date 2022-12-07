@@ -32,6 +32,8 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
@@ -49,18 +51,21 @@ use crate::drive::document::{
     contract_document_type_path_vec,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_keeping_history_primary_key_path_for_document_id_size,
+    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
     contract_documents_keeping_history_storage_time_reference_path_size,
     contract_documents_primary_key_path, make_document_reference,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentRefWithoutSerialization, DocumentSize,
+    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentRefWithoutSerialization,
     DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
+use crate::drive::object_size_info::KeyElementInfo::{
+    KeyElement, KeyElementSize, KeyUnknownElementSize,
+};
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElementSize,
+    PathFixedSizeKeyElement, PathKeyElementSize, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
@@ -78,86 +83,6 @@ use crate::error::fee::FeeError;
 use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
 
 impl Drive {
-    pub(crate) fn add_estimation_costs_for_add_document_to_primary_storage(
-        document_and_contract_info: &DocumentAndContractInfo,
-        primary_key_path: [&[u8]; 5],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    ) {
-        let document = if let Some(document) = document_and_contract_info
-            .document_info
-            .get_borrowed_document()
-        {
-            document
-        } else {
-            return;
-        };
-        let contract = document_and_contract_info.contract;
-        let document_type = document_and_contract_info.document_type;
-        // at this level we have all the documents for the contract
-        if document_type.documents_keep_history {
-            // if we keep history this level has trees
-            // we only keep flags if the contract can be deleted
-            let average_flags_size = if contract.can_be_deleted() {
-                // the trees flags will never change
-                let flags_size = StorageFlags::approximate_size(true, None);
-                Some(flags_size)
-            } else {
-                None
-            };
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(primary_key_path),
-                PotentiallyAtMaxElements(AllSubtrees(DEFAULT_HASH_SIZE_U8, average_flags_size)),
-            );
-            let document_id_in_primary_path =
-                contract_documents_keeping_history_primary_key_path_for_document_id(
-                    contract.id().as_bytes(),
-                    document_type.name.as_str(),
-                    document.id.as_slice(),
-                );
-            // we are dealing with a sibling reference
-            // sibling reference serialized size is going to be the encoded time size
-            // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of
-            // the encoded time
-            let reference_size = DEFAULT_FLOAT_SIZE + 2;
-            // on the lower level we have many items by date, and 1 ref to the current item
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(document_id_in_primary_path),
-                ApproximateElements(
-                    AVERAGE_NUMBER_OF_UPDATES as u32,
-                    Mix {
-                        subtree_size: None,
-                        items_size: Some((
-                            DEFAULT_FLOAT_SIZE_U8,
-                            document_type.estimated_size() as u32,
-                            average_flags_size,
-                            AVERAGE_NUMBER_OF_UPDATES,
-                        )),
-                        references_size: Some((1, reference_size, average_flags_size, 1)),
-                    },
-                ),
-            );
-        } else {
-            // we just have the elements
-            let approximate_size = if document_type.documents_mutable {
-                //todo: have the contract say how often we expect documents to mutate
-                Some((
-                    AVERAGE_NUMBER_OF_UPDATES as u16,
-                    AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
-                ))
-            } else {
-                None
-            };
-            let flags_size = StorageFlags::approximate_size(true, approximate_size);
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(primary_key_path),
-                PotentiallyAtMaxElements(AllItems(
-                    DEFAULT_HASH_SIZE_U8,
-                    document_type.estimated_size() as u32,
-                    Some(flags_size),
-                )),
-            );
-        }
-    }
     /// Adds a document to primary storage.
     /// If a document isn't sent to this function then we are just calling to know the query and
     /// insert operations
@@ -190,28 +115,35 @@ impl Drive {
 
         if document_type.documents_keep_history {
             let (path_key_info, storage_flags) =
-                if let DocumentRefAndSerialization((document, _, storage_flags)) =
-                    document_and_contract_info.document_info
-                {
+                if document_and_contract_info.document_info.is_document_size() {
+                    (
+                        PathKeySize(
+                            KeyInfoPath::from_known_path(primary_key_path),
+                            KeyInfo::MaxKeySize {
+                                unique_id: document_type.unique_id_for_storage().to_vec(),
+                                max_size: DEFAULT_HASH_SIZE_U8,
+                            },
+                        ),
+                        StorageFlags::optional_default_as_ref(),
+                    )
+                } else {
                     let inserted_storage_flags = if contract.can_be_deleted() {
-                        storage_flags
+                        document_and_contract_info
+                            .document_info
+                            .get_storage_flags_ref()
                     } else {
                         // there are no need for storage flags if the contract can not be deleted
                         // as this tree can never be deleted
                         None
                     };
                     (
-                        PathFixedSizeKeyRef((primary_key_path, document.id.as_slice())),
-                        inserted_storage_flags,
-                    )
-                } else {
-                    (
-                        PathKeySize((
-                            defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH
-                                + document_type.name.len() as u32,
-                            DEFAULT_HASH_SIZE,
+                        PathFixedSizeKeyRef((
+                            primary_key_path,
+                            document_and_contract_info
+                                .document_info
+                                .get_document_id_as_slice()?,
                         )),
-                        StorageFlags::optional_default_as_ref(),
+                        inserted_storage_flags,
                     )
                 };
             // we first insert an empty tree if the document is new
@@ -279,14 +211,15 @@ impl Drive {
                         element,
                     ))
                 }
-                DocumentSize(max_size) => {
-                    let path_max_length =
-                        contract_documents_keeping_history_primary_key_path_for_document_id_size(
-                            document_type.name.len() as u32,
+                DocumentEstimatedAverageSize(max_size) => {
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
+                            contract.id.as_bytes(),
+                            document_type,
                         );
-                    PathKeyElementSize((
-                        path_max_length,
-                        8,
+                    PathKeyUnknownElementSize((
+                        document_id_in_primary_path,
+                        KnownKey(encoded_time.clone()),
                         Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                     ))
                 }
@@ -294,16 +227,31 @@ impl Drive {
             self.batch_insert(path_key_element_info, drive_operations)?;
 
             let path_key_element_info =
-                if let DocumentRefAndSerialization((document, _, storage_flags)) =
-                    document_and_contract_info.document_info
-                {
+                if document_and_contract_info.document_info.is_document_size() {
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
+                            contract.id.as_bytes(),
+                            document_type,
+                        );
+                    let reference_max_size =
+                        contract_documents_keeping_history_storage_time_reference_path_size(
+                            document_type.name.len() as u32,
+                        );
+                    PathKeyUnknownElementSize((
+                        document_id_in_primary_path,
+                        KnownKey(vec![0]),
+                        Element::required_item_space(reference_max_size, STORAGE_FLAGS_SIZE),
+                    ))
+                } else {
                     // we should also insert a reference at 0 to the current value
                     // todo: we could construct this only once
                     let document_id_in_primary_path =
                         contract_documents_keeping_history_primary_key_path_for_document_id(
                             contract.id.as_bytes(),
                             document_type.name.as_str(),
-                            document.id.as_slice(),
+                            document_and_contract_info
+                                .document_info
+                                .get_document_id_as_slice()?,
                         );
                     PathFixedSizeKeyElement((
                         document_id_in_primary_path,
@@ -313,20 +261,6 @@ impl Drive {
                             Some(1),
                             StorageFlags::map_to_some_element_flags(storage_flags),
                         ),
-                    ))
-                } else {
-                    let path_max_length =
-                        contract_documents_keeping_history_primary_key_path_for_document_id_size(
-                            document_type.name.len() as u32,
-                        );
-                    let reference_max_size =
-                        contract_documents_keeping_history_storage_time_reference_path_size(
-                            document_type.name.len() as u32,
-                        );
-                    PathKeyElementSize((
-                        path_max_length,
-                        1,
-                        Element::required_item_space(reference_max_size, STORAGE_FLAGS_SIZE),
                     ))
                 };
 
@@ -349,11 +283,13 @@ impl Drive {
                     );
                     PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
                 }
-                DocumentSize(max_size) => PathKeyElementSize((
-                    defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH
-                        + document_type.name.len() as u32,
-                    DEFAULT_HASH_SIZE,
-                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
+                    KeyInfoPath::from_known_path(primary_key_path),
+                    KeyInfo::MaxKeySize {
+                        unique_id: document_type.unique_id_for_storage().to_vec(),
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    },
+                    Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
                 )),
                 DocumentWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
@@ -393,10 +329,12 @@ impl Drive {
                     );
                     PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
                 }
-                DocumentSize(max_size) => PathKeyElementSize((
-                    defaults::BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH
-                        + document_type.name.len() as u32,
-                    DEFAULT_HASH_SIZE,
+                DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
+                    KeyInfoPath::from_known_path(primary_key_path),
+                    KeyInfo::MaxKeySize {
+                        unique_id: document_type.unique_id_for_storage().to_vec(),
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    },
                     Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                 )),
             };
@@ -657,8 +595,14 @@ impl Drive {
                     );
                     KeyElement((document.id.as_slice(), document_reference))
                 }
-                DocumentSize(max_size) => KeyElementSize((
-                    DEFAULT_HASH_SIZE,
+                DocumentEstimatedAverageSize(max_size) => KeyUnknownElementSize((
+                    KeyInfo::MaxKeySize {
+                        unique_id: document_and_contract_info
+                            .document_type
+                            .unique_id_for_storage()
+                            .to_vec(),
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    },
                     Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                 )),
             };
@@ -689,9 +633,15 @@ impl Drive {
                     );
                     KeyElement((&[0], document_reference))
                 }
-                DocumentSize(max_size) => KeyElementSize((
-                    1,
-                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                DocumentEstimatedAverageSize(estimated_size) => KeyUnknownElementSize((
+                    KeyInfo::MaxKeySize {
+                        unique_id: document_and_contract_info
+                            .document_type
+                            .unique_id_for_storage()
+                            .to_vec(),
+                        max_size: 1,
+                    },
+                    Element::required_item_space(*estimated_size, STORAGE_FLAGS_SIZE),
                 )),
             };
 
@@ -957,7 +907,7 @@ impl Drive {
             let mut index_path_info = if document_and_contract_info.document_info.is_document_size()
             {
                 // This is a stateless operation
-                PathInfo::PathSize(index_path.iter().map(|x| x.len() as u32).sum())
+                PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
             } else {
                 PathInfo::PathIterator::<0>(index_path)
             };

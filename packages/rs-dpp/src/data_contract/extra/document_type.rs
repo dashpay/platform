@@ -108,6 +108,14 @@ impl DocumentType {
         index_level
     }
 
+    pub fn unique_id_for_storage(&self) -> [u8; 32] {
+        rand::random::<[u8; 32]>()
+    }
+
+    pub fn unique_id_for_document_field(&self, key_path: &str) -> [u8; 32] {
+        rand::random::<[u8; 32]>()
+    }
+
     pub fn serialize_value_for_key<'a>(
         &'a self,
         key: &str,
@@ -435,6 +443,10 @@ impl DocumentType {
                 .document_field_for_property(property)
                 .map(|document_field| document_field.document_type),
         }
+    }
+
+    pub fn field_can_be_null(&self, name: &str) -> bool {
+        !self.required_fields.contains(name)
     }
 }
 

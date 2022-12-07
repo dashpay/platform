@@ -34,6 +34,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
@@ -47,7 +49,7 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentSize, DocumentWithoutSerialization,
+    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
@@ -59,7 +61,9 @@ use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 
 use crate::drive::block_info::BlockInfo;
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
+use crate::error::fee::FeeError;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
@@ -314,7 +318,7 @@ impl Drive {
                     query_stateless_max_value_size.map(|vs| (vs, vec![1]));
                 self.grove_get(
                     contract_documents_keeping_history_primary_key_path_for_document_id,
-                    KeyRefRequest(&[0]),
+                    &[0],
                     query_stateless_with_max_value_size_and_max_reference_sizes,
                     transaction,
                     &mut batch_operations,
@@ -322,7 +326,7 @@ impl Drive {
             } else {
                 self.grove_get_direct(
                     contract_documents_primary_key_path,
-                    KeyRefRequest(document.id.as_slice()),
+                    document.id.as_slice(),
                     query_stateless_max_value_size,
                     transaction,
                     &mut batch_operations,
@@ -355,7 +359,7 @@ impl Drive {
                     )))
                 }?
             } else if let Some(max_value_size) = query_stateless_max_value_size {
-                DocumentSize(max_value_size as u32)
+                DocumentEstimatedAverageSize(max_value_size as u32)
             } else {
                 return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
                     "document being updated does not exist",
@@ -522,25 +526,49 @@ impl Drive {
                     // we first need to delete the old values
                     // unique indexes will be stored under key "0"
                     // non unique indices should have a tree at key "0" that has all elements based off of primary key
+
+                    let mut key_info_path = KeyInfoPath::from_vec(
+                        old_index_path
+                            .into_iter()
+                            .map(|key_info| match key_info {
+                                Key(key) => KnownKey(key),
+                                KeyRef(key_ref) => KnownKey(key_ref.to_vec()),
+                                KeySize(key_info) => key_info,
+                            })
+                            .collect::<Vec<KeyInfo>>(),
+                    );
+
                     if !index.unique {
-                        old_index_path.push(DriveKeyInfo::Key(vec![0]));
+                        key_info_path.push(KnownKey(vec![0]));
+
+                        let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                            1,
+                            &key_info_path,
+                            estimated_costs_only_with_layer_info,
+                        )?;
 
                         // here we should return an error if the element already exists
                         self.batch_delete_up_tree_while_empty(
-                            old_index_path,
+                            key_info_path,
                             document.id.as_slice(),
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            estimated_costs_only_with_layer_info.is_none(),
+                            stateless_delete_for_costs,
                             transaction,
                             &mut batch_operations,
                         )?;
                     } else {
+                        let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                            1,
+                            &key_info_path,
+                            estimated_costs_only_with_layer_info,
+                        )?;
+
                         // here we should return an error if the element already exists
                         self.batch_delete_up_tree_while_empty(
-                            old_index_path,
+                            key_info_path,
                             &[0],
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            estimated_costs_only_with_layer_info.is_none(),
+                            stateless_delete_for_costs,
                             transaction,
                             &mut batch_operations,
                         )?;

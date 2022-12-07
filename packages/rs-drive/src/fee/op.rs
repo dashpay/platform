@@ -38,6 +38,8 @@ use costs::storage_cost::removal::StorageRemovedBytes::{
 use costs::storage_cost::StorageCost;
 use costs::OperationCost;
 use enum_map::Enum;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 use grovedb::{batch::GroveDbOp, Element, PathQuery};
 use std::collections::BTreeMap;
 
@@ -50,8 +52,7 @@ use crate::fee::default_costs::{
     STORAGE_PROCESSING_CREDIT_PER_BYTE, STORAGE_SEEK_COST,
 };
 use crate::fee::op::DriveOperation::{
-    CalculatedCostOperation, CostCalculationDeleteOperation, CostCalculationInsertOperation,
-    CostCalculationQueryOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use crate::fee::removed_bytes_from_epochs_by_identities::RemovedBytesFromEpochsByIdentities;
 use crate::fee::FeeResult;
@@ -381,12 +382,6 @@ pub enum DriveOperation {
     CalculatedCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
-    /// Cost calculation insert operation
-    CostCalculationInsertOperation(SizesOfInsertOperation),
-    /// Cost calculation delete operation
-    CostCalculationDeleteOperation(SizesOfDeleteOperation),
-    /// Cost calculation query operation
-    CostCalculationQueryOperation(SizesOfQueryOperation),
 }
 
 impl DriveOperation {
@@ -436,15 +431,6 @@ impl DriveOperation {
             GroveOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "grove operations must be executed, not directly transformed to costs",
             ))),
-            CostCalculationInsertOperation(worst_case_insert_operation) => {
-                Ok(worst_case_insert_operation.cost())
-            }
-            CostCalculationQueryOperation(worst_case_query_operation) => {
-                Ok(worst_case_query_operation.cost())
-            }
-            CostCalculationDeleteOperation(worst_case_delete_operation) => {
-                Ok(worst_case_delete_operation.cost())
-            }
             CalculatedCostOperation(c) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "pre calculated fees should be requested by operation costs",
@@ -476,7 +462,7 @@ impl DriveOperation {
     }
 
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
-    pub fn for_empty_tree(
+    pub fn for_known_path_key_empty_tree(
         path: Vec<Vec<u8>>,
         key: Vec<u8>,
         storage_flags: Option<&StorageFlags>,
@@ -488,54 +474,37 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::for_path_key_element(path, key, tree)
+        DriveOperation::for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty tree at the given path and key
+    pub fn for_estimated_path_key_empty_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_tree(),
+        };
+
+        DriveOperation::for_estimated_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an element at the given path and key
-    pub fn for_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
+    pub fn for_known_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
         GroveOperation(GroveDbOp::insert_op(path, key, element))
     }
 
-    /// Sets `CostCalculationInsertOperation` given path, key, and value sizes.
-    pub fn for_insert_path_key_value_size(path_size: u32, key_size: u16, value_size: u32) -> Self {
-        CostCalculationInsertOperation(SizesOfInsertOperation {
-            path_size,
-            key_size,
-            value_size,
-        })
-    }
-
-    /// Sets `CostCalculationDeleteOperation`
-    pub fn for_delete_path_key_value_size(
-        path: Vec<Vec<u8>>,
-        key_size: u16,
-        value_size: u32,
-        multiplier: u8,
+    /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
+    pub fn for_estimated_path_key_element(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        element: Element,
     ) -> Self {
-        let path_sizes: Vec<u16> = path.into_iter().map(|x| x.len() as u16).collect();
-        Self::for_delete_path_key_value_max_sizes(path_sizes, key_size, value_size, multiplier)
-    }
-
-    /// Sets `CostCalculationDeleteOperation` with max sizes
-    pub fn for_delete_path_key_value_max_sizes(
-        path: Vec<u16>,
-        key_size: u16,
-        value_size: u32,
-        multiplier: u8,
-    ) -> Self {
-        let path_size: u32 = path.into_iter().map(|x| x as u32).sum();
-        CostCalculationDeleteOperation(SizesOfDeleteOperation::for_key_value_size(
-            path_size, key_size, value_size, multiplier,
-        ))
-    }
-
-    /// Sets `CostCalculationQueryOperation`
-    pub fn for_query_path_key_value_size(path_size: u32, key_size: u32, value_size: u32) -> Self {
-        CostCalculationQueryOperation(SizesOfQueryOperation {
-            path_size,
-            key_size,
-            value_size,
-        })
+        GroveOperation(GroveDbOp::insert_estimated_op(path, key, element))
     }
 }
 

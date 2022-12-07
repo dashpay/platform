@@ -32,22 +32,32 @@
 //! This module defines functions pertinent to Contracts stored in Drive.
 //!
 
+mod estimation_costs;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::common::encode::encode_unsigned_integer;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::data_contract::extra::DriveContractExt;
+use dpp::data_contract::DataContract;
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
+use grovedb::EstimatedLayerInformation::{ApproximateElements, EstimatedLevel};
+use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
+use crate::drive::defaults::{
+    AVERAGE_NUMBER_OF_UPDATES, CONTRACT_MAX_SERIALIZED_SIZE, DEFAULT_FLOAT_SIZE,
+    DEFAULT_FLOAT_SIZE_U8, ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+};
+use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DriveKeyInfo::{KeyRef, KeySize};
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElementSize,
@@ -162,18 +172,20 @@ impl Drive {
                 insert_operations,
             )?;
 
+            let reference_element =
+                Element::Reference(SiblingReference(encoded_time), Some(1), element_flags);
+
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
                     &[0],
-                    Element::Reference(SiblingReference(encoded_time), Some(1), element_flags),
+                    reference_element,
                 ))
             } else {
                 PathKeyElementSize((
-                    defaults::BASE_CONTRACT_KEEPING_HISTORY_STORAGE_PATH_SIZE,
-                    1,
-                    defaults::BASE_CONTRACT_KEEPING_HISTORY_STORAGE_PATH_SIZE
-                        + defaults::DEFAULT_FLOAT_SIZE,
+                    KeyInfoPath::from_known_path(contract_keeping_history_storage_path),
+                    KeyInfo::KnownKey(vec![0u8]),
+                    reference_element,
                 ))
             };
             self.batch_insert(path_key_element_info, insert_operations)?;
@@ -183,9 +195,9 @@ impl Drive {
                 PathFixedSizeKeyElement((contract_root_path, &[0], contract_element))
             } else {
                 PathKeyElementSize((
-                    defaults::BASE_CONTRACT_ROOT_PATH_SIZE,
-                    1,
-                    contract_element.byte_size(),
+                    KeyInfoPath::from_known_path(contract_root_path),
+                    KeyInfo::KnownKey(vec![0u8]),
+                    contract_element,
                 ))
             };
             self.batch_insert(path_key_element_info, insert_operations)?;
@@ -319,11 +331,7 @@ impl Drive {
 
         // the documents
         let contract_root_path = contract_root_path(contract.id.as_bytes());
-        let key_info = if estimated_costs_only_with_layer_info.is_none() {
-            KeyRef(&[1])
-        } else {
-            KeySize(1)
-        };
+        let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
             key_info,
@@ -352,11 +360,7 @@ impl Drive {
             ];
 
             // primary key tree
-            let key_info = if estimated_costs_only_with_layer_info.is_none() {
-                KeyRef(&[0])
-            } else {
-                KeySize(1)
-            };
+            let key_info = Key(vec![0]);
             self.batch_insert_empty_tree(
                 type_path,
                 key_info,
@@ -944,7 +948,7 @@ impl Drive {
         // We can do a get direct because there are no references involved
         if let Ok(Some(stored_element)) = self.grove_get_direct(
             contract_root_path(contract.id.as_bytes()),
-            KeyRefRequest(&[0]),
+            &[0],
             query_state_less_max_value_size,
             transaction,
             &mut drive_operations,
