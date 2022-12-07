@@ -49,9 +49,11 @@ use crate::errors::consensus::state::identity::{
 use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
-    DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm,
-    InvalidDataContractVersionErrorWasm, InvalidJsonSchemaRefErrorWasm,
-    SystemPropertyIndexAlreadyPresentErrorWasm, UniqueIndicesLimitReachedErrorWasm,
+    DataContractMaxDepthErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
+    InvalidCompoundIndexErrorWasm, InvalidDataContractVersionErrorWasm,
+    InvalidIndexPropertyTypeErrorWasm, InvalidIndexedPropertyConstraintErrorWasm,
+    InvalidJsonSchemaRefErrorWasm, SystemPropertyIndexAlreadyPresentErrorWasm,
+    UndefinedIndexPropertyErrorWasm, UniqueIndicesLimitReachedErrorWasm,
 };
 use super::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
@@ -349,28 +351,57 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
                 document_type,
                 index_definition,
                 property_name,
-            } => "todo!()".into(),
+            } => UndefinedIndexPropertyErrorWasm::new(
+                document_type.clone(),
+                index_definition.clone(),
+                property_name.clone(),
+                code,
+            )
+            .into(),
             dpp::consensus::basic::IndexError::InvalidIndexPropertyTypeError {
                 document_type,
                 index_definition,
                 property_name,
                 property_type,
-            } => "todo!()".into(),
+            } => InvalidIndexPropertyTypeErrorWasm::new(
+                document_type.clone(),
+                index_definition.clone(),
+                property_name.clone(),
+                property_type.clone(),
+                code,
+            )
+            .into(),
             dpp::consensus::basic::IndexError::InvalidIndexedPropertyConstraintError {
                 document_type,
                 index_definition,
                 property_name,
                 constraint_name,
                 reason,
-            } => "todo!()".into(),
+            } => InvalidIndexedPropertyConstraintErrorWasm::new(
+                document_type.clone(),
+                index_definition.clone(),
+                property_name.clone(),
+                constraint_name.clone(),
+                reason.clone(),
+                code,
+            )
+            .into(),
             dpp::consensus::basic::IndexError::InvalidCompoundIndexError {
                 document_type,
                 index_definition,
-            } => "todo!()".into(),
+            } => InvalidCompoundIndexErrorWasm::new(
+                document_type.clone(),
+                index_definition.clone(),
+                code,
+            )
+            .into(),
             dpp::consensus::basic::IndexError::DuplicateIndexError {
                 document_type,
                 index_definition,
-            } => "todo!()".into(),
+            } => {
+                DuplicateIndexErrorWasm::new(document_type.clone(), index_definition.clone(), code)
+                    .into()
+            }
         },
         BasicError::JsonSchemaCompilationError(error) => {
             JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
