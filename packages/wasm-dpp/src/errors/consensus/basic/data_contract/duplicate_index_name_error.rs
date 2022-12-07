@@ -21,12 +21,12 @@ impl DuplicateIndexNameErrorWasm {
 impl DuplicateIndexNameErrorWasm {
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.document_type
+        self.document_type.clone()
     }
 
     #[wasm_bindgen(js_name=getDuplicateIndexName)]
     pub fn get_duplicate_index_name(&self) -> String {
-        self.duplicate_index_name
+        self.duplicate_index_name.clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]
