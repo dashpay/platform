@@ -6,6 +6,10 @@ on:
     branches:
       - master
       - v[0-9]+\.[0-9]+-dev
+  push:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
   schedule:
     - cron: '30 4 * * *'
 
