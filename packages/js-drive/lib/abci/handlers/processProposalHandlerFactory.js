@@ -62,12 +62,12 @@ function processProposalHandlerFactory(
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    if (proposalBlockExecutionContext.getHeight()
+    const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
+
+    if (prepareProposalResult
       && proposalBlockExecutionContext.getHeight().toNumber() === height.toNumber()
       && proposalBlockExecutionContext.getRound() === round) {
       consensusLogger.debug('Returning cached result');
-
-      const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
 
       const {
         appHash,
