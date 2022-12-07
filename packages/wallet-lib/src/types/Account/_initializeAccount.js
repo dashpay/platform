@@ -6,21 +6,6 @@ const preparePlugins = require('./_preparePlugins');
 async function _initializeAccount(account, userUnsafePlugins) {
   const self = account;
 
-  // Add default derivation paths
-  account.addDefaultPaths();
-
-  // Issue additional derivation paths in case we have transactions in the store
-  // at the moment of initialization (from persistent storage)
-  account.createPathsForTransactions();
-
-  // Add block headers from storage into the SPV chain if there are any
-  const chainStore = self.storage.getDefaultChainStore();
-  const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
-  if (!self.offlineMode && blockHeaders.length > 0) {
-    const { blockHeadersProvider } = self.transport.client;
-    blockHeadersProvider.initializeWith(blockHeaders, lastSyncedHeaderHeight);
-  }
-
   // We run faster in offlineMode to speed up the process when less happens.
   const readinessIntervalTime = (account.offlineMode) ? 50 : 200;
   // TODO: perform rejection with a timeout
