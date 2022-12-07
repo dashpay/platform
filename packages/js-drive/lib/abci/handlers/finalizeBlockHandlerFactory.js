@@ -85,6 +85,9 @@ function finalizeBlockHandlerFactory(
       });
 
       await processProposal(processProposalRequest, consensusLogger);
+
+      // Revert consensus logger
+      proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
     }
 
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
