@@ -19,45 +19,41 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
 
   const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
 
-  const httpService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`;
-  const httpPort = config.get('platform.dapi.envoy.http.port');
-  const httpPortState = await providers.mnowatch.checkPortStatus(httpPort);
+  let serviceStatus = determineStatus.platform(dockerStatus, coreIsSynced)
 
-  const gRPCService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`;
-  const gRPCPort = await providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.grpc.port'));
-  const gRPCPortState = await providers.mnowatch.checkPortStatus(gRPCPort);
-
-  const p2pService = `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`;
-  const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
-  const p2pPortState = await providers.mnowatch.checkPortStatus(p2pPort);
-
-  const rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
-  const tenderdash = {
-    version: null,
-    catchingUp: null,
-    lastBlockHeight: null,
-    latestAppHash: null,
-    peers: null,
-    network: null,
-  };
-
-  let serviceStatus
-
-  if (dockerStatus === DockerStatusEnum.running) {
-    if (coreIsSynced) {
-      serviceStatus = ServiceStatusEnum.up
-    } else {
-      serviceStatus = ServiceStatusEnum.wait_for_core
+  const platform = {
+    httpService: null,
+    p2pService: null,
+    gRPCService: null,
+    rpcService: null,
+    httpPortState: null,
+    gRPCPortState: null,
+    p2pPortState: null,
+    tenderdash: {
+      dockerStatus,
+      serviceStatus,
+      version: null,
+      catchingUp: null,
+      lastBlockHeight: null,
+      latestAppHash: null,
+      peers: null,
+      network: null,
     }
-  } else {
-    return ServiceStatusEnum.error
   }
 
   // Collecting platform data fails if Tenderdash is waiting for core to sync
   try {
-    const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
+    const httpPort = config.get('platform.dapi.envoy.http.port');
+    const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
+    const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+
+    const [tenderdashStatusResponse, tenderdashNetInfoResponse,
+      httpPortState, gRPCPortState, p2pPortState] = await Promise.all([
       fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
-      fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`)
+      fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
+      providers.mnowatch.checkPortStatus(httpPort),
+      providers.mnowatch.checkPortStatus(gRPCPort),
+      providers.mnowatch.checkPortStatus(p2pPort)
     ])
 
     const [tenderdashNetInfo, tenderdashStatus] = await Promise.all([
@@ -65,39 +61,34 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
       tenderdashStatusResponse.json()
     ])
 
+    platform.httpPortState = httpPortState
+    platform.gRPCPortState = gRPCPortState
+    platform.p2pPortState = p2pPortState
+
+    platform.httpService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`;
+    platform.gRPCService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`;
+    platform.p2pService = `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`;
+    platform.rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
+
     const {n_peers: platformPeers} = tenderdashNetInfo
     const {node_info, sync_info} = tenderdashStatus
 
     const {version, network} = node_info;
     const {catching_up, latest_block_height, latest_app_hash} = sync_info;
 
-    tenderdash.version = version;
-    tenderdash.lastBlockHeight = latest_block_height;
-    tenderdash.catchingUp = catching_up;
-    tenderdash.peers = platformPeers;
-    tenderdash.network = network;
-    tenderdash.latestAppHash = latest_app_hash;
+    platform.tenderdash.version = version;
+    platform.tenderdash.lastBlockHeight = latest_block_height;
+    platform.tenderdash.catchingUp = catching_up;
+    platform.tenderdash.peers = platformPeers;
+    platform.tenderdash.network = network;
+    platform.tenderdash.latestAppHash = latest_app_hash;
   } catch (e) {
     if (e.name !== 'FetchError') {
       throw e;
     }
-    serviceStatus = ServiceStatusEnum.error
+
+    platform.tenderdash.serviceStatus = ServiceStatusEnum.error
   }
 
-  return {
-    dockerStatus,
-    serviceStatus,
-    httpService,
-    httpPort,
-    httpPortState,
-    gRPCService,
-    gRPCPort,
-    gRPCPortState,
-    p2pService,
-    p2pPort,
-    p2pPortState,
-    rpcService,
-    coreIsSynced,
-    tenderdash,
-  };
+  return platform
 };

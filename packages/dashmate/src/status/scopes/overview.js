@@ -34,7 +34,7 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
   const core = {
     version,
     dockerStatus,
-    serviceStatus:
+    serviceStatus,
     verificationProgress,
     blockHeight,
     sizeOnDisk,
@@ -53,16 +53,7 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
 
   const platform = {
     enabled: platformEnabled,
-    dockerStatus,
-    serviceStatus,
-    tenderdash: {
-      version: null,
-      lastBlockHeight: null,
-      catchingUp: null,
-      peers: null,
-      network: null,
-      latestAppHash: null,
-    },
+    tenderdash: null
   };
 
   if (masternodeEnabled) {
@@ -72,10 +63,9 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
   }
 
   if (platformEnabled) {
-    const platformScope = await getPlatformScope(createRpcClient, dockerCompose, config);
+    const {tenderdash} = await getPlatformScope(createRpcClient, dockerCompose, config);
 
-    platform.status = platformScope.status;
-    platform.tenderdash = platformScope.tenderdash;
+    platform.tenderdash = tenderdash;
   }
 
   return {

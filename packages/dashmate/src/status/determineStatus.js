@@ -35,5 +35,22 @@ module.exports = {
     } else {
       return ServiceStatusEnum.error
     }
+  },
+  /**
+   * Determine ServiceStatus based on DockerStatusEnum and MasternodeSyncAssetEnum
+   * @param dockerStatus {DockerStatusEnum}
+   * @param coreIsSynced {boolean}
+   * @returns {ServiceStatusEnum}
+   */
+  platform: (dockerStatus, coreIsSynced) => {
+    if (dockerStatus === DockerStatusEnum.running) {
+      if (coreIsSynced) {
+        return ServiceStatusEnum.up
+      } else {
+        return ServiceStatusEnum.wait_for_core
+      }
+    } else {
+      return ServiceStatusEnum.error
+    }
   }
 };

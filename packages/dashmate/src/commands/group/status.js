@@ -5,6 +5,8 @@ const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const printObject = require("../../printers/printObject");
 const colors = require("../../status/colors");
 const MasternodeStateEnum = require("../../enums/masternodeState");
+const ServiceStatusEnum = require("../../enums/serviceStatus");
+const {platform} = require("../../status/scopes");
 
 class GroupStatusCommand extends GroupBaseCommand {
   /**
@@ -32,15 +34,23 @@ class GroupStatusCommand extends GroupBaseCommand {
       if (flags.format === OUTPUT_FORMATS.PLAIN) {
         const plain = {
           'Network': config.get('network'),
-          'Core Status': colors.status(scope.core.status)(scope.core.status),
+          'Core Status': colors.status(scope.core.serviceStatus)(scope.core.serviceStatus),
           'Core Height': scope.core.blockHeight,
-          'Platform Enabled': scope.platform.enabled,
-          'Platform Status': scope.platform.status,
-          'Platform Version': scope.platform.tenderdash.version,
-          'Platform Block Height': scope.platform.tenderdash.blockHeight,
-          'Platform Peers': scope.platform.tenderdash.peers,
-          'Platform Network': scope.platform.tenderdash.network
+          'Platform Enabled': scope.platform.enabled
         };
+
+        if (scope.platform.enabled) {
+          if (scope.platform.tenderdash.serviceStatus === ServiceStatusEnum.error) {
+            plain['Platform Container'] = scope.platform.tenderdash.dockerStatus
+            plain['Platform Status'] = scope.platform.tenderdash.serviceStatus
+          } else {
+            plain['Platform Status'] = scope.platform.tenderdash.serviceStatus
+            plain['Platform Version'] = scope.platform.tenderdash.version
+            plain['Platform Block Height'] = scope.platform.tenderdash.lastBlockHeight
+            plain['Platform Peers'] = scope.platform.tenderdash.peers
+            plain['Platform Network'] = scope.platform.tenderdash.network
+          }
+        }
 
         printObject(plain, flags.format);
       } else {
@@ -51,7 +61,7 @@ class GroupStatusCommand extends GroupBaseCommand {
             blockHeight: scope.core.blockHeight
           },
           platform: {
-            status: scope.platform.status,
+            status: scope.platform.tenderdash.serviceStatus,
             version: scope.platform.tenderdash.version,
             blockHeight: scope.platform.tenderdash.block,
             peers: scope.platform.tenderdash.peers,
@@ -60,7 +70,6 @@ class GroupStatusCommand extends GroupBaseCommand {
         })
       }
     }
-    printObject(status, flags.format);
   }
 }
 
