@@ -179,8 +179,6 @@ describe('prepareProposalHandlerFactory', () => {
       txResults: new Array(3).fill({ code: 0 }),
       consensusParamUpdates,
       validatorSetUpdate,
-      coreChainLockUpdate,
-      txRecords,
     });
   });
 
