@@ -90,4 +90,35 @@ describe('processProposalHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(ResponseProcessProposal);
     expect(result.status).to.equal(2);
   });
+
+  it('should return prepareProposalResult from execution context', async () => {
+    proposalBlockExecutionContextMock.getHeight.returns(request.height);
+    proposalBlockExecutionContextMock.getRound.returns(request.round);
+
+    proposalBlockExecutionContextMock.getPrepareProposalResult.returns({
+      appHash,
+      txResults: new Array(3).fill({ code: 0 }),
+      consensusParamUpdates,
+      validatorSetUpdate,
+    });
+
+    const result = await processProposalHandler(request);
+
+    expect(proposalBlockExecutionContextMock.getPrepareProposalResult).to.be.calledOnce();
+
+    expect(result).to.be.an.instanceOf(ResponseProcessProposal);
+    expect(result.status).to.equal(1);
+    expect(result.appHash).to.equal(appHash);
+    expect(result.txResults).to.be.deep.equal(new Array(3).fill({ code: 0 }));
+    expect(result.consensusParamUpdates).to.be.equal(consensusParamUpdates);
+    expect(result.validatorSetUpdate).to.be.equal(validatorSetUpdate);
+
+    expect(beginBlockMock).to.not.be.called();
+
+    expect(deliverTxMock).to.not.be.called();
+
+    expect(verifyChainLockMock).to.not.be.called();
+
+    expect(endBlockMock).to.not.be.called();
+  });
 });

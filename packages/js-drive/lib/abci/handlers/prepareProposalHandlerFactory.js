@@ -150,6 +150,13 @@ function prepareProposalHandlerFactory(
       + ` in ${roundExecutionTime} seconds (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}, mempool txs = ${mempoolTxCount})`,
     );
 
+    proposalBlockExecutionContext.setPrepareProposalResult({
+      appHash,
+      txResults,
+      consensusParamUpdates,
+      validatorSetUpdate,
+    });
+
     return new ResponsePrepareProposal({
       appHash,
       txResults,
