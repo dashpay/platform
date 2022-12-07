@@ -135,7 +135,7 @@ function finalizeBlockHandlerFactory(
       {
         timings: blockExecutionTimings,
       },
-      `Block #${height} finalized in ${round + 1} rounds and ${blockExecutionTimings} seconds`,
+      `Block #${height} finalized in ${round + 1} round(s) and ${blockExecutionTimings} seconds`,
     );
 
     return new ResponseFinalizeBlock();
