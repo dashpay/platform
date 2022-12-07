@@ -16,7 +16,7 @@ impl JsonSchemaCompilationErrorWasm {
 impl JsonSchemaCompilationErrorWasm {
     #[wasm_bindgen(js_name=getError)]
     pub fn get_error(&self) -> String {
-        self.error
+        self.error.clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]

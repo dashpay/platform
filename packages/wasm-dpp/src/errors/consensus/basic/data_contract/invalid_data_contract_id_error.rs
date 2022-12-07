@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use crate::buffer::Buffer;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDataContractIdError)]
 pub struct InvalidDataContractIdErrorWasm {
