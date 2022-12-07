@@ -22,6 +22,7 @@ const txAction = {
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
+ * @param {ExecutionTimer} executionTimer
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
@@ -31,6 +32,7 @@ function prepareProposalHandlerFactory(
   beginBlock,
   endBlock,
   createCoreChainLockUpdate,
+  executionTimer,
 ) {
   /**
    * @typedef prepareProposalHandler
@@ -49,19 +51,17 @@ function prepareProposalHandlerFactory(
       proposerProTxHash,
       round,
     } = request;
+
     const consensusLogger = logger.child({
       height: height.toString(),
+      round,
       abciMethod: 'prepareProposal',
     });
 
-    consensusLogger.info(
-      {
-        height,
-      },
-      `Prepare proposal #${height}`,
-    );
     consensusLogger.debug('PrepareProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
+
+    consensusLogger.info(`Preparing a block proposal for height #${height} round #${round}`);
 
     await beginBlock(
       {
@@ -119,6 +119,7 @@ function prepareProposalHandlerFactory(
       txResults.push(txResult);
     }
 
+    // Revert consensus logger after deliverTx
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
     const coreChainLockUpdate = await createCoreChainLockUpdate(round, consensusLogger);
@@ -134,13 +135,19 @@ function prepareProposalHandlerFactory(
       coreChainLockedHeight,
     }, consensusLogger);
 
+    const roundExecutionTime = executionTimer.getTimer('roundExecution', true);
+
+    const mempoolTxCount = txs.length - validTxCount - invalidTxCount;
+
     consensusLogger.info(
       {
+        roundExecutionTime,
         validTxCount,
         invalidTxCount,
+        mempoolTxCount,
       },
-      `Prepare proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
-      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
+      `Prepared block proposal for height #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
+      + ` in ${roundExecutionTime} seconds (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}, mempool txs = ${mempoolTxCount})`,
     );
 
     proposalBlockExecutionContext.setPrepareProposalResult({

@@ -34,6 +34,7 @@ describe('prepareProposalHandlerFactory', () => {
   let endBlockResult;
   let proposalBlockExecutionContextMock;
   let round;
+  let executionTimerMock;
 
   beforeEach(function beforeEach() {
     round = 1;
@@ -58,6 +59,7 @@ describe('prepareProposalHandlerFactory', () => {
         appVersion: 1,
       },
     });
+
     validatorSetUpdate = new ValidatorSetUpdate();
 
     proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
@@ -83,6 +85,10 @@ describe('prepareProposalHandlerFactory', () => {
 
     updateCoreChainLockMock = this.sinon.stub().resolves(coreChainLockUpdate);
 
+    executionTimerMock = {
+      getTimer: this.sinon.stub().returns(0.1),
+    };
+
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
@@ -90,6 +96,7 @@ describe('prepareProposalHandlerFactory', () => {
       beginBlockMock,
       endBlockMock,
       updateCoreChainLockMock,
+      executionTimerMock,
     );
 
     const maxTxBytes = 42;

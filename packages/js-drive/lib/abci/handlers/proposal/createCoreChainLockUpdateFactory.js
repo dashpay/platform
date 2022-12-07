@@ -18,7 +18,7 @@ function createCoreChainLockUpdateFactory(
   /**
    * @typedef createCoreChainLockUpdate
    * @param {number} round
-   * @param {BaseLogger} logger
+   * @param {BaseLogger} consensusLogger
    * @return {Promise<CoreChainLock>}
    */
   async function createCoreChainLockUpdate(round, consensusLogger) {
@@ -34,7 +34,7 @@ function createCoreChainLockUpdateFactory(
         signature: coreChainLock.signature,
       });
 
-      consensusLogger.trace(
+      consensusLogger.debug(
         {
           nextCoreChainLockHeight: coreChainLock.height,
         },

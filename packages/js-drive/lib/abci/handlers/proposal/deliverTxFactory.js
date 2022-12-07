@@ -66,14 +66,18 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    const txConsensusLogger = consensusLogger.child({
+      txId: stHash,
+    });
 
-    consensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
+    proposalBlockExecutionContext.setConsensusLogger(txConsensusLogger);
+
+    txConsensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
     const stateTransition = await transactionalUnserializeStateTransition(
       stateTransitionByteArray,
       {
-        logger: consensusLogger,
+        logger: txConsensusLogger,
         executionTimer,
       },
     );
@@ -94,8 +98,8 @@ function deliverTxFactory(
       const consensusError = result.getFirstError();
       const message = 'State transition is invalid against the state';
 
-      consensusLogger.info(message);
-      consensusLogger.debug({
+      txConsensusLogger.info(message);
+      txConsensusLogger.debug({
         consensusError,
       });
 
@@ -151,7 +155,7 @@ function deliverTxFactory(
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
@@ -163,7 +167,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_CREATE: {
         const identityId = stateTransition.getIdentityId();
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -175,7 +179,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_TOP_UP: {
         const identityId = stateTransition.getIdentityId();
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -187,7 +191,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getIdentityId();
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -199,7 +203,7 @@ function deliverTxFactory(
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
-          consensusLogger.info(
+          txConsensusLogger.info(
             {
               documentId: transition.getId().toString(),
             },
@@ -227,7 +231,7 @@ function deliverTxFactory(
       processingFee: predictedProcessingFee,
     } = calculateOperationFees(predictedStateTransitionOperations);
 
-    consensusLogger.trace(
+    txConsensusLogger.trace(
       {
         timings: {
           overall: deliverTxTiming,

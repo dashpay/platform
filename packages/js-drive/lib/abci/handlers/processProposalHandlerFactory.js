@@ -6,68 +6,49 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const aggregateFees = require('./proposal/fees/aggregateFees');
-
-const proposalStatus = {
-  UNKNOWN: 0, // Unknown status. Returning this from the application is always an error.
-  ACCEPT: 1, // Status that signals that the application finds the proposal valid.
-  REJECT: 2, // Status that signals that the application finds the proposal invalid.
-};
+const statuses = require('./proposal/statuses');
 
 /**
- * @param {deliverTx} wrappedDeliverTx
  * @param {BaseLogger} logger
- * @param {BlockExecutionContext} proposalBlockExecutionContext
- * @param {beginBlock} beginBlock
- * @param {endBlock} endBlock
  * @param {verifyChainLock} verifyChainLock
+ * @param {processProposal} processProposal
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @return {processProposalHandler}
  */
 function processProposalHandlerFactory(
-  wrappedDeliverTx,
   logger,
-  proposalBlockExecutionContext,
-  beginBlock,
-  endBlock,
   verifyChainLock,
+  processProposal,
+  proposalBlockExecutionContext,
 ) {
   /**
    * @typedef processProposalHandler
+   * @param {abci.RequestProcessProposal} request
    * @return {Promise<abci.ResponseProcessProposal>}
    */
   async function processProposalHandler(request) {
     const {
       height,
-      txs,
-      coreChainLockedHeight,
-      version,
-      proposedLastCommit: lastCommitInfo,
-      time,
-      proposerProTxHash,
       coreChainLockUpdate,
       round,
     } = request;
 
     const consensusLogger = logger.child({
       height: height.toString(),
+      round,
       abciMethod: 'processProposal',
     });
 
-    consensusLogger.info(
-      {
-        height,
-      },
-      `Process proposal #${height}`,
-    );
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
+    // Skip process proposal if it was already prepared for this height and round
     const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
 
     if (prepareProposalResult
       && proposalBlockExecutionContext.getHeight().toNumber() === height.toNumber()
       && proposalBlockExecutionContext.getRound() === round) {
-      consensusLogger.debug('Returning cached result');
+      consensusLogger.debug('Skip processing proposal and return prepared result');
 
       const {
         appHash,
@@ -77,7 +58,7 @@ function processProposalHandlerFactory(
       } = prepareProposalResult;
 
       return new ResponseProcessProposal({
-        status: proposalStatus.ACCEPT,
+        status: statuses.ACCEPT,
         appHash,
         txResults,
         consensusParamUpdates,
@@ -89,83 +70,21 @@ function processProposalHandlerFactory(
       const chainLockIsValid = await verifyChainLock(coreChainLockUpdate);
 
       if (!chainLockIsValid) {
+        consensusLogger.warn({
+          coreChainLockUpdate,
+        }, `Block proposal #${height} round #${round} rejected due to invalid core chain locked height update`);
+
         return new ResponseProcessProposal({
-          status: proposalStatus.REJECT,
+          status: statuses.REJECT,
         });
       }
+
+      logger.debug({
+        coreChainLockUpdate,
+      }, `ChainLock is valid for height ${coreChainLockUpdate.coreBlockHeight}`);
     }
 
-    await beginBlock(
-      {
-        lastCommitInfo,
-        height,
-        coreChainLockedHeight,
-        version,
-        time,
-        proposerProTxHash: Buffer.from(proposerProTxHash),
-        round,
-      },
-      consensusLogger,
-    );
-
-    const txResults = [];
-    const feeResults = [];
-    let validTxCount = 0;
-    let invalidTxCount = 0;
-
-    for (const tx of txs) {
-      const {
-        code,
-        info,
-        fees,
-      } = await wrappedDeliverTx(tx, round, consensusLogger);
-
-      if (code === 0) {
-        validTxCount += 1;
-        // TODO We probably should calculate fees for invalid transitions as well
-        feeResults.push(fees);
-      } else {
-        invalidTxCount += 1;
-      }
-
-      const txResult = { code };
-
-      if (info) {
-        txResult.info = info;
-      }
-
-      txResults.push(txResult);
-    }
-
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
-
-    const {
-      consensusParamUpdates,
-      validatorSetUpdate,
-      appHash,
-    } = await endBlock({
-      height,
-      round,
-      fees: aggregateFees(feeResults),
-      coreChainLockedHeight,
-    }, consensusLogger);
-
-    consensusLogger.info(
-      {
-        validTxCount,
-        invalidTxCount,
-      },
-      `Process proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
-      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
-    );
-
-    return new ResponseProcessProposal({
-      status: proposalStatus.ACCEPT,
-      appHash,
-      txResults,
-      consensusParamUpdates,
-      validatorSetUpdate,
-    });
+    return processProposal(request, consensusLogger);
   }
 
   return processProposalHandler;

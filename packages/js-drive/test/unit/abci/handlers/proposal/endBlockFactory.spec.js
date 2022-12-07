@@ -129,6 +129,6 @@ describe('endBlockFactory', () => {
     expect(actualFees.storageFee).to.equal(1);
     expect(actualFees.processingFee).to.equal(2);
 
-    expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('roundExecution');
+    expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('roundExecution', true);
   });
 });
