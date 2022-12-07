@@ -6,7 +6,7 @@ const EVENTS = require('../../../EVENTS');
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
 const MIN_HEADERS_TO_KEEP = 2;
-const MAX_HEADERS_TO_KEEP = 5000;
+const MAX_HEADERS_TO_KEEP = 500;
 
 const STATES = {
   IDLE: 'STATE_IDLE',
