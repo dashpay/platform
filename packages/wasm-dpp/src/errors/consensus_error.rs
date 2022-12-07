@@ -29,7 +29,9 @@ use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
-use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerConditionErrorWasm;
+use crate::errors::consensus::state::data_contract::data_trigger::{
+    DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
+};
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
 use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
@@ -246,7 +248,23 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                     code,
                 )
                 .into(),
-                // DataTriggerError::DataTriggerExecutionError { .. } => {}
+                DataTriggerError::DataTriggerExecutionError {
+                    data_contract_id,
+                    document_transition_id,
+                    message,
+                    execution_error,
+                    document_transition,
+                    owner_id,
+                } => DataTriggerExecutionErrorWasm::new(
+                    data_contract_id.clone(),
+                    document_transition_id.clone(),
+                    message.clone(),
+                    wasm_bindgen::JsError::new(execution_error.to_string().as_ref()),
+                    document_transition.clone(),
+                    owner_id.clone(),
+                    code,
+                )
+                .into(),
                 // DataTriggerError::DataTriggerInvalidResultError { .. } => {}
                 _ => "Not implemented".into(),
             }
