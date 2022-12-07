@@ -29,9 +29,7 @@ use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
-use crate::errors::consensus::basic::data_contract::{
-    IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
-};
+use crate::errors::consensus::basic::data_contract::{DataContractImmutablePropertiesUpdateErrorWasm, IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm};
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -434,7 +432,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::MissingStateTransitionTypeError => "Not implemented".into(),
         BasicError::InvalidStateTransitionTypeError { .. } => "Not implemented".into(),
         BasicError::StateTransitionMaxSizeExceededError { .. } => "Not implemented".into(),
-        BasicError::DataContractImmutablePropertiesUpdateError { .. } => "Not implemented".into(),
+        BasicError::DataContractImmutablePropertiesUpdateError { operation, field_path } => {
+            DataContractImmutablePropertiesUpdateErrorWasm::new(operation.clone(), field_path.clone(), code).into()
+        },
         BasicError::IncompatibleDataContractSchemaError {
             data_contract_id,
             operation,

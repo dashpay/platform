@@ -5,6 +5,7 @@ mod index_error;
 mod invalid_data_contract_id_error;
 mod invalid_data_contract_version_error;
 mod invalid_json_schema_ref_error;
+mod data_contract_immutable_properties_update_error;
 
 pub use data_contract_max_depth_exceed_error::*;
 pub use duplicate_index_name_error::*;
@@ -13,3 +14,4 @@ pub use index_error::*;
 pub use invalid_data_contract_id_error::*;
 pub use invalid_data_contract_version_error::*;
 pub use invalid_json_schema_ref_error::*;
+pub use data_contract_immutable_properties_update_error::*;
