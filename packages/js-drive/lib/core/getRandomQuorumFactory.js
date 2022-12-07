@@ -50,18 +50,17 @@ function getRandomQuorumFactory(coreRpcClient) {
     }
 
     const allValidatorQuorumsExtendedInfo = await coreRpcClient.quorum('listextended');
-
     // convert to object
-    const validatorQuorumsInfo = (allValidatorQuorumsExtendedInfo[llmqMap[quorumType]] || [])
+    const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[llmqMap[quorumType]]
       .reduce(
         (obj, item) => ({
           ...obj,
-          [item.key]: item.value,
+          ...item,
         }),
         {},
       );
 
-    const numberOfQuorums = sml.getQuorumsOfType(quorumType).length;
+    const numberOfQuorums = validatorQuorums.length;
     const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3;
     const dkgInterval = 24;
 
@@ -71,7 +70,11 @@ function getRandomQuorumFactory(coreRpcClient) {
         (validatorQuorum) => validatorQuorum.validMembersCount >= MIN_QUORUM_VALID_MEMBERS,
       )
       .filter((validatorQuorum) => {
-        const validatorQuorumInfo = validatorQuorumsInfo[validatorQuorum.hash.toString('hex')];
+        const validatorQuorumInfo = validatorQuorumsInfo[validatorQuorum.quorumHash];
+
+        if (!validatorQuorumInfo) {
+          return false;
+        }
 
         const quorumRemoveHeight = validatorQuorumInfo.creationHeight
           + (dkgInterval * numberOfQuorums);
