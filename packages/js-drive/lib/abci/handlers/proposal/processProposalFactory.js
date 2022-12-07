@@ -1,67 +1,51 @@
 const {
   tendermint: {
     abci: {
-      ResponsePrepareProposal,
+      ResponseProcessProposal,
     },
   },
 } = require('@dashevo/abci/types');
 
-const aggregateFees = require('./proposal/fees/aggregateFees');
+const statuses = require('./statuses');
 
-const txAction = {
-  UNKNOWN: 0, // Unknown action
-  UNMODIFIED: 1, // The Application did not modify this transaction.
-  ADDED: 2, // The Application added this transaction.
-  REMOVED: 3, // The Application wants this transaction removed from the proposal and the mempool.
-};
+const aggregateFees = require('./fees/aggregateFees');
 
 /**
+ *
  * @param {deliverTx} wrappedDeliverTx
- * @param {BaseLogger} logger
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
- * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @param {ExecutionTimer} executionTimer
- * @return {prepareProposalHandler}
+ *
+ * @return {processProposal}
  */
-function prepareProposalHandlerFactory(
+function processProposalFactory(
   wrappedDeliverTx,
-  logger,
   proposalBlockExecutionContext,
   beginBlock,
   endBlock,
-  createCoreChainLockUpdate,
   executionTimer,
 ) {
   /**
-   * @typedef prepareProposalHandler
-   * @param {abci.RequestPrepareProposal} request
-   * @return {Promise<abci.ResponsePrepareProposal>}
+   * @param {abci.RequestProcessProposal} request
+   * @param {BaseLogger} consensusLogger
+   *
+   * @typedef processProposal
    */
-  async function prepareProposalHandler(request) {
+  async function processProposal(request, consensusLogger) {
     const {
       height,
-      maxTxBytes,
       txs,
       coreChainLockedHeight,
       version,
-      localLastCommit: lastCommitInfo,
+      proposedLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
       round,
     } = request;
 
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      round,
-      abciMethod: 'prepareProposal',
-    });
-
-    consensusLogger.debug('PrepareProposal ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
-
-    consensusLogger.info(`Preparing a block proposal for height #${height} round #${round}`);
+    consensusLogger.info(`Processing a block proposal for height #${height} round #${round}`);
 
     await beginBlock(
       {
@@ -76,26 +60,13 @@ function prepareProposalHandlerFactory(
       consensusLogger,
     );
 
-    let totalSizeBytes = 0;
-
-    const txRecords = [];
     const txResults = [];
     const feeResults = [];
+
     let validTxCount = 0;
     let invalidTxCount = 0;
 
     for (const tx of txs) {
-      totalSizeBytes += tx.length;
-
-      if (totalSizeBytes > maxTxBytes) {
-        break;
-      }
-
-      txRecords.push({
-        tx,
-        action: txAction.UNMODIFIED,
-      });
-
       const {
         code,
         info,
@@ -122,8 +93,6 @@ function prepareProposalHandlerFactory(
     // Revert consensus logger after deliverTx
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
-    const coreChainLockUpdate = await createCoreChainLockUpdate(round, consensusLogger);
-
     const {
       consensusParamUpdates,
       validatorSetUpdate,
@@ -137,30 +106,26 @@ function prepareProposalHandlerFactory(
 
     const roundExecutionTime = executionTimer.getTimer('roundExecution', true);
 
-    const mempoolTxCount = txs.length - validTxCount - invalidTxCount;
-
     consensusLogger.info(
       {
         roundExecutionTime,
         validTxCount,
         invalidTxCount,
-        mempoolTxCount,
       },
-      `Prepared block proposal for height #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
-      + ` in ${roundExecutionTime} seconds (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}, mempool txs = ${mempoolTxCount})`,
+      `Processed proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
+      + ` in ${roundExecutionTime} seconds (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
-    return new ResponsePrepareProposal({
+    return new ResponseProcessProposal({
+      status: statuses.ACCEPT,
       appHash,
       txResults,
       consensusParamUpdates,
       validatorSetUpdate,
-      coreChainLockUpdate,
-      txRecords,
     });
   }
 
-  return prepareProposalHandler;
+  return processProposal;
 }
 
-module.exports = prepareProposalHandlerFactory;
+module.exports = processProposalFactory;

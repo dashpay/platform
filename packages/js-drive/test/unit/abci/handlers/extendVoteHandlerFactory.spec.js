@@ -11,6 +11,7 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
 const extendVoteHandlerFactory = require('../../../../lib/abci/handlers/extendVoteHandlerFactory');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('extendVoteHandlerFactory', () => {
   let extendVoteHandler;
@@ -18,6 +19,10 @@ describe('extendVoteHandlerFactory', () => {
 
   beforeEach(function beforeEach() {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    const loggerMock = new LoggerMock(this.sinon);
+
+    blockExecutionContextMock.getConsensusLogger.returns(loggerMock);
 
     blockExecutionContextMock.getWithdrawalTransactionsMap.returns({});
 

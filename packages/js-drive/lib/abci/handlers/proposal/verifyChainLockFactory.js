@@ -60,12 +60,6 @@ function verifyChainLockFactory(
       throw e;
     }
 
-    if (!isVerified) {
-      logger.debug(`Invalid chainLock for height ${coreChainLock.coreBlockHeight}`);
-    } else {
-      logger.debug(`ChainLock is valid for height ${coreChainLock.coreBlockHeight}`);
-    }
-
     return isVerified;
   }
 

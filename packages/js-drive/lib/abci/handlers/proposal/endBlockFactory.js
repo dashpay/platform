@@ -28,10 +28,10 @@ function endBlockFactory(
    * @typedef endBlock
    *
    * @param {Object} request
-   * @param {number} [request.height]
-   * @param {number} [request.round]
-   * @param {FeeResult} [request.fees]
-   * @param {number} [request.coreChainLockedHeight]
+   * @param {number} request.height
+   * @param {number} request.round
+   * @param {FeeResult} request.fees
+   * @param {number} request.coreChainLockedHeight
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
@@ -49,8 +49,6 @@ function endBlockFactory(
       fees,
       coreChainLockedHeight,
     } = request;
-
-    consensusLogger.debug('EndBlock ABCI method requested');
 
     // Call RS ABCI
 
@@ -88,19 +86,17 @@ function endBlockFactory(
     }
 
     const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);
+
     const validatorSetUpdate = await rotateAndCreateValidatorSetUpdate(
       height,
       coreChainLockedHeight,
       round,
       consensusLogger,
     );
+
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });
 
-    const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
-
-    consensusLogger.info(
-      `Round execution took ${prepareProposalTimings} seconds`,
-    );
+    executionTimer.stopTimer('roundExecution', true);
 
     return {
       consensusParamUpdates,
