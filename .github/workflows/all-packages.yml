@@ -219,7 +219,7 @@ jobs:
         uses: jwalton/gh-docker-logs@v2
 
   codeql:
-    name: CodeQL Analyze
+    name: Code security audit
     runs-on: ubuntu-22.04
     permissions:
       actions: read
