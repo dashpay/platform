@@ -143,6 +143,13 @@ function prepareProposalHandlerFactory(
       + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
+    proposalBlockExecutionContext.setPrepareProposalResult({
+      appHash,
+      txResults,
+      consensusParamUpdates,
+      validatorSetUpdate,
+    });
+
     return new ResponsePrepareProposal({
       appHash,
       txResults,
