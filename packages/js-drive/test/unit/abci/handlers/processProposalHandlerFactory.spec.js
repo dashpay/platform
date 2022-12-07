@@ -2,6 +2,10 @@ const {
   tendermint: {
     abci: {
       ResponseProcessProposal,
+      ValidatorSetUpdate,
+    },
+    types: {
+      ConsensusParams,
     },
   },
 } = require('@dashevo/abci/types');
@@ -10,6 +14,7 @@ const Long = require('long');
 
 const processProposalHandlerFactory = require('../../../../lib/abci/handlers/processProposalHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('processProposalHandlerFactory', () => {
   let processProposalHandler;
@@ -19,9 +24,33 @@ describe('processProposalHandlerFactory', () => {
   let coreChainLockUpdate;
   let processProposalMock;
   let round;
+  let appHash;
+  let proposalBlockExecutionContextMock;
+  let consensusParamUpdates;
+  let validatorSetUpdate;
 
   beforeEach(function beforeEach() {
     round = 0;
+
+    appHash = Buffer.alloc(1, 1);
+
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    consensusParamUpdates = new ConsensusParams({
+      block: {
+        maxBytes: 1,
+        maxGas: 2,
+      },
+      evidence: {
+        maxAgeDuration: null,
+        maxAgeNumBlocks: 1,
+        maxBytes: 2,
+      },
+      version: {
+        appVersion: 1,
+      },
+    });
+    validatorSetUpdate = new ValidatorSetUpdate();
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -33,6 +62,7 @@ describe('processProposalHandlerFactory', () => {
       loggerMock,
       verifyChainLockMock,
       processProposalMock,
+      proposalBlockExecutionContextMock,
     );
 
     const txs = new Array(3).fill(Buffer.alloc(5, 0));
@@ -89,9 +119,11 @@ describe('processProposalHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(ResponseProcessProposal);
     expect(result.status).to.equal(2);
+
+    expect(processProposalMock).to.not.be.called();
   });
 
-  it('should return prepareProposalResult from execution context', async () => {
+  it('should return already prepared result for this height and round', async () => {
     proposalBlockExecutionContextMock.getHeight.returns(request.height);
     proposalBlockExecutionContextMock.getRound.returns(request.round);
 
@@ -113,12 +145,8 @@ describe('processProposalHandlerFactory', () => {
     expect(result.consensusParamUpdates).to.be.equal(consensusParamUpdates);
     expect(result.validatorSetUpdate).to.be.equal(validatorSetUpdate);
 
-    expect(beginBlockMock).to.not.be.called();
-
-    expect(deliverTxMock).to.not.be.called();
+    expect(processProposalMock).to.not.be.called();
 
     expect(verifyChainLockMock).to.not.be.called();
-
-    expect(endBlockMock).to.not.be.called();
   });
 });

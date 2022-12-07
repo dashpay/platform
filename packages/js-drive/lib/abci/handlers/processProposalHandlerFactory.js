@@ -12,12 +12,14 @@ const statuses = require('./proposal/statuses');
  * @param {BaseLogger} logger
  * @param {verifyChainLock} verifyChainLock
  * @param {processProposal} processProposal
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @return {processProposalHandler}
  */
 function processProposalHandlerFactory(
   logger,
   verifyChainLock,
   processProposal,
+  proposalBlockExecutionContext,
 ) {
   /**
    * @typedef processProposalHandler
@@ -40,12 +42,13 @@ function processProposalHandlerFactory(
     consensusLogger.debug('ProcessProposal ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
+    // Skip process proposal if it was already prepared for this height and round
     const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
 
     if (prepareProposalResult
       && proposalBlockExecutionContext.getHeight().toNumber() === height.toNumber()
       && proposalBlockExecutionContext.getRound() === round) {
-      consensusLogger.debug('Returning cached result');
+      consensusLogger.debug('Skip processing proposal and return prepared result');
 
       const {
         appHash,
@@ -55,7 +58,7 @@ function processProposalHandlerFactory(
       } = prepareProposalResult;
 
       return new ResponseProcessProposal({
-        status: proposalStatus.ACCEPT,
+        status: statuses.ACCEPT,
         appHash,
         txResults,
         consensusParamUpdates,
