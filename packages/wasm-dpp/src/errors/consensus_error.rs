@@ -51,6 +51,7 @@ use dpp::errors::DataTriggerError;
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm,
     InvalidDataContractVersionErrorWasm, InvalidJsonSchemaRefErrorWasm,
+    UniqueIndicesLimitReachedErrorWasm,
 };
 use super::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
@@ -331,7 +332,8 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             dpp::consensus::basic::IndexError::UniqueIndicesLimitReachedError {
                 document_type,
                 index_limit,
-            } => "todo!()".into(),
+            } => UniqueIndicesLimitReachedErrorWasm::new(document_type.clone(), *index_limit, code)
+                .into(),
             dpp::consensus::basic::IndexError::SystemPropertyIndexAlreadyPresentError {
                 document_type,
                 index_definition,
