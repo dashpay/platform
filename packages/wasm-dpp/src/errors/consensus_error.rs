@@ -45,6 +45,12 @@ use crate::errors::consensus::state::identity::{
 };
 use dpp::errors::DataTriggerError;
 
+use super::consensus::basic::data_contract::{
+    DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm, InvalidDataContractVersionErrorWasm,
+};
+use super::consensus::basic::document::{
+    DataContractNotPresentErrorWasm, InvalidDocumentTypeErrorWasm,
+};
 use super::consensus::basic::identity::{
     IdentityNotFoundErrorWasm, InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
 };
@@ -282,19 +288,43 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
     }
 }
 
-fn from_basic_error(basic_error: &Box<BasicError>) {
+fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
+    let code = basic_error.get_code();
+
     match basic_error.deref() {
-        BasicError::DataContractNotPresent { .. } => {}
-        BasicError::InvalidDataContractVersionError { .. } => {}
-        BasicError::DataContractMaxDepthExceedError(_) => {}
-        BasicError::InvalidDocumentTypeError { .. } => {}
-        BasicError::DuplicateIndexNameError { .. } => {}
+        BasicError::DataContractNotPresent { data_contract_id } => {
+            DataContractNotPresentErrorWasm::new(data_contract_id.clone(), code).into()
+        }
+        BasicError::InvalidDataContractVersionError {
+            expected_version,
+            version,
+        } => InvalidDataContractVersionErrorWasm::new(*expected_version, *version, code).into(),
+        BasicError::DataContractMaxDepthExceedError(depth) => {
+            DataContractMaxDepthErrorWasm::new(*depth, code).into()
+        }
+        BasicError::InvalidDocumentTypeError {
+            document_type,
+            data_contract_id,
+        } => {
+            InvalidDocumentTypeErrorWasm::new(document_type.clone(), data_contract_id.clone(), code)
+                .into()
+        }
+        BasicError::DuplicateIndexNameError {
+            document_type,
+            duplicate_index_name,
+        } => DuplicateIndexNameErrorWasm::new(
+            document_type.clone(),
+            duplicate_index_name.clone(),
+            code,
+        )
+        .into(),
         BasicError::InvalidJsonSchemaRefError { .. } => {}
         BasicError::IndexError(_) => {}
         BasicError::JsonSchemaCompilationError(_) => {}
         BasicError::InconsistentCompoundIndexDataError { .. } => {}
         BasicError::MissingDocumentTypeError => {}
         BasicError::MissingDocumentTransitionActionError => {}
+
         BasicError::InvalidDocumentTransitionActionError { .. } => {}
         BasicError::InvalidDocumentTransitionIdError { .. } => {}
         BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => {}

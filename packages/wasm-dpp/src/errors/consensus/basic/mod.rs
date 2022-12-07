@@ -1,3 +1,5 @@
+pub mod data_contract;
+pub mod document;
 pub mod identity;
 mod incompatible_protocol_version_error;
 mod invalid_signature_public_key_security_level_error;
