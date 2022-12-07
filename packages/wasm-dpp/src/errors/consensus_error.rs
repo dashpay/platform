@@ -50,7 +50,7 @@ use dpp::errors::DataTriggerError;
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexNameErrorWasm,
     InvalidDataContractVersionErrorWasm, InvalidJsonSchemaRefErrorWasm,
-    UniqueIndicesLimitReachedErrorWasm,
+    SystemPropertyIndexAlreadyPresentErrorWasm, UniqueIndicesLimitReachedErrorWasm,
 };
 use super::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
@@ -337,7 +337,13 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
                 document_type,
                 index_definition,
                 property_name,
-            } => "todo!()".into(),
+            } => SystemPropertyIndexAlreadyPresentErrorWasm::new(
+                document_type.clone(),
+                index_definition.clone(),
+                property_name.clone(),
+                code,
+            )
+            .into(),
             dpp::consensus::basic::IndexError::UndefinedIndexPropertyError {
                 document_type,
                 index_definition,
