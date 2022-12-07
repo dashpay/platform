@@ -52,8 +52,9 @@ use super::consensus::basic::data_contract::{
     InvalidDataContractVersionErrorWasm, InvalidJsonSchemaRefErrorWasm,
 };
 use super::consensus::basic::document::{
-    DataContractNotPresentErrorWasm, InvalidDocumentTypeErrorWasm,
-    MissingDocumentTransitionActionErrorWasm, MissingDocumentTypeErrorWasm,
+    DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
+    InvalidDocumentTypeErrorWasm, MissingDocumentTransitionActionErrorWasm,
+    MissingDocumentTypeErrorWasm,
 };
 use super::consensus::basic::identity::{
     IdentityNotFoundErrorWasm, InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
@@ -329,7 +330,15 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::JsonSchemaCompilationError(error) => {
             JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
         }
-        BasicError::InconsistentCompoundIndexDataError { .. } => "Not implemented".into(),
+        BasicError::InconsistentCompoundIndexDataError {
+            index_properties,
+            document_type,
+        } => InconsistentCompoundIndexDataErrorWasm::new(
+            index_properties.clone(),
+            document_type.clone(),
+            code,
+        )
+        .into(),
         BasicError::MissingDocumentTypeError => MissingDocumentTypeErrorWasm::new(code).into(),
         BasicError::MissingDocumentTransitionActionError => {
             MissingDocumentTransitionActionErrorWasm::new(code).into()
