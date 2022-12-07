@@ -37,6 +37,7 @@ pub use invalid_identity_asset_lock_transaction_error::*;
 pub use invalid_identity_asset_lock_transaction_output_error::*;
 pub use invalid_identity_credit_withdrawal_transition_core_fee_error::*;
 pub use invalid_identity_credit_withdrawal_transition_output_script_error::*;
+pub use invalid_identity_key_signature_error::*;
 pub use invalid_identity_public_key_data_error::*;
 pub use invalid_identity_public_key_security_level_error::*;
 pub use invalid_identity_public_key_type_error::*;
