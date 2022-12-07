@@ -53,7 +53,7 @@ function extendVoteHandlerFactory(proposalBlockExecutionContext) {
       consensusLogger.debug({
         type,
         extension: extensionString,
-      }, `Vote extended to obtain ${voteExtensionTypeName} signature for ${extensionTruncatedString} payload`);
+      }, `Vote extended to obtain ${voteExtensionTypeName} signature for ${extensionTruncatedString}... payload`);
     });
 
     return new ResponseExtendVote({
