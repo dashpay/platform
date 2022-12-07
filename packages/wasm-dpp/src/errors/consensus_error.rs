@@ -326,7 +326,43 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidJsonSchemaRefError { ref_error } => {
             InvalidJsonSchemaRefErrorWasm::new(ref_error.clone(), code).into()
         }
-        BasicError::IndexError(_) => "Not implemented".into(),
+        BasicError::IndexError(index_error) => match index_error {
+            dpp::consensus::basic::IndexError::UniqueIndicesLimitReachedError {
+                document_type,
+                index_limit,
+            } => "todo!()".into(),
+            dpp::consensus::basic::IndexError::SystemPropertyIndexAlreadyPresentError {
+                document_type,
+                index_definition,
+                property_name,
+            } => "todo!()".into(),
+            dpp::consensus::basic::IndexError::UndefinedIndexPropertyError {
+                document_type,
+                index_definition,
+                property_name,
+            } => "todo!()".into(),
+            dpp::consensus::basic::IndexError::InvalidIndexPropertyTypeError {
+                document_type,
+                index_definition,
+                property_name,
+                property_type,
+            } => "todo!()".into(),
+            dpp::consensus::basic::IndexError::InvalidIndexedPropertyConstraintError {
+                document_type,
+                index_definition,
+                property_name,
+                constraint_name,
+                reason,
+            } => "todo!()".into(),
+            dpp::consensus::basic::IndexError::InvalidCompoundIndexError {
+                document_type,
+                index_definition,
+            } => "todo!()".into(),
+            dpp::consensus::basic::IndexError::DuplicateIndexError {
+                document_type,
+                index_definition,
+            } => "todo!()".into(),
+        },
         BasicError::JsonSchemaCompilationError(error) => {
             JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
         }
