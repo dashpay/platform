@@ -57,8 +57,8 @@ use super::consensus::basic::identity::{
 };
 use super::consensus::basic::{
     InvalidSignaturePublicKeySecurityLevelErrorWasm, InvalidStateTransitionSignatureErrorWasm,
-    PublicKeyIsDisabledErrorWasm, PublicKeySecurityLevelNotMetErrorWasm,
-    WrongPublicKeyPurposeErrorWasm,
+    JsonSchemaCompilationErrorWasm, PublicKeyIsDisabledErrorWasm,
+    PublicKeySecurityLevelNotMetErrorWasm, WrongPublicKeyPurposeErrorWasm,
 };
 
 pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
@@ -323,7 +323,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             InvalidJsonSchemaRefErrorWasm::new(ref_error.clone(), code).into()
         }
         BasicError::IndexError(_) => {}
-        BasicError::JsonSchemaCompilationError(_) => {}
+        BasicError::JsonSchemaCompilationError(error) => {
+            JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
+        }
         BasicError::InconsistentCompoundIndexDataError { .. } => {}
         BasicError::MissingDocumentTypeError => {}
         BasicError::MissingDocumentTransitionActionError => {}
