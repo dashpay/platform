@@ -29,7 +29,11 @@ use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
-use crate::errors::consensus::basic::data_contract::{DataContractImmutablePropertiesUpdateErrorWasm, IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm};
+use crate::errors::consensus::basic::data_contract::{
+    DataContractImmutablePropertiesUpdateErrorWasm, IncompatibleDataContractSchemaErrorWasm,
+    InvalidDataContractIdErrorWasm,
+};
+use crate::errors::consensus::basic::state_transition::StateTransitionMaxSizeExceededErrorWasm;
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -430,11 +434,25 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::DataContractHaveNewUniqueIndexError { .. } => "Not implemented".into(),
         BasicError::IdentityNotFoundError { .. } => "Not implemented".into(),
         BasicError::MissingStateTransitionTypeError => "Not implemented".into(),
-        BasicError::InvalidStateTransitionTypeError { .. } => "Not implemented".into(),
-        BasicError::StateTransitionMaxSizeExceededError { .. } => "Not implemented".into(),
-        BasicError::DataContractImmutablePropertiesUpdateError { operation, field_path } => {
-            DataContractImmutablePropertiesUpdateErrorWasm::new(operation.clone(), field_path.clone(), code).into()
-        },
+        BasicError::InvalidStateTransitionTypeError { transition_type } => "Not implemented".into(),
+        BasicError::StateTransitionMaxSizeExceededError {
+            actual_size_kbytes,
+            max_size_kbytes,
+        } => StateTransitionMaxSizeExceededErrorWasm::new(
+            *actual_size_kbytes,
+            *max_size_kbytes,
+            code,
+        )
+        .into(),
+        BasicError::DataContractImmutablePropertiesUpdateError {
+            operation,
+            field_path,
+        } => DataContractImmutablePropertiesUpdateErrorWasm::new(
+            operation.clone(),
+            field_path.clone(),
+            code,
+        )
+        .into(),
         BasicError::IncompatibleDataContractSchemaError {
             data_contract_id,
             operation,

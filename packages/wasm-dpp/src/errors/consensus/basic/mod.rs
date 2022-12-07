@@ -1,6 +1,7 @@
 pub mod data_contract;
 pub mod document;
 pub mod identity;
+pub mod state_transition;
 mod incompatible_protocol_version_error;
 mod invalid_signature_public_key_security_level_error;
 mod invalid_state_transition_signature_error;
