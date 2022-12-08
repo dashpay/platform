@@ -144,20 +144,22 @@ describe('getRandomQuorumFactory', () => {
 
   it('should filter quorums by ttl', async () => {
     coreRpcClientMock.quorum.resolves({
-      llmq_test_v17: [
-        {
-          '251fae1f7fe89d38c4ce71781685c96291cc3852e9586c8eb6d5a71b73d6285c': {
-            creationHeight: 100,
-            minedBlockHash: '1af5ffbdb862a18b454106b6b99e30bb683fa5bab8278b19a6e91bf742405cce',
+      result: {
+        llmq_test_v17: [
+          {
+            '251fae1f7fe89d38c4ce71781685c96291cc3852e9586c8eb6d5a71b73d6285c': {
+              creationHeight: 100,
+              minedBlockHash: '1af5ffbdb862a18b454106b6b99e30bb683fa5bab8278b19a6e91bf742405cce',
+            },
           },
-        },
-        {
-          '1af5ffbdb862a18b454106b6b99e30bb683fa5bab8278b19a6e91bf742405cce': {
-            creationHeight: 672,
-            minedBlockHash: '251fae1f7fe89d38c4ce71781685c96291cc3852e9586c8eb6d5a71b73d6285c',
+          {
+            '1af5ffbdb862a18b454106b6b99e30bb683fa5bab8278b19a6e91bf742405cce': {
+              creationHeight: 672,
+              minedBlockHash: '251fae1f7fe89d38c4ce71781685c96291cc3852e9586c8eb6d5a71b73d6285c',
+            },
           },
-        },
-      ],
+        ],
+      },
     });
 
     const result = await getRandomQuorum(smlMock, quorumType, Buffer.alloc(1), coreHeight);
