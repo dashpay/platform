@@ -371,7 +371,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
                 Ok(key_info_path)
             }
             PathKeySize(path_info, key_info) => {
-                let mut path = path_info.clone();
+                let mut path = path_info;
                 path.push(key_info);
                 Ok(path)
             }

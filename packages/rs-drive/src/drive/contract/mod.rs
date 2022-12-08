@@ -1198,7 +1198,7 @@ mod tests {
         drive
             .apply_contract(
                 &contract,
-                contract_cbor.clone(),
+                contract_cbor,
                 BlockInfo::default(),
                 false,
                 StorageFlags::optional_default_as_ref(),
@@ -1226,7 +1226,7 @@ mod tests {
         drive
             .apply_contract(
                 &contract,
-                contract_cbor.clone(),
+                contract_cbor,
                 BlockInfo::default(),
                 false,
                 StorageFlags::optional_default_as_ref(),
