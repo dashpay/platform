@@ -615,7 +615,9 @@ impl<'a> DocumentInfo<'a> {
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => match key_path {
                 "$ownerId" | "$id" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
-                    unique_id: vec![],
+                    unique_id: document_type
+                        .unique_id_for_document_field(index_level, base_event)
+                        .to_vec(),
                     max_size: DEFAULT_HASH_SIZE_U8,
                 }))),
                 _ => {
@@ -664,18 +666,16 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets storage flags
-    pub fn get_document_id_as_slice(&self) -> Result<&[u8], Error> {
+    pub fn get_document_id_as_slice(&self) -> Option<&[u8]> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
-                Ok(document.id.as_slice())
+                Some(document.id.as_slice())
             }
-            DocumentInfo::DocumentWithoutSerialization((document, _)) => Ok(document.id.as_slice()),
-            DocumentInfo::DocumentEstimatedAverageSize(_) => {
-                Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "can not get document id from estimated document",
-                )))
+            DocumentInfo::DocumentWithoutSerialization((document, _)) => {
+                Some(document.id.as_slice())
             }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => None,
         }
     }
 }

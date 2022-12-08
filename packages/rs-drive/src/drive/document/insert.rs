@@ -141,7 +141,10 @@ impl Drive {
                             primary_key_path,
                             document_and_contract_info
                                 .document_info
-                                .get_document_id_as_slice()?,
+                                .get_document_id_as_slice()
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "can not get document id from estimated document",
+                                )))?,
                         )),
                         inserted_storage_flags,
                     )
@@ -251,7 +254,10 @@ impl Drive {
                             document_type.name.as_str(),
                             document_and_contract_info
                                 .document_info
-                                .get_document_id_as_slice()?,
+                                .get_document_id_as_slice()
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "can not get document id from estimated document",
+                                )))?,
                         );
                     PathFixedSizeKeyElement((
                         document_id_in_primary_path,

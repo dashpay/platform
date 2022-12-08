@@ -77,7 +77,7 @@ impl Drive {
                 ApproximateElements(
                     AVERAGE_NUMBER_OF_UPDATES as u32,
                     Mix {
-                        subtree_size: None,
+                        subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             document_type.estimated_size() as u32,
@@ -315,6 +315,14 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
     ) -> Result<Option<(EstimatedValueSize, EstimatedIntermediateFlagSizes)>, Error> {
+        // if estimated_costs_only_with_layer_info.is_some() {
+        //     for k in estimated_costs_only_with_layer_info.as_ref().unwrap().keys() {
+        //         let path = k.to_path().iter()
+        //             .map(|k| hex::encode(k.as_slice()))
+        //             .join("/");
+        //         dbg!(path);
+        //     }
+        // }
         estimated_costs_only_with_layer_info.as_ref().map_or(
             Ok::<Option<(u32, IntMap<u32>)>, Error>(None),
             |layer_info| {

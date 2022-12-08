@@ -33,6 +33,7 @@ use std::path::Path;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
+use itertools::Itertools;
 
 use object_size_info::DocumentAndContractInfo;
 use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
@@ -241,7 +242,15 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
-            // dbg!(&estimated_layer_info);
+            // Leave this for future debugging
+            // for (k, v) in estimated_layer_info.iter() {
+            //     let path = k
+            //         .to_path()
+            //         .iter()
+            //         .map(|k| hex::encode(k.as_slice()))
+            //         .join("/");
+            //     dbg!(path, v);
+            // }
             self.grove_batch_operations_costs(
                 batch_operations,
                 estimated_layer_info,

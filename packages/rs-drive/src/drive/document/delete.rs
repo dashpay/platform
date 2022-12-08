@@ -32,6 +32,7 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
+use dpp::data_contract::DataContract;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -273,6 +274,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -310,7 +312,8 @@ impl Drive {
                 key_info_path,
                 document_and_contract_info
                     .document_info
-                    .get_document_id_as_slice()?,
+                    .get_document_id_as_slice()
+                    .unwrap_or(event_id.as_slice()),
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                 stateless_delete_for_costs,
                 transaction,
@@ -351,22 +354,7 @@ impl Drive {
         transaction: TransactionArg,
         batch_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        if let Some(unique) = index_level.has_index_with_uniqueness {
-            self.remove_reference_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info.clone(),
-                unique,
-                any_fields_null,
-                storage_flags,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                batch_operations,
-            )?;
-        }
-
         let sub_level_index_count = index_level.sub_index_levels.len() as u32;
-
-        let document_type = document_and_contract_info.document_type;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -381,6 +369,22 @@ impl Drive {
                 ),
             );
         }
+
+        if let Some(unique) = index_level.has_index_with_uniqueness {
+            self.remove_reference_for_index_level_for_contract_operations(
+                document_and_contract_info,
+                index_path_info.clone(),
+                unique,
+                any_fields_null,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+            )?;
+        }
+
+        let document_type = document_and_contract_info.document_type;
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
@@ -609,13 +613,12 @@ impl Drive {
             None
         };
 
-        // if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-        //     Self::add_estimation_costs_for_top_index_level(
-        //         &contract,
-        //         &document_type,
-        //         estimated_costs_only_with_layer_info,
-        //     )?;
-        // }
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+                contract,
+                estimated_costs_only_with_layer_info,
+            );
+        }
 
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_direct(
@@ -1478,13 +1481,9 @@ mod tests {
             )
             .expect("expected to be able to delete the document");
 
-        let removed_bytes = fee_result
-            .removed_bytes_from_identities
-            .get(&random_owner_id)
-            .unwrap()
-            .get(0)
-            .unwrap();
-        assert_eq!(added_bytes, *removed_bytes as u64);
+        assert!(fee_result.removed_bytes_from_identities.0.is_empty());
+        assert_eq!(fee_result.storage_fee, 0);
+        assert_eq!(fee_result.processing_fee, 144746400);
     }
 
     #[test]

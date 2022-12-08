@@ -60,7 +60,7 @@ impl Drive {
                 ApproximateElements(
                     AVERAGE_NUMBER_OF_UPDATES as u32,
                     Mix {
-                        subtree_size: None,
+                        subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             contract.to_cbor().unwrap().len() as u32, //todo: fix this
