@@ -18,7 +18,7 @@ impl InvalidDocumentTransitionActionErrorWasm {
 impl InvalidDocumentTransitionActionErrorWasm {
     #[wasm_bindgen(js_name=getAction)]
     pub fn get_action(&self) -> String {
-        self.document_type.clone()
+        self.action.clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]
