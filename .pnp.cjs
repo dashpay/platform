@@ -6215,7 +6215,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["bufferutil", "npm:4.0.6"],\
             ["node-gyp", "npm:8.4.0"],\
-            ["node-gyp-build", "npm:4.3.0"]\
+            ["node-gyp-build", "npm:4.5.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -7382,7 +7382,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/unplugged/cpu-features-npm-0.0.2-b27e7998ec/node_modules/cpu-features/",\
           "packageDependencies": [\
             ["cpu-features", "npm:0.0.2"],\
-            ["nan", "npm:2.15.0"],\
+            ["nan", "npm:2.17.0"],\
             ["node-gyp", "npm:8.4.0"]\
           ],\
           "linkType": "HARD"\
@@ -13076,14 +13076,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["nan", [\
-        ["npm:2.15.0", {\
-          "packageLocation": "./.yarn/unplugged/nan-npm-2.15.0-505c98ef4d/node_modules/nan/",\
-          "packageDependencies": [\
-            ["nan", "npm:2.15.0"],\
-            ["node-gyp", "npm:8.4.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:2.17.0", {\
           "packageLocation": "./.yarn/unplugged/nan-npm-2.17.0-bf36a21d6f/node_modules/nan/",\
           "packageDependencies": [\
@@ -13319,13 +13311,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["node-gyp-build", [\
-        ["npm:4.3.0", {\
-          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.3.0-87bdf5216f-1ecab16d9f.zip/node_modules/node-gyp-build/",\
-          "packageDependencies": [\
-            ["node-gyp-build", "npm:4.3.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:4.5.0", {\
           "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.5.0-2538da6152-d888bae0fb.zip/node_modules/node-gyp-build/",\
           "packageDependencies": [\
@@ -16091,7 +16076,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["asn1", "npm:0.2.6"],\
             ["bcrypt-pbkdf", "npm:1.0.2"],\
             ["cpu-features", "npm:0.0.2"],\
-            ["nan", "npm:2.15.0"]\
+            ["nan", "npm:2.17.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -17605,7 +17590,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["utf-8-validate", "npm:5.0.9"],\
             ["node-gyp", "npm:8.4.0"],\
-            ["node-gyp-build", "npm:4.3.0"]\
+            ["node-gyp-build", "npm:4.5.0"]\
           ],\
           "linkType": "HARD"\
         }]\
