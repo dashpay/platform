@@ -33,9 +33,7 @@ use crate::errors::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateErrorWasm, IncompatibleDataContractSchemaErrorWasm,
     InvalidDataContractIdErrorWasm,
 };
-use crate::errors::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeErrorWasm, StateTransitionMaxSizeExceededErrorWasm,
-};
+use crate::errors::consensus::basic::state_transition::{InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm, StateTransitionMaxSizeExceededErrorWasm};
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -435,7 +433,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         }
         BasicError::DataContractHaveNewUniqueIndexError { .. } => "Not implemented".into(),
         BasicError::IdentityNotFoundError { .. } => "Not implemented".into(),
-        BasicError::MissingStateTransitionTypeError => "Not implemented".into(),
+        BasicError::MissingStateTransitionTypeError => {
+            MissingStateTransitionTypeErrorWasm::new(code).into()
+        },
         BasicError::InvalidStateTransitionTypeError { transition_type } => {
             InvalidStateTransitionTypeErrorWasm::new(*transition_type, code).into()
         }
