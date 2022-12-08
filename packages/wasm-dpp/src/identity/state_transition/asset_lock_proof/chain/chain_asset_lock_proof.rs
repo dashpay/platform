@@ -22,6 +22,12 @@ struct ChainAssetLockProofParams {
     out_point: Vec<u8>,
 }
 
+impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
+    fn from(v: ChainAssetLockProof) -> Self {
+        ChainAssetLockProofWasm(v)
+    }
+}
+
 #[wasm_bindgen(js_class = ChainAssetLockProof)]
 impl ChainAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
