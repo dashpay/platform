@@ -62,10 +62,14 @@ use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
-    InvalidCompoundIndexErrorWasm, InvalidDataContractVersionErrorWasm,
-    InvalidIndexPropertyTypeErrorWasm, InvalidIndexedPropertyConstraintErrorWasm,
-    InvalidJsonSchemaRefErrorWasm, SystemPropertyIndexAlreadyPresentErrorWasm,
-    UndefinedIndexPropertyErrorWasm, UniqueIndicesLimitReachedErrorWasm,
+    IncompatibleRe2PatternErrorWasm, InvalidCompoundIndexErrorWasm,
+    InvalidDataContractVersionErrorWasm, InvalidIndexPropertyTypeErrorWasm,
+    InvalidIndexedPropertyConstraintErrorWasm, InvalidJsonSchemaRefErrorWasm,
+    SystemPropertyIndexAlreadyPresentErrorWasm, UndefinedIndexPropertyErrorWasm,
+    UniqueIndicesLimitReachedErrorWasm,
+};
+use super::consensus::basic::decode::{
+    ProtocolVersionParsingErrorWasm, SerializedObjectParsingErrorWasm,
 };
 use super::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
@@ -80,8 +84,12 @@ use super::consensus::basic::{
     JsonSchemaCompilationErrorWasm, PublicKeyIsDisabledErrorWasm,
     PublicKeySecurityLevelNotMetErrorWasm, WrongPublicKeyPurposeErrorWasm,
 };
+use super::consensus::fee::BalanceIsNotEnoughErrorWasm;
+use super::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 
 pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
+    let code = e.code();
+
     match e {
         DPPConsensusError::JsonSchemaError(e) => {
             // TODO: rework JSONSchema error
@@ -154,13 +162,38 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
             IdentityAlreadyExistsErrorWasm::from(e).into()
         }
         // TODO: implement those
-        // DPPConsensusError::TestConsensusError(_) => {}
-        // DPPConsensusError::SerializedObjectParsingError { .. } => {}
-        // DPPConsensusError::ProtocolVersionParsingError { .. } => {}
-        // DPPConsensusError::IncompatibleRe2PatternError { .. } => {}
-        // DPPConsensusError::FeeError(e) => {
-        //
-        // }
+        // #[cfg(test)]
+        // DPPConsensusError::TestConsensusError(TestConsensusError { message }) => {}
+        DPPConsensusError::SerializedObjectParsingError { parsing_error } => {
+            SerializedObjectParsingErrorWasm::new(
+                wasm_bindgen::JsError::new(parsing_error.to_string().as_ref()),
+                code,
+            )
+            .into()
+        }
+        DPPConsensusError::ProtocolVersionParsingError { parsing_error } => {
+            ProtocolVersionParsingErrorWasm::new(
+                wasm_bindgen::JsError::new(parsing_error.to_string().as_ref()),
+                code,
+            )
+            .into()
+        }
+        DPPConsensusError::IncompatibleRe2PatternError {
+            pattern,
+            path,
+            message,
+        } => IncompatibleRe2PatternErrorWasm::new(
+            pattern.clone(),
+            path.clone(),
+            message.clone(),
+            code,
+        )
+        .into(),
+        DPPConsensusError::FeeError(e) => match e {
+            dpp::consensus::fee::FeeError::BalanceIsNotEnoughError { balance, fee } => {
+                BalanceIsNotEnoughErrorWasm::new(*balance, *fee, code).into()
+            }
+        },
         DPPConsensusError::SignatureError(e) => from_signature_error(e),
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
@@ -296,8 +329,19 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                     code,
                 )
                 .into(),
-                // TODO: implement this one
-                // DataTriggerError::DataTriggerInvalidResultError { .. } => {}
+                DataTriggerError::DataTriggerInvalidResultError {
+                    data_contract_id,
+                    document_transition_id,
+                    document_transition,
+                    owner_id,
+                } => DataTriggerInvalidResultErrorWasm::new(
+                    data_contract_id.clone(),
+                    document_transition_id.clone(),
+                    document_transition.clone(),
+                    owner_id.clone(),
+                    code,
+                )
+                .into(),
                 // TODO: remove when all if the above is implemented
                 _ => "Not implemented".into(),
             }
