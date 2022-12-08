@@ -30,10 +30,14 @@ use dpp::StateError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractImmutablePropertiesUpdateErrorWasm, IncompatibleDataContractSchemaErrorWasm,
-    InvalidDataContractIdErrorWasm,
+    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
+    IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
-use crate::errors::consensus::basic::state_transition::{InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm, StateTransitionMaxSizeExceededErrorWasm};
+use crate::errors::consensus::basic::state_transition::{
+    InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
+    StateTransitionMaxSizeExceededErrorWasm,
+};
+use crate::errors::consensus::signature::IdentityNotFoundErrorWasm;
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -49,7 +53,6 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 use dpp::errors::DataTriggerError;
-use crate::errors::consensus::signature::IdentityNotFoundErrorWasm;
 
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
@@ -432,13 +435,21 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::DataContractInvalidIndexDefinitionUpdateError { .. } => {
             "Not implemented".into()
         }
-        BasicError::DataContractHaveNewUniqueIndexError { .. } => "Not implemented".into(),
+        BasicError::DataContractHaveNewUniqueIndexError {
+            document_type,
+            index_name,
+        } => DataContractHaveNewUniqueIndexErrorWasm::new(
+            document_type.clone(),
+            index_name.clone(),
+            code,
+        )
+        .into(),
         BasicError::IdentityNotFoundError { identity_id } => {
             IdentityNotFoundErrorWasm::new(identity_id.clone(), code).into()
-        },
+        }
         BasicError::MissingStateTransitionTypeError => {
             MissingStateTransitionTypeErrorWasm::new(code).into()
-        },
+        }
         BasicError::InvalidStateTransitionTypeError { transition_type } => {
             InvalidStateTransitionTypeErrorWasm::new(*transition_type, code).into()
         }

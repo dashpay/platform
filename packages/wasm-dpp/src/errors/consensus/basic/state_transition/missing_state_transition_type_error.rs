@@ -7,9 +7,7 @@ pub struct MissingStateTransitionTypeErrorWasm {
 
 impl MissingStateTransitionTypeErrorWasm {
     pub fn new(code: u32) -> Self {
-        MissingStateTransitionTypeErrorWasm {
-            code,
-        }
+        MissingStateTransitionTypeErrorWasm { code }
     }
 }
 
