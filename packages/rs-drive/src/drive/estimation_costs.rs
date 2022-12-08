@@ -1,11 +1,5 @@
-use crate::drive::contract::{
-    all_contracts_global_root_path, contract_root_path,
-};
-use crate::drive::defaults::{
-    DEFAULT_HASH_SIZE_U8,
-    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
-};
-
+use crate::drive::contract::{all_contracts_global_root_path, contract_root_path};
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
@@ -17,7 +11,7 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerInformation::{
     ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements,
 };
-use grovedb::EstimatedLayerSizes::{AllSubtrees};
+use grovedb::EstimatedLayerSizes::AllSubtrees;
 
 use std::collections::HashMap;
 

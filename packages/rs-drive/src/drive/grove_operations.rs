@@ -41,7 +41,7 @@ use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPat
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
 use std::collections::HashMap;
 
-use crate::drive::defaults::{SOME_TREE_SIZE};
+use crate::drive::defaults::SOME_TREE_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 
@@ -55,15 +55,14 @@ use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo, PathKeyIn
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation::{CalculatedCostOperation};
-use crate::fee::op::{DriveOperation};
+use crate::fee::op::DriveOperation;
+use crate::fee::op::DriveOperation::CalculatedCostOperation;
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::Error as GroveError;
 use intmap::IntMap;
 use storage::rocksdb_storage::RocksDbStorage;
-
 
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
 /// and returns the operation's return value.

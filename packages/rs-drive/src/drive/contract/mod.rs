@@ -45,15 +45,12 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::{
-    CONTRACT_MAX_SERIALIZED_SIZE,
-};
+use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};

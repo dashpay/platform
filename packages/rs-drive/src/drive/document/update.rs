@@ -393,8 +393,7 @@ impl Drive {
                         &top_index_property.name,
                         document_type,
                         owner_id,
-                        &document_type.index_structure,
-                        unique_event_id(),
+                        None,
                     )?
                     .unwrap_or_default();
 
@@ -457,8 +456,7 @@ impl Drive {
                             &index_property.name,
                             document_type,
                             owner_id,
-                            &document_type.index_structure,
-                            unique_event_id(),
+                            None,
                         )?
                         .unwrap_or_default();
 

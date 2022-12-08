@@ -592,8 +592,7 @@ impl<'a> DocumentInfo<'a> {
         key_path: &str,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
-        index_level: &IndexLevel,
-        base_event: [u8; 32],
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
     ) -> Result<Option<DriveKeyInfo>, Error> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
@@ -613,41 +612,48 @@ impl<'a> DocumentInfo<'a> {
                     Some(value) => Ok(Some(Key(value))),
                 }
             }
-            DocumentInfo::DocumentEstimatedAverageSize(_) => match key_path {
-                "$ownerId" | "$id" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
-                    unique_id: document_type
-                        .unique_id_for_document_field(index_level, base_event)
-                        .to_vec(),
-                    max_size: DEFAULT_HASH_SIZE_U8,
-                }))),
-                _ => {
-                    let document_field_type = document_type.properties.get(key_path).ok_or({
-                        Error::Contract(ContractError::DocumentTypeFieldNotFound(
-                            "incorrect key path for document type",
-                        ))
-                    })?;
-                    let estimated_middle_size = document_field_type
-                        .document_type
-                        .middle_byte_size_ceil()
-                        .ok_or({
-                            Error::Drive(DriveError::CorruptedCodeExecution(
-                                "document type must have a max size",
-                            ))
-                        })?;
-                    if estimated_middle_size > u8::MAX as u16 {
-                        // this is too big for a key
-                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "estimated middle size is too big for a key",
-                        )));
-                    }
-                    Ok(Some(KeySize(KeyInfo::MaxKeySize {
+            DocumentInfo::DocumentEstimatedAverageSize(_) => {
+                let (index_level, base_event) = size_info_with_base_event.ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
+                ))?;
+                match key_path {
+                    "$ownerId" | "$id" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
                         unique_id: document_type
                             .unique_id_for_document_field(index_level, base_event)
                             .to_vec(),
-                        max_size: estimated_middle_size as u8,
-                    })))
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    }))),
+                    _ => {
+                        let document_field_type =
+                            document_type.properties.get(key_path).ok_or({
+                                Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                                    "incorrect key path for document type",
+                                ))
+                            })?;
+
+                        let estimated_middle_size = document_field_type
+                            .document_type
+                            .middle_byte_size_ceil()
+                            .ok_or({
+                                Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "document type must have a max size",
+                                ))
+                            })?;
+                        if estimated_middle_size > u8::MAX as u16 {
+                            // this is too big for a key
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "estimated middle size is too big for a key",
+                            )));
+                        }
+                        Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                            unique_id: document_type
+                                .unique_id_for_document_field(index_level, base_event)
+                                .to_vec(),
+                            max_size: estimated_middle_size as u8,
+                        })))
+                    }
                 }
-            },
+            }
         }
     }
 

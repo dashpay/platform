@@ -34,7 +34,6 @@ use std::path::Path;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
-
 use object_size_info::DocumentAndContractInfo;
 use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 

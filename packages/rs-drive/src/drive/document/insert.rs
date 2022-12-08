@@ -37,15 +37,13 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllSubtrees};
+use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::contract::Contract;
-use crate::drive::defaults::{
-    DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE,
-};
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
 use crate::drive::document::{
     contract_document_type_path_vec,
     contract_documents_keeping_history_primary_key_path_for_document_id,
@@ -59,15 +57,13 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{
-    KeyElement, KeyUnknownElementSize,
-};
+use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
-use crate::drive::{Drive};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
@@ -729,8 +725,7 @@ impl Drive {
                     name,
                     document_type,
                     document_and_contract_info.owner_id,
-                    sub_level,
-                    event_id,
+                    Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
 
@@ -873,8 +868,7 @@ impl Drive {
                     name,
                     document_type,
                     document_and_contract_info.owner_id,
-                    sub_level,
-                    event_id,
+                    Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
 

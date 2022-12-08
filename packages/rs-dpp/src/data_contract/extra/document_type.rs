@@ -44,7 +44,7 @@ pub struct IndexLevel {
     /// did an index terminate at this level
     pub has_index_with_uniqueness: Option<bool>,
     /// unique level identifier
-    pub level_identifier: u64
+    pub level_identifier: u64,
 }
 
 impl DocumentType {
@@ -93,7 +93,7 @@ impl DocumentType {
 
     pub fn build_index_structure(indices: &[Index]) -> IndexLevel {
         let mut index_level = IndexLevel::default();
-        let mut counter : u64 = 0;
+        let mut counter: u64 = 0;
         for index in indices {
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().peekable();
@@ -122,7 +122,11 @@ impl DocumentType {
     }
 
     /// Unique id that combines the index_level and the base event id
-    pub fn unique_id_for_document_field(&self, index_level: &IndexLevel, base_event: [u8; 32]) -> Vec<u8> {
+    pub fn unique_id_for_document_field(
+        &self,
+        index_level: &IndexLevel,
+        base_event: [u8; 32],
+    ) -> Vec<u8> {
         let mut bytes = index_level.level_identifier.to_be_bytes().to_vec();
         bytes.extend_from_slice(&base_event);
         bytes

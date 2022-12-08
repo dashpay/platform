@@ -32,15 +32,12 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
-
-
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-
 
 use std::collections::HashMap;
 
@@ -52,14 +49,14 @@ use crate::drive::defaults::{
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
 };
 use crate::drive::document::{
-    contract_document_type_path_vec,
-    contract_documents_primary_key_path, document_reference_size, unique_event_id,
+    contract_document_type_path_vec, contract_documents_primary_key_path, document_reference_size,
+    unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
-use crate::drive::object_size_info::DriveKeyInfo::{KeyRef};
+use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
@@ -397,8 +394,7 @@ impl Drive {
                     name,
                     document_type,
                     document_and_contract_info.owner_id,
-                    sub_level,
-                    event_id,
+                    Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
 
@@ -513,8 +509,7 @@ impl Drive {
                     name,
                     document_type,
                     document_and_contract_info.owner_id,
-                    sub_level,
-                    event_id,
+                    Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
 
