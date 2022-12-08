@@ -400,6 +400,15 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
+        if apply == false {
+            return self.insert_contract_cbor(
+                contract_cbor,
+                contract_id,
+                block_info,
+                false,
+                transaction,
+            );
+        }
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
@@ -439,7 +448,6 @@ impl Drive {
             &contract,
             &original_contract_fetch_info.contract,
             &block_info,
-            apply,
             transaction,
             &mut drive_operations,
         )?;
@@ -472,15 +480,11 @@ impl Drive {
         contract: &Contract,
         original_contract: &Contract,
         block_info: &BlockInfo,
-        apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info =
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
         let batch_operations = self.update_contract_operations(
             contract_element,
             contract,
