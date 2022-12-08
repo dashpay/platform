@@ -32,16 +32,16 @@ itertools = { version = "0.10.5" }
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 
 [dependencies.grovedb]
-git = "https://github.com/dashevo/grovedb"
-branch = "master"
+git = "https://github.com/dashpay/grovedb"
+rev = "f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 
 [dependencies.storage]
-git = "https://github.com/dashevo/grovedb"
-branch = "master"
+git = "https://github.com/dashpay/grovedb"
+rev = "f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 
 [dependencies.costs]
-git = "https://github.com/dashevo/grovedb"
-branch = "master"
+git = "https://github.com/dashpay/grovedb"
+rev = "f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 
 [dev-dependencies]
 criterion = "0.3.5"
