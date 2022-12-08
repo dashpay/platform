@@ -405,10 +405,10 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .document_info
                     .get_estimated_size_for_document_type(name, document_type)?;
-
+                dbg!(document_top_field_estimated_size);
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
-                        "document top field is too big for being an index",
+                        "document field is too big for being an index",
                     )));
                 }
 
@@ -518,7 +518,7 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .document_info
                     .get_estimated_size_for_document_type(name, document_type)?;
-
+                dbg!(document_top_field_estimated_size);
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
                         "document top field is too big for being an index",

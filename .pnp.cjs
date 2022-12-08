@@ -2361,7 +2361,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["swagger-jsdoc", "npm:3.7.0"],\
             ["ws", "virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5"],\
-            ["zeromq", "npm:5.2.8"]\
+            ["zeromq", "npm:5.3.1"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -2700,7 +2700,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["through2", "npm:3.0.2"],\
-            ["zeromq", "npm:5.2.8"]\
+            ["zeromq", "npm:5.3.1"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -13076,18 +13076,18 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["nan", [\
-        ["npm:2.14.2", {\
-          "packageLocation": "./.yarn/unplugged/nan-npm-2.14.2-e3ede8ce5d/node_modules/nan/",\
-          "packageDependencies": [\
-            ["nan", "npm:2.14.2"],\
-            ["node-gyp", "npm:8.4.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:2.15.0", {\
           "packageLocation": "./.yarn/unplugged/nan-npm-2.15.0-505c98ef4d/node_modules/nan/",\
           "packageDependencies": [\
             ["nan", "npm:2.15.0"],\
+            ["node-gyp", "npm:8.4.0"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:2.17.0", {\
+          "packageLocation": "./.yarn/unplugged/nan-npm-2.17.0-bf36a21d6f/node_modules/nan/",\
+          "packageDependencies": [\
+            ["nan", "npm:2.17.0"],\
             ["node-gyp", "npm:8.4.0"]\
           ],\
           "linkType": "HARD"\
@@ -13323,6 +13323,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.3.0-87bdf5216f-1ecab16d9f.zip/node_modules/node-gyp-build/",\
           "packageDependencies": [\
             ["node-gyp-build", "npm:4.3.0"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:4.5.0", {\
+          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.5.0-2538da6152-d888bae0fb.zip/node_modules/node-gyp-build/",\
+          "packageDependencies": [\
+            ["node-gyp-build", "npm:4.5.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -18896,13 +18903,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["zeromq", [\
-        ["npm:5.2.8", {\
-          "packageLocation": "./.yarn/unplugged/zeromq-npm-5.2.8-213a0f74bc/node_modules/zeromq/",\
+        ["npm:5.3.1", {\
+          "packageLocation": "./.yarn/unplugged/zeromq-npm-5.3.1-352eae853d/node_modules/zeromq/",\
           "packageDependencies": [\
-            ["zeromq", "npm:5.2.8"],\
-            ["nan", "npm:2.14.2"],\
+            ["zeromq", "npm:5.3.1"],\
+            ["nan", "npm:2.17.0"],\
             ["node-gyp", "npm:8.4.0"],\
-            ["node-gyp-build", "npm:4.3.0"]\
+            ["node-gyp-build", "npm:4.5.0"]\
           ],\
           "linkType": "HARD"\
         }]\

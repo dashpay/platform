@@ -48,7 +48,7 @@ use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, Pa
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
+use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -567,6 +567,7 @@ impl<'a> DocumentInfo<'a> {
     ) -> Result<u16, Error> {
         match key_path {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
                 let document_field_type = document_type.properties.get(key_path).ok_or({
                     Error::Contract(ContractError::DocumentTypeFieldNotFound(
