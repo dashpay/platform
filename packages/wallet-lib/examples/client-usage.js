@@ -26,5 +26,5 @@ wallet
     account.on(EVENTS.PREFETCHED, () => logger.info('PREFETCHED', EVENTS.PREFETCHED));
     account.on(EVENTS.DISCOVERY_STARTED, () => logger.info(EVENTS.PREFETCHED));
   }).catch((e) => {
-  console.log('Failed with error', e);
-});
+      console.log('Failed with error', e);
+  });
