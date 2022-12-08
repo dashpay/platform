@@ -35,7 +35,7 @@ use crate::errors::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
-use crate::errors::consensus::basic::document::{DuplicateDocumentTransitionsWithIdsError, MissingDataContractIdErrorWasm};
+use crate::errors::consensus::basic::document::{DuplicateDocumentTransitionsWithIdsError, InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm};
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
     StateTransitionMaxSizeExceededErrorWasm,
@@ -430,7 +430,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         }
 
         BasicError::InvalidDocumentTransitionActionError { .. } => "Not implemented".into(),
-        BasicError::InvalidDocumentTransitionIdError { .. } => "Not implemented".into(),
+        BasicError::InvalidDocumentTransitionIdError { expected_id, invalid_id } => {
+            InvalidDocumentTransitionIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code).into()
+        },
         BasicError::DuplicateDocumentTransitionsWithIdsError { references } => {
             DuplicateDocumentTransitionsWithIdsError::new(references.clone(), code).into()
         },
