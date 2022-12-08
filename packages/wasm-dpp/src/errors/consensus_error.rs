@@ -31,8 +31,8 @@ use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
-    DataContractInvalidIndexDefinitionUpdateErrorWasm, IncompatibleDataContractSchemaErrorWasm,
-    InvalidDataContractIdErrorWasm,
+    DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
+    IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -432,7 +432,15 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => "Not implemented".into(),
         BasicError::MissingDataContractIdError => "Not implemented".into(),
         BasicError::InvalidIdentifierError { .. } => "Not implemented".into(),
-        BasicError::DataContractUniqueIndicesChangedError { .. } => "Not implemented".into(),
+        BasicError::DataContractUniqueIndicesChangedError {
+            document_type,
+            index_name,
+        } => DataContractUniqueIndicesChangedErrorWasm::new(
+            document_type.clone(),
+            index_name.clone(),
+            code,
+        )
+        .into(),
         BasicError::DataContractInvalidIndexDefinitionUpdateError {
             document_type,
             index_name,
