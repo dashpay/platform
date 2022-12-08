@@ -43,6 +43,12 @@ impl From<InstantAssetLockProof> for InstantAssetLockProofWasm {
     }
 }
 
+impl From<InstantAssetLockProofWasm> for InstantAssetLockProof {
+    fn from(v: InstantAssetLockProofWasm) -> Self {
+        v.0
+    }
+}
+
 #[wasm_bindgen(js_class = InstantAssetLockProof)]
 impl InstantAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
