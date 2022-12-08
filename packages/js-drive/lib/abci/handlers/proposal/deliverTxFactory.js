@@ -6,6 +6,7 @@ const AbstractDocumentTransition = require(
 );
 
 const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+const aggregateOperationFees = require('./fees/aggregateOperationFees');
 
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
@@ -42,7 +43,7 @@ function deliverTxFactory(
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
    * @param {BaseLogger} consensusLogger
-   * @return {Promise<{ code: number }>}
+   * @return {Promise<{ code: number, fees: FeeResult }>}
    */
   async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
@@ -65,14 +66,18 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    const txConsensusLogger = consensusLogger.child({
+      txId: stHash,
+    });
 
-    consensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
+    proposalBlockExecutionContext.setConsensusLogger(txConsensusLogger);
+
+    txConsensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
     const stateTransition = await transactionalUnserializeStateTransition(
       stateTransitionByteArray,
       {
-        logger: consensusLogger,
+        logger: txConsensusLogger,
         executionTimer,
       },
     );
@@ -93,8 +98,8 @@ function deliverTxFactory(
       const consensusError = result.getFirstError();
       const message = 'State transition is invalid against the state';
 
-      consensusLogger.info(message);
-      consensusLogger.debug({
+      txConsensusLogger.info(message);
+      txConsensusLogger.debug({
         consensusError,
       });
 
@@ -150,7 +155,7 @@ function deliverTxFactory(
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
@@ -162,7 +167,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_CREATE: {
         const identityId = stateTransition.getIdentityId();
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -174,7 +179,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_TOP_UP: {
         const identityId = stateTransition.getIdentityId();
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -186,7 +191,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getIdentityId();
 
-        consensusLogger.info(
+        txConsensusLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -198,7 +203,7 @@ function deliverTxFactory(
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
-          consensusLogger.info(
+          txConsensusLogger.info(
             {
               documentId: transition.getId().toString(),
             },
@@ -217,8 +222,8 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageFee: storageFees,
-      processingFee: processingFees,
+      storageFee: actualStorageFees,
+      processingFee: actualProcessingFees,
     } = calculateOperationFees(actualStateTransitionOperations);
 
     const {
@@ -226,7 +231,7 @@ function deliverTxFactory(
       processingFee: predictedProcessingFee,
     } = calculateOperationFees(predictedStateTransitionOperations);
 
-    consensusLogger.trace(
+    txConsensusLogger.trace(
       {
         timings: {
           overall: deliverTxTiming,
@@ -244,8 +249,8 @@ function deliverTxFactory(
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
-            storage: storageFees,
-            processing: processingFees,
+            storage: actualStorageFees,
+            processing: actualProcessingFees,
             final: actualStateTransitionFee,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
@@ -257,8 +262,7 @@ function deliverTxFactory(
 
     return {
       code: 0,
-      processingFees,
-      storageFees,
+      fees: aggregateOperationFees(actualStateTransitionOperations),
     };
   }
 

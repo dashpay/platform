@@ -5986,7 +5986,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["http-errors", "npm:1.7.2"],\
             ["iconv-lite", "npm:0.4.24"],\
             ["on-finished", "npm:2.3.0"],\
-            ["qs", "npm:6.7.0"],\
+            ["qs", "npm:6.11.0"],\
             ["raw-body", "npm:2.4.0"],\
             ["type-is", "npm:1.6.18"]\
           ],\
@@ -14755,13 +14755,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["qs", "npm:6.11.0"],\
             ["side-channel", "npm:1.0.4"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:6.7.0", {\
-          "packageLocation": "./.yarn/cache/qs-npm-6.7.0-15161a344c-dfd5f6adef.zip/node_modules/qs/",\
-          "packageDependencies": [\
-            ["qs", "npm:6.7.0"]\
           ],\
           "linkType": "HARD"\
         }]\

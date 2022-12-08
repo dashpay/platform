@@ -46,7 +46,6 @@ function synchronizeMasternodeIdentitiesFactory(
    * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
-    // TODO: We should either pass block info and transaction or just use state repository (?)
     if (!lastSyncedCoreHeight) {
       const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
         useTransaction: true,

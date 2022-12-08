@@ -39,12 +39,12 @@ function beginBlockFactory(
   /**
    * @typedef beginBlock
    * @param {Object} request
-   * @param {ILastCommitInfo} [request.lastCommitInfo]
-   * @param {Long} [request.height]
-   * @param {number} [request.coreChainLockedHeight]
-   * @param {IConsensus} [request.version]
-   * @param {ITimestamp} [request.time]
-   * @param {Buffer} [request.proposerProTxHash]
+   * @param {ILastCommitInfo} request.lastCommitInfo
+   * @param {Long} request.height
+   * @param {number} request.coreChainLockedHeight
+   * @param {IConsensus} request.version
+   * @param {ITimestamp} request.time
+   * @param {Buffer} request.proposerProTxHash
    * @param {BaseLogger} consensusLogger
    *
    * @return {Promise<void>}
@@ -86,27 +86,25 @@ function beginBlockFactory(
     await waitForChainLockedHeight(coreChainLockedHeight);
 
     // Reset block execution context
-
     proposalBlockExecutionContext.reset();
 
-    // Set block execution context params
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
     proposalBlockExecutionContext.setHeight(height);
     proposalBlockExecutionContext.setVersion(version);
+    proposalBlockExecutionContext.setRound(round);
     proposalBlockExecutionContext.setTimeMs(protoTimestampToMillis(time));
     proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
     proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
-    proposalBlockExecutionContext.setRound(round);
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
     transactionalDpp.setProtocolVersion(version.app.toNumber());
 
+    // Restart transaction if already started
     if (await groveDBStore.isTransactionStarted()) {
       await groveDBStore.abortTransaction();
     }
 
-    // Start db transaction for the block
     await groveDBStore.startTransaction();
 
     // Call RS ABCI
@@ -155,7 +153,7 @@ function beginBlockFactory(
 
       const blockTimeFormatted = new Date(proposalBlockExecutionContext.getTimeMs()).toUTCString();
 
-      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
+      consensusLogger.info(debugData, `Epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
     }
 
     // Update SML
@@ -193,8 +191,6 @@ function beginBlockFactory(
         );
       }
     }
-
-    consensusLogger.info(`Block begin #${height}`);
   }
 
   return beginBlock;
