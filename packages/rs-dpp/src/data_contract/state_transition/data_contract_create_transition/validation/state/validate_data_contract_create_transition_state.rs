@@ -83,8 +83,8 @@ mod test {
         };
 
         state_repository_mock
-            .expect_fetch_data_contract::<Vec<u8>>()
-            .return_once(|_, _| Ok(Some(vec![])));
+            .expect_fetch_data_contract::<DataContract>()
+            .return_once(|_, _| Ok(None));
         state_transition.execution_context.enable_dry_run();
 
         let result = validate_data_contract_create_transition_state(

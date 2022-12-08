@@ -105,7 +105,7 @@ mod test {
         let mut mock_state_repository = MockStateRepositoryLike::new();
 
         mock_state_repository
-            .expect_fetch_data_contract::<&'static [u8]>()
+            .expect_fetch_data_contract::<DataContract>()
             .return_once(|_, _| Ok(None));
         state_transition.get_execution_context().enable_dry_run();
 

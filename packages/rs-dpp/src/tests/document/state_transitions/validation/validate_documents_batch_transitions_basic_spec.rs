@@ -593,7 +593,7 @@ async fn data_contract_should_exist_in_the_state() {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
-        .returning(|_, _| Err(anyhow!("no contract found")));
+        .returning(|_, _| Ok(None));
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -945,7 +945,7 @@ async fn should_not_validate_document_transitions_on_dry_run() {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
-        .return_once(|_, _| Err(anyhow!("some error")));
+        .return_once(|_, _| Ok(None));
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -955,6 +955,6 @@ async fn should_not_validate_document_transitions_on_dry_run() {
     )
     .await
     .expect("validation result should be returned");
-
+    dbg!(&result);
     assert!(result.is_valid());
 }
