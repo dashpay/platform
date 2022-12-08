@@ -39,7 +39,7 @@ class StatusCommand extends ConfigBaseCommand {
       } = core;
 
       const plain = {
-        Network: network,
+        'Network': network,
         'Core Version': version,
         'Core Status': colors.status(status)(status),
         'Core Size': `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB`,

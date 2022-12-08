@@ -49,11 +49,11 @@ class CoreStatusCommand extends ConfigBaseCommand {
       } = scope;
 
       const plain = {
-        Version: colors.status(version, latestVersion)(version),
+        'Version': colors.status(version, latestVersion)(version),
         'Latest version': latestVersion,
-        Network: network,
-        Chain: chain,
-        Status: colors.status(status)(status),
+        'Network': network,
+        'Chain': chain,
+        'Status': colors.status(status)(status),
         'Sync asset': syncAsset,
         'Peer count': peersCount,
         'P2P service': p2pService,
@@ -63,7 +63,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
         'Header height': headerHeight,
         'Verification Progress': `${verificationProgress * 100}%`,
         'Remote Block Height': remoteBlockHeight || 'N/A',
-        Difficulty: difficulty,
+        'Difficulty': difficulty,
       };
 
       if (masternode.enabled) {

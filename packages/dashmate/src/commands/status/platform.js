@@ -82,7 +82,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       } = tenderdash;
 
       plain['Tenderdash Version'] = tenderdashVersion;
-      plain.Network = tenderdashNetwork;
+      plain['Network'] = tenderdashNetwork;
       plain['Block height'] = platformBlockHeight;
       plain['Peer count'] = platformPeers;
       plain['App hash'] = platformLatestAppHash;
