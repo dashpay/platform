@@ -164,7 +164,11 @@ describe('prepareProposalHandlerFactory', () => {
 
     expect(deliverTxMock).to.be.calledThrice();
 
-    expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(round, loggerMock);
+    expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(
+      request.coreChainLockedHeight,
+      round,
+      loggerMock,
+    );
 
     expect(endBlockMock).to.be.calledOnceWithExactly(
       {
