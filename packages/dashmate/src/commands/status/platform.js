@@ -81,14 +81,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         network: tenderdashNetwork,
       } = tenderdash;
 
-      const plain = {
-        'Tenderdash Version': tenderdashVersion,
-        Network: tenderdashNetwork,
-        'Block height': platformBlockHeight,
-        'Peer count': platformPeers,
-        'App hash': platformLatestAppHash,
-      };
-
       plain['Tenderdash Version'] = tenderdashVersion;
       plain.Network = tenderdashNetwork;
       plain['Block height'] = platformBlockHeight;

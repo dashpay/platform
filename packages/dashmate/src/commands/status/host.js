@@ -8,7 +8,7 @@ class HostStatusCommand extends ConfigBaseCommand {
   /**
    * @return {Promise<void>}
    */
-  async runWithDependencies(args, flags, statusProvider, config) {
+  async runWithDependencies(args, flags, statusProvider) {
     const scope = await statusProvider.getHostScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
@@ -32,7 +32,7 @@ class HostStatusCommand extends ConfigBaseCommand {
       return printObject(plain, flags.format);
     }
 
-    printObject(scope, flags.format);
+    return printObject(scope, flags.format);
   }
 }
 

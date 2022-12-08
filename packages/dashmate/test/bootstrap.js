@@ -10,8 +10,6 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
-
-
 use(dirtyChai);
 use(sinonChai);
 

@@ -2,7 +2,7 @@ const DockerStatusEnum = require('../../enums/dockerStatus');
 const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../util/extractCoreVersion');
-const ServiceStatusEnum = require("../../enums/serviceStatus");
+const ServiceStatusEnum = require('../../enums/serviceStatus');
 
 module.exports = (dockerCompose, createRpcClient) => async (config) => {
   const network = config.get('network');
@@ -13,7 +13,7 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
     pass: config.get('core.rpc.password'),
-  })
+  });
 
   const core = {
     network,
@@ -32,9 +32,9 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     headerHeight: null,
     difficulty: null,
     verificationProgress: null,
-  }
+  };
 
-  core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core')
+  core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core');
 
   if (core.dockerStatus !== DockerStatusEnum.running) {
     core.serviceStatus = ServiceStatusEnum.error;
@@ -48,19 +48,21 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     rpcClient.getPeerInfo(),
   ]);
 
-  const {AssetName: syncAsset} = mnsyncStatus.result;
-  core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset)
+  const { AssetName: syncAsset } = mnsyncStatus.result;
+  core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset);
 
-  const {chain, difficulty, blocks, headers, verificationprogress} = blockchainInfo.result;
+  const {
+    chain, difficulty, blocks, headers, verificationprogress,
+  } = blockchainInfo.result;
 
-  core.chain = chain
-  core.difficulty = difficulty
+  core.chain = chain;
+  core.difficulty = difficulty;
   core.blockHeight = blocks;
   core.headerHeight = headers;
   core.verificationProgress = verificationprogress;
   core.peersCount = peerInfo.result.length;
 
-  const {subversion} = networkInfo.result;
+  const { subversion } = networkInfo.result;
   core.version = extractCoreVersion(subversion);
 
   const providersResult = await Promise.allSettled([
@@ -70,11 +72,11 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
   ]);
 
   const [latestVersion, p2pPortState, insightStatus] = providersResult
-    .map(result => result.status === 'fulfilled' ? result.value : null)
+    .map((result) => (result.status === 'fulfilled' ? result.value : null));
 
-  core.latestVersion = latestVersion
-  core.p2pPortState = p2pPortState
-  core.remoteBlockHeight = insightStatus ? insightStatus.info.blocks : null
+  core.latestVersion = latestVersion;
+  core.p2pPortState = p2pPortState;
+  core.remoteBlockHeight = insightStatus ? insightStatus.info.blocks : null;
 
-  return core
+  return core;
 };

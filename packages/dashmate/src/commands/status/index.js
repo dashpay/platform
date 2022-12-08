@@ -94,7 +94,7 @@ class StatusCommand extends ConfigBaseCommand {
       return printObject(plain, flags.format);
     }
 
-    printObject(scope, flags.format);
+    return printObject(scope, flags.format);
   }
 }
 

@@ -24,7 +24,8 @@ function scheduleRenewZeroSslCertificateFactory(
     );
 
     if (!certificate) {
-      console.info('No ZeroSSL certificate found.');
+      // eslint-disable-next-line no-console
+      console.log('No ZeroSSL certificate found.');
 
       return;
     }

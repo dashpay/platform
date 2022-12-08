@@ -24,9 +24,12 @@ describe('determineStatus', () => {
   });
 
   it('should return syncing', async () => {
-    const syncing = determineStatus.core(DockerStatusEnum.running, MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
-    const up = determineStatus.core(DockerStatusEnum.running, MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED);
-    const error = determineStatus.core(DockerStatusEnum.restarting, MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
+    const syncing = determineStatus.core(DockerStatusEnum.running,
+      MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
+    const up = determineStatus.core(DockerStatusEnum.running,
+      MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED);
+    const error = determineStatus.core(DockerStatusEnum.restarting,
+      MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
 
     expect(syncing).to.be.equal(ServiceStatusEnum.syncing);
     expect(up).to.be.equal(ServiceStatusEnum.up);

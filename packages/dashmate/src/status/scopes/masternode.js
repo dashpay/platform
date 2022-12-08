@@ -3,22 +3,22 @@ const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
 
-module.exports = async (dockerCompose,createRpcClient) => async (config) => {
+module.exports = async (dockerCompose, createRpcClient) => async (config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
     pass: config.get('core.rpc.password'),
-  })
+  });
 
-  const mnsyncStatus = await rpcClient.mnsync('status')
-  const {AssetName: syncAsset} = mnsyncStatus.result;
+  const mnsyncStatus = await rpcClient.mnsync('status');
+  const { AssetName: syncAsset } = mnsyncStatus.result;
 
   const masternode = {
     proTxHash: null,
     state: null,
     sentinel: {
       state: null,
-      version: null
+      version: null,
     },
     nodeState: {
       dmnState: null,
@@ -27,46 +27,49 @@ module.exports = async (dockerCompose,createRpcClient) => async (config) => {
       lastPaidTime: null,
       paymentQueuePosition: null,
       nextPaymentTime: null,
-    }
-  }
+    },
+  };
 
   // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
   try {
     const sentinelStateResponse = await dockerCompose
-      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
+      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py');
     const sentinelVersionResponse = await dockerCompose
-      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
+      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v');
 
-    masternode.sentinel.state = sentinelStateResponse.out.split(/\r?\n/)[0]
-    masternode.sentinel.version = sentinelVersionResponse.out.replace(/Dash Sentinel v/, '')
+    const [state] = sentinelStateResponse.out.split(/\r?\n/);
+
+    masternode.sentinel.state = state;
+    masternode.sentinel.version = sentinelVersionResponse.out.replace(/Dash Sentinel v/, '');
+    // eslint-disable-next-line no-empty
   } catch (e) {
   }
 
-
   if (syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
-    const [blockchainInfo, masternodeCount, masternodeStatus] =
-      await Promise.all([
-        rpcClient.getBlockchainInfo(),
-        rpcClient.masternode('count'),
-        rpcClient.masternode('status'),
-      ])
+    const [blockchainInfo, masternodeCount, masternodeStatus] = await Promise.all([
+      rpcClient.getBlockchainInfo(),
+      rpcClient.masternode('count'),
+      rpcClient.masternode('status'),
+    ]);
 
-    const {blocks: coreBlocks} = blockchainInfo.result;
-    const {dmnState, state, status, proTxHash} = masternodeStatus.result;
+    const { blocks: coreBlocks } = blockchainInfo.result;
+    const {
+      dmnState, state, status, proTxHash,
+    } = masternodeStatus.result;
 
     const countInfo = masternodeCount.result;
-    const {enabled} = countInfo;
+    const { enabled } = countInfo;
 
-    masternode.sentinel = proTxHash
-    masternode.proTxHash = proTxHash
-    masternode.status = status
-    masternode.state = state
+    masternode.sentinel = proTxHash;
+    masternode.proTxHash = proTxHash;
+    masternode.status = status;
+    masternode.state = state;
 
     if (masternodeStatus === MasternodeStateEnum.READY) {
       const position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
 
       const poSePenalty = dmnState.PoSePenalty;
-      const {lastPaidHeight} = dmnState;
+      const { lastPaidHeight } = dmnState;
       const lastPaidTime = blocksToTime(coreBlocks - dmnState.lastPaidHeight);
       const paymentQueuePosition = position / enabled;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;

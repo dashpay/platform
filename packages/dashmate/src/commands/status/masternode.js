@@ -15,6 +15,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {createRpcClient} createRpcClient
    * @param {Config} config
+   * @param statusProvider statusProvider
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -62,7 +63,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       return printObject(plain, flags.format);
     }
 
-    printObject(scope, flags.format);
+    return printObject(scope, flags.format);
   }
 }
 

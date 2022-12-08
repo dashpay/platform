@@ -1,6 +1,6 @@
-const DockerStatusEnum = require("../enums/dockerStatus");
-const ServiceStatusEnum = require("../enums/serviceStatus");
-const MasternodeSyncAssetEnum = require("../enums/masternodeSyncAsset");
+const DockerStatusEnum = require('../enums/dockerStatus');
+const ServiceStatusEnum = require('../enums/serviceStatus');
+const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
 
 module.exports = {
   /**
@@ -11,13 +11,9 @@ module.exports = {
    * @return {DockerStatusEnum}
    */
   docker: async (dockerCompose, config, serviceName) => {
-    try {
-      const containerInfo = await dockerCompose.inspectService(config.toEnvs(), serviceName);
+    const containerInfo = await dockerCompose.inspectService(config.toEnvs(), serviceName);
 
-      return containerInfo.State.Status;
-    } catch (e) {
-      throw e;
-    }
+    return containerInfo.State.Status;
   },
   /**
    * Determine ServiceStatus based on DockerStatusEnum and MasternodeSyncAssetEnum
@@ -28,13 +24,11 @@ module.exports = {
   core: (dockerStatus, syncAsset) => {
     if (dockerStatus === DockerStatusEnum.running) {
       if (syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
-        return ServiceStatusEnum.up
-      } else {
-        return ServiceStatusEnum.syncing
+        return ServiceStatusEnum.up;
       }
-    } else {
-      return ServiceStatusEnum.error
+      return ServiceStatusEnum.syncing;
     }
+    return ServiceStatusEnum.error;
   },
   /**
    * Determine ServiceStatus based on DockerStatusEnum and MasternodeSyncAssetEnum
@@ -45,12 +39,10 @@ module.exports = {
   platform: (dockerStatus, coreIsSynced) => {
     if (dockerStatus === DockerStatusEnum.running) {
       if (coreIsSynced) {
-        return ServiceStatusEnum.up
-      } else {
-        return ServiceStatusEnum.wait_for_core
+        return ServiceStatusEnum.up;
       }
-    } else {
-      return ServiceStatusEnum.error
+      return ServiceStatusEnum.wait_for_core;
     }
-  }
+    return ServiceStatusEnum.error;
+  },
 };

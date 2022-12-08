@@ -1,43 +1,47 @@
-const statusProviderFactory = require('../../src/status/statusProviderFactory')
-const sinon = require('sinon')
-const mockMNSync = require('./mocks/mnSyncMock.json')
-const mockGetNetworkInfo = require('./mocks/mockGetNetworkInfo.json')
-const mockGetBlockchainInfo = require('./mocks/mockGetBlockchainInfo.json')
+const sinon = require('sinon');
+const statusProviderFactory = require('../../src/status/statusProviderFactory');
+const mockMNSync = require('./mocks/mnSyncMock.json');
+const mockGetNetworkInfo = require('./mocks/mockGetNetworkInfo.json');
+const mockGetBlockchainInfo = require('./mocks/mockGetBlockchainInfo.json');
 
 describe.only('statusProvider integration test', () => {
-  let statusProvider
+  let statusProvider;
 
-  let dockerComposeMock
-  let mockRpcClient
-  let mockConfig
+  let dockerComposeMock;
+  let mockRpcClient;
+  let mockConfig;
 
   beforeEach(async function it() {
     dockerComposeMock = {
       isServiceRunning: sinon.stub(),
-      docker: {getContainer: sinon.stub()},
-      inspectService: sinon.stub()
-    }
-    mockRpcClient = {mnsync: sinon.stub(), getNetworkInfo: sinon.stub(), getBlockchainInfo: sinon.stub()}
-    mockConfig = {get: this.sinon.stub(), toEnvs: this.sinon.stub()}
+      docker: { getContainer: sinon.stub() },
+      inspectService: sinon.stub(),
+    };
+    mockRpcClient = {
+      mnsync: sinon.stub(),
+      getNetworkInfo: sinon.stub(),
+      getBlockchainInfo: sinon.stub(),
+    };
+    mockConfig = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
 
-    statusProvider = statusProviderFactory(dockerComposeMock, () => mockRpcClient)
+    statusProvider = statusProviderFactory(dockerComposeMock, () => mockRpcClient);
   });
 
-  it('should basically work', async function it() {
-    mockConfig.get.withArgs('network').returns('testnet')
-    mockConfig.get.withArgs('core.masternode.enable').returns(false)
-    mockConfig.get.withArgs('platform.drive.tenderdash.rpc.port').returns(8080)
+  it('should basically work', async () => {
+    mockConfig.get.withArgs('network').returns('testnet');
+    mockConfig.get.withArgs('core.masternode.enable').returns(false);
+    mockConfig.get.withArgs('platform.drive.tenderdash.rpc.port').returns(8080);
 
-    const mockCoreStatus = {State: {Status: "running"}}
+    const mockCoreStatus = { State: { Status: 'running' } };
 
-    dockerComposeMock.inspectService.resolves(mockCoreStatus)
+    dockerComposeMock.inspectService.resolves(mockCoreStatus);
 
-    mockRpcClient.mnsync.resolves({result: mockMNSync})
-    mockRpcClient.getBlockchainInfo.resolves({result: mockGetBlockchainInfo})
-    mockRpcClient.getNetworkInfo.resolves({result: mockGetNetworkInfo})
+    mockRpcClient.mnsync.resolves({ result: mockMNSync });
+    mockRpcClient.getBlockchainInfo.resolves({ result: mockGetBlockchainInfo });
+    mockRpcClient.getNetworkInfo.resolves({ result: mockGetNetworkInfo });
 
-    const scope = await statusProvider.getOverviewScope(mockConfig)
+    const scope = await statusProvider.getOverviewScope(mockConfig);
 
-    expect(scope).to.exist()
+    expect(scope).to.exist();
   });
 });

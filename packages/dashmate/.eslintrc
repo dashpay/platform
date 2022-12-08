@@ -1,5 +1,13 @@
 {
   "extends": "airbnb-base",
+  "env": {
+    "commonjs": true,
+    "node": true,
+    "mocha": true
+  },
+  "globals": {
+    "expect": true
+  },
   "rules": {
     "no-plusplus": 0,
     "eol-last": [

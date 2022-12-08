@@ -1,12 +1,13 @@
 const extractCoreVersion = require('../../util/extractCoreVersion');
 const determineStatus = require('../determineStatus');
 
-module.exports = (dockerCompose, createRpcClient) => async (config, getPlatformScope, getMasternodeScope) => {
+module.exports = (dockerCompose, createRpcClient) => async (config,
+  getPlatformScope, getMasternodeScope) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
     pass: config.get('core.rpc.password'),
-  })
+  });
 
   const [mnSync, blockchainInfo, networkInfo, dockerStatus] = await Promise.all([
     rpcClient.mnsync('status'),
@@ -15,8 +16,8 @@ module.exports = (dockerCompose, createRpcClient) => async (config, getPlatformS
     determineStatus.docker(dockerCompose, config, 'core'),
   ]);
 
-  const {AssetName: syncAsset} = mnSync.result;
-  const serviceStatus = determineStatus.core(dockerStatus, syncAsset)
+  const { AssetName: syncAsset } = mnSync.result;
+  const serviceStatus = determineStatus.core(dockerStatus, syncAsset);
 
   const network = config.get('network');
   const masternodeEnabled = config.get('core.masternode.enable');
@@ -26,7 +27,7 @@ module.exports = (dockerCompose, createRpcClient) => async (config, getPlatformS
   const blockHeight = blockchainInfo.result.blocks;
   const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4);
 
-  const {subversion} = networkInfo.result;
+  const { subversion } = networkInfo.result;
   const version = extractCoreVersion(subversion);
 
   const core = {
@@ -51,7 +52,7 @@ module.exports = (dockerCompose, createRpcClient) => async (config, getPlatformS
 
   const platform = {
     enabled: platformEnabled,
-    tenderdash: null
+    tenderdash: null,
   };
 
   if (masternodeEnabled) {
@@ -61,7 +62,7 @@ module.exports = (dockerCompose, createRpcClient) => async (config, getPlatformS
   }
 
   if (platformEnabled) {
-    const {tenderdash} = await getPlatformScope(config);
+    const { tenderdash } = await getPlatformScope(config);
 
     platform.tenderdash = tenderdash;
   }
