@@ -50,7 +50,9 @@ use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
 };
-use crate::drive::document::{contract_document_type_path, contract_documents_primary_key_path};
+use crate::drive::document::{
+    contract_document_type_path, contract_documents_primary_key_path, document_reference_size,
+};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
@@ -398,13 +400,16 @@ impl Drive {
                     .collect::<Vec<KeyInfo>>(),
             );
 
+            let reference_size =
+                document_reference_size(document_type, StorageFlags::approximate_size(true, None));
+
             // unique indexes will be stored under key "0"
             // non unique indices should have a tree at key "0" that has all elements based off of primary key
             if !index.unique {
                 key_info_path.push(KnownKey(vec![0]));
 
                 let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                    1,
+                    reference_size,
                     &key_info_path,
                     estimated_costs_only_with_layer_info,
                 )?;
@@ -420,7 +425,7 @@ impl Drive {
                 )?;
             } else {
                 let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                    1,
+                    reference_size,
                     &key_info_path,
                     estimated_costs_only_with_layer_info,
                 )?;

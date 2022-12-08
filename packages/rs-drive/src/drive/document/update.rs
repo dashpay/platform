@@ -45,7 +45,7 @@ use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, OPTIMIZED_DOCUMENT_
 use crate::drive::document::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path, make_document_reference,
+    contract_documents_primary_key_path, document_reference_size, make_document_reference,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
@@ -538,11 +538,16 @@ impl Drive {
                             .collect::<Vec<KeyInfo>>(),
                     );
 
+                    let reference_size = document_reference_size(
+                        document_type,
+                        StorageFlags::approximate_size(true, None),
+                    );
+
                     if !index.unique {
                         key_info_path.push(KnownKey(vec![0]));
 
                         let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                            1,
+                            reference_size,
                             &key_info_path,
                             estimated_costs_only_with_layer_info,
                         )?;
@@ -558,7 +563,7 @@ impl Drive {
                         )?;
                     } else {
                         let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                            1,
+                            reference_size,
                             &key_info_path,
                             estimated_costs_only_with_layer_info,
                         )?;
@@ -1367,7 +1372,7 @@ mod tests {
             //Explanation for 1350
 
             //todo
-            1314
+            1278
         } else {
             //Explanation for 1049
 
@@ -1607,7 +1612,7 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let expected_added_bytes = if using_history { 1314 } else { 1006 };
+        let expected_added_bytes = if using_history { 1278 } else { 1006 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1774,7 +1779,7 @@ mod tests {
             //Explanation for 1350
 
             //todo
-            1314
+            1278
         } else {
             //Explanation for 1049
 
@@ -1916,7 +1921,7 @@ mod tests {
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        let expected_added_bytes = if using_history { 1315 } else { 1007 };
+        let expected_added_bytes = if using_history { 1279 } else { 1007 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 

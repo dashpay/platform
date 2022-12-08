@@ -170,6 +170,31 @@ fn make_document_reference(
     )
 }
 
+/// size of a document reference.
+fn document_reference_size(document_type: &DocumentType, storage_flags_size: u32) -> u32 {
+    // we need to construct the reference from the split height of the contract document
+    // type which is at 4
+    // 0 represents document storage
+    // Then we add document id
+    // Then we add 0 if the document type keys history
+    // vec![vec![0], Vec::from(document.id)];
+    // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
+    let mut reference_path_size = 36;
+    if document_type.documents_keep_history {
+        reference_path_size += 2;
+    }
+
+    // 1 for type reference
+    // 1 for reference type
+    // 1 for root height offset
+    // reference path size
+    // 1 reference_hops options
+    // 1 reference_hops count
+    // 1 element flags option
+    // storage flags size
+    6 + reference_path_size + storage_flags_size
+}
+
 /// Tests module
 #[cfg(test)]
 pub(crate) mod tests {
