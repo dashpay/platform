@@ -80,7 +80,7 @@ describe('getRandomQuorumFactory', () => {
     };
 
     coreRpcClientMock = {
-      quorum: this.sinon.stub().resolves(quorumListExtended),
+      quorum: this.sinon.stub().resolves({ result: quorumListExtended }),
     };
 
     getRandomQuorum = getRandomQuorumFactory(coreRpcClientMock);
