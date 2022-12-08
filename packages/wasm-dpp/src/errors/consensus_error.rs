@@ -1,5 +1,6 @@
 use crate::errors::consensus::basic::{
-    IncompatibleProtocolVersionErrorWasm, UnsupportedProtocolVersionErrorWasm,
+    IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
+    UnsupportedProtocolVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
@@ -431,7 +432,10 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidDocumentTransitionIdError { .. } => "Not implemented".into(),
         BasicError::DuplicateDocumentTransitionsWithIdsError { .. } => "Not implemented".into(),
         BasicError::MissingDataContractIdError => "Not implemented".into(),
-        BasicError::InvalidIdentifierError { .. } => "Not implemented".into(),
+        BasicError::InvalidIdentifierError {
+            identifier_name,
+            error,
+        } => InvalidIdentifierErrorWasm::new(identifier_name.clone(), error.clone(), code).into(),
         BasicError::DataContractUniqueIndicesChangedError {
             document_type,
             index_name,

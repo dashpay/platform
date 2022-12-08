@@ -2,6 +2,7 @@ pub mod data_contract;
 pub mod document;
 pub mod identity;
 mod incompatible_protocol_version_error;
+mod invalid_identifier_error;
 mod invalid_signature_public_key_security_level_error;
 mod invalid_state_transition_signature_error;
 mod json_schema_compilation_error;
@@ -13,6 +14,7 @@ mod unsupported_protocol_version_error;
 mod wrong_public_key_purpose_error;
 
 pub use incompatible_protocol_version_error::*;
+pub use invalid_identifier_error::*;
 pub use invalid_signature_public_key_security_level_error::*;
 pub use invalid_state_transition_signature_error::*;
 pub use json_schema_compilation_error::*;
