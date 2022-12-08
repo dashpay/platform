@@ -1,7 +1,6 @@
 use crate::buffer::Buffer;
 use crate::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
 
-
 use dpp::identifier::Identifier;
 use dpp::prelude::DocumentTransition;
 use wasm_bindgen::prelude::*;
@@ -11,7 +10,7 @@ pub struct DataTriggerExecutionErrorWasm {
     data_contract_id: Identifier,
     document_transition_id: Identifier,
     message: String,
-    execution_error: wasm_bindgen::JsError,
+    execution_error: JsError,
     document_transition: Option<DocumentTransition>,
     owner_id: Option<Identifier>,
     code: u32,

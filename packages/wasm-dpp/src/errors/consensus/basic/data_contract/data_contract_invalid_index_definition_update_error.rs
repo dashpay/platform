@@ -1,5 +1,3 @@
-
-
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractInvalidIndexDefinitionUpdateError)]

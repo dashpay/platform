@@ -1,5 +1,6 @@
 use dpp::consensus::basic::identity::InvalidIdentityAssetLockTransactionError;
 
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -50,7 +51,10 @@ impl InvalidIdentityAssetLockTransactionErrorWasm {
 
     // TODO: finish implementing getCode
     #[wasm_bindgen(js_name=getCode)]
-    pub fn code(&self) -> u32 {
-        unimplemented!()
+    pub fn get_code(&self) -> u32 {
+        ConsensusError::InvalidIdentityAssetLockTransactionError(
+            InvalidIdentityAssetLockTransactionError::new(""),
+        )
+        .code()
     }
 }

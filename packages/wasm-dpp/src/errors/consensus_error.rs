@@ -153,6 +153,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IdentityAlreadyExistsError(e) => {
             IdentityAlreadyExistsErrorWasm::from(e).into()
         }
+        // TODO: implement those
         // DPPConsensusError::TestConsensusError(_) => {}
         // DPPConsensusError::SerializedObjectParsingError { .. } => {}
         // DPPConsensusError::ProtocolVersionParsingError { .. } => {}
@@ -160,15 +161,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         // DPPConsensusError::FeeError(e) => {
         //
         // }
-        DPPConsensusError::SignatureError(e) => {
-            from_signature_error(e);
-            "Not implemented".into()
-        }
+        DPPConsensusError::SignatureError(e) => from_signature_error(e),
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
-        DPPConsensusError::BasicError(basic_error) => {
-            from_basic_error(basic_error);
-            "Not implemented".into()
-        }
+        DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
         // TODO: remove
         _ => e.to_string().into(),
     }
@@ -301,10 +296,13 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                     code,
                 )
                 .into(),
+                // TODO: implement this one
                 // DataTriggerError::DataTriggerInvalidResultError { .. } => {}
+                // TODO: remove when all if the above is implemented
                 _ => "Not implemented".into(),
             }
         }
+        // TODO: remove when all of the above is implemented
         _ => "Not implemented".into(),
     }
 }
