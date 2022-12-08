@@ -1,5 +1,4 @@
 use crate::buffer::Buffer;
-use dpp::prelude::Identifier;
 use std::iter::FromIterator;
 use wasm_bindgen::prelude::*;
 

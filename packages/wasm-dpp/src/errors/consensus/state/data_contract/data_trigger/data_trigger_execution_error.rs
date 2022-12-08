@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
 use crate::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
 
-use dpp::dashcore::anyhow;
+
 use dpp::identifier::Identifier;
 use dpp::prelude::DocumentTransition;
 use wasm_bindgen::prelude::*;
@@ -22,6 +22,11 @@ impl DataTriggerExecutionErrorWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> Buffer {
         Buffer::from_bytes(self.data_contract_id.as_bytes())
+    }
+
+    #[wasm_bindgen(js_name=getExecutionError)]
+    pub fn data_execution_error(&self) -> JsError {
+        self.execution_error.clone()
     }
 
     #[wasm_bindgen(js_name=getDocumentTransitionId)]

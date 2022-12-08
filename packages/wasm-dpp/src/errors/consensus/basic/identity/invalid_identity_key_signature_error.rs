@@ -1,4 +1,4 @@
-use crate::buffer::Buffer;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityKeySignatureError)]

@@ -8,6 +8,12 @@ pub struct TransactionDecodeError {
     message: Option<String>,
 }
 
+impl TransactionDecodeError {
+    pub fn get_message(&self) -> &Option<String> {
+        &self.message
+    }
+}
+
 #[wasm_bindgen(js_name=InvalidIdentityAssetLockTransactionError)]
 pub struct InvalidIdentityAssetLockTransactionErrorWasm {
     validation_error: TransactionDecodeError,
@@ -35,6 +41,11 @@ impl InvalidIdentityAssetLockTransactionErrorWasm {
     pub fn validation_error(&self) -> JsValue {
         let kek = self.validation_error.clone();
         kek.into()
+    }
+
+    #[wasm_bindgen(js_name=getMessage)]
+    pub fn get_message(&self) -> String {
+        self.message.clone()
     }
 
     // TODO: finish implementing getCode

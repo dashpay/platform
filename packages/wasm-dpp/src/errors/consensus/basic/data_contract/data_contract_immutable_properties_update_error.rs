@@ -1,5 +1,5 @@
-use crate::buffer::Buffer;
-use dpp::prelude::Identifier;
+
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractImmutablePropertiesUpdateError)]
