@@ -49,6 +49,7 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 use dpp::errors::DataTriggerError;
+use crate::errors::consensus::signature::IdentityNotFoundErrorWasm;
 
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
@@ -63,7 +64,7 @@ use super::consensus::basic::document::{
     MissingDocumentTypeErrorWasm,
 };
 use super::consensus::basic::identity::{
-    IdentityNotFoundErrorWasm, InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
+    InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
 };
 use super::consensus::basic::{
     InvalidSignaturePublicKeySecurityLevelErrorWasm, InvalidStateTransitionSignatureErrorWasm,
@@ -432,7 +433,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             "Not implemented".into()
         }
         BasicError::DataContractHaveNewUniqueIndexError { .. } => "Not implemented".into(),
-        BasicError::IdentityNotFoundError { .. } => "Not implemented".into(),
+        BasicError::IdentityNotFoundError { identity_id } => {
+            IdentityNotFoundErrorWasm::new(identity_id.clone(), code).into()
+        },
         BasicError::MissingStateTransitionTypeError => {
             MissingStateTransitionTypeErrorWasm::new(code).into()
         },
