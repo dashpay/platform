@@ -7,23 +7,26 @@ const {
  *
  * @param {AbstractOperation[]} operations
  *
- * @returns {{ storageFee: number, processingFee: number }}
+ * @returns {{storageFee: number, processingFee: number}}
  */
 function calculateOperationFees(operations) {
-  const fees = {
-    storageFee: 0,
-    processingFee: 0,
-  };
+  let storageFee = 0;
+  let processingFee = 0;
 
   operations.forEach((operation) => {
-    fees.storageFee += operation.getProcessingCost();
-    fees.processingFee += operation.getStorageCost();
+    storageFee += operation.getStorageCost();
+    processingFee += operation.getProcessingCost();
   });
 
-  fees.storageFee *= FEE_MULTIPLIER;
-  fees.processingFee *= FEE_MULTIPLIER;
+  // TODO: Do we need to multiply pre calculated fees?
 
-  return fees;
+  storageFee *= FEE_MULTIPLIER;
+  processingFee *= FEE_MULTIPLIER;
+
+  return {
+    storageFee,
+    processingFee,
+  };
 }
 
 module.exports = calculateOperationFees;

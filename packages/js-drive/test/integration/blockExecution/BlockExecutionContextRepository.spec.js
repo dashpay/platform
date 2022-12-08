@@ -58,6 +58,7 @@ describe('BlockExecutionContextRepository', () => {
 
     expect(rawBlockExecutionContext).to.deep.equal(blockExecutionContext.toObject({
       skipConsensusLogger: true,
+      skipPrepareProposalResult: true,
     }));
   });
 
@@ -76,8 +77,10 @@ describe('BlockExecutionContextRepository', () => {
 
     expect(fetchedBlockExecutionContext.toObject({
       skipConsensusLogger: true,
+      skipPrepareProposalResult: true,
     })).to.deep.equal(blockExecutionContext.toObject({
       skipConsensusLogger: true,
+      skipPrepareProposalResult: true,
     }));
   });
 
@@ -100,8 +103,10 @@ describe('BlockExecutionContextRepository', () => {
 
     expect(fetchedBlockExecutionContext.toObject({
       skipConsensusLogger: true,
+      skipPrepareProposalResult: true,
     })).to.deep.equal(blockExecutionContext.toObject({
       skipConsensusLogger: true,
+      skipPrepareProposalResult: true,
     }));
   });
 });

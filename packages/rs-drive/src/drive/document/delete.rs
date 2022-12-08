@@ -1405,7 +1405,7 @@ mod tests {
             .expect("expected to be able to delete the document");
 
         let removed_bytes = fee_result
-            .removed_bytes_from_identities
+            .removed_bytes_from_epochs_by_identities
             .get(&random_owner_id)
             .unwrap()
             .get(0)
@@ -1476,7 +1476,10 @@ mod tests {
             )
             .expect("expected to be able to delete the document");
 
-        assert!(fee_result.removed_bytes_from_identities.0.is_empty());
+        assert!(fee_result
+            .removed_bytes_from_epochs_by_identities
+            .0
+            .is_empty());
         assert_eq!(fee_result.storage_fee, 0);
         assert_eq!(fee_result.processing_fee, 144746400);
     }
