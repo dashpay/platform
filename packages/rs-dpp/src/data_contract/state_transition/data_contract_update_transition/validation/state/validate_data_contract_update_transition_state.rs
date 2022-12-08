@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -53,7 +55,10 @@ pub async fn validate_data_contract_update_transition_state(
             &state_transition.data_contract.id,
             state_transition.get_execution_context(),
         )
-        .await?;
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     if state_transition.execution_context.is_dry_run() {
         return Ok(result);
@@ -105,7 +110,7 @@ mod test {
         let mut mock_state_repository = MockStateRepositoryLike::new();
 
         mock_state_repository
-            .expect_fetch_data_contract::<DataContract>()
+            .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
         state_transition.get_execution_context().enable_dry_run();
 

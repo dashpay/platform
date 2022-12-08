@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use dashcore::BlockHeader;
 use futures::future::join_all;
 use itertools::Itertools;
@@ -80,6 +82,9 @@ pub async fn validate_document_transitions(
     let data_contract = state_repository
         .fetch_data_contract(data_contract_id, &tmp_execution_context)
         .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?
         .ok_or_else(|| ProtocolError::DataContractNotPresentError {
             data_contract_id: data_contract_id.clone(),
         })?;

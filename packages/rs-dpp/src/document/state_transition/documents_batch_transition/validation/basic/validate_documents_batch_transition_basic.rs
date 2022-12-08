@@ -1,6 +1,6 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
 };
 
 use crate::{
@@ -121,7 +121,10 @@ pub async fn validate_documents_batch_transition_basic(
     for (data_contract_id, transitions) in document_transitions_by_contracts {
         let maybe_data_contract = state_repository
             .fetch_data_contract(&data_contract_id, execution_context)
-            .await?;
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
 
         if execution_context.is_dry_run() {
             return Ok(result);

@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
@@ -90,10 +90,14 @@ async fn fetch_data_contracts_for_document_transition(
         })?;
 
         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
-        let data_contract = state_repository
+        let data_contract: DataContract = state_repository
             .fetch_data_contract(&data_contract_id, execution_context)
             .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?
             .ok_or_else(|| ProtocolError::DataContractNotPresentError { data_contract_id })?;
+
         data_contracts.push(data_contract);
     }
 

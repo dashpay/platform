@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::anyhow;
 use anyhow::Context;
 use json_patch::PatchOperation;
@@ -98,6 +100,9 @@ where
             .state_repository
             .fetch_data_contract(&data_contract_id, execution_context)
             .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?
         {
             Some(data_contract) => data_contract,
             None => {

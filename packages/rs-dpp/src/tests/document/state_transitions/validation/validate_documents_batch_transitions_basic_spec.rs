@@ -592,7 +592,7 @@ async fn data_contract_should_exist_in_the_state() {
     } = setup_test(Action::Create);
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
+        .expect_fetch_data_contract()
         .returning(|_, _| Ok(None));
 
     let result = validate_documents_batch_transition_basic(
@@ -944,7 +944,7 @@ async fn should_not_validate_document_transitions_on_dry_run() {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
+        .expect_fetch_data_contract()
         .return_once(|_, _| Ok(None));
 
     let result = validate_documents_batch_transition_basic(

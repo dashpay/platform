@@ -1,7 +1,16 @@
+use std::convert::TryInto;
+
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{ProtocolError, data_contract::{DataContract, state_transition::DataContractCreateTransition}, errors::StateError, state_repository::StateRepositoryLike, state_transition::StateTransitionLike, validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult}};
+use crate::{
+    data_contract::{state_transition::DataContractCreateTransition, DataContract},
+    errors::StateError,
+    state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
+    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
+    ProtocolError,
+};
 
 pub struct DataContractCreateTransitionStateValidator<SR>
 where
@@ -49,7 +58,10 @@ pub async fn validate_data_contract_create_transition_state(
             &state_transition.data_contract.id,
             state_transition.get_execution_context(),
         )
-        .await?;
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     if state_transition.get_execution_context().is_dry_run() {
         return Ok(result);
@@ -83,7 +95,7 @@ mod test {
         };
 
         state_repository_mock
-            .expect_fetch_data_contract::<DataContract>()
+            .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
         state_transition.execution_context.enable_dry_run();
 
