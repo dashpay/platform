@@ -28,6 +28,12 @@ impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
     }
 }
 
+impl From<ChainAssetLockProofWasm> for ChainAssetLockProof {
+    fn from(v: ChainAssetLockProofWasm) -> Self {
+        v.0
+    }
+}
+
 #[wasm_bindgen(js_class = ChainAssetLockProof)]
 impl ChainAssetLockProofWasm {
     #[wasm_bindgen(constructor)]

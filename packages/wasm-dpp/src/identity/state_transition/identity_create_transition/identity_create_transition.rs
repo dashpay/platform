@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::identifier::IdentifierWrapper;
+use crate::state_transition::AssetLockProofWasm;
 use crate::{
     errors::RustConversionError,
     identity::{
@@ -57,6 +59,23 @@ impl IdentityCreateTransitionWasm {
             .collect()
     }
 
+    #[wasm_bindgen(js_name=setAssetLockProof)]
+    pub fn set_asset_lock_proof(&mut self, asset_lock_proof: JsValue) -> Result<(), JsValue> {
+        let asset_lock_proof = AssetLockProofWasm::new(asset_lock_proof)?;
+
+        self.0
+            .set_asset_lock_proof(asset_lock_proof.into())
+            .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(js_name=assetLockProof)]
+    pub fn asset_lock_proof(&self) -> JsValue {
+        self.get_asset_lock_proof()
+    }
+
     #[wasm_bindgen(js_name=getAssetLockProof)]
     pub fn get_asset_lock_proof(&self) -> JsValue {
         let asset_lock_proof = self.0.get_asset_lock_proof().to_owned();
@@ -68,5 +87,16 @@ impl IdentityCreateTransitionWasm {
                 ChainAssetLockProofWasm::from(chain_asset_lock_proof).into()
             }
         }
+    }
+
+    #[wasm_bindgen(js_name=getType)]
+    pub fn get_type(&self) -> u8 {
+        IdentityCreateTransition::get_type() as u8
+    }
+
+    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(js_name=identityId)]
+    pub fn identity_id(&self) -> IdentifierWrapper {
+        self.0.get_identity_id().clone().into()
     }
 }

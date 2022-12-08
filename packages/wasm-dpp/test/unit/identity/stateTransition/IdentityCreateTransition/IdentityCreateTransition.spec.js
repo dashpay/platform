@@ -40,37 +40,37 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe.skip('#getType', () => {
+  describe('#getType', () => {
     it('should return IDENTITY_CREATE type', () => {
-      expect(stateTransition.getType()).to.equal(stateTransitionTypes.IDENTITY_CREATE);
+      expect(stateTransition.getType()).to.equal(stateTransitionJS.getType());
     });
   });
 
-  describe.skip('#setAssetLockProof', () => {
+  describe('#setAssetLockProof', () => {
     it('should set asset lock proof', () => {
       stateTransition.setAssetLockProof(
-        new InstantAssetLockProof(rawStateTransition.assetLockProof),
+        stateTransitionJS.assetLockProof.toObject(),
       );
 
       expect(stateTransition.assetLockProof.toObject())
-        .to.deep.equal(rawStateTransition.assetLockProof);
+        .to.deep.equal(stateTransitionJS.assetLockProof.toObject());
     });
 
     it('should set `identityId`', () => {
       stateTransition.setAssetLockProof(
-        new InstantAssetLockProof(rawStateTransition.assetLockProof),
+        stateTransitionJS.assetLockProof.toObject(),
       );
 
-      expect(stateTransition.identityId).to.deep.equal(
-        stateTransition.getAssetLockProof().createIdentifier(),
+      expect(stateTransition.identityId.toBuffer()).to.deep.equal(
+        stateTransition.getAssetLockProof().createIdentifier().toBuffer(),
       );
     });
   });
 
-  describe.skip('#getAssetLockProof', () => {
+  describe('#getAssetLockProof', () => {
     it('should return currently set locked OutPoint', () => {
       expect(stateTransition.getAssetLockProof().toObject()).to.deep.equal(
-        rawStateTransition.assetLockProof,
+        stateTransitionJS.assetLockProof.toObject(),
       );
     });
   });
