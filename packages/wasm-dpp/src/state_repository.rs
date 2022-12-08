@@ -1,6 +1,6 @@
 //! Bindings for state repository -like objects coming from JS.
 
-use std::{convert::TryFrom, pin::Pin, sync::Mutex};
+use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
 use dpp::{
@@ -51,14 +51,14 @@ impl ExternalStateRepositoryLikeWrapper {
 
 #[async_trait]
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
-    async fn fetch_data_contract<T>(
+    type ConversionError = Infallible;
+    type FetchDataContract = DataContractWasm;
+
+    async fn fetch_data_contract(
         &self,
         data_contract_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Option<T>>
-    where
-        DataContract: TryFrom<T>,
-    {
+    ) -> anyhow::Result<Option<Self::FetchDataContract>> {
         Ok(self
             .0
             .lock()

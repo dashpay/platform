@@ -80,17 +80,11 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
 
   it('should return valid result', async () => {
     const result = await factory(stateTransition);
-    console.log(result);
 
     expect(dataContractFetched).to.be.true();
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
-
-    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
-      dataContract.getId(),
-      executionContext,
-    );
   });
 
   // it('should return valid result on dry run', async () => {
