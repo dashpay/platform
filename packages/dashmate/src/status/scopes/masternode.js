@@ -1,4 +1,4 @@
-const getPaymentQueuePosition = require('../../util/getPaymentQueueposition');
+const getPaymentQueuePosition = require('../../util/getPaymentQueuePosition');
 const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
