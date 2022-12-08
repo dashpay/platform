@@ -32,16 +32,16 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
-use dpp::data_contract::DataContract;
-use grovedb::batch::key_info::KeyInfo;
+
+
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use grovedb::Error::MerkError;
+
 use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use intmap::IntMap;
-use itertools::Itertools;
+
+
 use std::collections::HashMap;
 
 use crate::contract::document::Document;
@@ -52,16 +52,16 @@ use crate::drive::defaults::{
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
 };
 use crate::drive::document::{
-    contract_document_type_path, contract_document_type_path_vec,
+    contract_document_type_path_vec,
     contract_documents_primary_key_path, document_reference_size, unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
-use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathInfo};
+use crate::drive::object_size_info::DriveKeyInfo::{KeyRef};
+
+use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
@@ -267,7 +267,7 @@ impl Drive {
     fn remove_reference_for_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        mut index_path_info: PathInfo<0>,
+        index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,

@@ -1,15 +1,15 @@
 use crate::drive::contract::{
-    all_contracts_global_root_path, contract_keeping_history_storage_path, contract_root_path,
+    all_contracts_global_root_path, contract_root_path,
 };
 use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8,
-    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+    DEFAULT_HASH_SIZE_U8,
+    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
 };
 
-use crate::drive::document::contract_document_type_path;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
-use bincode::Options;
+
 use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
@@ -17,8 +17,8 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerInformation::{
     ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements,
 };
-use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
-use serde::Serialize;
+use grovedb::EstimatedLayerSizes::{AllSubtrees};
+
 use std::collections::HashMap;
 
 impl Drive {

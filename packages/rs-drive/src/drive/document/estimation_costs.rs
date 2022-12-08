@@ -1,30 +1,29 @@
-use crate::contract::Contract;
+
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
-    CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE,
-    DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE,
+    CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8,
+    DEFAULT_HASH_SIZE_U8,
 };
 use crate::drive::document::{
-    contract_document_type_path_vec,
     contract_documents_keeping_history_primary_key_path_for_document_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{EstimatedIntermediateFlagSizes, EstimatedValueSize};
-use crate::drive::object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::KeyElementSize;
+
+
+
 use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, PathInfo, PathKeyElementInfo,
+    DocumentAndContractInfo,
 };
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
+use dpp::data_contract::extra::{DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::Error::MerkError;
 use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
-use grovedb::{Element, EstimatedLayerInformation};
+use grovedb::{EstimatedLayerInformation};
 use intmap::IntMap;
 use itertools::Itertools;
 use std::collections::HashMap;

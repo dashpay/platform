@@ -40,30 +40,29 @@ use std::sync::Arc;
 use crate::common::encode::encode_unsigned_integer;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::data_contract::extra::DriveContractExt;
-use dpp::data_contract::DataContract;
+
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::EstimatedLayerInformation::{ApproximateElements, EstimatedLevel};
-use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
+
+
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, CONTRACT_MAX_SERIALIZED_SIZE, DEFAULT_FLOAT_SIZE,
-    DEFAULT_FLOAT_SIZE_U8, ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+    CONTRACT_MAX_SERIALIZED_SIZE,
 };
-use crate::drive::document::contract_document_type_path;
+
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
+
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
-use crate::drive::{contract_documents_path, defaults, Drive, RootTree};
+use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;

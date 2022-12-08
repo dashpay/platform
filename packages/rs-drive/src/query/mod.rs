@@ -56,7 +56,7 @@ pub use ordering::OrderClause;
 use crate::common::bytes_for_system_value;
 use crate::contract::{document::Document, Contract};
 use crate::drive::block_info::BlockInfo;
-use crate::drive::object_size_info::KeyValueInfo;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QueryError;

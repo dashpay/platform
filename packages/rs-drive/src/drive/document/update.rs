@@ -52,7 +52,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
-use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
+
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathKeyInfo};
 use crate::drive::Drive;
@@ -64,7 +64,7 @@ use crate::fee::{calculate_fee, FeeResult};
 use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
-use crate::error::fee::FeeError;
+
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {

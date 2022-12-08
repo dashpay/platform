@@ -37,7 +37,7 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element;
 use std::collections::HashSet;
-use std::ops::AddAssign;
+
 use storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -48,14 +48,14 @@ use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, Pa
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::defaults::{DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::extra::{DocumentType, IndexLevel};
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
-use crate::error::fee::FeeError;
+
 use dpp::data_contract::extra::ContractError;
 
 /// Info about a path.

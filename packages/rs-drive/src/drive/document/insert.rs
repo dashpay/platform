@@ -37,20 +37,18 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
+use grovedb::EstimatedLayerSizes::{AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::contract::Contract;
 use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_FLOAT_SIZE,
-    DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE,
+    DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE,
 };
 use crate::drive::document::{
     contract_document_type_path_vec,
     contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_keeping_history_primary_key_path_for_document_id_size,
     contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
     contract_documents_keeping_history_storage_time_reference_path_size,
     contract_documents_primary_key_path, make_document_reference, unique_event_id,
@@ -62,14 +60,14 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{
-    KeyElement, KeyElementSize, KeyUnknownElementSize,
+    KeyElement, KeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElementSize, PathKeyUnknownElementSize,
+    PathFixedSizeKeyElement, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
-use crate::drive::{defaults, Drive};
+use crate::drive::{Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
