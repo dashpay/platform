@@ -3,7 +3,7 @@ const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
 
-module.exports = async (createRpcClient, dockerCompose, config) => {
+module.exports = async (dockerCompose,createRpcClient) => async (config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),

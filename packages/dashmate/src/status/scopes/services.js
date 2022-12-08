@@ -1,6 +1,6 @@
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
-module.exports = async (createRpcClient, dockerCompose, config) => {
+module.exports = (dockerCompose) => async (config) => {
   const services = {};
 
   const serviceHumanNames = {

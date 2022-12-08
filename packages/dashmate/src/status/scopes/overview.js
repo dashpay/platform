@@ -1,9 +1,7 @@
-const getMasternodeScope = require('./masternode');
-const getPlatformScope = require('./platform');
 const extractCoreVersion = require('../../util/extractCoreVersion');
 const determineStatus = require('../determineStatus');
 
-module.exports = async (createRpcClient, dockerCompose, config) => {
+module.exports = (dockerCompose, createRpcClient) => async (config, getPlatformScope, getMasternodeScope) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
@@ -57,13 +55,13 @@ module.exports = async (createRpcClient, dockerCompose, config) => {
   };
 
   if (masternodeEnabled) {
-    const masternodeScope = await getMasternodeScope(createRpcClient, dockerCompose, config);
+    const masternodeScope = await getMasternodeScope(config);
 
     masternode.state = masternodeScope.state;
   }
 
   if (platformEnabled) {
-    const {tenderdash} = await getPlatformScope(createRpcClient, dockerCompose, config);
+    const {tenderdash} = await getPlatformScope(config);
 
     platform.tenderdash = tenderdash;
   }

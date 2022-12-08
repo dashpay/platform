@@ -1,68 +1,80 @@
+const DockerStatusEnum = require('../../enums/dockerStatus');
 const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../util/extractCoreVersion');
+const ServiceStatusEnum = require("../../enums/serviceStatus");
 
-module.exports = async (createRpcClient, dockerCompose, config) => {
+module.exports = (dockerCompose, createRpcClient) => async (config) => {
+  const network = config.get('network');
+  const rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
+  const p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
+
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
     pass: config.get('core.rpc.password'),
   })
 
-  const [mnsyncStatus, networkInfo, blockchainInfo, peerInfo, dockerStatus] = await Promise.all([
+  const core = {
+    network,
+    p2pService,
+    rpcService,
+    version: null,
+    chain: null,
+    latestVersion: null,
+    dockerStatus: null,
+    serviceStatus: null,
+    syncAsset: null,
+    peersCount: null,
+    p2pPortState: null,
+    blockHeight: null,
+    remoteBlockHeight: null,
+    headerHeight: null,
+    difficulty: null,
+    verificationProgress: null,
+  }
+
+  core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core')
+
+  if (core.dockerStatus !== DockerStatusEnum.running) {
+    core.serviceStatus = ServiceStatusEnum.error;
+    return core;
+  }
+
+  const [mnsyncStatus, networkInfo, blockchainInfo, peerInfo] = await Promise.all([
     rpcClient.mnsync('status'),
     rpcClient.getNetworkInfo(),
     rpcClient.getBlockchainInfo(),
     rpcClient.getPeerInfo(),
-    determineStatus.docker(dockerCompose, config, 'core'),
   ]);
 
-  const [latestVersion, p2pPortState, remoteBlockHeight] = await Promise.all([
+  const {AssetName: syncAsset} = mnsyncStatus.result;
+  core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset)
+
+  const {chain, difficulty, blocks, headers, verificationprogress} = blockchainInfo.result;
+
+  core.chain = chain
+  core.difficulty = difficulty
+  core.blockHeight = blocks;
+  core.headerHeight = headers;
+  core.verificationProgress = verificationprogress;
+  core.peersCount = peerInfo.result.length;
+
+  const {subversion} = networkInfo.result;
+  core.version = extractCoreVersion(subversion);
+
+  const providersResult = await Promise.allSettled([
     providers.github.release('dashpay/dash'),
     providers.mnowatch.checkPortStatus(config.get('core.p2p.port')),
     providers.insight(config.get('network')).status(),
   ]);
 
-  const network = config.get('network');
-  const masternodeEnabled = config.get('core.masternode.enable');
-  const rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
-  const p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
+  const [latestVersion, p2pPortState, insightStatus] = providersResult
+    .map(result => result.status === 'fulfilled' ? result.value : null)
 
-  const blockHeight = blockchainInfo.result.blocks;
-  const headerHeight = blockchainInfo.result.headers;
-  const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4);
-  const {chain, difficulty} = blockchainInfo.result;
+  core.latestVersion = latestVersion
+  core.p2pPortState = p2pPortState
+  core.remoteBlockHeight = insightStatus ? insightStatus.info.blocks : null
 
-  const peersCount = peerInfo.result.length;
-
-  const {subversion} = networkInfo.result;
-  const version = extractCoreVersion(subversion);
-
-  const {AssetName: syncAsset} = mnsyncStatus.result;
-
-  const serviceStatus = determineStatus.core(dockerStatus, syncAsset)
-
-  const masternode = {
-    enabled: masternodeEnabled,
-  };
-
-  return {
-    version,
-    network,
-    chain,
-    latestVersion,
-    dockerStatus,
-    serviceStatus,
-    syncAsset,
-    peersCount,
-    p2pService,
-    p2pPortState,
-    rpcService,
-    blockHeight,
-    remoteBlockHeight,
-    headerHeight,
-    difficulty,
-    verificationProgress,
-    masternode,
-  };
+  return core
 };

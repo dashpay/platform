@@ -3,7 +3,7 @@ const publicIp = require('public-ip');
 const prettyMs = require('pretty-ms');
 const prettyByte = require('pretty-bytes');
 
-module.exports = async () => ({
+module.exports = () => async () => ({
   hostname: os.hostname(),
   uptime: prettyMs(os.uptime() * 1000),
   platform: os.platform(),

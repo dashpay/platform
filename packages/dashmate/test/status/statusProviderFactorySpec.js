@@ -4,11 +4,12 @@ const mockMNSync = require('./mocks/mnSyncMock.json')
 const mockGetNetworkInfo = require('./mocks/mockGetNetworkInfo.json')
 const mockGetBlockchainInfo = require('./mocks/mockGetBlockchainInfo.json')
 
-describe('Dashmate Status Provider Factory tests', () => {
+describe.only('statusProvider integration test', () => {
   let statusProvider
 
   let dockerComposeMock
   let mockRpcClient
+  let mockConfig
 
   beforeEach(async function it() {
     dockerComposeMock = {
@@ -17,12 +18,15 @@ describe('Dashmate Status Provider Factory tests', () => {
       inspectService: sinon.stub()
     }
     mockRpcClient = {mnsync: sinon.stub(), getNetworkInfo: sinon.stub(), getBlockchainInfo: sinon.stub()}
+    mockConfig = {get: this.sinon.stub(), toEnvs: this.sinon.stub()}
 
     statusProvider = statusProviderFactory(dockerComposeMock, () => mockRpcClient)
   });
 
-  it('should basically work', async () => {
-    const mockConfig = {network: 'test', 'core.masternode.enable': false, 'platform.drive.tenderdash.rpc.port': 8080}
+  it('should basically work', async function it() {
+    mockConfig.get.withArgs('network').returns('testnet')
+    mockConfig.get.withArgs('core.masternode.enable').returns(false)
+    mockConfig.get.withArgs('platform.drive.tenderdash.rpc.port').returns(8080)
 
     const mockCoreStatus = {State: {Status: "running"}}
 
@@ -32,9 +36,7 @@ describe('Dashmate Status Provider Factory tests', () => {
     mockRpcClient.getBlockchainInfo.resolves({result: mockGetBlockchainInfo})
     mockRpcClient.getNetworkInfo.resolves({result: mockGetNetworkInfo})
 
-    const config = {get: (path) => mockConfig[path], toEnvs: sinon.stub()}
-
-    const scope = await statusProvider.getOverviewScope(config)
+    const scope = await statusProvider.getOverviewScope(mockConfig)
 
     expect(scope).to.exist()
   });

@@ -2,9 +2,8 @@ const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
 const providers = require('../providers');
-const DockerStatusEnum = require("../../enums/dockerStatus");
 
-module.exports = async (createRpcClient, dockerCompose, config) => {
+module.exports = (dockerCompose, createRpcClient) => async (config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
