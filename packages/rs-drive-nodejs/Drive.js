@@ -1,6 +1,7 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -109,16 +110,23 @@ class Drive {
       Buffer.from(id),
       epochIndex,
       useTransaction,
-    ).then(([dataContract, innerFeeResult]) => {
-      const result = [];
+    ).then(([encodedDataContract, innerFeeResult]) => {
+      let dataContract = encodedDataContract;
 
-      // TODO: Fee result should be present even if data contract wasn't found
-      if (dataContract) {
-        result.push(dataContract);
+      if (encodedDataContract !== null) {
+        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+          encodedDataContract,
+        );
 
-        if (innerFeeResult) {
-          result.push(new FeeResult(innerFeeResult));
-        }
+        rawDataContract.protocolVersion = protocolVersion;
+
+        dataContract = new DataContract(rawDataContract);
+      }
+
+      const result = [dataContract];
+
+      if (innerFeeResult) {
+        result.push(new FeeResult(innerFeeResult));
       }
 
       return result;

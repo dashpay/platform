@@ -78,9 +78,7 @@ describe('Drive', () => {
 
       expect(fetchedDataContract).to.be.null();
 
-      expect(feeResult).to.have.property('processingFee');
-      expect(feeResult).to.have.property('storageFee');
-      expect(feeResult).to.have.property('removedFromIdentities');
+      expect(feeResult).to.be.instanceOf(FeeResult);
 
       expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
       expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -96,7 +94,7 @@ describe('Drive', () => {
 
       const [fetchedDataContract, feeResult] = result;
 
-      expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
+      expect(fetchedDataContract.toBuffer()).to.deep.equal(dataContract.toBuffer());
 
       expect(feeResult).to.be.an.instanceOf(FeeResult);
 
@@ -114,7 +112,7 @@ describe('Drive', () => {
 
       const [fetchedDataContract] = result;
 
-      expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
+      expect(fetchedDataContract.toBuffer()).to.deep.equal(dataContract.toBuffer());
     });
   });
 

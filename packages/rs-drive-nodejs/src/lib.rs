@@ -413,7 +413,7 @@ impl PlatformWrapper {
                         Ok((maybe_fee_result, maybe_contract_fetch_info)) => {
                             let js_result = task_context.empty_array();
 
-                            let contract: Handle<JsValue> = if let Some(contract_fetch_info) =
+                            let js_contract: Handle<JsValue> = if let Some(contract_fetch_info) =
                                 maybe_contract_fetch_info
                             {
                                 let contract_cbor =
@@ -426,7 +426,7 @@ impl PlatformWrapper {
                                 task_context.null().upcast()
                             };
 
-                            js_result.set(&mut task_context, 0, contract)?;
+                            js_result.set(&mut task_context, 0, js_contract)?;
 
                             if let Some(fee_result) = maybe_fee_result {
                                 let js_fee_result =
