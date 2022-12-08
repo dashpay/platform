@@ -113,7 +113,6 @@ impl Drive {
 
     /// Adds estimation costs for the index reference
     fn add_estimation_costs_for_index_reference(
-        &self,
         mut index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_can_be_null: bool,
@@ -139,7 +138,6 @@ impl Drive {
 
     /// Adds indices for an index level and recurses.
     fn add_estimation_costs_for_index_level(
-        &self,
         document_info: &DocumentInfo,
         document_type: &DocumentType,
         index_path_info: PathInfo<0>,
@@ -149,7 +147,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) -> Result<(), Error> {
         if let Some(unique) = index_level.has_index_with_uniqueness {
-            self.add_estimation_costs_for_index_reference(
+            Self::add_estimation_costs_for_index_reference(
                 index_path_info.clone(),
                 unique,
                 any_fields_can_be_null,
@@ -208,7 +206,7 @@ impl Drive {
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.add_estimation_costs_for_index_level(
+            Self::add_estimation_costs_for_index_level(
                 document_info,
                 document_type,
                 sub_level_index_path_info,
@@ -222,9 +220,7 @@ impl Drive {
     }
 
     /// Adds indices for the top index level and calls for lower levels.
-    fn add_estimation_costs_for_top_index_level(
-        &self,
-        index_level: &IndexLevel,
+    pub(crate) fn add_estimation_costs_for_top_index_level(
         contract: &Contract,
         document_type: &DocumentType,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -245,7 +241,7 @@ impl Drive {
         let contract_document_type_path =
             contract_document_type_path_vec(contract.id.as_bytes(), document_type.name.as_str());
 
-        let sub_level_index_count = index_level.sub_index_levels.len() as u32;
+        let sub_level_index_count = document_type.index_structure.sub_index_levels.len() as u32;
 
         // On this level we will have a 0 and all the top index paths
         estimated_costs_only_with_layer_info.insert(
@@ -259,7 +255,7 @@ impl Drive {
         let document_info = DocumentEstimatedAverageSize(document_type.estimated_size() as u32);
 
         // next we need to store a reference to the document for each index
-        for (name, sub_level) in &index_level.sub_index_levels {
+        for (name, sub_level) in &document_type.index_structure.sub_index_levels {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -299,7 +295,7 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
-            self.add_estimation_costs_for_index_level(
+            Self::add_estimation_costs_for_index_level(
                 &document_info,
                 document_type,
                 index_path_info,

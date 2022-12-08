@@ -305,6 +305,14 @@ impl Drive {
             None
         };
 
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_top_index_level(
+                &contract,
+                &document_type,
+                estimated_costs_only_with_layer_info,
+            )?;
+        }
+
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_direct(
             contract_documents_primary_key_path,

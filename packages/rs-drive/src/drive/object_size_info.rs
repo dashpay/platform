@@ -129,9 +129,7 @@ impl<'a, const N: usize> PathInfo<'a, N> {
                 let key_info_path = KeyInfoPath::from_known_owned_path(path);
                 Ok(key_info_path)
             }
-            PathWithSizes(_) => Err(Error::Fee(FeeError::CorruptedCodeExecution(
-                "attempting to mix worst case document types and average case costs",
-            ))),
+            PathWithSizes(key_info_path) => Ok(key_info_path),
         }
     }
 }
