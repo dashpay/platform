@@ -10,11 +10,7 @@ pub struct InvalidDocumentTransitionIdErrorWasm {
 }
 
 impl InvalidDocumentTransitionIdErrorWasm {
-    pub fn new(
-        expected_id: Identifier,
-        invalid_id: Identifier,
-        code: u32,
-    ) -> Self {
+    pub fn new(expected_id: Identifier, invalid_id: Identifier, code: u32) -> Self {
         InvalidDocumentTransitionIdErrorWasm {
             expected_id,
             invalid_id,
