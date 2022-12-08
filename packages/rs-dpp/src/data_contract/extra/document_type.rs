@@ -43,6 +43,8 @@ pub struct IndexLevel {
     pub sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
     pub has_index_with_uniqueness: Option<bool>,
+    /// unique level identifier
+    pub level_identifier: u64
 }
 
 impl DocumentType {
@@ -91,6 +93,7 @@ impl DocumentType {
 
     pub fn build_index_structure(indices: &[Index]) -> IndexLevel {
         let mut index_level = IndexLevel::default();
+        let mut counter : u64 = 0;
         for index in indices {
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().peekable();
@@ -98,7 +101,13 @@ impl DocumentType {
                 current_level = current_level
                     .sub_index_levels
                     .entry(index_part.name.clone())
-                    .or_default();
+                    .or_insert_with(|| {
+                        counter += 1;
+                        IndexLevel {
+                            level_identifier: counter,
+                            ..Default::default()
+                        }
+                    });
                 if properties_iter.peek().is_none() {
                     current_level.has_index_with_uniqueness = Some(index.unique);
                 }
@@ -112,8 +121,11 @@ impl DocumentType {
         rand::random::<[u8; 32]>()
     }
 
-    pub fn unique_id_for_document_field(&self, key_path: &str) -> [u8; 32] {
-        rand::random::<[u8; 32]>()
+    /// Unique id that combines the index_level and the base event id
+    pub fn unique_id_for_document_field(&self, index_level: &IndexLevel, base_event: [u8; 32]) -> Vec<u8> {
+        let mut bytes = index_level.level_identifier.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&base_event);
+        bytes
     }
 
     pub fn serialize_value_for_key<'a>(

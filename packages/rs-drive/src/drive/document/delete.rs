@@ -36,8 +36,8 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Error::MerkError;
-use grovedb::EstimatedLayerInformation::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllItems;
+use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use intmap::IntMap;
 use itertools::Itertools;
@@ -51,15 +51,16 @@ use crate::drive::defaults::{
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
 };
 use crate::drive::document::{
-    contract_document_type_path, contract_documents_primary_key_path, document_reference_size,
+    contract_document_type_path, contract_document_type_path_vec,
+    contract_documents_primary_key_path, document_reference_size, unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
-use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
+use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
@@ -67,7 +68,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -261,6 +262,309 @@ impl Drive {
         Ok(())
     }
 
+    /// Removes the terminal reference.
+    fn remove_reference_for_index_level_for_contract_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        mut index_path_info: PathInfo<0>,
+        unique: bool,
+        any_fields_null: bool,
+        storage_flags: &Option<&StorageFlags>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        let mut key_info_path = index_path_info.convert_to_key_info_path();
+
+        let document_type = document_and_contract_info.document_type;
+        let reference_size =
+            document_reference_size(document_type, StorageFlags::approximate_size(true, None));
+
+        // unique indexes will be stored under key "0"
+        // non unique indices should have a tree at key "0" that has all elements based off of primary key
+        if !unique || any_fields_null {
+            key_info_path.push(KnownKey(vec![0]));
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                // On this level we will have a 0 and all the top index paths
+                estimated_costs_only_with_layer_info.insert(
+                    key_info_path.clone(),
+                    PotentiallyAtMaxElements(AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    )),
+                );
+            }
+
+            let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                reference_size,
+                &key_info_path,
+                estimated_costs_only_with_layer_info,
+            )?;
+
+            // here we should return an error if the element already exists
+            self.batch_delete_up_tree_while_empty(
+                key_info_path,
+                document_and_contract_info
+                    .document_info
+                    .get_document_id_as_slice()?,
+                Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
+                stateless_delete_for_costs,
+                transaction,
+                batch_operations,
+            )?;
+        } else {
+            let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                reference_size,
+                &key_info_path,
+                estimated_costs_only_with_layer_info,
+            )?;
+
+            // here we should return an error if the element already exists
+            self.batch_delete_up_tree_while_empty(
+                key_info_path,
+                &[0],
+                Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
+                stateless_delete_for_costs,
+                transaction,
+                batch_operations,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Removes indices for an index level and recurses.
+    fn remove_indices_for_index_level_for_contract_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        index_path_info: PathInfo<0>,
+        index_level: &IndexLevel,
+        mut any_fields_null: bool,
+        storage_flags: &Option<&StorageFlags>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        event_id: [u8; 32],
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        if let Some(unique) = index_level.has_index_with_uniqueness {
+            self.remove_reference_for_index_level_for_contract_operations(
+                document_and_contract_info,
+                index_path_info.clone(),
+                unique,
+                any_fields_null,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+            )?;
+        }
+
+        let sub_level_index_count = index_level.sub_index_levels.len() as u32;
+
+        let document_type = document_and_contract_info.document_type;
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            // On this level we will have a 0 and all the top index paths
+            estimated_costs_only_with_layer_info.insert(
+                index_path_info.clone().convert_to_key_info_path(),
+                ApproximateElements(
+                    sub_level_index_count + 1,
+                    AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    ),
+                ),
+            );
+        }
+
+        // fourth we need to store a reference to the document for each index
+        for (name, sub_level) in &index_level.sub_index_levels {
+            let mut sub_level_index_path_info = index_path_info.clone();
+            let index_property_key = KeyRef(name.as_bytes());
+
+            let document_index_field = document_and_contract_info
+                .document_info
+                .get_raw_for_document_type(
+                    name,
+                    document_type,
+                    document_and_contract_info.owner_id,
+                    sub_level,
+                    event_id,
+                )?
+                .unwrap_or_default();
+
+            sub_level_index_path_info.push(index_property_key)?;
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                let document_top_field_estimated_size = document_and_contract_info
+                    .document_info
+                    .get_estimated_size_for_document_type(name, document_type)?;
+
+                if document_top_field_estimated_size > u8::MAX as u16 {
+                    return Err(Error::Fee(FeeError::Overflow(
+                        "document top field is too big for being an index",
+                    )));
+                }
+
+                estimated_costs_only_with_layer_info.insert(
+                    sub_level_index_path_info.clone().convert_to_key_info_path(),
+                    PotentiallyAtMaxElements(AllSubtrees(
+                        document_top_field_estimated_size as u8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    )),
+                );
+            }
+
+            // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+            // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+
+            any_fields_null |= document_index_field.is_empty();
+
+            // we push the actual value of the index path
+            sub_level_index_path_info.push(document_index_field)?;
+            // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+            // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+            self.remove_indices_for_index_level_for_contract_operations(
+                document_and_contract_info,
+                sub_level_index_path_info,
+                sub_level,
+                any_fields_null,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Removes indices for the top index level and calls for lower levels.
+    fn remove_indices_for_top_index_level_for_contract_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        let document_type = document_and_contract_info.document_type;
+        let index_level = &document_type.index_structure;
+        let contract = document_and_contract_info.contract;
+        let event_id = unique_event_id();
+        let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
+            document_and_contract_info
+                .document_info
+                .get_storage_flags_ref()
+        } else {
+            None //there are no need for storage flags if documents are not mutable and contract can not be deleted
+        };
+
+        // we need to construct the path for documents on the contract
+        // the path is
+        //  * Document and Contract root tree
+        //  * Contract ID recovered from document
+        //  * 0 to signify Documents and not Contract
+        let contract_document_type_path = contract_document_type_path_vec(
+            document_and_contract_info.contract.id.as_bytes(),
+            document_and_contract_info.document_type.name.as_str(),
+        );
+
+        let sub_level_index_count = index_level.sub_index_levels.len() as u32;
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            // On this level we will have a 0 and all the top index paths
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
+                ApproximateElements(
+                    sub_level_index_count + 1,
+                    AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    ),
+                ),
+            );
+        }
+
+        // next we need to store a reference to the document for each index
+        for (name, sub_level) in &index_level.sub_index_levels {
+            // at this point the contract path is to the contract documents
+            // for each index the top index component will already have been added
+            // when the contract itself was created
+            let mut index_path: Vec<Vec<u8>> = contract_document_type_path.clone();
+            index_path.push(Vec::from(name.as_bytes()));
+
+            // with the example of the dashpay contract's first index
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
+            let document_top_field = document_and_contract_info
+                .document_info
+                .get_raw_for_document_type(
+                    name,
+                    document_type,
+                    document_and_contract_info.owner_id,
+                    sub_level,
+                    event_id,
+                )?
+                .unwrap_or_default();
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                let document_top_field_estimated_size = document_and_contract_info
+                    .document_info
+                    .get_estimated_size_for_document_type(name, document_type)?;
+
+                if document_top_field_estimated_size > u8::MAX as u16 {
+                    return Err(Error::Fee(FeeError::Overflow(
+                        "document top field is too big for being an index",
+                    )));
+                }
+
+                // On this level we will have all the user defined values for the paths
+                estimated_costs_only_with_layer_info.insert(
+                    KeyInfoPath::from_known_owned_path(index_path.clone()),
+                    PotentiallyAtMaxElements(AllSubtrees(
+                        document_top_field_estimated_size as u8,
+                        storage_flags.map(|s| s.serialized_size()),
+                    )),
+                );
+            }
+
+            let any_fields_null = document_top_field.is_empty();
+
+            let mut index_path_info = if document_and_contract_info.document_info.is_document_size()
+            {
+                // This is a stateless operation
+                PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
+            } else {
+                PathInfo::PathIterator::<0>(index_path)
+            };
+
+            // we push the actual value of the index path
+            index_path_info.push(document_top_field)?;
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+            self.remove_indices_for_index_level_for_contract_operations(
+                document_and_contract_info,
+                index_path_info,
+                sub_level,
+                any_fields_null,
+                &storage_flags,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Prepares the operations for deleting a document.
     pub(crate) fn delete_document_for_contract_operations(
         &self,
@@ -299,30 +603,31 @@ impl Drive {
             contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
 
         let stateless = estimated_costs_only_with_layer_info.is_some();
-        let query_stateless_max_value_size = if stateless {
+        let query_stateless_estimated_value_size = if stateless {
             Some(document_type.estimated_size())
         } else {
             None
         };
 
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_top_index_level(
-                &contract,
-                &document_type,
-                estimated_costs_only_with_layer_info,
-            )?;
-        }
+        // if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+        //     Self::add_estimation_costs_for_top_index_level(
+        //         &contract,
+        //         &document_type,
+        //         estimated_costs_only_with_layer_info,
+        //     )?;
+        // }
 
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_direct(
             contract_documents_primary_key_path,
             document_id.as_slice(),
-            query_stateless_max_value_size,
+            query_stateless_estimated_value_size,
             transaction,
             &mut batch_operations,
         )?;
 
-        let document_info = if let Some(estimated_value_size) = query_stateless_max_value_size {
+        let document_info = if let Some(estimated_value_size) = query_stateless_estimated_value_size
+        {
             DocumentEstimatedAverageSize(estimated_value_size as u32)
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
@@ -350,105 +655,19 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let contract_document_type_path =
-            contract_document_type_path(contract.id.as_bytes(), document_type_name);
+        let document_and_contract_info = DocumentAndContractInfo {
+            document_info,
+            contract,
+            document_type,
+            owner_id: None,
+        };
 
-        // fourth we need delete all references to the document
-        // to do this we need to go through each index
-        for index in &document_type.indices {
-            // at this point the contract path is to the contract documents
-            // for each index the top index component will already have been added
-            // when the contract itself was created
-            let mut index_path: Vec<DriveKeyInfo> = contract_document_type_path
-                .iter()
-                .map(|&x| Key(Vec::from(x)))
-                .collect();
-            let top_index_property = index.properties.get(0).ok_or(Error::Drive(
-                DriveError::CorruptedContractIndexes("invalid contract indices"),
-            ))?;
-            index_path.push(Key(Vec::from(top_index_property.name.as_bytes())));
-
-            // with the example of the dashpay contract's first index
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_info
-                .get_raw_for_document_type(&top_index_property.name, document_type, owner_id)?
-                .unwrap_or_default();
-
-            // we push the actual value of the index path
-            index_path.push(document_top_field);
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
-
-            for i in 1..index.properties.len() {
-                let index_property = index.properties.get(i).ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("invalid contract indices"),
-                ))?;
-
-                index_path.push(Key(Vec::from(index_property.name.as_bytes())));
-                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
-                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
-
-                let document_top_field = document_info
-                    .get_raw_for_document_type(&index_property.name, document_type, owner_id)?
-                    .unwrap_or_default();
-
-                // we push the actual value of the index path
-                index_path.push(document_top_field);
-                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
-                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            }
-
-            let mut key_info_path = KeyInfoPath::from_vec(
-                index_path
-                    .into_iter()
-                    .map(|key_info| match key_info {
-                        Key(key) => KnownKey(key),
-                        KeyRef(key_ref) => KnownKey(key_ref.to_vec()),
-                        KeySize(key_info) => key_info,
-                    })
-                    .collect::<Vec<KeyInfo>>(),
-            );
-
-            let reference_size =
-                document_reference_size(document_type, StorageFlags::approximate_size(true, None));
-
-            // unique indexes will be stored under key "0"
-            // non unique indices should have a tree at key "0" that has all elements based off of primary key
-            if !index.unique {
-                key_info_path.push(KnownKey(vec![0]));
-
-                let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                    reference_size,
-                    &key_info_path,
-                    estimated_costs_only_with_layer_info,
-                )?;
-
-                // here we should return an error if the element already exists
-                self.batch_delete_up_tree_while_empty(
-                    key_info_path,
-                    document_id.as_slice(),
-                    Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                    stateless_delete_for_costs,
-                    transaction,
-                    &mut batch_operations,
-                )?;
-            } else {
-                let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                    reference_size,
-                    &key_info_path,
-                    estimated_costs_only_with_layer_info,
-                )?;
-
-                // here we should return an error if the element already exists
-                self.batch_delete_up_tree_while_empty(
-                    key_info_path,
-                    &[0],
-                    Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                    stateless_delete_for_costs,
-                    transaction,
-                    &mut batch_operations,
-                )?;
-            }
-        }
+        self.remove_indices_for_top_index_level_for_contract_operations(
+            &document_and_contract_info,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+        )?;
         Ok(batch_operations)
     }
 }

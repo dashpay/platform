@@ -195,6 +195,10 @@ fn document_reference_size(document_type: &DocumentType, storage_flags_size: u32
     6 + reference_path_size + storage_flags_size
 }
 
+fn unique_event_id() -> [u8; 32] {
+    rand::random::<[u8; 32]>()
+}
+
 /// Tests module
 #[cfg(test)]
 pub(crate) mod tests {

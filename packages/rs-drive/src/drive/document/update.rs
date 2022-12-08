@@ -46,6 +46,7 @@ use crate::drive::document::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path, document_reference_size, make_document_reference,
+    unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
@@ -388,7 +389,13 @@ impl Drive {
                     .unwrap_or_default();
 
                 let old_document_top_field = old_document_info
-                    .get_raw_for_document_type(&top_index_property.name, document_type, owner_id)?
+                    .get_raw_for_document_type(
+                        &top_index_property.name,
+                        document_type,
+                        owner_id,
+                        &document_type.index_structure,
+                        unique_event_id(),
+                    )?
                     .unwrap_or_default();
 
                 // if we are not applying that means we are trying to get worst case costs
@@ -446,7 +453,13 @@ impl Drive {
                         .unwrap_or_default();
 
                     let old_document_index_field = old_document_info
-                        .get_raw_for_document_type(&index_property.name, document_type, owner_id)?
+                        .get_raw_for_document_type(
+                            &index_property.name,
+                            document_type,
+                            owner_id,
+                            &document_type.index_structure,
+                            unique_event_id(),
+                        )?
                         .unwrap_or_default();
 
                     // if we are not applying that means we are trying to get worst case costs

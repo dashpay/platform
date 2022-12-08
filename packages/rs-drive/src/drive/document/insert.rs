@@ -53,7 +53,7 @@ use crate::drive::document::{
     contract_documents_keeping_history_primary_key_path_for_document_id_size,
     contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
     contract_documents_keeping_history_storage_time_reference_path_size,
-    contract_documents_primary_key_path, make_document_reference,
+    contract_documents_primary_key_path, make_document_reference, unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
@@ -569,7 +569,7 @@ impl Drive {
             {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
-                    index_path_info.clone().convert_to_key_info_path()?,
+                    index_path_info.clone().convert_to_key_info_path(),
                     PotentiallyAtMaxElements(AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
                         storage_flags.map(|s| s.serialized_size()),
@@ -679,6 +679,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -702,7 +703,7 @@ impl Drive {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
-                index_path_info.clone().convert_to_key_info_path()?,
+                index_path_info.clone().convert_to_key_info_path(),
                 ApproximateElements(
                     sub_level_index_count + 1,
                     AllSubtrees(
@@ -724,6 +725,8 @@ impl Drive {
                     name,
                     document_type,
                     document_and_contract_info.owner_id,
+                    sub_level,
+                    event_id,
                 )?
                 .unwrap_or_default();
 
@@ -755,9 +758,7 @@ impl Drive {
                 }
 
                 estimated_costs_only_with_layer_info.insert(
-                    sub_level_index_path_info
-                        .clone()
-                        .convert_to_key_info_path()?,
+                    sub_level_index_path_info.clone().convert_to_key_info_path(),
                     PotentiallyAtMaxElements(AllSubtrees(
                         document_top_field_estimated_size as u8,
                         storage_flags.map(|s| s.serialized_size()),
@@ -794,6 +795,7 @@ impl Drive {
                 any_fields_null,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
+                event_id,
                 transaction,
                 batch_operations,
             )?;
@@ -813,6 +815,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let index_level = &document_and_contract_info.document_type.index_structure;
         let contract = document_and_contract_info.contract;
+        let event_id = unique_event_id();
         let document_type = document_and_contract_info.document_type;
         let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
             document_and_contract_info
@@ -866,6 +869,8 @@ impl Drive {
                     name,
                     document_type,
                     document_and_contract_info.owner_id,
+                    sub_level,
+                    event_id,
                 )?
                 .unwrap_or_default();
 
@@ -923,6 +928,7 @@ impl Drive {
                 any_fields_null,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,
+                event_id,
                 transaction,
                 batch_operations,
             )?;

@@ -52,7 +52,7 @@ use crate::drive::defaults::{DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_U16, DEFAULT_H
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::extra::DocumentType;
+use dpp::data_contract::extra::{DocumentType, IndexLevel};
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
 use crate::error::fee::FeeError;
@@ -119,17 +119,11 @@ impl<'a, const N: usize> PathInfo<'a, N> {
     }
 
     /// Get the KeyInfoPath for grovedb estimated costs
-    pub(crate) fn convert_to_key_info_path(self) -> Result<KeyInfoPath, Error> {
+    pub(crate) fn convert_to_key_info_path(self) -> KeyInfoPath {
         match self {
-            PathFixedSizeIterator(path) => {
-                let key_info_path = KeyInfoPath::from_known_path(path);
-                Ok(key_info_path)
-            }
-            PathIterator(path) => {
-                let key_info_path = KeyInfoPath::from_known_owned_path(path);
-                Ok(key_info_path)
-            }
-            PathWithSizes(key_info_path) => Ok(key_info_path),
+            PathFixedSizeIterator(path) => KeyInfoPath::from_known_path(path),
+            PathIterator(path) => KeyInfoPath::from_known_owned_path(path),
+            PathWithSizes(key_info_path) => key_info_path,
         }
     }
 }
@@ -598,6 +592,8 @@ impl<'a> DocumentInfo<'a> {
         key_path: &str,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
+        index_level: &IndexLevel,
+        base_event: [u8; 32],
     ) -> Result<Option<DriveKeyInfo>, Error> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
@@ -644,7 +640,7 @@ impl<'a> DocumentInfo<'a> {
                     }
                     Ok(Some(KeySize(KeyInfo::MaxKeySize {
                         unique_id: document_type
-                            .unique_id_for_document_field(key_path)
+                            .unique_id_for_document_field(index_level, base_event)
                             .to_vec(),
                         max_size: estimated_middle_size as u8,
                     })))
