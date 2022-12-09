@@ -3,9 +3,8 @@ mod instant;
 
 pub use chain::*;
 pub use instant::*;
-use serde::Serialize;
 
-use crate::{errors::RustConversionError, with_js_error};
+use crate::errors::RustConversionError;
 use wasm_bindgen::prelude::*;
 
 use crate::Deserialize;

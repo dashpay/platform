@@ -1,4 +1,4 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+// const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const stateTransitionTypes = require(
   '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
@@ -17,9 +17,25 @@ describe('IdentityCreateTransition', () => {
   let stateTransitionJS;
   let stateTransition;
   let IdentityCreateTransition;
+  let IdentityPublicKey;
+  let KeyType;
+  let KeyPurpose;
+  let KeySecurityLevel;
+
+  const mockRawPublicKey = (params = {}) => ({
+    id: 0,
+    type: KeyType.ECDSA_SECP256K1,
+    data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
+    purpose: KeyPurpose.AUTHENTICATION,
+    securityLevel: KeySecurityLevel.MASTER,
+    readOnly: false,
+    ...params,
+  });
 
   before(async () => {
-    ({ IdentityCreateTransition } = await loadWasmDpp());
+    ({
+      IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
+    } = await loadWasmDpp());
   });
 
   beforeEach(() => {
@@ -75,46 +91,66 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe.skip('#setPublicKeys', () => {
+  describe('#setPublicKeys', () => {
     it('should set public keys', () => {
-      const publicKeys = [new IdentityPublicKey(), new IdentityPublicKey()];
+      const publicKeys = [
+        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
+        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
+      ];
 
-      stateTransition.setPublicKeys(publicKeys);
+      stateTransition.setPublicKeys(publicKeys.map((key) => key.toObject()));
+      stateTransitionJS.setPublicKeys(publicKeys);
 
-      expect(stateTransition.publicKeys).to.have.deep.members(publicKeys);
+      expect(stateTransition.publicKeys.map((key) => key.toObject()))
+        .to.deep.equal(stateTransitionJS.publicKeys.map((key) => key.toObject()));
     });
   });
 
-  describe.skip('#getPublicKeys', () => {
+  describe('#getPublicKeys', () => {
     it('should return set public keys', () => {
-      expect(stateTransition.getPublicKeys()).to.deep.equal(
-        rawStateTransition.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
-      );
+      expect(stateTransition.getPublicKeys().map((key) => key.toJSON()))
+        .to.deep.equal(
+          stateTransitionJS.getPublicKeys().map((key) => key.toJSON()),
+        );
     });
   });
 
-  describe.skip('#addPublicKeys', () => {
+  describe('#addPublicKeys', () => {
     it('should add more public keys', () => {
-      const publicKeys = [new IdentityPublicKey(), new IdentityPublicKey()];
+      const publicKeys = [
+        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
+        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
+      ];
 
-      stateTransition.publicKeys = [];
-      stateTransition.addPublicKeys(publicKeys);
-      expect(stateTransition.getPublicKeys()).to.have.deep.members(publicKeys);
+      stateTransitionJS.publicKeys = [];
+      stateTransitionJS.addPublicKeys(publicKeys);// .map((key) => key.toObject()));
+
+      stateTransition.setPublicKeys([]);
+      stateTransition.addPublicKeys(publicKeys.map((key) => key.toObject()));
+
+      expect(stateTransition.getPublicKeys().map((key) => key.toObject()))
+        .to.deep.equal(stateTransitionJS.getPublicKeys().map((key) => key.toObject()));
     });
   });
 
-  describe.skip('#getIdentityId', () => {
+  describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId()).to.deep.equal(
-        stateTransition.getAssetLockProof().createIdentifier(),
+      expect(stateTransition.getIdentityId().toBuffer())
+        .to.deep.equal(stateTransitionJS.getIdentityId());
+
+      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(
+        stateTransition.getAssetLockProof().createIdentifier().toBuffer(),
       );
     });
   });
 
-  describe.skip('#getOwnerId', () => {
+  describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId()).to.equal(
-        stateTransition.getIdentityId(),
+      expect(stateTransition.getOwnerId().toBuffer())
+        .to.deep.equal(stateTransitionJS.getOwnerId());
+
+      expect(stateTransition.getOwnerId().toBuffer()).to.deep.equal(
+        stateTransition.getIdentityId().toBuffer(),
       );
     });
   });

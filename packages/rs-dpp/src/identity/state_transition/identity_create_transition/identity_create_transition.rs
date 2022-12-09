@@ -104,7 +104,7 @@ impl IdentityCreateTransition {
                 .iter()
                 .map(|val| serde_json::from_value(val.clone()))
                 .collect::<Result<Vec<IdentityPublicKey>, serde_json::Error>>()?;
-            state_transition = state_transition.set_public_keys(keys);
+            state_transition.set_public_keys(keys);
         }
 
         if let Some(proof) = transition_map.get(property_names::ASSET_LOCK_PROOF) {
@@ -142,14 +142,14 @@ impl IdentityCreateTransition {
     }
 
     /// Replaces existing set of public keys with a new one
-    pub fn set_public_keys(mut self, public_keys: Vec<IdentityPublicKey>) -> Self {
+    pub fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKey>) -> &mut Self {
         self.public_keys = public_keys;
 
         self
     }
 
     /// Adds public keys to the existing public keys array
-    pub fn add_public_keys(mut self, public_keys: &mut Vec<IdentityPublicKey>) -> Self {
+    pub fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKey>) -> &mut Self {
         self.public_keys.append(public_keys);
 
         self
