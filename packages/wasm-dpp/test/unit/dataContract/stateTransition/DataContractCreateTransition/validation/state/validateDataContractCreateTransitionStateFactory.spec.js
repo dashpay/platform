@@ -1,17 +1,5 @@
-// const validateDataContractCreateTransitionStateFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/validation/state/validateDataContractCreateTransitionStateFactory');
-// const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-
-// const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-
-// const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-
-// const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-// const DataContractAlreadyPresentError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/DataContractAlreadyPresentError');
-// const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -19,11 +7,9 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
   let validateDataContractCreateTransitionState;
   let dataContract;
   let stateTransition;
-  let stateRepositoryMock;
   let executionContext;
   let ValidationResult;
   let fetchDataContract;
-
   let DataContractCreateTransition;
   let ApplyDataContractCreateTransition;
   let StateTransitionExecutionContext;
@@ -87,19 +73,14 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  // it('should return valid result on dry run', async () => {
-  //   stateRepositoryMock.fetchDataContract.resolves(dataContract);
+  it('should return valid result on dry run', async () => {
+    executionContext.enableDryRun();
+    const result = await factory(stateTransition);
+    executionContext.disableDryRun();
 
-  //   executionContext.enableDryRun();
-  //   const result = await validateDataContractCreateTransitionState(stateTransition);
-  //   executionContext.disableDryRun();
+    expect(dataContractFetched).to.be.true();
 
-  //   expect(result).to.be.an.instanceOf(ValidationResult);
-  //   expect(result.isValid()).to.be.true();
-
-  //   expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
-  //     dataContract.getId(),
-  //     executionContext,
-  //   );
-  // });
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+  });
 });

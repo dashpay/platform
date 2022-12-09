@@ -132,7 +132,7 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
     }
 }
