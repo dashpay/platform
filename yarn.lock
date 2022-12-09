@@ -10295,12 +10295,21 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"nan@npm:2.17.0, nan@npm:^2.14.1, nan@npm:^2.15.0":
-  version: 2.17.0
-  resolution: "nan@npm:2.17.0"
+"nan@npm:2.14.2":
+  version: 2.14.2
+  resolution: "nan@npm:2.14.2"
   dependencies:
     node-gyp: latest
-  checksum: ec609aeaf7e68b76592a3ba96b372aa7f5df5b056c1e37410b0f1deefbab5a57a922061e2c5b369bae9c7c6b5e6eecf4ad2dac8833a1a7d3a751e0a7c7f849ed
+  checksum: 7a269139b66a7d37470effb7fb36a8de8cc3b5ffba6e40bb8e0545307911fe5ebf94797ec62f655ecde79c237d169899f8bd28256c66a32cbc8284faaf94c3f4
+  languageName: node
+  linkType: hard
+
+"nan@npm:^2.14.1, nan@npm:^2.15.0":
+  version: 2.15.0
+  resolution: "nan@npm:2.15.0"
+  dependencies:
+    node-gyp: latest
+  checksum: 33e1bb4dfca447fe37d4bb5889be55de154828632c8d38646db67293a21afd61ed9909cdf1b886214a64707d935926c4e60e2b09de9edfc2ad58de31d6ce8f39
   languageName: node
   linkType: hard
 
@@ -10469,14 +10478,14 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"node-gyp-build@npm:^4.3.0, node-gyp-build@npm:^4.5.0":
-  version: 4.5.0
-  resolution: "node-gyp-build@npm:4.5.0"
+"node-gyp-build@npm:^4.2.3, node-gyp-build@npm:^4.3.0":
+  version: 4.3.0
+  resolution: "node-gyp-build@npm:4.3.0"
   bin:
     node-gyp-build: bin.js
     node-gyp-build-optional: optional.js
     node-gyp-build-test: build-test.js
-  checksum: d888bae0fb88335f69af1b57a2294a931c5042f36e413d8d364c992c9ebfa0b96ffe773179a5a2c8f04b73856e8634e09cce108dbb9804396d3cc8c5455ff2db
+  checksum: 1ecab16d9f275174d516e223f60f65ebe07540347d5c04a6a7d6921060b7f2e3af4f19463d9d1dcedc452e275c2ae71354a99405e55ebd5b655bb2f38025c728
   languageName: node
   linkType: hard
 
@@ -14996,12 +15005,12 @@ typescript@^3.9.5:
   linkType: hard
 
 "zeromq@npm:^5.2.8":
-  version: 5.3.1
-  resolution: "zeromq@npm:5.3.1"
+  version: 5.2.8
+  resolution: "zeromq@npm:5.2.8"
   dependencies:
-    nan: 2.17.0
+    nan: 2.14.2
     node-gyp: latest
-    node-gyp-build: ^4.5.0
-  checksum: 2a66959697ccdbd30916f862b0b639c5d3f2e301f68ef34cb7eb74f8ad5947ffe36ab06731073dbf1db9556afb9c938e13e18127b838915f0bc424444026845d
+    node-gyp-build: ^4.2.3
+  checksum: 0fada0fe60a4227d4ced3db6fe5fec308db8b973c63f4b5cb9e4354e8d467cbea949b626df512f77a73771161d018d83cb8f6bafbb75ca146cca565d433c72d4
   languageName: node
   linkType: hard
