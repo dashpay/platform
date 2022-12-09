@@ -187,15 +187,14 @@ impl Drive {
                 self.batch_delete(
                     withdrawals_path,
                     id,
-                    true,
-                    true,
+                    None,
                     transaction,
                     &mut batch_operations,
                 )?;
             }
 
             self.apply_batch_drive_operations(
-                true,
+                None,
                 transaction,
                 batch_operations,
                 &mut drive_operations,

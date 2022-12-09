@@ -580,7 +580,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "0.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=df3535f1c26bec0539c6500d9d621eb4b18c61aa#df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -790,6 +790,21 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
+source = "git+https://github.com/dashevo/rust-dashcore?branch=master#6092d584487918c5330fec93152e4df06a714067"
+dependencies = [
+ "anyhow",
+ "bech32",
+ "bitcoin_hashes",
+ "core2",
+ "hashbrown 0.8.2",
+ "hex",
+ "rustversion",
+ "secp256k1",
+]
+
+[[package]]
+name = "dashcore"
+version = "0.29.1"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#6092d584487918c5330fec93152e4df06a714067"
 dependencies = [
  "anyhow",
@@ -847,7 +862,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "env_logger",
  "futures",
  "getrandom",
@@ -887,7 +902,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
  "dpp",
  "enum-map",
  "grovedb",
@@ -895,6 +910,7 @@ dependencies = [
  "indexmap",
  "integer-encoding",
  "intmap",
+ "itertools",
  "moka",
  "rand 0.8.5",
  "rand_distr",
@@ -914,7 +930,7 @@ dependencies = [
  "bs58",
  "chrono",
  "ciborium",
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "drive",
  "hex",
  "rand 0.8.5",
@@ -1246,8 +1262,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.3.1"
-source = "git+https://github.com/dashpay/grovedb?rev=df3535f1c26bec0539c6500d9d621eb4b18c61aa#df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+version = "0.6.1"
+source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 dependencies = [
  "bincode",
  "costs",
@@ -1580,7 +1596,8 @@ checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 [[package]]
 name = "librocksdb-sys"
 version = "0.8.0+7.4.4"
-source = "git+https://github.com/yiyuanliu/rust-rocksdb?branch=transaction#2210e86191e581bcd87da15589687e0044109f54"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "611804e4666a25136fcc5f8cf425ab4d26c7f74ea245ffe92ea23b85b6420b5d"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -1671,8 +1688,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=df3535f1c26bec0539c6500d9d621eb4b18c61aa#df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+version = "0.6.1"
+source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1688,6 +1705,7 @@ dependencies = [
  "num_cpus",
  "rand 0.8.5",
  "storage",
+ "thiserror",
  "time 0.3.17",
  "visualize",
 ]
@@ -2530,8 +2548,9 @@ dependencies = [
 
 [[package]]
 name = "rocksdb"
-version = "0.18.0"
-source = "git+https://github.com/yiyuanliu/rust-rocksdb?branch=transaction#2210e86191e581bcd87da15589687e0044109f54"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e9562ea1d70c0cc63a34a22d977753b50cca91cc6b6527750463bd5dd8697bc"
 dependencies = [
  "libc",
  "librocksdb-sys",
@@ -2841,7 +2860,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "0.2.0"
-source = "git+https://github.com/dashpay/grovedb?rev=df3535f1c26bec0539c6500d9d621eb4b18c61aa#df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 dependencies = [
  "blake3",
  "costs",
@@ -3227,7 +3246,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=df3535f1c26bec0539c6500d9d621eb4b18c61aa#df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 dependencies = [
  "hex",
  "itertools",

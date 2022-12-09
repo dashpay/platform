@@ -410,27 +410,29 @@ impl PlatformWrapper {
                     let this = task_context.undefined();
 
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(maybe_contract_fetch_info) => {
+                        Ok((maybe_fee_result, maybe_contract_fetch_info)) => {
                             let js_result = task_context.empty_array();
 
-                            // TODO: Fee result should be present even if data contract wasn't found
-                            if let Some(contract_fetch_info) = maybe_contract_fetch_info {
+                            let js_contract: Handle<JsValue> = if let Some(contract_fetch_info) =
+                                maybe_contract_fetch_info
+                            {
                                 let contract_cbor =
                                     contract_fetch_info.contract.to_buffer().or_else(|_| {
                                         task_context.throw_range_error("can't serialize contract")
                                     })?;
 
-                                let contract_buffer =
-                                    JsBuffer::external(&mut task_context, contract_cbor);
+                                JsBuffer::external(&mut task_context, contract_cbor).upcast()
+                            } else {
+                                task_context.null().upcast()
+                            };
 
-                                js_result.set(&mut task_context, 0, contract_buffer)?;
+                            js_result.set(&mut task_context, 0, js_contract)?;
 
-                                if let Some(fee_result) = &contract_fetch_info.fee {
-                                    let js_fee_result = task_context
-                                        .boxed(FeeResultWrapper::new(fee_result.clone()));
+                            if let Some(fee_result) = maybe_fee_result {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
 
-                                    js_result.set(&mut task_context, 1, js_fee_result)?;
-                                }
+                                js_result.set(&mut task_context, 1, js_fee_result)?;
                             }
 
                             // First parameter of JS callbacks is error, which is null in this case

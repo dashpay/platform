@@ -34,18 +34,22 @@
 //!
 
 use crate::contract::document::Document;
+use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
 use dpp::data_contract::extra::DocumentType;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::Element;
 
 mod delete;
+mod estimation_costs;
 mod insert;
 mod update;
 
 /// Returns the path to a contract document type.
-fn contract_document_type_path<'a>(
+pub(crate) fn contract_document_type_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 4] {
@@ -57,8 +61,21 @@ fn contract_document_type_path<'a>(
     ]
 }
 
+/// Returns the path to a contract document type.
+pub(crate) fn contract_document_type_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![1u8],
+        contract_id.to_vec(),
+        vec![1u8],
+        document_type_name.as_bytes().to_vec(),
+    ]
+}
+
 /// Returns the path to the primary keys of a contract document type.
-fn contract_documents_primary_key_path<'a>(
+pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 5] {
@@ -85,6 +102,22 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
         &[0],
         document_id,
     ]
+}
+
+/// Returns the path to a contract document when the document id isn't known.
+fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
+    contract_id: &[u8],
+    document_type: &DocumentType,
+) -> KeyInfoPath {
+    let mut key_info_path = KeyInfoPath::from_known_path(contract_documents_primary_key_path(
+        contract_id,
+        document_type.name.as_str(),
+    ));
+    key_info_path.push(KeyInfo::MaxKeySize {
+        unique_id: document_type.unique_id_for_storage().to_vec(),
+        max_size: DEFAULT_HASH_SIZE_U8,
+    });
+    key_info_path
 }
 
 /// Returns the size of the path to a contract document.
@@ -135,6 +168,35 @@ fn make_document_reference(
         Some(max_reference_hops),
         StorageFlags::map_to_some_element_flags(storage_flags),
     )
+}
+
+/// size of a document reference.
+fn document_reference_size(document_type: &DocumentType, storage_flags_size: u32) -> u32 {
+    // we need to construct the reference from the split height of the contract document
+    // type which is at 4
+    // 0 represents document storage
+    // Then we add document id
+    // Then we add 0 if the document type keys history
+    // vec![vec![0], Vec::from(document.id)];
+    // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
+    let mut reference_path_size = 36;
+    if document_type.documents_keep_history {
+        reference_path_size += 2;
+    }
+
+    // 1 for type reference
+    // 1 for reference type
+    // 1 for root height offset
+    // reference path size
+    // 1 reference_hops options
+    // 1 reference_hops count
+    // 1 element flags option
+    // storage flags size
+    6 + reference_path_size + storage_flags_size
+}
+
+fn unique_event_id() -> [u8; 32] {
+    rand::random::<[u8; 32]>()
 }
 
 /// Tests module

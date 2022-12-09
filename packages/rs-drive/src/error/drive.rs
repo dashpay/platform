@@ -7,12 +7,12 @@ pub enum DriveError {
     CorruptedCodeExecution(&'static str),
 
     /// Error
-    #[error("unsupported error: {0}")]
-    Unsupported(&'static str),
+    #[error("not supported error: {0}")]
+    NotSupported(&'static str),
 
     /// Error
-    #[error("unsupported private error: {0}")]
-    UnsupportedPrivate(&'static str),
+    #[error("not supported private error: {0}")]
+    NotSupportedPrivate(&'static str),
 
     /// Error
     #[error("grovedb insertion error: {0}")]

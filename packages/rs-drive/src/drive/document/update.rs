@@ -32,23 +32,27 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use grovedb::{Element, TransactionArg};
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::key_info::KeyInfo::KnownKey;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, SOME_OPTIMIZED_DOCUMENT_REFERENCE};
+use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, OPTIMIZED_DOCUMENT_REFERENCE};
 use crate::drive::document::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path, make_document_reference,
+    contract_documents_primary_key_path, document_reference_size, make_document_reference,
+    unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentSize, DocumentWithoutSerialization,
+    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
-use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
+
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathKeyInfo};
 use crate::drive::Drive;
@@ -58,7 +62,9 @@ use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 
 use crate::drive::block_info::BlockInfo;
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
+
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
@@ -104,6 +110,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+        let estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -131,7 +142,7 @@ impl Drive {
                 owner_id,
             },
             &block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
         )?;
@@ -182,6 +193,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+        let estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
 
         let document_type = contract.document_type_for_name(document_type_name)?;
 
@@ -196,7 +212,7 @@ impl Drive {
                 owner_id,
             },
             &block_info,
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
         )?;
@@ -209,17 +225,24 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        apply: bool,
+        mut estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
-            apply,
+            &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
-        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            drive_operations,
+        )
     }
 
     /// Gathers operations for updating a document.
@@ -227,7 +250,9 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
@@ -238,16 +263,15 @@ impl Drive {
             )));
         }
 
-        if !document_and_contract_info
-            .document_info
-            .is_document_and_serialization()
+        // If we are going for estimated costs do an add instead as it always worse than an update
+        if document_and_contract_info.document_info.is_document_size()
+            || estimated_costs_only_with_layer_info.is_some()
         {
-            // todo: right now let's say the worst case scenario for an update is that all the data must be added again
             return self.add_document_for_contract_operations(
                 document_and_contract_info,
-                false,
+                true, // we say we should override as this skips an unnecessary check
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
             );
         }
@@ -277,11 +301,9 @@ impl Drive {
                 document_and_contract_info.document_type,
                 storage_flags,
             );
-            let query_stateless_max_value_size = if apply {
-                None
-            } else {
-                Some(document_type.max_size())
-            };
+            let query_stateless_max_value_size = estimated_costs_only_with_layer_info
+                .as_mut()
+                .map(|_| document_type.max_size());
 
             // next we need to get the old document from storage
             let old_document_element = if document_type.documents_keep_history {
@@ -297,7 +319,7 @@ impl Drive {
                     query_stateless_max_value_size.map(|vs| (vs, vec![1]));
                 self.grove_get(
                     contract_documents_keeping_history_primary_key_path_for_document_id,
-                    KeyRefRequest(&[0]),
+                    &[0],
                     query_stateless_with_max_value_size_and_max_reference_sizes,
                     transaction,
                     &mut batch_operations,
@@ -305,7 +327,7 @@ impl Drive {
             } else {
                 self.grove_get_direct(
                     contract_documents_primary_key_path,
-                    KeyRefRequest(document.id.as_slice()),
+                    document.id.as_slice(),
                     query_stateless_max_value_size,
                     transaction,
                     &mut batch_operations,
@@ -318,7 +340,7 @@ impl Drive {
                 &document_and_contract_info,
                 block_info,
                 true,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
                 &mut batch_operations,
             )?;
@@ -338,7 +360,7 @@ impl Drive {
                     )))
                 }?
             } else if let Some(max_value_size) = query_stateless_max_value_size {
-                DocumentSize(max_value_size as u32)
+                DocumentEstimatedAverageSize(max_value_size as u32)
             } else {
                 return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
                     "document being updated does not exist",
@@ -367,7 +389,12 @@ impl Drive {
                     .unwrap_or_default();
 
                 let old_document_top_field = old_document_info
-                    .get_raw_for_document_type(&top_index_property.name, document_type, owner_id)?
+                    .get_raw_for_document_type(
+                        &top_index_property.name,
+                        document_type,
+                        owner_id,
+                        None,
+                    )?
                     .unwrap_or_default();
 
                 // if we are not applying that means we are trying to get worst case costs
@@ -393,7 +420,7 @@ impl Drive {
                                 document_top_field.as_slice(),
                             )),
                             storage_flags,
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -425,7 +452,12 @@ impl Drive {
                         .unwrap_or_default();
 
                     let old_document_index_field = old_document_info
-                        .get_raw_for_document_type(&index_property.name, document_type, owner_id)?
+                        .get_raw_for_document_type(
+                            &index_property.name,
+                            document_type,
+                            owner_id,
+                            None,
+                        )?
                         .unwrap_or_default();
 
                     // if we are not applying that means we are trying to get worst case costs
@@ -452,7 +484,7 @@ impl Drive {
                                     index_property.name.as_bytes(),
                                 )),
                                 storage_flags,
-                                apply,
+                                estimated_costs_only_with_layer_info.is_none(),
                                 transaction,
                                 &mut batch_operations,
                             )?;
@@ -482,7 +514,7 @@ impl Drive {
                                     document_index_field.as_slice(),
                                 )),
                                 storage_flags,
-                                apply,
+                                estimated_costs_only_with_layer_info.is_none(),
                                 transaction,
                                 &mut batch_operations,
                             )?;
@@ -505,25 +537,54 @@ impl Drive {
                     // we first need to delete the old values
                     // unique indexes will be stored under key "0"
                     // non unique indices should have a tree at key "0" that has all elements based off of primary key
+
+                    let mut key_info_path = KeyInfoPath::from_vec(
+                        old_index_path
+                            .into_iter()
+                            .map(|key_info| match key_info {
+                                Key(key) => KnownKey(key),
+                                KeyRef(key_ref) => KnownKey(key_ref.to_vec()),
+                                KeySize(key_info) => key_info,
+                            })
+                            .collect::<Vec<KeyInfo>>(),
+                    );
+
+                    let reference_size = document_reference_size(
+                        document_type,
+                        StorageFlags::approximate_size(true, None),
+                    );
+
                     if !index.unique {
-                        old_index_path.push(DriveKeyInfo::Key(vec![0]));
+                        key_info_path.push(KnownKey(vec![0]));
+
+                        let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                            reference_size,
+                            &key_info_path,
+                            estimated_costs_only_with_layer_info,
+                        )?;
 
                         // here we should return an error if the element already exists
                         self.batch_delete_up_tree_while_empty(
-                            old_index_path,
+                            key_info_path,
                             document.id.as_slice(),
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            apply,
+                            stateless_delete_for_costs,
                             transaction,
                             &mut batch_operations,
                         )?;
                     } else {
+                        let stateless_delete_for_costs = Self::stateless_delete_for_costs(
+                            reference_size,
+                            &key_info_path,
+                            estimated_costs_only_with_layer_info,
+                        )?;
+
                         // here we should return an error if the element already exists
                         self.batch_delete_up_tree_while_empty(
-                            old_index_path,
+                            key_info_path,
                             &[0],
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            apply,
+                            stateless_delete_for_costs,
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -536,7 +597,7 @@ impl Drive {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
                             storage_flags,
-                            apply,
+                            estimated_costs_only_with_layer_info.is_none(),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -556,11 +617,9 @@ impl Drive {
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
                             PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
-                            if apply {
-                                None
-                            } else {
-                                SOME_OPTIMIZED_DOCUMENT_REFERENCE
-                            },
+                            estimated_costs_only_with_layer_info
+                                .as_mut()
+                                .map(|_| OPTIMIZED_DOCUMENT_REFERENCE),
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -605,7 +664,6 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
 
     #[test]
@@ -1062,8 +1120,8 @@ mod tests {
            "$revision": 1,
            "firstName": "myName",
            "lastName": "lastName",
-           "$createdAt":1647535750329 as u64,
-           "$updatedAt":1647535750329 as u64,
+           "$createdAt":1647535750329_u64,
+           "$updatedAt":1647535750329_u64,
         });
 
         let serialized_document = value_to_cbor(document, Some(defaults::PROTOCOL_VERSION));
@@ -1071,7 +1129,7 @@ mod tests {
         drive
             .add_serialized_document_for_serialized_contract(
                 serialized_document.as_slice(),
-                &contract.as_slice(),
+                contract.as_slice(),
                 "indexedDocument",
                 None,
                 true,
@@ -1093,8 +1151,8 @@ mod tests {
            "$revision": 2,
            "firstName": "updatedName",
            "lastName": "lastName",
-           "$createdAt":1647535750329 as u64,
-           "$updatedAt":1647535754556 as u64,
+           "$createdAt":1647535750329_u64,
+           "$updatedAt":1647535754556_u64,
         });
 
         let serialized_document = value_to_cbor(document, Some(defaults::PROTOCOL_VERSION));
@@ -1102,7 +1160,7 @@ mod tests {
         drive
             .update_document_for_contract_cbor(
                 serialized_document.as_slice(),
-                &contract.as_slice(),
+                contract.as_slice(),
                 "indexedDocument",
                 None,
                 BlockInfo::default(),
@@ -1325,7 +1383,7 @@ mod tests {
             //Explanation for 1350
 
             //todo
-            1350
+            1278
         } else {
             //Explanation for 1049
 
@@ -1565,7 +1623,7 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let expected_added_bytes = if using_history { 1350 } else { 1006 };
+        let expected_added_bytes = if using_history { 1278 } else { 1006 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1664,7 +1722,7 @@ mod tests {
         test_fees_for_update_document_on_index(true, false)
     }
 
-    fn test_worst_case_fees_for_update_document(using_history: bool, using_transaction: bool) {
+    fn test_estimated_fees_for_update_document(using_history: bool, using_transaction: bool) {
         let config = DriveConfig {
             batching_enabled: true,
             batching_consistency_verification: true,
@@ -1710,8 +1768,8 @@ mod tests {
         };
 
         let person_0_updated = Person {
-            id: id.clone(),
-            owner_id: owner_id.clone(),
+            id,
+            owner_id,
             first_name: "Samuel".to_string(),
             middle_name: "Abraham".to_string(),
             last_name: "Westrich2".to_string(),
@@ -1732,7 +1790,7 @@ mod tests {
             //Explanation for 1350
 
             //todo
-            1350
+            1278
         } else {
             //Explanation for 1049
 
@@ -1874,28 +1932,28 @@ mod tests {
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        let expected_added_bytes = if using_history { 1351 } else { 1007 };
+        let expected_added_bytes = if using_history { 1279 } else { 1007 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_no_history_using_transaction() {
-        test_worst_case_fees_for_update_document(false, true)
+    fn test_estimated_fees_for_update_document_no_history_using_transaction() {
+        test_estimated_fees_for_update_document(false, true)
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_no_history_no_transaction() {
-        test_worst_case_fees_for_update_document(false, false)
+    fn test_estimated_fees_for_update_document_no_history_no_transaction() {
+        test_estimated_fees_for_update_document(false, false)
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_with_history_using_transaction() {
-        test_worst_case_fees_for_update_document(true, true)
+    fn test_estimated_fees_for_update_document_with_history_using_transaction() {
+        test_estimated_fees_for_update_document(true, true)
     }
 
     #[test]
-    fn test_worst_case_fees_for_update_document_with_history_no_transaction() {
-        test_worst_case_fees_for_update_document(true, false)
+    fn test_estimated_fees_for_update_document_with_history_no_transaction() {
+        test_estimated_fees_for_update_document(true, false)
     }
 
     #[derive(Serialize, Deserialize)]
@@ -1931,7 +1989,6 @@ mod tests {
             0,
             person
                 .owner_id
-                .clone()
                 .try_into()
                 .expect("expected to get owner_id"),
         ));
@@ -1944,7 +2001,7 @@ mod tests {
                         &document_cbor,
                         storage_flags.as_ref(),
                     )),
-                    contract: &contract,
+                    contract,
                     document_type,
                     owner_id: None,
                 },
@@ -1963,27 +2020,10 @@ mod tests {
         person: &Person,
         transaction: TransactionArg,
     ) -> FeeResult {
-        let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("document should be properly deserialized");
-        let document_type = contract
-            .document_type_for_name("person")
-            .expect("expected to get document type");
-
-        let storage_flags = Some(StorageFlags::SingleEpochOwned(
-            0,
-            person
-                .owner_id
-                .clone()
-                .try_into()
-                .expect("expected to get owner_id"),
-        ));
-
         drive
             .delete_document_for_contract(
                 person.id,
-                &contract,
+                contract,
                 "person",
                 Some(person.owner_id),
                 block_info,
@@ -2227,7 +2267,7 @@ mod tests {
         let factory = DataContractFactory::new(1, data_contract_validator);
 
         let contract = factory
-            .create(owner_id.clone(), documents)
+            .create(owner_id.clone(), documents, Some(15))
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
@@ -2287,7 +2327,7 @@ mod tests {
                 &document_type,
                 Some(owner_id.to_buffer()),
                 false,
-                block_info.clone(),
+                block_info,
                 true,
                 Some(&storage_flags),
                 None,

@@ -28,19 +28,20 @@ intmap = { version="2.0.0", features=["serde"] }
 chrono = "0.4.20"
 bincode = "1.3.3"
 dpp = { path = "../rs-dpp" }
-dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
+itertools = { version = "0.10.5" }
+dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+rev = "f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+rev = "f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "df3535f1c26bec0539c6500d9d621eb4b18c61aa"
+rev = "f8f3c70488448c26d67c3751dd73120b76cdcf0c"
 
 [dev-dependencies]
 criterion = "0.3.5"
