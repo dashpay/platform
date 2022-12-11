@@ -136,7 +136,7 @@ describe('core scope unit tests', () => {
     expect(scope.remoteBlockHeight).to.be.equal(null);
   });
 
-  it('should throw if error during request to core', async function it() {
+  it('should throw if error during request to core', async () => {
     mockRpcClient.mnsync.throws(new Error());
 
     try {
