@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const PortStateEnum = require('../enums/portState');
 
 const MAX_REQUEST_TIMEOUT = 5000;
 
@@ -54,6 +55,14 @@ module.exports = {
     },
   },
   mnowatch: {
-    checkPortStatus: async (port) => requestText(`https://mnowatch.org/${port}/`),
+    checkPortStatus: async (port) => {
+      try {
+        return requestText(`https://mnowatch.org/${port}/`);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(e);
+        return PortStateEnum.ERROR;
+      }
+    },
   },
 };

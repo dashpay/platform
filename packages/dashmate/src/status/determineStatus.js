@@ -38,11 +38,9 @@ module.exports = {
    */
   platform: (dockerStatus, coreIsSynced) => {
     if (dockerStatus === DockerStatusEnum.running) {
-      if (coreIsSynced) {
-        return ServiceStatusEnum.up;
-      }
-      return ServiceStatusEnum.wait_for_core;
+      return coreIsSynced ? ServiceStatusEnum.up : ServiceStatusEnum.wait_for_core;
     }
+
     return ServiceStatusEnum.error;
   },
 };

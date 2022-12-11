@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
+const DockerStatusEnum = require('../../enums/dockerStatus');
 const providers = require('../providers');
 
 module.exports = (dockerCompose, createRpcClient) => async (config) => {
@@ -10,13 +11,17 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     pass: config.get('core.rpc.password'),
   });
 
+  const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
+
+  if (dockerStatus !== DockerStatusEnum.running) {
+    throw new Error('Docker container is not running');
+  }
+
   const {
     result: {
       IsSynced: coreIsSynced,
     },
   } = await rpcClient.mnsync('status');
-
-  const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
 
   const serviceStatus = determineStatus.platform(dockerStatus, coreIsSynced);
 
@@ -41,34 +46,36 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     },
   };
 
+  platform.httpService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`;
+  platform.gRPCService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`;
+  platform.p2pService = `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`;
+  platform.rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
+
   // Collecting platform data fails if Tenderdash is waiting for core to sync
   try {
     const httpPort = config.get('platform.dapi.envoy.http.port');
     const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
 
-    const [tenderdashStatusResponse, tenderdashNetInfoResponse,
-      httpPortState, gRPCPortState, p2pPortState] = await Promise.all([
+    const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
       fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
       fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
+    ]);
+
+    const [httpPortState, gRPCPortState, p2pPortState] = await Promise.all([
       providers.mnowatch.checkPortStatus(httpPort),
       providers.mnowatch.checkPortStatus(gRPCPort),
       providers.mnowatch.checkPortStatus(p2pPort),
     ]);
 
-    const [tenderdashNetInfo, tenderdashStatus] = await Promise.all([
-      tenderdashNetInfoResponse.json(),
+    const [tenderdashStatus, tenderdashNetInfo] = await Promise.all([
       tenderdashStatusResponse.json(),
+      tenderdashNetInfoResponse.json(),
     ]);
 
     platform.httpPortState = httpPortState;
     platform.gRPCPortState = gRPCPortState;
     platform.p2pPortState = p2pPortState;
-
-    platform.httpService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`;
-    platform.gRPCService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`;
-    platform.p2pService = `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`;
-    platform.rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
 
     const { version, network } = tenderdashStatus.node_info;
 
@@ -85,11 +92,14 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     platform.tenderdash.network = network;
     platform.tenderdash.latestAppHash = latestAppHash;
   } catch (e) {
-    if (e.name !== 'FetchError') {
+    if (e.name === 'FetchError') {
+      platform.tenderdash.serviceStatus = ServiceStatusEnum.error;
+
+      // eslint-disable-next-line no-console
+      console.error(e);
+    } else {
       throw e;
     }
-
-    platform.tenderdash.serviceStatus = ServiceStatusEnum.error;
   }
 
   return platform;
