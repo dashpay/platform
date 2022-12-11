@@ -1,18 +1,18 @@
-function getPaymentQueuePosition(masternodeState, masternodeEnabledCount, coreBlocks) {
+function getPaymentQueuePosition(dmnState, masternodeEnabledCount, coreBlocks) {
   let paymentQueuePosition;
   // Masternode has been unbanned recently
-  if (masternodeState.PoSeRevivedHeight > masternodeState.lastPaidHeight) {
-    paymentQueuePosition = masternodeState.PoSeRevivedHeight
+  if (dmnState.PoSeRevivedHeight > dmnState.lastPaidHeight) {
+    paymentQueuePosition = dmnState.PoSeRevivedHeight
       + masternodeEnabledCount
       - coreBlocks;
   // Masternode has never been paid
-  } else if (masternodeState.lastPaidHeight === 0) {
-    paymentQueuePosition = masternodeState.registeredHeight
+  } else if (dmnState.lastPaidHeight === 0) {
+    paymentQueuePosition = dmnState.registeredHeight
       + masternodeEnabledCount
       - coreBlocks;
   // Masternode was previously paid and is in normal queue
   } else {
-    paymentQueuePosition = masternodeState.lastPaidHeight
+    paymentQueuePosition = dmnState.lastPaidHeight
       + masternodeEnabledCount
       - coreBlocks;
   }

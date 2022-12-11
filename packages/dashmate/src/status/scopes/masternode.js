@@ -3,7 +3,7 @@ const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
 
-module.exports = async (dockerCompose, createRpcClient) => async (config) => {
+module.exports = (dockerCompose, createRpcClient) => async (config) => {
   const rpcClient = createRpcClient({
     port: config.get('core.rpc.port'),
     user: config.get('core.rpc.user'),
@@ -14,12 +14,14 @@ module.exports = async (dockerCompose, createRpcClient) => async (config) => {
   const { AssetName: syncAsset } = mnsyncStatus.result;
 
   const masternode = {
-    proTxHash: null,
-    state: null,
+    syncAsset,
     sentinel: {
       state: null,
       version: null,
     },
+    proTxHash: null,
+    state: null,
+    status: null,
     nodeState: {
       dmnState: null,
       poSePenalty: null,
@@ -37,6 +39,8 @@ module.exports = async (dockerCompose, createRpcClient) => async (config) => {
     const sentinelVersionResponse = await dockerCompose
       .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v');
 
+    console.log(sentinelStateResponse.out)
+
     const [state] = sentinelStateResponse.out.split(/\r?\n/);
 
     masternode.sentinel.state = state;
@@ -53,24 +57,23 @@ module.exports = async (dockerCompose, createRpcClient) => async (config) => {
     ]);
 
     const { blocks: coreBlocks } = blockchainInfo.result;
-    const {
-      dmnState, state, status, proTxHash,
-    } = masternodeStatus.result;
 
     const countInfo = masternodeCount.result;
     const { enabled } = countInfo;
 
-    masternode.sentinel = proTxHash;
+    const { state, status, proTxHash } = masternodeStatus.result;
+
     masternode.proTxHash = proTxHash;
     masternode.status = status;
     masternode.state = state;
 
-    if (masternodeStatus === MasternodeStateEnum.READY) {
-      const position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
+    if (state === MasternodeStateEnum.READY) {
+      const {dmnState} = masternodeStatus.result
 
-      const poSePenalty = dmnState.PoSePenalty;
-      const { lastPaidHeight } = dmnState;
-      const lastPaidTime = blocksToTime(coreBlocks - dmnState.lastPaidHeight);
+      const {PoSePenalty: poSePenalty, lastPaidHeight} = dmnState
+
+      const position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
+      const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
       const paymentQueuePosition = position / enabled;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 

@@ -4,7 +4,7 @@ const mockMNSync = require('./mocks/mnSyncMock.json');
 const mockGetNetworkInfo = require('./mocks/mockGetNetworkInfo.json');
 const mockGetBlockchainInfo = require('./mocks/mockGetBlockchainInfo.json');
 
-describe.only('statusProvider integration test', () => {
+describe('statusProvider integration test', () => {
   let statusProvider;
 
   let dockerComposeMock;
@@ -44,4 +44,6 @@ describe.only('statusProvider integration test', () => {
 
     expect(scope).to.exist();
   });
+
+  // todo add test checking throws
 });

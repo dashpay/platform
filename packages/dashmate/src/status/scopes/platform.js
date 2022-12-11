@@ -21,6 +21,7 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
   const serviceStatus = determineStatus.platform(dockerStatus, coreIsSynced);
 
   const platform = {
+    coreIsSynced,
     httpService: null,
     p2pService: null,
     gRPCService: null,

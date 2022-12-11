@@ -45,7 +45,6 @@ class CoreStatusCommand extends ConfigBaseCommand {
         headerHeight,
         difficulty,
         verificationProgress,
-        masternode,
       } = scope;
 
       const plain = {
@@ -65,11 +64,6 @@ class CoreStatusCommand extends ConfigBaseCommand {
         'Remote Block Height': remoteBlockHeight || 'N/A',
         'Difficulty': difficulty,
       };
-
-      if (masternode.enabled) {
-        plain['Sentinel version'] = masternode.sentinelVersion;
-        plain['Sentinel status'] = masternode.sentinel.status ? chalk.green('No errors') : chalk.red(masternode.sentinelState);
-      }
 
       return printObject(plain, flags.format);
     }
