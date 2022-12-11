@@ -135,4 +135,16 @@ describe('core scope unit tests', () => {
     expect(scope.p2pPortState).to.be.equal(null);
     expect(scope.remoteBlockHeight).to.be.equal(null);
   });
+
+  it('should throw if error during request to core', async function it() {
+    mockRpcClient.mnsync.throws(new Error());
+
+    try {
+      await getCoreScope(config);
+
+      expect.fail('should throw error');
+    } catch (e) {
+      expect(e instanceof Error).to.be.true();
+    }
+  });
 });
