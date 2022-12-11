@@ -1,5 +1,3 @@
-const chalk = require('chalk');
-
 const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 

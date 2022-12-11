@@ -39,8 +39,6 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     const sentinelVersionResponse = await dockerCompose
       .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v');
 
-    console.log(sentinelStateResponse.out)
-
     const [state] = sentinelStateResponse.out.split(/\r?\n/);
 
     masternode.sentinel.state = state;
@@ -68,9 +66,9 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     masternode.state = state;
 
     if (state === MasternodeStateEnum.READY) {
-      const {dmnState} = masternodeStatus.result
+      const { dmnState } = masternodeStatus.result;
 
-      const {PoSePenalty: poSePenalty, lastPaidHeight} = dmnState
+      const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
       const position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
       const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);

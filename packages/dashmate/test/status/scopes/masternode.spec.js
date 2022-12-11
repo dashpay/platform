@@ -1,8 +1,8 @@
 const MasternodeSyncAssetEnum = require('../../../src/enums/masternodeSyncAsset');
 const getMasternodeScopeFactory = require('../../../src/status/scopes/masternode');
-const MasternodeStateEnum = require("../../../src/enums/masternodeState");
+const MasternodeStateEnum = require('../../../src/enums/masternodeState');
 
-describe.only('masternode scope unit tests', () => {
+describe('masternode scope unit tests', () => {
   let mockRpcClient;
   let mockCreateRpcClient;
   let mockDockerCompose;
@@ -17,43 +17,47 @@ describe.only('masternode scope unit tests', () => {
       masternode: this.sinon.stub(),
     };
     mockCreateRpcClient = () => mockRpcClient;
-    mockDockerCompose = {execCommand: this.sinon.stub()};
+    mockDockerCompose = { execCommand: this.sinon.stub() };
 
-    config = {get: this.sinon.stub(), toEnvs: this.sinon.stub()};
+    config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
     getMasternodeScope = getMasternodeScopeFactory(mockDockerCompose, mockCreateRpcClient);
   });
 
-  it('should just work', async function it() {
-    config.toEnvs.returns({})
+  it('should just work', async () => {
+    config.toEnvs.returns({});
 
-    mockRpcClient.mnsync.returns({result: {AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED}})
+    mockRpcClient.mnsync.returns({
+      result: {
+        AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+      },
+    });
 
     mockDockerCompose.execCommand
       .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
-      .returns({out: ''})
+      .returns({ out: '' });
 
     mockDockerCompose.execCommand
       .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
-      .returns({out: 'Dash Sentinel v1.7.1'})
+      .returns({ out: 'Dash Sentinel v1.7.1' });
 
-    const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+    const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
     const mockDmnState = {
       PoSePenalty: 0,
       PoSeRevivedHeight: 500,
       lastPaidHeight: 555,
-      registeredHeight: 400
-    }
+      registeredHeight: 400,
+    };
 
-    mockRpcClient.getBlockchainInfo.returns({result: {blocks: 1337}})
-    mockRpcClient.masternode.withArgs('count').returns({result: {enabled: 666}})
+    mockRpcClient.getBlockchainInfo.returns({ result: { blocks: 1337 } });
+    mockRpcClient.masternode.withArgs('count').returns({ result: { enabled: 666 } });
     mockRpcClient.masternode.withArgs('status').returns({
       result: {
         dmnState: mockDmnState,
         state: MasternodeStateEnum.READY,
         status: 'Ready',
-        proTxHash: mockProTxHash
-      }
-    })
+        proTxHash: mockProTxHash,
+      },
+    });
 
     const scope = await getMasternodeScope(config);
 
@@ -69,19 +73,19 @@ describe.only('masternode scope unit tests', () => {
     expect(scope.nodeState.poSePenalty).to.be.equal(mockDmnState.PoSePenalty);
     expect(scope.nodeState.lastPaidHeight).to.be.equal(mockDmnState.lastPaidHeight);
     expect(scope.nodeState.lastPaidTime).to.exist();
-    expect(scope.nodeState.paymentQueuePosition).to.exist()
+    expect(scope.nodeState.paymentQueuePosition).to.exist();
     expect(scope.nodeState.nextPaymentTime).to.exist();
   });
 
-  it('should throw if error with calls to core', async function it() {
-    mockRpcClient.mnsync.throws(new Error())
+  it('should throw if error with calls to core', async () => {
+    mockRpcClient.mnsync.throws(new Error());
 
     try {
       await getMasternodeScope(config);
 
       expect.fail('should throw error');
     } catch (e) {
-      expect(e instanceof Error).to.be.true()
+      expect(e instanceof Error).to.be.true();
     }
 
     expect(mockDockerCompose.execCommand.notCalled).to.be.true();
@@ -89,18 +93,22 @@ describe.only('masternode scope unit tests', () => {
     expect(mockRpcClient.masternode.notCalled).to.be.true();
   });
 
-  it.only('should not make calls if syncing', async function it() {
-    config.toEnvs.returns({})
+  it('should not make calls if syncing', async () => {
+    config.toEnvs.returns({});
 
-    mockRpcClient.mnsync.returns({result: {AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN}})
+    mockRpcClient.mnsync.returns({
+      result: {
+        AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
+      },
+    });
 
     mockDockerCompose.execCommand
       .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
-      .returns({out: 'Waiting for dash core sync'})
+      .returns({ out: 'Waiting for dash core sync' });
 
     mockDockerCompose.execCommand
       .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
-      .returns({out: 'Dash Sentinel v1.7.1'})
+      .returns({ out: 'Dash Sentinel v1.7.1' });
 
     const scope = await getMasternodeScope(config);
 
@@ -113,40 +121,44 @@ describe.only('masternode scope unit tests', () => {
     expect(scope.nodeState.poSePenalty).to.be.equal(null);
     expect(scope.nodeState.lastPaidHeight).to.be.equal(null);
     expect(scope.nodeState.lastPaidTime).to.be.equal(null);
-    expect(scope.nodeState.paymentQueuePosition).to.be.equal(null)
-    expect(scope.nodeState.nextPaymentTime).to.be.equal(null)
+    expect(scope.nodeState.paymentQueuePosition).to.be.equal(null);
+    expect(scope.nodeState.nextPaymentTime).to.be.equal(null);
 
     expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
     expect(mockRpcClient.masternode.notCalled).to.be.true();
   });
 
-  it('should not load sentinel version if exited with error', async function it() {
-    config.toEnvs.returns({})
+  it('should not load sentinel version if exited with error', async () => {
+    config.toEnvs.returns({});
 
-    mockRpcClient.mnsync.returns({result: {AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN}})
+    mockRpcClient.mnsync.returns({
+      result: {
+        AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
+      },
+    });
 
     mockDockerCompose.execCommand
       .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
-      .throws(new Error())
+      .throws(new Error());
 
-    const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+    const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
     const mockDmnState = {
       PoSePenalty: 0,
       PoSeRevivedHeight: 500,
       lastPaidHeight: 555,
-      registeredHeight: 400
-    }
+      registeredHeight: 400,
+    };
 
-    mockRpcClient.getBlockchainInfo.returns({result: {blocks: 1337}})
-    mockRpcClient.masternode.withArgs('count').returns({result: {enabled: 666}})
+    mockRpcClient.getBlockchainInfo.returns({ result: { blocks: 1337 } });
+    mockRpcClient.masternode.withArgs('count').returns({ result: { enabled: 666 } });
     mockRpcClient.masternode.withArgs('status').returns({
       result: {
         dmnState: mockDmnState,
         state: MasternodeStateEnum.READY,
         status: 'Ready',
-        proTxHash: mockProTxHash
-      }
-    })
+        proTxHash: mockProTxHash,
+      },
+    });
 
     const scope = await getMasternodeScope(config);
 
