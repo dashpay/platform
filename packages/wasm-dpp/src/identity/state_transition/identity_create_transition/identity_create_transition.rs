@@ -3,7 +3,6 @@ use std::default::Default;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::state_transition::AssetLockProofWasm;
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
 };
 
 use dpp::{
+    identifier::Identifier,
     identity::{
         state_transition::{
             asset_lock_proof::AssetLockProof,
@@ -317,5 +317,16 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         Ok(js_object.into())
+    }
+
+    #[wasm_bindgen(js_name=getModifiedDataIds)]
+    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+        let ids = self.0.get_modified_data_ids();
+
+        ids.into_iter()
+            .map(|id| {
+                <IdentifierWrapper as std::convert::From<Identifier>>::from(id.clone()).into()
+            })
+            .collect()
     }
 }
