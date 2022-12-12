@@ -1706,7 +1706,6 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     lodash: ^4.17.21
-    lodash.get: ^4.4.2
     long: ^5.2.0
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
