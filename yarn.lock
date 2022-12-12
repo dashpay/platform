@@ -1424,7 +1424,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     google-protobuf: ^3.12.2
     jayson: ^3.3.4
-    lodash: ^4.17.19
+    lodash: ^4.17.21
     lru-cache: ^5.1.1
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
@@ -1881,7 +1881,7 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
     karma-webpack: ^5.0.0
-    lodash: ^4.17.19
+    lodash: ^4.17.21
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
