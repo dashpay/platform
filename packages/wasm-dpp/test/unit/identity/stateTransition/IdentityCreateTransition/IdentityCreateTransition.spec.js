@@ -5,7 +5,7 @@ const stateTransitionTypes = require(
 );
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const IdentifierJS = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
@@ -21,6 +21,7 @@ describe('IdentityCreateTransition', () => {
   let KeyType;
   let KeyPurpose;
   let KeySecurityLevel;
+  let Identifier;
 
   const mockRawPublicKey = (params = {}) => ({
     id: 0,
@@ -35,7 +36,7 @@ describe('IdentityCreateTransition', () => {
 
   before(async () => {
     ({
-      IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
+      IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel, Identifier,
     } = await loadWasmDpp());
   });
 
@@ -211,16 +212,17 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe.skip('#getModifiedDataIds', () => {
+  describe('#getModifiedDataIds', () => {
     it('should return ids of created identities', () => {
       const result = stateTransition.getModifiedDataIds();
+      const resultJS = stateTransitionJS.getModifiedDataIds();
 
-      expect(result.length).to.be.equal(1);
+      expect(result.length).to.equal(resultJS.length);
+      expect(result.map((id) => id.toBuffer())).to.deep.equal(resultJS);
       const identityId = result[0];
 
-      expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId).to.be.deep.equal(
-        new IdentityCreateTransition(rawStateTransition).getIdentityId(),
+      expect(identityId.toBuffer()).to.be.deep.equal(
+        stateTransition.getIdentityId().toBuffer(),
       );
     });
   });
