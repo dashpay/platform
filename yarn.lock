@@ -1600,10 +1600,7 @@ __metadata:
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
-    lodash.clonedeep: ^4.5.0
-    lodash.clonedeepwith: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.set: ^4.3.2
+    lodash: ^4.17.21
     long: ^5.2.0
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
@@ -9437,13 +9434,6 @@ fsevents@~2.3.2:
   version: 4.5.0
   resolution: "lodash.clonedeep@npm:4.5.0"
   checksum: 92c46f094b064e876a23c97f57f81fbffd5d760bf2d8a1c61d85db6d1e488c66b0384c943abee4f6af7debf5ad4e4282e74ff83177c9e63d8ff081a4837c3489
-  languageName: node
-  linkType: hard
-
-"lodash.clonedeepwith@npm:^4.5.0":
-  version: 4.5.0
-  resolution: "lodash.clonedeepwith@npm:4.5.0"
-  checksum: 9fbf4ebfa04b381df226a2298eba680327bea3d0d5d19c5118de7ae218fd219186e30e9fd0d33b13729f34ffbc83c1cf09cb27aff265ba94cb602b8a2b1e71c9
   languageName: node
   linkType: hard
 

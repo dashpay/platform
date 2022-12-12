@@ -1,6 +1,6 @@
-const lodashGet = require('lodash.get');
-const lodashSet = require('lodash.set');
-const lodashCloneDeepWith = require('lodash.clonedeepwith');
+const lodashGet = require('lodash/get');
+const lodashSet = require('lodash/set');
+const lodashCloneDeepWith = require('lodash/cloneDeepWith');
 
 const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
 

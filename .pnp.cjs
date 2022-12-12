@@ -2621,10 +2621,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha", "npm:2.0.1"],\
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],\
             ["karma-webpack", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:5.0.0"],\
-            ["lodash.clonedeep", "npm:4.5.0"],\
-            ["lodash.clonedeepwith", "npm:4.5.0"],\
-            ["lodash.get", "npm:4.4.2"],\
-            ["lodash.set", "npm:4.3.2"],\
+            ["lodash", "npm:4.17.21"],\
             ["long", "npm:5.2.0"],\
             ["mocha", "npm:9.2.2"],\
             ["node-inspect-extracted", "npm:1.0.8"],\
@@ -12091,15 +12088,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/lodash.clonedeep-npm-4.5.0-fbc3cda4e5-92c46f094b.zip/node_modules/lodash.clonedeep/",\
           "packageDependencies": [\
             ["lodash.clonedeep", "npm:4.5.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["lodash.clonedeepwith", [\
-        ["npm:4.5.0", {\
-          "packageLocation": "./.yarn/cache/lodash.clonedeepwith-npm-4.5.0-67373e487a-9fbf4ebfa0.zip/node_modules/lodash.clonedeepwith/",\
-          "packageDependencies": [\
-            ["lodash.clonedeepwith", "npm:4.5.0"]\
           ],\
           "linkType": "HARD"\
         }]\
