@@ -2402,7 +2402,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha", "npm:2.0.1"],\
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],\
             ["karma-webpack", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:5.0.0"],\
-            ["lodash.sample", "npm:4.2.1"],\
+            ["lodash", "npm:4.17.21"],\
             ["mocha", "npm:9.2.2"],\
             ["node-inspect-extracted", "npm:1.0.8"],\
             ["nyc", "npm:15.1.0"],\
@@ -12163,15 +12163,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/lodash.merge-npm-4.6.2-77cb4416bf-ad580b4bdb.zip/node_modules/lodash.merge/",\
           "packageDependencies": [\
             ["lodash.merge", "npm:4.6.2"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["lodash.sample", [\
-        ["npm:4.2.1", {\
-          "packageLocation": "./.yarn/cache/lodash.sample-npm-4.2.1-ec9e9fdf4d-8d93c1db13.zip/node_modules/lodash.sample/",\
-          "packageDependencies": [\
-            ["lodash.sample", "npm:4.2.1"]\
           ],\
           "linkType": "HARD"\
         }]\

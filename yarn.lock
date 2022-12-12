@@ -1358,7 +1358,7 @@ __metadata:
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
-    lodash.sample: ^4.2.1
+    lodash: ^4.17.21
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
@@ -9493,13 +9493,6 @@ fsevents@~2.3.2:
   version: 4.6.2
   resolution: "lodash.merge@npm:4.6.2"
   checksum: ad580b4bdbb7ca1f7abf7e1bce63a9a0b98e370cf40194b03380a46b4ed799c9573029599caebc1b14e3f24b111aef72b96674a56cfa105e0f5ac70546cdc005
-  languageName: node
-  linkType: hard
-
-"lodash.sample@npm:^4.2.1":
-  version: 4.2.1
-  resolution: "lodash.sample@npm:4.2.1"
-  checksum: 8d93c1db133b7c7c5d6f87eb6e512c83dc97baf1de56a2013eff17fd8ddffa5a0901541e320933d9fdb6a4d90e8a597d44bb7aa1e4fa6eca4da534802941e4ab
   languageName: node
   linkType: hard
 
