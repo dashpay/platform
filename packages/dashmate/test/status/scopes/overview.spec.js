@@ -3,7 +3,7 @@ const MasternodeStateEnum = require('../../../src/enums/masternodeState');
 const DockerStatusEnum = require('../../../src/enums/dockerStatus');
 const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
 
-describe.only('overview scope unit tests', () => {
+describe('overview scope unit tests', () => {
   let mockGetCoreScope;
   let mockGetPlatformScope;
   let mockGetMasternodeScope;
@@ -68,7 +68,7 @@ describe.only('overview scope unit tests', () => {
     expect(scope.core.dockerStatus).to.be.equal(mockCoreScope.dockerStatus);
   });
 
-  it.only('should not load if masternode or platform disabled ', async () => {
+  it('should not load if masternode or platform disabled ', async () => {
     config.get.withArgs('core.masternode.enable').returns(false);
     config.get.withArgs('network').returns('mainnet');
 
