@@ -1176,7 +1176,7 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_epochs_by_identities: _,
+            fee_refunds: _,
             removed_bytes_from_system: _,
         } = drive
             .add_serialized_document_for_contract(
@@ -1225,7 +1225,7 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_epochs_by_identities: _,
+            fee_refunds: _,
             removed_bytes_from_system: _,
         } = drive
             .add_serialized_document_for_contract(
@@ -1274,7 +1274,7 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_epochs_by_identities: _,
+            fee_refunds: _,
             removed_bytes_from_system: _,
         } = drive
             .add_serialized_document_for_contract(
@@ -1480,7 +1480,7 @@ mod tests {
         let FeeResult {
             storage_fee,
             processing_fee,
-            removed_bytes_from_epochs_by_identities: _,
+            fee_refunds: _,
             removed_bytes_from_system: _,
         } = drive
             .add_document_for_contract(

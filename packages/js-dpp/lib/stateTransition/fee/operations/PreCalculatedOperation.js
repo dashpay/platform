@@ -31,6 +31,13 @@ class PreCalculatedOperation extends AbstractOperation {
   }
 
   /**
+   * @return {{identifier: Buffer, creditsPerEpoch: Object<string, number>}[]}
+   */
+  getRefunds() {
+    return this.feeResult.feeRefunds;
+  }
+
+  /**
    * @return {{processingCost: number, type: string, storageCost: number}}
    */
   toJSON() {

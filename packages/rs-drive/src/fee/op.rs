@@ -41,7 +41,9 @@ use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{batch::GroveDbOp, Element, PathQuery};
+use intmap::IntMap;
 use std::collections::BTreeMap;
+use std::process::id;
 
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
@@ -54,7 +56,7 @@ use crate::fee::default_costs::{
 use crate::fee::op::DriveOperation::{
     CalculatedCostOperation, GroveOperation, PreCalculatedFeeResult,
 };
-use crate::fee::removed_bytes_from_epochs_by_identities::RemovedBytesFromEpochsByIdentities;
+use crate::fee::refunds::FeeRefunds;
 use crate::fee::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
@@ -398,26 +400,28 @@ impl DriveOperation {
                     let cost = operation.operation_cost()?;
                     let storage_fee = cost.storage_cost(epoch)?;
                     let processing_fee = cost.ephemeral_cost(epoch)?;
-                    let (removed_bytes_from_identities, removed_bytes_from_system) =
+                    let (removed_bytes_from_epochs_by_identities, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
-                            NoStorageRemoval => (BTreeMap::default(), 0),
+                            NoStorageRemoval => (FeeRefunds::default(), 0),
                             BasicStorageRemoval(amount) => {
                                 // this is not always considered an error
-                                (BTreeMap::default(), amount)
+                                (FeeRefunds::default(), amount)
                             }
-                            SectionedStorageRemoval(mut s) => {
-                                let system_amount = s
+                            SectionedStorageRemoval(mut removalPerEpochByIdentifier) => {
+                                let system_amount = removalPerEpochByIdentifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
-                                (s, system_amount)
+
+                                (
+                                    FeeRefunds::from_storage_removal(removalPerEpochByIdentifier)?,
+                                    system_amount,
+                                )
                             }
                         };
                     Ok(FeeResult {
                         storage_fee,
                         processing_fee,
-                        removed_bytes_from_epochs_by_identities: RemovedBytesFromEpochsByIdentities(
-                            removed_bytes_from_identities,
-                        ),
+                        fee_refunds: removed_bytes_from_epochs_by_identities,
                         removed_bytes_from_system,
                     })
                 }
@@ -516,7 +520,7 @@ pub trait DriveCost {
     fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
 }
 
-fn get_overflow_error(str: &'static str) -> Error {
+pub(crate) fn get_overflow_error(str: &'static str) -> Error {
     Error::Fee(FeeError::Overflow(str))
 }
 

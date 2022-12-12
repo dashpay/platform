@@ -76,6 +76,41 @@ impl FeeResultWrapper {
 
         Ok(cx.boxed(Self::new(fee_result_sum)))
     }
+
+    pub fn get_fee_refunds(mut cx: FunctionContext) -> JsResult<JsArray> {
+        let fee_result_wrapper_self = cx
+            .this()
+            .downcast_or_throw::<JsBox<FeeResultWrapper>, _>(&mut cx)?;
+
+        // Clone fee result because IntMap doesn't implement iterator for reference
+        let fee_result = fee_result_wrapper_self.deref().deref().deref().clone();
+
+        let js_fee_refunds: Handle<JsArray> = cx.empty_array();
+
+        for (index, (identifier, credits_per_epoch)) in
+            fee_result.fee_refunds.0.into_iter().enumerate()
+        {
+            let js_epoch_index_map = cx.empty_object();
+
+            for (epoch, credits) in credits_per_epoch {
+                // TODO: We could miss fees here
+                let js_credits = cx.number(credits as f64);
+
+                js_epoch_index_map.set(&mut cx, epoch.to_string().as_str(), js_credits)?;
+            }
+
+            let js_identity_to_epochs = cx.empty_object();
+
+            let js_identifier = JsBuffer::external(&mut cx, identifier);
+
+            js_identity_to_epochs.set(&mut cx, "identifier", js_identifier)?;
+            js_identity_to_epochs.set(&mut cx, "creditsPerEpoch", js_epoch_index_map)?;
+
+            js_fee_refunds.set(&mut cx, index as u32, js_identity_to_epochs)?;
+        }
+
+        Ok(js_fee_refunds)
+    }
 }
 
 impl Finalize for FeeResultWrapper {}

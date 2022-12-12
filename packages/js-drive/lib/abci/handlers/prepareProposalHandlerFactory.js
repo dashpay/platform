@@ -6,7 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const aggregateFees = require('./proposal/fees/aggregateFees');
+const addToFeeTxResults = require('./proposal/fees/addToFeeTxResults');
 
 const txAction = {
   UNKNOWN: 0, // Unknown action
@@ -80,7 +80,13 @@ function prepareProposalHandlerFactory(
 
     const txRecords = [];
     const txResults = [];
-    const feeResults = [];
+    const feeResults = {
+      storageFee: 0,
+      processingFee: 0,
+      feeRefunds: { },
+      feeRefundsSum: 0,
+    };
+
     let validTxCount = 0;
     let invalidTxCount = 0;
 
@@ -105,7 +111,7 @@ function prepareProposalHandlerFactory(
       if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        feeResults.push(fees);
+        addToFeeTxResults(feeResults, fees);
       } else {
         invalidTxCount += 1;
       }
@@ -135,7 +141,7 @@ function prepareProposalHandlerFactory(
     } = await endBlock({
       height,
       round,
-      fees: aggregateFees(feeResults),
+      fees: feeResults,
       coreChainLockedHeight,
     }, consensusLogger);
 

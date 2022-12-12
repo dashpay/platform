@@ -2349,6 +2349,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("feeResultAdd", FeeResultWrapper::add)?;
     cx.export_function("feeResultAddFees", FeeResultWrapper::add_fees)?;
     cx.export_function("feeResultCreate", FeeResultWrapper::create)?;
+    cx.export_function("feeResultGetRefunds", FeeResultWrapper::get_fee_refunds)?;
 
     Ok(())
 }

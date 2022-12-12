@@ -30,7 +30,12 @@ function endBlockFactory(
    * @param {Object} request
    * @param {number} request.height
    * @param {number} request.round
-   * @param {FeeResult} request.fees
+   * @param {
+   *    storageFee: number,
+   *    processingFee: number,
+   *    feeRefunds: Object<string, number>,
+   *    feeRefundsSum: number
+   * } request.fees
    * @param {number} request.coreChainLockedHeight
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
@@ -46,14 +51,19 @@ function endBlockFactory(
     const {
       height,
       round,
-      fees,
+      fees: {
+        feeRefunds,
+        processingFee,
+        storageFee,
+        feeRefundsSum,
+      },
       coreChainLockedHeight,
     } = request;
 
     // Call RS ABCI
 
     const rsRequest = {
-      fees,
+      feeRefunds,
     };
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
@@ -64,17 +74,13 @@ function endBlockFactory(
 
     const { currentEpochIndex } = proposalBlockExecutionContext.getEpochInfo();
 
-    const {
-      processingFee: processingFees,
-      storageFee: storageFees,
-    } = fees;
-
-    if (processingFees > 0 || storageFees > 0) {
+    if (processingFee > 0 || storageFee > 0) {
       consensusLogger.debug({
         currentEpochIndex,
-        processingFees,
-        storageFees,
-      }, `${processingFees} processing fees added to epoch #${currentEpochIndex}. ${storageFees} storage fees added to distribution pool`);
+        processingFee,
+        storageFee,
+        feeRefundsSum,
+      }, `${processingFee} processing fees added to epoch #${currentEpochIndex}. ${storageFee} storage fees added to distribution pool. ${feeRefundsSum} credits refunded to identities`);
     }
 
     if (rsResponse.proposersPaidCount) {

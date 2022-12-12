@@ -32,13 +32,13 @@ use enum_map::EnumMap;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::{BaseOp, DriveOperation};
-use crate::fee::removed_bytes_from_epochs_by_identities::RemovedBytesFromEpochsByIdentities;
+use crate::fee::refunds::FeeRefunds;
 use crate::fee_pools::epochs::Epoch;
 
 /// Default costs module
 pub mod default_costs;
 pub mod op;
-mod removed_bytes_from_epochs_by_identities;
+mod refunds;
 
 /// Fee Result
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
@@ -47,8 +47,8 @@ pub struct FeeResult {
     pub storage_fee: u64,
     /// Processing fee
     pub processing_fee: u64,
-    /// Removed bytes from identities
-    pub removed_bytes_from_epochs_by_identities: RemovedBytesFromEpochsByIdentities,
+    /// Credits to refund to identities
+    pub fee_refunds: FeeRefunds,
     /// Removed bytes not needing to be refunded to identities
     pub removed_bytes_from_system: u32,
 }
@@ -104,8 +104,7 @@ impl FeeResult {
                 .ok_or(Error::Fee(FeeError::Overflow(
                     "processing fee overflow error",
                 )))?;
-        self.removed_bytes_from_epochs_by_identities
-            .checked_add_assign(rhs.removed_bytes_from_epochs_by_identities)?;
+        self.fee_refunds.checked_add_assign(rhs.fee_refunds)?;
         self.removed_bytes_from_system = self
             .removed_bytes_from_system
             .checked_add(rhs.removed_bytes_from_system)

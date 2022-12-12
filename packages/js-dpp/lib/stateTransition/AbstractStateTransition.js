@@ -113,6 +113,14 @@ class AbstractStateTransition {
   }
 
   /**
+   * @abstract
+   * @return {Identifier}
+   */
+  getOwnerId() {
+    throw new Error('Not implemented');
+  }
+
+  /**
    * Get state transition as JSON
    *
    * @return {JsonStateTransition}
@@ -287,10 +295,12 @@ class AbstractStateTransition {
   /**
    * Calculate ST fee in credits
    *
+   * @param {Object} options
+   * @param {boolean} [options.useCache=false]
    * @return {number}
    */
-  calculateFee() {
-    return calculateStateTransitionFee(this);
+  calculateFee(options = {}) {
+    return calculateStateTransitionFee(this, options);
   }
 
   /**

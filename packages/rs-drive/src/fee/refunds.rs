@@ -1,17 +1,46 @@
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+use crate::fee::op::get_overflow_error;
 use bincode::Options;
-use costs::storage_cost::removal::Identifier;
+use costs::storage_cost::removal::{Identifier, StorageRemovalPerEpochByIdentifier};
 use intmap::IntMap;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::{IntoIter, Iter};
 use std::collections::BTreeMap;
 
-/// Fee Result
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
-pub struct RemovedBytesFromEpochsByIdentities(pub BTreeMap<Identifier, IntMap<u32>>);
+type CreditsPerEpoch = IntMap<u64>;
+type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
 
-impl RemovedBytesFromEpochsByIdentities {
+/// Fee refunds to identities based on removed data from specific epochs
+#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
+pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
+
+impl FeeRefunds {
+    pub fn from_storage_removal(
+        storage_removal: StorageRemovalPerEpochByIdentifier,
+    ) -> Result<Self, Error> {
+        let refunds_per_epoch_by_identifier = storage_removal
+            .into_iter()
+            .map(|(identifier, bytes_per_epochs)| {
+                bytes_per_epochs
+                    .into_iter()
+                    .map(|(epoch_index, bytes)| {
+                        (bytes as u64)
+                            .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
+                            .ok_or_else(|| {
+                                get_overflow_error("storage written bytes cost overflow")
+                            })
+                            .map(|credits| (epoch_index, credits))
+                    })
+                    .collect::<Result<CreditsPerEpoch, Error>>()
+                    .map(|credits_per_epochs| (identifier, credits_per_epochs))
+            })
+            .collect::<Result<CreditsPerEpochByIdentifier, Error>>()?;
+
+        Ok(Self(refunds_per_epoch_by_identifier))
+    }
+
     /// Adds and self assigns result between two Fee Results
     pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), Error> {
         for (identifier, mut int_map_b) in rhs.0.into_iter() {
@@ -28,7 +57,7 @@ impl RemovedBytesFromEpochsByIdentities {
                         };
                         combined.map(|c| (k, c))
                     })
-                    .collect::<Result<IntMap<u32>, Error>>()?;
+                    .collect::<Result<CreditsPerEpoch, Error>>()?;
                 intersection.into_iter().chain(int_map_b).collect()
             } else {
                 int_map_b
@@ -40,17 +69,17 @@ impl RemovedBytesFromEpochsByIdentities {
     }
 
     /// Passthrough method for get
-    pub fn get(&self, key: &Identifier) -> Option<&IntMap<u32>> {
+    pub fn get(&self, key: &Identifier) -> Option<&CreditsPerEpoch> {
         self.0.get(key)
     }
 
     /// Passthrough method for iteration
-    pub fn iter(&self) -> Iter<Identifier, IntMap<u32>> {
+    pub fn iter(&self) -> Iter<Identifier, CreditsPerEpoch> {
         self.0.iter()
     }
 
     /// Passthrough method for into interation
-    pub fn into_iter(self) -> IntoIter<Identifier, IntMap<u32>> {
+    pub fn into_iter(self) -> IntoIter<Identifier, CreditsPerEpoch> {
         self.0.into_iter()
     }
 
@@ -80,7 +109,7 @@ impl RemovedBytesFromEpochsByIdentities {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Ok(RemovedBytesFromEpochsByIdentities(
+        Ok(FeeRefunds(
             bincode::DefaultOptions::default()
                 .with_varint_encoding()
                 .reject_trailing_bytes()
