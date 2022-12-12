@@ -7,7 +7,7 @@ const DockerStatusEnum = require('../../../src/enums/dockerStatus');
 const providers = require('../../../src/status/providers');
 const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
 
-describe('masternode scope unit tests', () => {
+describe('platform scope unit tests', () => {
   let mockRpcClient;
   let mockCreateRpcClient;
   let mockDetermineDockerStatus;
