@@ -7619,11 +7619,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["hasbin", "npm:1.2.3"],\
             ["jayson", "npm:3.6.5"],\
             ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
-            ["lodash.clonedeep", "npm:4.5.0"],\
-            ["lodash.get", "npm:4.4.2"],\
-            ["lodash.isequal", "npm:4.5.0"],\
-            ["lodash.merge", "npm:4.6.2"],\
-            ["lodash.set", "npm:4.3.2"],\
+            ["lodash", "npm:4.17.21"],\
             ["memory-streams", "npm:0.1.3"],\
             ["node-fetch", "virtual:25a5f5382d53dbf298bf7a1191760bc2e0a523a619eeb0e667b99a8649e8ad183f9e2e0b45f6fb831b92f4078b61622aa567cf79565f6aa5af9597e3c84864f6#npm:2.6.7"],\
             ["node-forge", "npm:1.3.1"],\
