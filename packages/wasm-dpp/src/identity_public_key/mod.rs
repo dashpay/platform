@@ -153,6 +153,12 @@ impl IdentityPublicKeyWasm {
 
         js_sys::Reflect::set(
             &js_object,
+            &JsValue::from_str("type"),
+            &JsValue::from(self.get_type()),
+        )?;
+
+        js_sys::Reflect::set(
+            &js_object,
             &"data".to_owned().into(),
             &JsValue::from(data_buffer),
         )?;
