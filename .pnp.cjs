@@ -2679,9 +2679,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["find-my-way", "npm:2.2.5"],\
             ["js-merkle", "npm:0.1.5"],\
             ["levelup", "npm:4.4.0"],\
-            ["lodash.clonedeep", "npm:4.5.0"],\
-            ["lodash.get", "npm:4.4.2"],\
-            ["lodash.set", "npm:4.3.2"],\
+            ["lodash", "npm:4.17.21"],\
             ["long", "npm:5.2.0"],\
             ["memdown", "npm:5.1.0"],\
             ["mocha", "npm:9.2.2"],\
@@ -2734,6 +2732,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
+            ["lodash", "npm:4.17.21"],\
             ["lodash.get", "npm:4.4.2"],\
             ["long", "npm:5.2.0"],\
             ["mocha", "npm:9.2.2"],\
@@ -12151,15 +12150,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/lodash.merge-npm-4.6.2-77cb4416bf-ad580b4bdb.zip/node_modules/lodash.merge/",\
           "packageDependencies": [\
             ["lodash.merge", "npm:4.6.2"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["lodash.set", [\
-        ["npm:4.3.2", {\
-          "packageLocation": "./.yarn/cache/lodash.set-npm-4.3.2-7586c942c2-a9122f49ee.zip/node_modules/lodash.set/",\
-          "packageDependencies": [\
-            ["lodash.set", "npm:4.3.2"]\
           ],\
           "linkType": "HARD"\
         }]\
