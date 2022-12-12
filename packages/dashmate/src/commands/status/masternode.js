@@ -40,17 +40,19 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const plain = {};
 
-      plain['Masternode Status'] = colors.status(masternode.status)(masternode.status);
-      plain['Masternode State'] = (masternode.state === 'READY' ? chalk.green : chalk.red)(masternode.state);
+      plain['Masternode State'] = (masternode.state === MasternodeStateEnum.READY
+        ? chalk.green : chalk.red)(masternode.state);
       plain['Verification Progress'] = `${verificationProgress * 100}%`;
-      plain['Sentinel Status'] = (masternode.sentinelState !== '' ? chalk.red(masternode.sentinelState) : chalk.green('No errors'));
+      plain['Sentinel Version'] = masternode.sentinel.version;
+      plain['Sentinel Status'] = (masternode.sentinel.state !== ''
+        ? chalk.red(masternode.sentinel.state) : chalk.green('No errors'));
 
       if (masternode.state === MasternodeStateEnum.READY) {
         const {
           proTxHash, lastPaidBlock, lastPaidTime,
           paymentQueuePosition, nexPaymentTime,
           poSePenalty, enabledCount,
-        } = masternode;
+        } = masternode.nodeState;
 
         plain['ProTx Hash'] = proTxHash;
         plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(poSePenalty);

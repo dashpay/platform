@@ -5,6 +5,7 @@ const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const colors = require('../../status/colors');
+const ServiceStatusEnum = require('../../enums/serviceStatus');
 
 class StatusCommand extends ConfigBaseCommand {
   /**
@@ -53,9 +54,7 @@ class StatusCommand extends ConfigBaseCommand {
       plain['Masternode Enabled'] = masternode.enabled;
 
       if (masternode.enabled) {
-        plain['Masternode Status'] = masternode.status;
         plain['Masternode State'] = masternode.state;
-        plain['Masternode ProTX'] = masternode.protx;
 
         if (masternode.state === MasternodeStateEnum.READY) {
           const {
@@ -64,8 +63,9 @@ class StatusCommand extends ConfigBaseCommand {
             lastPaidTime,
             paymentQueuePosition,
             nextPaymentTime,
-          } = masternode.state;
+          } = masternode.nodeState;
 
+          plain['Masternode ProTX'] = masternode.proTxHash;
           plain['PoSe Penalty'] = PoSePenalty;
           plain['Last paid block'] = lastPaidHeight;
           plain['Last paid time'] = lastPaidTime;
@@ -80,10 +80,9 @@ class StatusCommand extends ConfigBaseCommand {
       plain['Platform Enabled'] = platform.enabled;
 
       if (platform.enabled) {
-        // todo syncing
-        plain['Platform Status'] = colors.status(platform.status)(platform.status);
+        plain['Platform Status'] = colors.status(platform.tenderdash.serviceStatus)(platform.serviceStatus);
 
-        if (platform.status === 'running') {
+        if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
           plain['Platform Version'] = platform.tenderdash.version;
           plain['Platform Block Height'] = platform.tenderdash.blockHeight;
           plain['Platform Peers'] = platform.tenderdash.peers;

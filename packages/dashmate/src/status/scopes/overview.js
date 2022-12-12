@@ -1,34 +1,12 @@
-const extractCoreVersion = require('../../util/extractCoreVersion');
-const determineStatus = require('../determineStatus');
-
-module.exports = (dockerCompose, createRpcClient) => async (config,
-  getPlatformScope, getMasternodeScope) => {
-  const rpcClient = createRpcClient({
-    port: config.get('core.rpc.port'),
-    user: config.get('core.rpc.user'),
-    pass: config.get('core.rpc.password'),
-  });
-
-  const [mnSync, blockchainInfo, networkInfo, dockerStatus] = await Promise.all([
-    rpcClient.mnsync('status'),
-    rpcClient.getBlockchainInfo(),
-    rpcClient.getNetworkInfo(),
-    determineStatus.docker(dockerCompose, config, 'core'),
-  ]);
-
-  const { AssetName: syncAsset } = mnSync.result;
-  const serviceStatus = determineStatus.core(dockerStatus, syncAsset);
-
+module.exports = (getCoreScope, getPlatformScope, getMasternodeScope) => async (config) => {
   const network = config.get('network');
   const masternodeEnabled = config.get('core.masternode.enable');
   const platformEnabled = config.get('network') !== 'mainnet' && config.name !== 'local_seed';
 
-  const sizeOnDisk = blockchainInfo.result.size_on_disk;
-  const blockHeight = blockchainInfo.result.blocks;
-  const verificationProgress = blockchainInfo.result.verificationprogress.toFixed(4);
-
-  const { subversion } = networkInfo.result;
-  const version = extractCoreVersion(subversion);
+  const {
+    serviceStatus, dockerStatus, verificationProgress,
+    blockHeight, sizeOnDisk, version,
+  } = await getCoreScope(config);
 
   const core = {
     version,
@@ -41,12 +19,12 @@ module.exports = (dockerCompose, createRpcClient) => async (config,
 
   const masternode = {
     enabled: masternodeEnabled,
-    state: {
-      poSePenalty: null,
-      lastPaidHeight: null,
-      lastPaidTime: null,
-      paymentQueuePosition: null,
-      nextPaymentTime: null,
+    proTxHash: null,
+    nodeState: null,
+    state: null,
+    sentinel: {
+      version: null,
+      state: null,
     },
   };
 
@@ -56,9 +34,14 @@ module.exports = (dockerCompose, createRpcClient) => async (config,
   };
 
   if (masternodeEnabled) {
-    const masternodeScope = await getMasternodeScope(config);
+    const {
+      state, proTxHash, sentinel, nodeState,
+    } = await getMasternodeScope(config);
 
-    masternode.state = masternodeScope.state;
+    masternode.state = state;
+    masternode.proTxHash = proTxHash;
+    masternode.sentinel = sentinel;
+    masternode.nodeState = nodeState;
   }
 
   if (platformEnabled) {

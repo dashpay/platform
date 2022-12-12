@@ -11,11 +11,12 @@ const getOverviewScopeFactory = require('./scopes/overview');
  * @return {statusProvider}
  */
 function statusProviderFactory(dockerCompose, createRpcClient) {
+  const getCoreScope = getCoreScopeFactory(dockerCompose, createRpcClient);
   const getMasternodeScope = getMasternodeScopeFactory(dockerCompose, createRpcClient);
   const getPlatformScope = getPlatformScopeFactory(dockerCompose, createRpcClient);
-  const getOverviewScope = getOverviewScopeFactory(dockerCompose, createRpcClient);
+  const getOverviewScope = getOverviewScopeFactory(getCoreScope,
+    getMasternodeScope, getPlatformScope);
   const getServicesScope = getServicesScopeFactory(dockerCompose, createRpcClient);
-  const getCoreScope = getCoreScopeFactory(dockerCompose, createRpcClient);
   const getHostScope = getHostScopeFactory();
 
   return {

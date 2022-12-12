@@ -1,49 +1,98 @@
-// const sinon = require('sinon');
-// const MasternodeSyncAssetEnum = require('../../../src/enums/masternodeSyncAsset');
-// const getOverviewScopeFactory = require('../../../src/status/scopes/overview');
-//
-// describe('determineStatus', () => {
-//   let mockRpcClient;
-//   let mockCreateRpcClient;
-//   let mockDockerCompose;
-//
-//   beforeEach(async () => {
-//     mockRpcClient = {
-//       mnsync: sinon.stub(),
-//       getBlockchainInfo: sinon.stub(),
-//       getNetworkInfo: sinon.stub(),
-//     };
-//     mockCreateRpcClient = () => mockRpcClient;
-//     mockDockerCompose = { inspectService: sinon.stub() };
-//   });
-//
-//   it('should not retrieve masternode and platform data', async () => {
-//     const config = { get: sinon.stub(), toEnvs: sinon.stub() };
-//
-//     mockRpcClient.mnsync.returns({
-//       result: {
-//         AssetName:
-//         MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
-//       },
-//     });
-//     mockRpcClient.getBlockchainInfo.returns({
-//       result: {
-//         size_on_disk: 1337,
-//         verificationprogress: 1,
-//       },
-//     });
-//     mockRpcClient.getNetworkInfo.returns({ result: { subversion: '' } });
-//     mockDockerCompose.inspectService.returns({ State: { Status: 'running' } });
-//     config.get.withArgs('network').returns('mainnet');
-//
-//     const mockGetPlatformScope = sinon.stub();
-//     const mockGetMasternodeScope = sinon.stub();
-//
-//     const getOverviewScope = getOverviewScopeFactory(mockDockerCompose, mockCreateRpcClient);
-//
-//     const scope = await getOverviewScope(config, mockGetPlatformScope, mockGetMasternodeScope);
-//
-//     expect(mockGetMasternodeScope.notCalled).to.be.true();
-//     expect(mockGetPlatformScope.notCalled).to.be.true();
-//   });
-// });
+const getOverviewScopeFactory = require('../../../src/status/scopes/overview');
+const MasternodeStateEnum = require('../../../src/enums/masternodeState');
+const DockerStatusEnum = require('../../../src/enums/dockerStatus');
+const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
+
+describe.only('overview scope unit tests', () => {
+  let mockGetCoreScope;
+  let mockGetPlatformScope;
+  let mockGetMasternodeScope;
+
+  let config;
+  let getOverviewScope;
+
+  beforeEach(async function it() {
+    mockGetCoreScope = this.sinon.stub();
+    mockGetMasternodeScope = this.sinon.stub();
+    mockGetPlatformScope = this.sinon.stub();
+
+    config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+
+    getOverviewScope = getOverviewScopeFactory(mockGetCoreScope,
+      mockGetMasternodeScope, mockGetPlatformScope);
+  });
+
+  it('should just work', async () => {
+    const mockCoreScope = {
+      version: 'v1.2.3',
+      dockerStatus: DockerStatusEnum.running,
+      serviceStatus: ServiceStatusEnum.up,
+      blockHeight: 1337,
+      verificationProgress: 1,
+      sizeOnDisk: 1,
+    };
+
+    const mockMasternodeScope = {
+      state: MasternodeStateEnum.READY,
+      poSePenalty: 0,
+      lastPaidHeight: 100,
+      lastPaidTime: '23 days ago',
+      paymentQueuePosition: null,
+      nextPaymentTime: 'in 1 day',
+      sentinelState: '',
+      sentinelVersion: 'v1.2',
+    };
+
+    const mockPlatformScope = {
+      coreIsSynced: true,
+      tenderdash: {
+        dockerStatus: DockerStatusEnum.running,
+        serviceStatus: ServiceStatusEnum.up,
+        version: null,
+        catchingUp: null,
+        lastBlockHeight: null,
+        latestAppHash: null,
+        peers: null,
+        network: null,
+      },
+    };
+
+    mockGetCoreScope.returns(mockCoreScope);
+    mockGetPlatformScope.returns(mockPlatformScope);
+    mockGetMasternodeScope.returns(mockMasternodeScope);
+
+    const scope = await getOverviewScope(config);
+
+    expect(scope.core.version).to.be.equal(mockCoreScope.version);
+    expect(scope.core.dockerStatus).to.be.equal(mockCoreScope.dockerStatus);
+    expect(scope.core.dockerStatus).to.be.equal(mockCoreScope.dockerStatus);
+  });
+
+  it.only('should not load if masternode or platform disabled ', async () => {
+    config.get.withArgs('core.masternode.enable').returns(false);
+    config.get.withArgs('network').returns('mainnet');
+
+    const mockCoreScope = {
+      version: 'v1.2.3',
+      dockerStatus: DockerStatusEnum.running,
+      serviceStatus: ServiceStatusEnum.up,
+      blockHeight: 1337,
+      verificationProgress: 1,
+      sizeOnDisk: 1,
+    };
+
+    mockGetCoreScope.returns(mockCoreScope);
+
+    const scope = await getOverviewScope(config);
+
+    expect(mockGetMasternodeScope.notCalled).to.be.true();
+    expect(scope.masternode.state).to.be.equal(null);
+    expect(scope.masternode.proTxHash).to.be.equal(null);
+    expect(scope.masternode.sentinel.version).to.be.equal(null);
+    expect(scope.masternode.sentinel.state).to.be.equal(null);
+    expect(scope.masternode.nodeState).to.be.equal(null);
+
+    expect(mockGetPlatformScope.notCalled).to.be.true();
+    expect(scope.platform.tenderdash).to.be.equal(null);
+  });
+});

@@ -24,7 +24,6 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     latestVersion: null,
     dockerStatus: null,
     serviceStatus: null,
-    syncAsset: null,
     peersCount: null,
     p2pPortState: null,
     blockHeight: null,

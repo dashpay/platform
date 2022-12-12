@@ -16,7 +16,7 @@ module.exports = {
   },
   status: (status) => {
     switch (status) {
-      case ServiceStatusEnum.running:
+      case ServiceStatusEnum.up:
         return chalk.green;
       case ServiceStatusEnum.syncing:
       case ServiceStatusEnum.wait_for_core:
