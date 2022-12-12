@@ -21,7 +21,6 @@ describe('core scope unit tests', () => {
       mnsync: this.sinon.stub(),
       getBlockchainInfo: this.sinon.stub(),
       getNetworkInfo: this.sinon.stub(),
-      getPeerInfo: this.sinon.stub(),
     };
     mockCreateRpcClient = () => mockRpcClient;
     mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
@@ -45,7 +44,7 @@ describe('core scope unit tests', () => {
       result:
         { AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED },
     });
-    mockRpcClient.getNetworkInfo.returns({ result: { subversion: '/Dash Core:0.17.0.3/' } });
+    mockRpcClient.getNetworkInfo.returns({ result: { subversion: '/Dash Core:0.17.0.3/', connections: 1 } });
     mockRpcClient.getBlockchainInfo.returns({
       result: {
         difficulty: 1,
@@ -56,7 +55,6 @@ describe('core scope unit tests', () => {
         verificationprogress: 1,
       },
     });
-    mockRpcClient.getPeerInfo.returns({ result: [{}] });
 
     mockGithubProvider.returns('v1337-dev');
     mockMNOWatchProvider.returns('OPEN');
@@ -101,7 +99,6 @@ describe('core scope unit tests', () => {
     expect(mockRpcClient.mnsync.notCalled).to.be.true();
     expect(mockRpcClient.getNetworkInfo.notCalled).to.be.true();
     expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
-    expect(mockRpcClient.getPeerInfo.notCalled).to.be.true();
 
     expect(mockGithubProvider.notCalled).to.be.true();
     expect(mockMNOWatchProvider.notCalled).to.be.true();
@@ -119,7 +116,6 @@ describe('core scope unit tests', () => {
       result:
         { size_on_disk: 1337, verificationprogress: 1 },
     });
-    mockRpcClient.getPeerInfo.returns({ result: [{}] });
     mockDetermineDockerStatus.returns(DockerStatusEnum.running);
 
     mockGithubProvider.returns(Promise.reject());

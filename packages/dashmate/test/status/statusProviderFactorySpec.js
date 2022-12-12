@@ -1,8 +1,8 @@
-const sinon = require('sinon');
 const statusProviderFactory = require('../../src/status/statusProviderFactory');
 const mockMNSync = require('./mocks/mnSyncMock.json');
 const mockGetNetworkInfo = require('./mocks/mockGetNetworkInfo.json');
 const mockGetBlockchainInfo = require('./mocks/mockGetBlockchainInfo.json');
+const MasternodeStateEnum = require('../../src/enums/masternodeState');
 
 describe('statusProvider integration test', () => {
   let statusProvider;
@@ -13,14 +13,15 @@ describe('statusProvider integration test', () => {
 
   beforeEach(async function it() {
     dockerComposeMock = {
-      isServiceRunning: sinon.stub(),
-      docker: { getContainer: sinon.stub() },
-      inspectService: sinon.stub(),
+      isServiceRunning: this.sinon.stub(),
+      docker: { getContainer: this.sinon.stub() },
+      inspectService: this.sinon.stub(),
     };
     mockRpcClient = {
-      mnsync: sinon.stub(),
-      getNetworkInfo: sinon.stub(),
-      getBlockchainInfo: sinon.stub(),
+      mnsync: this.sinon.stub(),
+      getNetworkInfo: this.sinon.stub(),
+      getBlockchainInfo: this.sinon.stub(),
+      masternode: this.sinon.stub(),
     };
     mockConfig = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
 
@@ -39,6 +40,16 @@ describe('statusProvider integration test', () => {
     mockRpcClient.mnsync.resolves({ result: mockMNSync });
     mockRpcClient.getBlockchainInfo.resolves({ result: mockGetBlockchainInfo });
     mockRpcClient.getNetworkInfo.resolves({ result: mockGetNetworkInfo });
+
+    mockRpcClient.masternode.withArgs('count').resolves({ result: { enabled: 1337 } });
+    mockRpcClient.masternode.withArgs('status').resolves({
+      result: {
+        state: MasternodeStateEnum.READY,
+        status: 'Ready',
+        proTxHash: 'deadbeef',
+        dmnState: { poSePenalty: 0, lastPaidHeight: 1300 },
+      },
+    });
 
     const scope = await statusProvider.getOverviewScope(mockConfig);
 

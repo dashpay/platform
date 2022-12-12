@@ -40,11 +40,10 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
     return core;
   }
 
-  const [mnsyncStatus, networkInfo, blockchainInfo, peerInfo] = await Promise.all([
+  const [mnsyncStatus, networkInfo, blockchainInfo] = await Promise.all([
     rpcClient.mnsync('status'),
     rpcClient.getNetworkInfo(),
     rpcClient.getBlockchainInfo(),
-    rpcClient.getPeerInfo(),
   ]);
 
   const { AssetName: syncAsset } = mnsyncStatus.result;
@@ -59,9 +58,10 @@ module.exports = (dockerCompose, createRpcClient) => async (config) => {
   core.blockHeight = blocks;
   core.headerHeight = headers;
   core.verificationProgress = verificationprogress;
-  core.peersCount = peerInfo.result.length;
 
-  const { subversion } = networkInfo.result;
+  const { subversion, connections } = networkInfo.result;
+
+  core.peersCount = connections;
   core.version = extractCoreVersion(subversion);
 
   const providersResult = await Promise.allSettled([
