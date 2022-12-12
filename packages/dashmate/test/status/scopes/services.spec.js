@@ -7,9 +7,9 @@ describe('services scope unit tests', () => {
   let getServicesScope;
 
   beforeEach(async function it() {
-    mockDockerCompose = {inspectService: this.sinon.stub()};
+    mockDockerCompose = { inspectService: this.sinon.stub() };
 
-    config = {get: this.sinon.stub(), toEnvs: this.sinon.stub()};
+    config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
     getServicesScope = getServicesScopeFactory(mockDockerCompose);
   });
 
@@ -22,14 +22,14 @@ describe('services scope unit tests', () => {
       Config: {
         Image: 'fakeImageId',
       },
-    })
+    });
 
-    const scope = await getServicesScope(config)
+    const scope = await getServicesScope(config);
 
     for (const [, service] of Object.entries(scope)) {
-      expect(service.containerId).to.be.equal('fakeId')
-      expect(service.image).to.be.equal('fakeImageId')
-      expect(service.status).to.be.equal('running')
+      expect(service.containerId).to.be.equal('fakeId');
+      expect(service.image).to.be.equal('fakeImageId');
+      expect(service.status).to.be.equal('running');
     }
   });
 });
