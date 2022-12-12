@@ -1307,8 +1307,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    lodash.clone: ~4.5.0
-    lodash.matches: ^4.6.0
+    lodash: ^4.17.21
     mathjs: ^10.4.3
     mocha: ^9.1.2
   languageName: unknown
@@ -9434,13 +9433,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"lodash.clone@npm:~4.5.0":
-  version: 4.5.0
-  resolution: "lodash.clone@npm:4.5.0"
-  checksum: 5839f22acf3a43c026ac4325f7bcd378f34967415cd0b9fd7efa9bbbf38dc665900d36e040944c5afab94a51ff8a24f6cfc3781fe439705cbad5c722e9506b16
-  languageName: node
-  linkType: hard
-
 "lodash.clonedeep@npm:^4.5.0":
   version: 4.5.0
   resolution: "lodash.clonedeep@npm:4.5.0"
@@ -9494,13 +9486,6 @@ fsevents@~2.3.2:
   version: 4.4.0
   resolution: "lodash.ismatch@npm:4.4.0"
   checksum: a393917578842705c7fc1a30fb80613d1ac42d20b67eb26a2a6004d6d61ee90b419f9eb320508ddcd608e328d91eeaa2651411727eaa9a12534ed6ccb02fc705
-  languageName: node
-  linkType: hard
-
-"lodash.matches@npm:^4.6.0":
-  version: 4.6.0
-  resolution: "lodash.matches@npm:4.6.0"
-  checksum: 002617abb63d3735d8600e5e74d499a02edbef090c33acf1198f46b3ec924752729bbac2eb4f26ec00b0ce3b382fd03fdf25d19cfff08ec735180fcb36cd3fe4
   languageName: node
   linkType: hard
 

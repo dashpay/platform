@@ -2306,8 +2306,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
-            ["lodash.clone", "npm:4.5.0"],\
-            ["lodash.matches", "npm:4.6.0"],\
+            ["lodash", "npm:4.17.21"],\
             ["mathjs", "npm:10.4.3"],\
             ["mocha", "npm:9.2.2"]\
           ],\
@@ -12087,15 +12086,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["lodash.clone", [\
-        ["npm:4.5.0", {\
-          "packageLocation": "./.yarn/cache/lodash.clone-npm-4.5.0-d9f712430b-5839f22acf.zip/node_modules/lodash.clone/",\
-          "packageDependencies": [\
-            ["lodash.clone", "npm:4.5.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["lodash.clonedeep", [\
         ["npm:4.5.0", {\
           "packageLocation": "./.yarn/cache/lodash.clonedeep-npm-4.5.0-fbc3cda4e5-92c46f094b.zip/node_modules/lodash.clonedeep/",\
@@ -12164,15 +12154,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/lodash.ismatch-npm-4.4.0-e538fd6c3d-a393917578.zip/node_modules/lodash.ismatch/",\
           "packageDependencies": [\
             ["lodash.ismatch", "npm:4.4.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["lodash.matches", [\
-        ["npm:4.6.0", {\
-          "packageLocation": "./.yarn/cache/lodash.matches-npm-4.6.0-4ac5f4f696-002617abb6.zip/node_modules/lodash.matches/",\
-          "packageDependencies": [\
-            ["lodash.matches", "npm:4.6.0"]\
           ],\
           "linkType": "HARD"\
         }]\
