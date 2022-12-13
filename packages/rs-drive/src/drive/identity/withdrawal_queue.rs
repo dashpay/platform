@@ -36,6 +36,7 @@ use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
 
 use crate::drive::batch::GroveDbOpBatch;
+use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -187,7 +188,10 @@ impl Drive {
                 self.batch_delete(
                     withdrawals_path,
                     id,
-                    None,
+                    // we know that we are not deleting a subtree
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
                     transaction,
                     &mut batch_operations,
                 )?;

@@ -171,7 +171,7 @@ fn make_document_reference(
 }
 
 /// size of a document reference.
-fn document_reference_size(document_type: &DocumentType, storage_flags_size: u32) -> u32 {
+fn document_reference_size(document_type: &DocumentType) -> u32 {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -191,8 +191,7 @@ fn document_reference_size(document_type: &DocumentType, storage_flags_size: u32
     // 1 reference_hops options
     // 1 reference_hops count
     // 1 element flags option
-    // storage flags size
-    6 + reference_path_size + storage_flags_size
+    6 + reference_path_size
 }
 
 fn unique_event_id() -> [u8; 32] {

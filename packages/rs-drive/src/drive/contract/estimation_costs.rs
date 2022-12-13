@@ -9,9 +9,10 @@ use crate::drive::Drive;
 use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerInformation::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
@@ -38,11 +39,15 @@ impl Drive {
                     contract.id.as_bytes(),
                     document_type_name.as_str(),
                 )),
-                EstimatedLevel(
-                    0,
-                    true,
-                    AllSubtrees(ESTIMATED_AVERAGE_INDEX_NAME_SIZE, storage_flags),
-                ),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: EstimatedLevel(0, true),
+                    estimated_layer_sizes: AllSubtrees(
+                        ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+                        NoSumTrees,
+                        storage_flags,
+                    ),
+                },
             );
         }
 
@@ -57,9 +62,10 @@ impl Drive {
                 KeyInfoPath::from_known_path(contract_keeping_history_storage_path(
                     contract.id.as_bytes(),
                 )),
-                ApproximateElements(
-                    AVERAGE_NUMBER_OF_UPDATES as u32,
-                    Mix {
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
+                    estimated_layer_sizes: Mix {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
@@ -69,7 +75,7 @@ impl Drive {
                         )),
                         references_size: Some((1, reference_size, storage_flags, 1)),
                     },
-                ),
+                },
             );
         }
     }
