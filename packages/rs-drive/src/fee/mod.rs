@@ -38,7 +38,9 @@ use crate::fee_pools::epochs::Epoch;
 /// Default costs module
 pub mod default_costs;
 pub mod op;
-mod refunds;
+
+/// Fee result refunds
+pub mod refunds;
 
 /// Fee Result
 #[derive(Debug, Clone, Eq, PartialEq, Default)]

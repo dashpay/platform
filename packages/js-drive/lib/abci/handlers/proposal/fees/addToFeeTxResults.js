@@ -18,7 +18,7 @@ function addToFeeTxResults(feeResults, feeResult) {
   feeResults.processingFee += feeResult.processingFee;
   feeResults.feeRefundsSum += feeResult.feeRefundsSum;
 
-  for (const [epochIndex, credits] of feeResult.feeRefunds.entries()) {
+  for (const [epochIndex, credits] of Object.entries(feeResult.feeRefunds)) {
     if (!feeResults.feeRefunds[epochIndex]) {
       feeResults.feeRefunds[epochIndex] = 0;
     }

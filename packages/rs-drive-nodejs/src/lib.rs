@@ -2,6 +2,7 @@ mod converter;
 mod fee_result;
 
 use neon::object::PropertyKey;
+use std::num::ParseIntError;
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
@@ -11,12 +12,14 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::error::Error;
+use drive::fee::refunds::CreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
-    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest, Serializable,
+    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFeeResult,
+    InitChainRequest, Serializable,
 };
 use drive_abci::platform::Platform;
 use neon::prelude::*;
@@ -2015,11 +2018,11 @@ impl PlatformWrapper {
     }
 
     fn js_abci_block_end(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_fee_result = cx.argument::<JsBox<FeeResultWrapper>>(0)?;
-        let js_request = cx.argument::<JsBuffer>(1)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_request = cx.argument::<JsObject>(0)?;
 
-        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2027,9 +2030,34 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let fee_result = js_fee_result.deref().deref().deref().clone();
+        let js_fees: Handle<JsObject> = js_request.get(&mut cx, "fees")?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let js_processing_fee: Handle<JsNumber> = js_fees.get(&mut cx, "processingFee")?;
+        let processing_fee = js_processing_fee.value(&mut cx) as u64;
+
+        let js_storage_fee: Handle<JsNumber> = js_fees.get(&mut cx, "storageFee")?;
+        let storage_fee = js_storage_fee.value(&mut cx) as u64;
+
+        let js_fee_refunds: Handle<JsObject> = js_fees.get(&mut cx, "feeRefunds")?;
+
+        let mut fee_refunds: CreditsPerEpoch = Default::default();
+
+        for js_epoch_index_value in js_fee_refunds
+            .get_own_property_names(&mut cx)?
+            .to_vec(&mut cx)?
+        {
+            let js_epoch_index = js_epoch_index_value.downcast_or_throw::<JsString, _>(&mut cx)?;
+
+            let epoch_index = js_epoch_index
+                .value(&mut cx)
+                .parse()
+                .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
+
+            let js_credits: Handle<JsNumber> = js_fee_refunds.get(&mut cx, js_epoch_index)?;
+            let credits = js_credits.value(&mut cx) as u64;
+
+            fee_refunds.insert(epoch_index, credits);
+        }
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2043,15 +2071,16 @@ impl PlatformWrapper {
             };
 
             let result = transaction_result.and_then(|transaction_arg| {
-                BlockEndRequest::from_bytes(&request_bytes)
-                    .and_then(|request| {
-                        let full_request = BlockEndRequest {
-                            fees: fee_result,
-                            ..request
-                        };
+                let request = BlockEndRequest {
+                    fees: BlockFeeResult {
+                        processing_fee,
+                        storage_fee,
+                        fee_refunds,
+                    },
+                };
 
-                        platform.block_end(full_request, transaction_arg)
-                    })
+                platform
+                    .block_end(request, transaction_arg)
                     .and_then(|response| response.to_bytes())
                     .map_err(|e| e.to_string())
             });

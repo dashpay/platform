@@ -37,8 +37,9 @@ use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
-use drive::fee::FeeResult;
-use serde::{Deserialize, Serialize};
+use drive::fee::refunds::CreditsPerEpoch;
+use serde::{Deserialize, Deserializer, Serialize};
+use std::ops::Deref;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -82,8 +83,30 @@ pub struct BlockBeginResponse {
 pub struct BlockEndRequest {
     /// The fees for the block
     /// Avoid of serialization to optimize transfer through Node.JS binding
-    #[serde(skip)]
-    pub fees: FeeResult,
+    pub fees: BlockFeeResult,
+}
+
+/// Aggregated fees after block execution
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockFeeResult {
+    /// Processing fee
+    pub processing_fee: u64,
+    /// Storage fee
+    pub storage_fee: u64,
+    /// Fee refunds
+    pub fee_refunds: CreditsPerEpoch,
+}
+
+impl BlockFeeResult {
+    /// Create block fee result from fees
+    pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
+        Self {
+            storage_fee,
+            processing_fee,
+            ..Default::default()
+        }
+    }
 }
 
 /// A struct for handling block end responses
@@ -146,10 +169,10 @@ pub trait Serializable<'a>: Serialize + Deserialize<'a> {
     fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let mut bytes = vec![];
 
-        ciborium::ser::into_writer(&self, &mut bytes).map_err(|_| {
-            Error::Serialization(SerializationError::CorruptedSerialization(
-                "can't serialize ABCI message",
-            ))
+        ciborium::ser::into_writer(&self, &mut bytes).map_err(|e| {
+            let message = format!("can't deserialize ABCI message: {}", e);
+
+            Error::Serialization(SerializationError::CorruptedSerialization(message))
         })?;
 
         Ok(bytes)
@@ -157,10 +180,10 @@ pub trait Serializable<'a>: Serialize + Deserialize<'a> {
 
     /// Deserialize ABCI message
     fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        ciborium::de::from_reader(bytes).map_err(|_| {
-            Error::Serialization(SerializationError::CorruptedDeserialization(
-                "can't deserialize ABCI message",
-            ))
+        ciborium::de::from_reader(bytes).map_err(|e| {
+            let message = format!("can't deserialize ABCI message: {}", e);
+
+            Error::Serialization(SerializationError::CorruptedDeserialization(message))
         })
     }
 }

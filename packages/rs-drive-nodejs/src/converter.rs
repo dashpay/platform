@@ -4,6 +4,7 @@ use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
+use intmap::IntMap;
 use neon::prelude::*;
 use neon::types::buffer::TypedArray;
 use num::FromPrimitive;

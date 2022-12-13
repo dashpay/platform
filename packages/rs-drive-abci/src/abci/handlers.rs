@@ -173,6 +173,8 @@ impl TenderdashAbci for Platform {
 
         drive_cache.cached_contracts.clear_block_cache();
 
+        // Super slow operation of preparing chunks
+
         Ok(AfterFinalizeBlockResponse {})
     }
 }
@@ -190,7 +192,8 @@ mod tests {
         use std::ops::Div;
 
         use crate::abci::messages::{
-            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest,
+            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFeeResult,
+            InitChainRequest,
         };
         use crate::common::helpers::setup::setup_platform;
 
@@ -357,7 +360,7 @@ mod tests {
                     }
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeeResult::from_fees(storage_fees_per_block, 1600),
+                        fees: BlockFeeResult::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform
@@ -509,7 +512,7 @@ mod tests {
                     );
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeeResult::from_fees(storage_fees_per_block, 1600),
+                        fees: BlockFeeResult::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform

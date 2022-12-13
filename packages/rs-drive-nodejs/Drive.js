@@ -430,17 +430,9 @@ class Drive {
        * @returns {Promise<BlockEndResponse>}
        */
       async blockEnd(request, useTransaction = false) {
-        // Pass instance of FeeResult separately to avoid of unnecessary serialization
-        const feeResultInner = request.fees.inner;
-
-        delete request.fees;
-
-        const requestBytes = cbor.encode(request);
-
         const responseBytes = await abciBlockEndAsync.call(
           drive,
-          feeResultInner,
-          requestBytes,
+          request,
           useTransaction,
         );
 
@@ -512,7 +504,15 @@ class Drive {
 
 /**
  * @typedef BlockEndRequest
- * @property {FeeResult} fees
+ * @property {BlockFeeResult} fees
+ */
+
+/**
+ * @typedef BlockFeeResult
+ * @property {number} storageFee
+ * @property {number} processingFee
+ * @property {Object<string, number>} feeRefunds
+ * @property {number} feeRefundsSum
  */
 
 /**

@@ -9,14 +9,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::btree_map::{IntoIter, Iter};
 use std::collections::BTreeMap;
 
-type CreditsPerEpoch = IntMap<u64>;
-type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
+/// Credits per Epoch
+pub type CreditsPerEpoch = IntMap<u64>;
+
+/// Credits per Epoch by Identifier
+pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
+    /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
     pub fn from_storage_removal(
         storage_removal: StorageRemovalPerEpochByIdentifier,
     ) -> Result<Self, Error> {
@@ -96,6 +100,7 @@ impl FeeRefunds {
             })
     }
 
+    /// Returns serialized size
     pub fn serialized_size(&self) -> Result<u64, Error> {
         bincode::DefaultOptions::default()
             .with_varint_encoding()
@@ -108,6 +113,7 @@ impl FeeRefunds {
             })
     }
 
+    /// Deserialized struct from bytes
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Ok(FeeRefunds(
             bincode::DefaultOptions::default()

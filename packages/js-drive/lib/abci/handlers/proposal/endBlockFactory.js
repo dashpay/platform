@@ -51,19 +51,14 @@ function endBlockFactory(
     const {
       height,
       round,
-      fees: {
-        feeRefunds,
-        processingFee,
-        storageFee,
-        feeRefundsSum,
-      },
+      fees,
       coreChainLockedHeight,
     } = request;
 
     // Call RS ABCI
 
     const rsRequest = {
-      feeRefunds,
+      fees,
     };
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
@@ -73,6 +68,12 @@ function endBlockFactory(
     consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
     const { currentEpochIndex } = proposalBlockExecutionContext.getEpochInfo();
+
+    const {
+      processingFee,
+      storageFee,
+      feeRefundsSum,
+    } = fees;
 
     if (processingFee > 0 || storageFee > 0) {
       consensusLogger.debug({

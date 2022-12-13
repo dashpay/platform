@@ -42,12 +42,7 @@ function deliverTxFactory(
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
    *  code: number,
-   *  fees: {
-   *    storageFee: number,
-   *    processingFee: number,
-   *    feeRefunds: Object<string, number>,
-   *    feeRefundsSum: number,
-   *  }}>}
+   *  fees: BlockFeeResult}>}
    */
   async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();

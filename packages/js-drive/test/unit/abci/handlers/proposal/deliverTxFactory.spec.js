@@ -9,14 +9,14 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const FeeResult = require('@dashevo/rs-drive/FeeResult');
 
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
-
 const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
-const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
+const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const PredictedFeeLowerThanActualError = require('../../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
@@ -38,6 +38,7 @@ describe('deliverTxFactory', () => {
   let loggerMock;
   let round;
   let proposalBlockExecutionContextMock;
+  let stateTransitionExecutionContextMock;
 
   beforeEach(async function beforeEach() {
     round = 42;
@@ -49,12 +50,26 @@ describe('deliverTxFactory', () => {
     dpp = new DashPlatformProtocol();
     await dpp.initialize();
 
+    stateTransitionExecutionContextMock = new StateTransitionExecutionContext();
+
+    stateTransitionExecutionContextMock.setLastCalculatedFeeDetails({
+      storageFee: 100,
+      processingFee: 10,
+      feeRefunds: [{ identifier: Buffer.alloc(32), creditsPerEpoch: { 1: 15 } }],
+      feeRefundsSum: 15,
+      total: 95,
+    });
+
     documentsBatchTransitionFixture = dpp.document.createStateTransition({
       create: documentFixture,
     });
 
+    documentsBatchTransitionFixture.setExecutionContext(stateTransitionExecutionContextMock);
+
     dataContractCreateTransitionFixture = dpp
       .dataContract.createDataContractCreateTransition(dataContractFixture);
+
+    dataContractCreateTransitionFixture.setExecutionContext(stateTransitionExecutionContextMock);
 
     documentTx = documentsBatchTransitionFixture.toBuffer();
 
@@ -105,7 +120,14 @@ describe('deliverTxFactory', () => {
 
     expect(response).to.deep.equal({
       code: 0,
-      fees: FeeResult.create(),
+      fees: {
+        processingFee: 10,
+        storageFee: 100,
+        feeRefunds: {
+          1: 15,
+        },
+        feeRefundsSum: 15,
+      },
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
@@ -139,7 +161,14 @@ describe('deliverTxFactory', () => {
 
     expect(response).to.deep.equal({
       code: 0,
-      fees: FeeResult.create(),
+      fees: {
+        processingFee: 10,
+        storageFee: 100,
+        feeRefunds: {
+          1: 15,
+        },
+        feeRefundsSum: 15,
+      },
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(

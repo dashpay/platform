@@ -8,7 +8,6 @@ const getMasternodeRewardShareDocumentsFixture = require('@dashevo/dpp/lib/test/
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const FeeResult = require('@dashevo/rs-drive/FeeResult');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
@@ -104,7 +103,14 @@ describe('Fee Pools', () => {
       await rsDrive.getAbci().blockBegin(blockBeginRequest);
 
       const blockEndRequest = {
-        fees: FeeResult.create(10000, 1000),
+        fees: {
+          processingFee: 1000,
+          storageFee: 10000 + 15,
+          feeRefunds: {
+            1: 15,
+          },
+          feeRefundsSum: 15,
+        },
       };
 
       await rsDrive.getAbci().blockEnd(blockEndRequest);
