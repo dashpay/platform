@@ -13,19 +13,23 @@ const verifyStatus = {
 };
 
 /**
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
- *
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @return {verifyVoteExtensionHandler}
  */
-function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContextCollection) {
+function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
   /**
    * @typedef verifyVoteExtensionHandler
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
   async function verifyVoteExtensionHandler() {
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
-    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
-      .getWithdrawalTransactionsMap();
+    const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
+      .child({
+        abciMethod: 'verifyVoteExtension',
+      });
+
+    consensusLogger.debug('VerifyVote ABCI method requested');
+
+    // TODO Verify withdrawal vote extensions and add logs
 
     return new ResponseVerifyVoteExtension({
       status: verifyStatus.ACCEPT,

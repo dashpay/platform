@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.3
-FROM node:16-alpine as builder
+FROM node:16-alpine3.16 as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -58,7 +58,7 @@ WORKDIR /platform
 # Copy yarn and Cargo files
 COPY .yarn /platform/.yarn
 COPY .cargo /platform/.cargo
-COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.toml rust-toolchain.toml ./
+COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.toml Cargo.lock rust-toolchain.toml ./
 
 # Copy only necessary packages from monorepo
 COPY packages/js-drive packages/js-drive
@@ -88,7 +88,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/drive && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM node:16-alpine
+FROM node:16-alpine3.16
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}

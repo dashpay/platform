@@ -38,7 +38,9 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use dpp::data_contract::extra::DriveContractExt;
-use grovedb::TransactionArg;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveOperationConverter {
@@ -46,7 +48,9 @@ pub trait DriveOperationConverter {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error>;
@@ -79,7 +83,9 @@ impl DriveOperationConverter for ContractOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -97,7 +103,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                     &contract,
                     contract_cbor,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     storage_flags,
                     transaction,
                 )
@@ -110,7 +116,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 contract,
                 contract_serialization,
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 storage_flags,
                 transaction,
             ),
@@ -227,7 +233,9 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -260,7 +268,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     document_and_contract_info,
                     override_document,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                 )
             }
@@ -289,7 +297,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     document_and_contract_info,
                     override_document,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                 )
             }
@@ -300,7 +308,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 document_and_contract_info,
                 override_document,
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
             ),
             DocumentOperationType::DeleteDocumentForContract {
@@ -313,7 +321,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 contract,
                 document_type_name,
                 owner_id,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
             ),
             DocumentOperationType::DeleteDocumentForContractCbor {
@@ -328,7 +336,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     &contract,
                     document_type_name,
                     owner_id,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                 )
             }
@@ -357,7 +365,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                 )
             }
@@ -384,7 +392,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                 )
             }
@@ -410,7 +418,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
-                    apply,
+                    estimated_costs_only_with_layer_info,
                     transaction,
                 )
             }
@@ -462,16 +470,28 @@ impl DriveOperationConverter for DriveOperationType<'_> {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         match self {
             DriveOperationType::ContractOperation(contract_operation_type) => {
-                contract_operation_type.to_drive_operations(drive, apply, block_info, transaction)
+                contract_operation_type.to_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                )
             }
             DriveOperationType::DocumentOperation(document_operation_type) => {
-                document_operation_type.to_drive_operations(drive, apply, block_info, transaction)
+                document_operation_type.to_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                )
             } // DriveOperationType::IdentityOperation(identity_operation_type) => {
               //     identity_operation_type.to_grove_db_operations(
               //         drive,
@@ -494,17 +514,22 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
         for drive_op in operations {
             drive_operations.append(&mut drive_op.to_drive_operations(
                 self,
-                apply,
+                &mut estimated_costs_only_with_layer_info,
                 block_info,
                 transaction,
             )?);
         }
         let mut cost_operations = vec![];
         self.apply_batch_drive_operations(
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             drive_operations,
             &mut cost_operations,

@@ -37,8 +37,9 @@ impl DataContractFactory {
         &self,
         owner_id: Identifier,
         documents: JsonValue,
+        entropy_seed: Option<u64>,
     ) -> Result<DataContract, ProtocolError> {
-        let entropy = entropy_generator::generate();
+        let entropy = entropy_generator::generate(entropy_seed);
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
@@ -187,7 +188,7 @@ mod test {
             .clone();
 
         let result = factory
-            .create(data_contract.owner_id.clone(), raw_documents)
+            .create(data_contract.owner_id.clone(), raw_documents, None)
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);

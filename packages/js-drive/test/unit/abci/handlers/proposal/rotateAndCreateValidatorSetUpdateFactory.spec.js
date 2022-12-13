@@ -12,14 +12,13 @@ const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
 describe('rotateAndCreateValidatorSetUpdateFactory', () => {
   let rotateAndCreateValidatorSetUpdate;
-  let blockExecutionContextMock;
   let validatorSetMock;
   let createValidatorSetUpdateMock;
   let height;
   let loggerMock;
   let lastCommitInfoMock;
   let round;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
   let coreChainLockedHeight;
 
   beforeEach(function beforeEach() {
@@ -30,8 +29,8 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
       blockSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
     };
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
 
     validatorSetMock = {
       rotate: this.sinon.stub(),
@@ -41,12 +40,9 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
     createValidatorSetUpdateMock = this.sinon.stub();
 
     loggerMock = new LoggerMock(this.sinon);
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
 
     rotateAndCreateValidatorSetUpdate = rotateAndCreateValidatorSetUpdateFactory(
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionContextMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
     );
@@ -78,9 +74,7 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
     );
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
+
     expect(response).to.be.equal(validatorSetUpdate);
   });
 
@@ -103,9 +97,7 @@ describe('rotateAndCreateValidatorSetUpdateFactory', () => {
     );
 
     expect(createValidatorSetUpdateMock).to.not.be.called();
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
+
     expect(response).to.be.undefined();
   });
 });

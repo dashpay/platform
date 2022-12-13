@@ -33,8 +33,12 @@
 //!
 
 use dpp::identity::Identity;
+use grovedb::batch::KeyInfoPath;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
-use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
+use grovedb::{
+    Element, EstimatedLayerInformation, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
+};
+use std::collections::HashMap;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
@@ -101,12 +105,22 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut batch = GroveDbOpBatch::new();
+        let estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
 
         self.add_insert_identity_operations(identity, storage_flags, &mut batch)?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        self.apply_batch_grovedb_operations(apply, transaction, batch, &mut drive_operations)?;
+        self.apply_batch_grovedb_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch,
+            &mut drive_operations,
+        )?;
 
         calculate_fee(None, Some(drive_operations), &block_info.epoch)
     }

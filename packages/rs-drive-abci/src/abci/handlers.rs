@@ -199,13 +199,15 @@ mod tests {
         use rs_drive::common::helpers::identities::create_test_masternode_identities;
         use rs_drive::drive::batch::GroveDbOpBatch;
         use rs_drive::rpc::core::MockCoreRPCLike;
+        use drive::common::helpers::identities::create_test_masternode_identities;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee::FeeResult;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
         use std::ops::Div;
 
         use crate::abci::messages::{
-            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, FeesAggregate,
-            InitChainRequest,
+            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest,
         };
         use crate::common::helpers::setup::{setup_platform, setup_system_data_contract};
 
@@ -400,11 +402,7 @@ mod tests {
                     }
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
-                        },
-                        block_time_ms: 0,
+                        fees: FeeResult::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform
@@ -603,11 +601,7 @@ mod tests {
                     );
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
-                        },
-                        block_time_ms,
+                        fees: FeeResult::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform

@@ -13,7 +13,7 @@ pub use {
         encode_float, encode_signed_integer, encode_unsigned_integer, DocumentField,
         DocumentFieldType,
     },
-    document_type::DocumentType,
+    document_type::{DocumentType, IndexLevel},
     drive_api::{DriveContractExt, DriveEncoding},
     errors::{ContractError, StructureError},
     index::{Index, IndexProperty},
