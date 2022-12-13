@@ -1,4 +1,4 @@
-const sample = require('lodash.sample');
+const sample = require('lodash/sample');
 const networks = require('@dashevo/dashcore-lib/lib/networks');
 
 class ListDAPIAddressProvider {

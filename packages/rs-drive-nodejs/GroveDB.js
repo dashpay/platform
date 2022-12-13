@@ -24,25 +24,25 @@ const {
   dir: __dirname,
 });
 
-const appendStack = require('./appendStack');
+const { appendStackAsync } = require('./appendStack');
 
-const groveDbGetAsync = appendStack(promisify(groveDbGet));
-const groveDbInsertAsync = appendStack(promisify(groveDbInsert));
-const groveDbInsertIfNotExistsAsync = appendStack(promisify(groveDbInsertIfNotExists));
-const groveDbDeleteAsync = appendStack(promisify(groveDbDelete));
-const groveDbFlushAsync = appendStack(promisify(groveDbFlush));
-const groveDbStartTransactionAsync = appendStack(promisify(groveDbStartTransaction));
-const groveDbCommitTransactionAsync = appendStack(promisify(groveDbCommitTransaction));
-const groveDbRollbackTransactionAsync = appendStack(promisify(groveDbRollbackTransaction));
-const groveDbIsTransactionStartedAsync = appendStack(promisify(groveDbIsTransactionStarted));
-const groveDbAbortTransactionAsync = appendStack(promisify(groveDbAbortTransaction));
-const groveDbPutAuxAsync = appendStack(promisify(groveDbPutAux));
-const groveDbDeleteAuxAsync = appendStack(promisify(groveDbDeleteAux));
-const groveDbGetAuxAsync = appendStack(promisify(groveDbGetAux));
-const groveDbQueryAsync = appendStack(promisify(groveDbQuery));
-const groveDbProveQueryAsync = appendStack(promisify(groveDbProveQuery));
-const groveDbProveQueryManyAsync = appendStack(promisify(groveDbProveQueryMany));
-const groveDbRootHashAsync = appendStack(promisify(groveDbRootHash));
+const groveDbGetAsync = appendStackAsync(promisify(groveDbGet));
+const groveDbInsertAsync = appendStackAsync(promisify(groveDbInsert));
+const groveDbInsertIfNotExistsAsync = appendStackAsync(promisify(groveDbInsertIfNotExists));
+const groveDbDeleteAsync = appendStackAsync(promisify(groveDbDelete));
+const groveDbFlushAsync = appendStackAsync(promisify(groveDbFlush));
+const groveDbStartTransactionAsync = appendStackAsync(promisify(groveDbStartTransaction));
+const groveDbCommitTransactionAsync = appendStackAsync(promisify(groveDbCommitTransaction));
+const groveDbRollbackTransactionAsync = appendStackAsync(promisify(groveDbRollbackTransaction));
+const groveDbIsTransactionStartedAsync = appendStackAsync(promisify(groveDbIsTransactionStarted));
+const groveDbAbortTransactionAsync = appendStackAsync(promisify(groveDbAbortTransaction));
+const groveDbPutAuxAsync = appendStackAsync(promisify(groveDbPutAux));
+const groveDbDeleteAuxAsync = appendStackAsync(promisify(groveDbDeleteAux));
+const groveDbGetAuxAsync = appendStackAsync(promisify(groveDbGetAux));
+const groveDbQueryAsync = appendStackAsync(promisify(groveDbQuery));
+const groveDbProveQueryAsync = appendStackAsync(promisify(groveDbProveQuery));
+const groveDbProveQueryManyAsync = appendStackAsync(promisify(groveDbProveQueryMany));
+const groveDbRootHashAsync = appendStackAsync(promisify(groveDbRootHash));
 
 // Wrapper class for the boxed `GroveDB` for idiomatic JavaScript usage
 class GroveDB {
@@ -335,16 +335,6 @@ class GroveDB {
  * @property {"rangeAfterToInclusive"} type
  * @property {Buffer} after
  * @property {Buffer} to
- */
-
-/**
- * @typedef FeeResult
- * @property {number} processingFee
- * @property {number} storageFee
- * @property {{
- *   identifier: Uint8Array,
- *   epochsToBytes: Object<string, number>
- * }[]} removedFromIdentities
  */
 
 module.exports = GroveDB;

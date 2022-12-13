@@ -1,5 +1,5 @@
 const { Listr } = require('listr2');
-const isEqual = require('lodash.isequal');
+const isEqual = require('lodash/isEqual');
 
 const wait = require('../../../../util/wait');
 

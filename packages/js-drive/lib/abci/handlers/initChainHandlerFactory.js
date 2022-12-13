@@ -21,6 +21,7 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {registerSystemDataContracts} registerSystemDataContracts
  * @param {GroveDBStore} groveDBStore
  * @param {RSAbci} rsAbci
+ * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -33,6 +34,7 @@ function initChainHandlerFactory(
   registerSystemDataContracts,
   groveDBStore,
   rsAbci,
+  createCoreChainLockUpdate,
 ) {
   /**
    * @typedef initChainHandler
@@ -109,6 +111,12 @@ function initChainHandlerFactory(
 
     const validatorSetUpdate = createValidatorSetUpdate(validatorSet);
 
+    const coreChainLockUpdate = await createCoreChainLockUpdate(
+      initialCoreChainLockedHeight,
+      0,
+      consensusLogger,
+    );
+
     consensusLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
     consensusLogger.info(
@@ -125,6 +133,7 @@ function initChainHandlerFactory(
       appHash,
       validatorSetUpdate,
       initialCoreHeight: initialCoreChainLockedHeight,
+      nextCoreChainLockUpdate: coreChainLockUpdate,
     });
   }
 

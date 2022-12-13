@@ -1,4 +1,4 @@
-const lodashGet = require('lodash.get');
+const lodashGet = require('lodash/get');
 
 const ValidationResult = require('../../../../../validation/ValidationResult');
 

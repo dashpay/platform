@@ -18,7 +18,7 @@ class DriveStateRepository {
    * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
-   * @param {BlockExecutionContext} latestBlockExecutionContext
+   * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
    * @param {Object} [options]
@@ -32,7 +32,7 @@ class DriveStateRepository {
     documentRepository,
     spentAssetLockTransactionsRepository,
     coreRpcClient,
-    latestBlockExecutionContext,
+    blockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
     options = {},
@@ -44,7 +44,7 @@ class DriveStateRepository {
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionContext = latestBlockExecutionContext;
+    this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
     this.#options = options;
@@ -221,6 +221,7 @@ class DriveStateRepository {
         dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
+        // TODO: We don't need this anymore
         useTransaction: false,
       },
     );
