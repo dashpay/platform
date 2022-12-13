@@ -65,7 +65,9 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 
+use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType};
 use dpp::data_contract::extra::DriveContractExt;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.
@@ -301,9 +303,6 @@ impl Drive {
                 document_and_contract_info.document_type,
                 storage_flags,
             );
-            let query_stateless_max_value_size = estimated_costs_only_with_layer_info
-                .as_mut()
-                .map(|_| document_type.max_size());
 
             // next we need to get the old document from storage
             let old_document_element = if document_type.documents_keep_history {
@@ -315,12 +314,10 @@ impl Drive {
                     );
                 // When keeping document history the 0 is a reference that points to the current value
                 // O is just on one byte, so we have at most one hop of size 1 (1 byte)
-                let query_stateless_with_max_value_size_and_max_reference_sizes =
-                    query_stateless_max_value_size.map(|vs| (vs, vec![1]));
                 self.grove_get(
                     contract_documents_keeping_history_primary_key_path_for_document_id,
                     &[0],
-                    query_stateless_with_max_value_size_and_max_reference_sizes,
+                    QueryType::StatefulQuery,
                     transaction,
                     &mut batch_operations,
                 )?
@@ -328,7 +325,7 @@ impl Drive {
                 self.grove_get_direct(
                     contract_documents_primary_key_path,
                     document.id.as_slice(),
-                    query_stateless_max_value_size,
+                    DirectQueryType::StatefulDirectQuery,
                     transaction,
                     &mut batch_operations,
                 )?
@@ -359,8 +356,6 @@ impl Drive {
                         "old document is not an item",
                     )))
                 }?
-            } else if let Some(max_value_size) = query_stateless_max_value_size {
-                DocumentEstimatedAverageSize(max_value_size as u32)
             } else {
                 return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
                     "document being updated does not exist",
@@ -420,7 +415,7 @@ impl Drive {
                                 document_top_field.as_slice(),
                             )),
                             storage_flags,
-                            estimated_costs_only_with_layer_info.is_none(),
+                            BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -484,7 +479,7 @@ impl Drive {
                                     index_property.name.as_bytes(),
                                 )),
                                 storage_flags,
-                                estimated_costs_only_with_layer_info.is_none(),
+                                BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
                                 &mut batch_operations,
                             )?;
@@ -514,7 +509,7 @@ impl Drive {
                                     document_index_field.as_slice(),
                                 )),
                                 storage_flags,
-                                estimated_costs_only_with_layer_info.is_none(),
+                                BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
                                 &mut batch_operations,
                             )?;
@@ -551,40 +546,27 @@ impl Drive {
 
                     let reference_size = document_reference_size(
                         document_type,
-                        StorageFlags::approximate_size(true, None),
-                    );
+                    ) + StorageFlags::approximate_size(true, None);
 
                     if !index.unique {
                         key_info_path.push(KnownKey(vec![0]));
-
-                        let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                            reference_size,
-                            &key_info_path,
-                            estimated_costs_only_with_layer_info,
-                        )?;
 
                         // here we should return an error if the element already exists
                         self.batch_delete_up_tree_while_empty(
                             key_info_path,
                             document.id.as_slice(),
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            stateless_delete_for_costs,
+                            BatchDeleteUpTreeApplyType::StatefulBatchDelete { is_known_to_be_subtree_with_sum: Some((false, false)) },
                             transaction,
                             &mut batch_operations,
                         )?;
                     } else {
-                        let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                            reference_size,
-                            &key_info_path,
-                            estimated_costs_only_with_layer_info,
-                        )?;
-
                         // here we should return an error if the element already exists
                         self.batch_delete_up_tree_while_empty(
                             key_info_path,
                             &[0],
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            stateless_delete_for_costs,
+                            BatchDeleteUpTreeApplyType::StatefulBatchDelete { is_known_to_be_subtree_with_sum: Some((false, false)) },
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -597,7 +579,7 @@ impl Drive {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
                             storage_flags,
-                            estimated_costs_only_with_layer_info.is_none(),
+                            BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -617,9 +599,7 @@ impl Drive {
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
                             PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
-                            estimated_costs_only_with_layer_info
-                                .as_mut()
-                                .map(|_| OPTIMIZED_DOCUMENT_REFERENCE),
+                            BatchInsertApplyType::StatefulBatchInsert,
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -1380,72 +1360,76 @@ mod tests {
         );
         let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
         let expected_added_bytes = if using_history {
-            //Explanation for 1350
+            //Explanation for 1290
 
             //todo
-            1278
+            1290
         } else {
-            //Explanation for 1049
+            //Explanation for 1014
 
             // Document Storage
 
             //// Item
-            // = 410 Bytes
+            // = 412 Bytes
 
-            // Explanation for 410 storage_written_bytes
+            // Explanation for 412 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 278
+            // Value -> 279
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
             //   173 for item serialized bytes
+            //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
             // 2 byte for the value_size (required space for above 128)
 
-            // Parent Hook -> 67
+            // Parent Hook -> 68
             // Key Bytes 32
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Basic Merk 1
 
-            // Total 65 + 278 + 67 = 410
+            // Total 65 + 279 + 68 = 412
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
             // = 177 Bytes
 
-            // Explanation for 177 storage_written_bytes
+            // Explanation for 179 storage_written_bytes
 
             // Key -> 51 bytes
             // 32 bytes for the key prefix
             // 18 bytes for the key "My apples are safe" 18 characters
             // 1 byte for key_size (required space for 50)
 
-            // Value -> 73
+            // Value -> 74
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags
             //   1 for the enum type
             //   1 for empty tree value
+            //   1 for Basic Merk
             // 32 for node hash
             // 0 for value hash
             // 2 byte for the value_size (required space for 73 + up to 256 for child key)
 
-            // Parent Hook -> 53
+            // Parent Hook -> 54
             // Key Bytes 18
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Basic merk 1
 
-            // Total 51 + 73 + 53 = 177
+            // Total 51 + 74 + 54 = 179
 
             //// Tree 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Key: 0
@@ -1458,7 +1442,7 @@ mod tests {
             // 1 bytes for the key "My apples are safe" 18 characters
             // 1 byte for key_size (required space for 33)
 
-            // Value -> 73
+            // Value -> 74
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags
@@ -1466,15 +1450,17 @@ mod tests {
             //   1 for empty tree value
             // 32 for node hash
             // 0 for value hash
+            // 1 for Basic Merk
             // 2 byte for the value_size (required space for 73 + up to 256 for child key)
 
-            // Parent Hook -> 36
+            // Parent Hook -> 37
             // Key Bytes 1
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Basic Merk 1
 
-            // Total 34 + 73 + 36 = 143
+            // Total 34 + 74 + 37 = 145
 
             //// Ref 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Reference to Serialized Item
@@ -1487,7 +1473,7 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 144
+            // Value -> 145
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
@@ -1498,17 +1484,19 @@ mod tests {
             //   2 for the max reference hop
             // 32 for node hash
             // 32 for value hash
+            // 1 for Basic Merk
             // 2 byte for the value_size (required space for above 128)
 
-            // Parent Hook -> 67
+            // Parent Hook -> 68
             // Key Bytes 32
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Basic Merk 1
 
-            // Total 65 + 144 + 67 = 276
+            // Total 65 + 145 + 68 = 278
 
-            1006
+            1014
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1555,7 +1543,7 @@ mod tests {
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        let expected_added_bytes = if using_history { 363 } else { 1 };
+        let expected_added_bytes = if using_history { 365 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1623,7 +1611,7 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let expected_added_bytes = if using_history { 1278 } else { 1006 };
+        let expected_added_bytes = if using_history { 1290 } else { 1014 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1674,10 +1662,10 @@ mod tests {
             .unwrap();
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
-        let expected_added_bytes = if using_history { 601 } else { 599 };
+        let expected_added_bytes = if using_history { 607 } else { 605 };
         assert_eq!(added_bytes, expected_added_bytes);
 
-        let expected_removed_bytes = if using_history { 598 } else { 596 };
+        let expected_removed_bytes = if using_history { 604 } else { 602 };
 
         assert_eq!(*removed_bytes, expected_removed_bytes);
     }
@@ -1787,43 +1775,45 @@ mod tests {
         );
         let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
         let expected_added_bytes = if using_history {
-            //Explanation for 1350
+            //Explanation for 1290
 
             //todo
-            1278
+            1290
         } else {
-            //Explanation for 1049
+            //Explanation for 1114
 
             // Document Storage
 
             //// Item
-            // = 410 Bytes
+            // = 412 Bytes
 
-            // Explanation for 410 storage_written_bytes
+            // Explanation for 412 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 278
+            // Value -> 279
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
             //   173 for item serialized bytes
+            //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
             // 2 byte for the value_size (required space for above 128)
 
-            // Parent Hook -> 67
+            // Parent Hook -> 68
             // Key Bytes 32
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Feature Type Basic 1
 
-            // Total 65 + 278 + 67 = 410
+            // Total 65 + 279 + 68 = 412
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
@@ -1836,52 +1826,56 @@ mod tests {
             // 18 bytes for the key "My apples are safe" 18 characters
             // 1 byte for key_size (required space for 50)
 
-            // Value -> 73
+            // Value -> 74
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags
             //   1 for the enum type
             //   1 for empty tree value
+            //   1 for Basic Merk
             // 32 for node hash
             // 0 for value hash
             // 2 byte for the value_size (required space for 73 + up to 256 for child key)
 
-            // Parent Hook -> 53
+            // Parent Hook -> 54
             // Key Bytes 18
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Basic Merk 1
 
-            // Total 51 + 73 + 53 = 177
+            // Total 51 + 74 + 54 = 179
 
             //// Tree 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Key: 0
             // = 143 Bytes
 
-            // Explanation for 143 storage_written_bytes
+            // Explanation for 145 storage_written_bytes
 
             // Key -> 34 bytes
             // 32 bytes for the key prefix
             // 1 bytes for the key "My apples are safe" 18 characters
             // 1 byte for key_size (required space for 33)
 
-            // Value -> 73
+            // Value -> 74
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags
             //   1 for the enum type
             //   1 for empty tree value
+            //   1 for Basic Merk
             // 32 for node hash
             // 0 for value hash
             // 2 byte for the value_size (required space for 73 + up to 256 for child key)
 
-            // Parent Hook -> 36
+            // Parent Hook -> 37
             // Key Bytes 1
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // Basic Merk 1
 
-            // Total 34 + 73 + 36 = 143
+            // Total 34 + 74 + 37 = 145
 
             //// Ref 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Reference to Serialized Item
@@ -1894,7 +1888,7 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 144
+            // Value -> 145
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
@@ -1903,19 +1897,23 @@ mod tests {
             //   1 for reference root height
             //   36 for the reference path bytes ( 1 + 1 + 32 + 1 + 1)
             //   2 for the max reference hop
+            //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
             // 2 byte for the value_size (required space for above 128)
 
-            // Parent Hook -> 67
+            // Parent Hook -> 68
             // Key Bytes 32
             // Hash Size 32
             // Key Length 1
             // Child Heights 2
+            // No Sum Tree 1
 
-            // Total 65 + 144 + 67 = 276
+            // Total 65 + 145 + 68 = 278
 
-            1006
+            // 412 + 179 + 145 + 278 = 1014
+
+            1014
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1932,7 +1930,7 @@ mod tests {
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        let expected_added_bytes = if using_history { 1279 } else { 1007 };
+        let expected_added_bytes = if using_history { 1291 } else { 1014 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 

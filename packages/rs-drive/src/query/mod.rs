@@ -57,6 +57,7 @@ use crate::common::bytes_for_system_value;
 use crate::contract::{document::Document, Contract};
 use crate::drive::block_info::BlockInfo;
 
+use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QueryError;
@@ -526,7 +527,7 @@ impl<'a> DriveQuery<'a> {
                     .grove_get(
                         start_at_document_path,
                         &start_at_document_key,
-                        None,
+                        StatefulQuery,
                         transaction,
                         drive_operations,
                     )
@@ -1255,8 +1256,9 @@ impl<'a> DriveQuery<'a> {
         for (_, value, _) in key_value_elements.iter_mut() {
             let element = Element::deserialize(value).unwrap();
             match element {
-                Element::Item(val, _) => values.push(val),
-                Element::Tree(..) | Element::Reference(..) => {
+                Element::Item(val, _)
+                | Element::SumItem(val, _) => values.push(val),
+                Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
                     return Err(Error::GroveDB(GroveError::InvalidQuery(
                         "path query should only point to items: got trees",
                     )));

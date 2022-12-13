@@ -35,10 +35,11 @@
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::contract::document::Document;
@@ -58,6 +59,10 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 
+use crate::drive::grove_operations::BatchDeleteApplyType::{
+    StatefulBatchDelete, StatelessBatchDelete,
+};
+use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
@@ -67,6 +72,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -215,11 +221,15 @@ impl Drive {
         let flags_size = StorageFlags::approximate_size(true, approximate_size);
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(primary_key_path),
-            PotentiallyAtMaxElements(AllItems(
-                DEFAULT_HASH_SIZE_U8,
-                document_type.estimated_size() as u32,
-                Some(flags_size),
-            )),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_sizes: AllItems(
+                    DEFAULT_HASH_SIZE_U8,
+                    document_type.estimated_size() as u32,
+                    Some(flags_size),
+                ),
+            },
         );
     }
 
@@ -235,16 +245,21 @@ impl Drive {
         transaction: TransactionArg,
         batch_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let stateless_delete_for_costs_with_estimated_value_size =
-            if estimated_costs_only_with_layer_info.is_some() {
-                Some(document_type.estimated_size())
-            } else {
-                None
-            };
+        let apply_type = if estimated_costs_only_with_layer_info.is_some() {
+            StatelessBatchDelete {
+                is_sum_tree: false,
+                estimated_value_size: document_type.estimated_size() as u32,
+            }
+        } else {
+            // we know we are not deleting a subtree
+            StatefulBatchDelete {
+                is_known_to_be_subtree_with_sum: Some((false, false)),
+            }
+        };
         self.batch_delete(
             contract_documents_primary_key_path,
             document_id.as_slice(),
-            stateless_delete_for_costs_with_estimated_value_size,
+            apply_type,
             transaction,
             batch_operations,
         )?;
@@ -278,8 +293,6 @@ impl Drive {
         let mut key_info_path = index_path_info.convert_to_key_info_path();
 
         let document_type = document_and_contract_info.document_type;
-        let reference_size =
-            document_reference_size(document_type, StorageFlags::approximate_size(true, None));
 
         // unique indexes will be stored under key "0"
         // non unique indices should have a tree at key "0" that has all elements based off of primary key
@@ -291,16 +304,23 @@ impl Drive {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
-                    PotentiallyAtMaxElements(AllSubtrees(
-                        DEFAULT_HASH_SIZE_U8,
-                        storage_flags.map(|s| s.serialized_size()),
-                    )),
+                    EstimatedLayerInformation {
+                        is_sum_tree: false,
+                        estimated_layer_count: PotentiallyAtMaxElements,
+                        estimated_layer_sizes: AllSubtrees(
+                            DEFAULT_HASH_SIZE_U8,
+                            NoSumTrees,
+                            storage_flags.map(|s| s.serialized_size()),
+                        ),
+                    },
                 );
             }
 
-            let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                reference_size,
+            let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
+                AllReference(DEFAULT_HASH_SIZE_U8, document_reference_size(document_type), storage_flags.map(|s| s.serialized_size())),
                 &key_info_path,
+                // we know we are not deleting a tree
+                Some((false, false)),
                 estimated_costs_only_with_layer_info,
             )?;
 
@@ -312,23 +332,25 @@ impl Drive {
                     .get_document_id_as_slice()
                     .unwrap_or(event_id.as_slice()),
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                stateless_delete_for_costs,
+                delete_apply_type,
                 transaction,
                 batch_operations,
             )?;
         } else {
-            let stateless_delete_for_costs = Self::stateless_delete_for_costs(
-                reference_size,
+
+            let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
+                AllReference(1, document_reference_size(document_type), storage_flags.map(|s| s.serialized_size())),
                 &key_info_path,
+                // we know we are not deleting a tree
+                Some((false, false)),
                 estimated_costs_only_with_layer_info,
             )?;
-
             // here we should return an error if the element already exists
             self.batch_delete_up_tree_while_empty(
                 key_info_path,
                 &[0],
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                stateless_delete_for_costs,
+                delete_apply_type,
                 transaction,
                 batch_operations,
             )?;
@@ -357,13 +379,15 @@ impl Drive {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
-                ApproximateElements(
-                    sub_level_index_count + 1,
-                    AllSubtrees(
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
+                    estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
+                        NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
-                ),
+                },
             );
         }
 
@@ -414,10 +438,15 @@ impl Drive {
 
                 estimated_costs_only_with_layer_info.insert(
                     sub_level_index_path_info.clone().convert_to_key_info_path(),
-                    PotentiallyAtMaxElements(AllSubtrees(
-                        document_top_field_estimated_size as u8,
-                        storage_flags.map(|s| s.serialized_size()),
-                    )),
+                    EstimatedLayerInformation {
+                        is_sum_tree: false,
+                        estimated_layer_count: PotentiallyAtMaxElements,
+                        estimated_layer_sizes: AllSubtrees(
+                            document_top_field_estimated_size as u8,
+                            NoSumTrees,
+                            storage_flags.map(|s| s.serialized_size()),
+                        ),
+                    },
                 );
             }
 
@@ -483,13 +512,15 @@ impl Drive {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
-                ApproximateElements(
-                    sub_level_index_count + 1,
-                    AllSubtrees(
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
+                    estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
+                        NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
-                ),
+                },
             );
         }
 
@@ -528,10 +559,15 @@ impl Drive {
                 // On this level we will have all the user defined values for the paths
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
-                    PotentiallyAtMaxElements(AllSubtrees(
-                        document_top_field_estimated_size as u8,
-                        storage_flags.map(|s| s.serialized_size()),
-                    )),
+                    EstimatedLayerInformation {
+                        is_sum_tree: false,
+                        estimated_layer_count: PotentiallyAtMaxElements,
+                        estimated_layer_sizes: AllSubtrees(
+                            document_top_field_estimated_size as u8,
+                            NoSumTrees,
+                            storage_flags.map(|s| s.serialized_size()),
+                        ),
+                    },
                 );
             }
 
@@ -601,32 +637,34 @@ impl Drive {
         let contract_documents_primary_key_path =
             contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
 
-        let stateless = estimated_costs_only_with_layer_info.is_some();
-        let query_stateless_estimated_value_size = if stateless {
-            Some(document_type.estimated_size())
-        } else {
-            None
-        };
-
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+        let direct_query_type = if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
                 contract,
                 estimated_costs_only_with_layer_info,
             );
-        }
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: false,
+                query_target: QueryTargetValue(document_type.estimated_size() as u32),
+            }
+        } else {
+            DirectQueryType::StatefulDirectQuery
+        };
 
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_direct(
             contract_documents_primary_key_path,
             document_id.as_slice(),
-            query_stateless_estimated_value_size,
+            direct_query_type,
             transaction,
             &mut batch_operations,
         )?;
 
-        let document_info = if let Some(estimated_value_size) = query_stateless_estimated_value_size
+        let document_info = if let DirectQueryType::StatelessDirectQuery {
+            query_target,
+            ..
+        } = direct_query_type
         {
-            DocumentEstimatedAverageSize(estimated_value_size as u32)
+            DocumentEstimatedAverageSize(query_target.len())
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
                 let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
@@ -1381,8 +1419,8 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        // We added 1756 bytes
-        assert_eq!(added_bytes, 1668);
+        // We added 1682 bytes
+        assert_eq!(added_bytes, 1682);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -1453,8 +1491,8 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        // We added 1756 bytes
-        assert_eq!(added_bytes, 1668);
+        // We added 1682 bytes
+        assert_eq!(added_bytes, 1682);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()

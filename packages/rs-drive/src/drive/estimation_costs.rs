@@ -7,12 +7,11 @@ use crate::drive::{contract_documents_path, Drive};
 use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerInformation::{
-    ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements,
-};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
@@ -22,16 +21,25 @@ impl Drive {
         // we have constructed the top layer so contract/documents tree are at the top
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
-            EstimatedLevel(0, false, AllSubtrees(1, None)),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: EstimatedLevel(0, false),
+                estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
+            },
         );
 
         // we then need to insert the contract layer
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(all_contracts_global_root_path()),
-            PotentiallyAtMaxElements(AllSubtrees(
-                DEFAULT_HASH_SIZE_U8,
-                Some(StorageFlags::approximate_size(true, None)),
-            )),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_sizes: AllSubtrees(
+                    DEFAULT_HASH_SIZE_U8,
+                    NoSumTrees,
+                    Some(StorageFlags::approximate_size(true, None)),
+                ),
+            },
         );
     }
 
@@ -52,15 +60,24 @@ impl Drive {
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_root_path(contract.id.as_bytes())),
-            EstimatedLevel(1, false, AllSubtrees(1, storage_flags)),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: EstimatedLevel(1, false),
+                estimated_layer_sizes: AllSubtrees(1, NoSumTrees, storage_flags),
+            },
         );
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_documents_path(contract.id.as_bytes())),
-            ApproximateElements(
-                document_type_count,
-                AllSubtrees(ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, storage_flags),
-            ),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: ApproximateElements(document_type_count),
+                estimated_layer_sizes: AllSubtrees(
+                    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
+                    NoSumTrees,
+                    storage_flags,
+                ),
+            },
         );
     }
 }

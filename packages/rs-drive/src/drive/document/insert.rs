@@ -36,21 +36,16 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::contract::Contract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{
-    contract_document_type_path_vec,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
-    contract_documents_keeping_history_storage_time_reference_path_size,
-    contract_documents_primary_key_path, make_document_reference, unique_event_id,
-};
+use crate::drive::document::{contract_document_type_path_vec, contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_keeping_history_primary_key_path_for_unknown_document_id, contract_documents_keeping_history_storage_time_reference_path_size, contract_documents_primary_key_path, document_reference_size, make_document_reference, unique_event_id};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentRefWithoutSerialization,
@@ -72,9 +67,12 @@ use crate::fee::{calculate_fee, FeeResult};
 use crate::common::encode::encode_unsigned_integer;
 use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
+use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
+use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType};
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -143,11 +141,20 @@ impl Drive {
                         inserted_storage_flags,
                     )
                 };
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsert
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsert {
+                    in_tree_using_sums: false,
+                    is_sum_tree: false,
+                    flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+                }
+            };
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
                 storage_flags,
-                estimated_costs_only_with_layer_info.is_none(),
+                apply_type,
                 transaction,
                 drive_operations,
             )?;
@@ -338,11 +345,17 @@ impl Drive {
                     Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
                 )),
             };
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertApplyType::StatefulBatchInsert
+            } else {
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_using_sums: false,
+                    target: QueryTargetValue(document_type.estimated_size() as u32),
+                }
+            };
             let inserted = self.batch_insert_if_not_exists(
                 path_key_element_info,
-                estimated_costs_only_with_layer_info
-                    .as_mut()
-                    .map(|_| document_type.max_size()),
+                apply_type,
                 transaction,
                 drive_operations,
             )?;
@@ -554,11 +567,22 @@ impl Drive {
             let key_path_info = KeyRef(&[0]);
 
             let path_key_info = key_path_info.add_path_info(index_path_info.clone());
+
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsert
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsert {
+                    in_tree_using_sums: false,
+                    is_sum_tree: false,
+                    flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+                }
+            };
+
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
                 *storage_flags,
-                estimated_costs_only_with_layer_info.is_none(),
+                apply_type,
                 transaction,
                 batch_operations,
             )?;
@@ -570,10 +594,15 @@ impl Drive {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
-                    PotentiallyAtMaxElements(AllSubtrees(
-                        DEFAULT_HASH_SIZE_U8,
-                        storage_flags.map(|s| s.serialized_size()),
-                    )),
+                    EstimatedLayerInformation {
+                        is_sum_tree: false,
+                        estimated_layer_count: PotentiallyAtMaxElements,
+                        estimated_layer_sizes: AllSubtrees(
+                            DEFAULT_HASH_SIZE_U8,
+                            NoSumTrees,
+                            storage_flags.map(|s| s.serialized_size()),
+                        ),
+                    },
                 );
             }
 
@@ -650,12 +679,19 @@ impl Drive {
                 key_element_info,
             )?;
 
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertApplyType::StatefulBatchInsert
+            } else {
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_using_sums: false,
+                    target: QueryTargetValue(document_reference_size(document_and_contract_info.document_type) + storage_flags.map(|s| s.serialized_size()).unwrap_or_default()),
+                }
+            };
+
             // here we should return an error if the element already exists
             let inserted = self.batch_insert_if_not_exists(
                 path_key_element_info,
-                estimated_costs_only_with_layer_info
-                    .as_mut()
-                    .map(|_| document_and_contract_info.document_type.max_size()),
+                apply_type,
                 transaction,
                 batch_operations,
             )?;
@@ -704,15 +740,27 @@ impl Drive {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
-                ApproximateElements(
-                    sub_level_index_count + 1,
-                    AllSubtrees(
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
+                    estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
+                        NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
-                ),
+                },
             );
         }
+
+        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertTreeApplyType::StatefulBatchInsert
+        } else {
+            BatchInsertTreeApplyType::StatelessBatchInsert {
+                in_tree_using_sums: false,
+                is_sum_tree: false,
+                flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+            }
+        };
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
@@ -737,7 +785,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 *storage_flags,
-                estimated_costs_only_with_layer_info.is_none(),
+                apply_type.clone(),
                 transaction,
                 batch_operations,
             )?;
@@ -758,10 +806,15 @@ impl Drive {
 
                 estimated_costs_only_with_layer_info.insert(
                     sub_level_index_path_info.clone().convert_to_key_info_path(),
-                    PotentiallyAtMaxElements(AllSubtrees(
-                        document_top_field_estimated_size as u8,
-                        storage_flags.map(|s| s.serialized_size()),
-                    )),
+                    EstimatedLayerInformation {
+                        is_sum_tree: false,
+                        estimated_layer_count: PotentiallyAtMaxElements,
+                        estimated_layer_sizes: AllSubtrees(
+                            document_top_field_estimated_size as u8,
+                            NoSumTrees,
+                            storage_flags.map(|s| s.serialized_size()),
+                        ),
+                    },
                 );
             }
 
@@ -776,7 +829,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 *storage_flags,
-                estimated_costs_only_with_layer_info.is_none(),
+                apply_type.clone(),
                 transaction,
                 batch_operations,
             )?;
@@ -842,15 +895,27 @@ impl Drive {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
-                ApproximateElements(
-                    sub_level_index_count + 1,
-                    AllSubtrees(
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
+                    estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
+                        NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
-                ),
+                },
             );
         }
+
+        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertTreeApplyType::StatefulBatchInsert
+        } else {
+            BatchInsertTreeApplyType::StatelessBatchInsert {
+                in_tree_using_sums: false,
+                is_sum_tree: false,
+                flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+            }
+        };
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in &index_level.sub_index_levels {
@@ -878,7 +943,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 storage_flags,
-                estimated_costs_only_with_layer_info.is_none(),
+                apply_type.clone(),
                 transaction,
                 batch_operations,
             )?;
@@ -898,10 +963,15 @@ impl Drive {
                 // On this level we will have all the user defined values for the paths
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
-                    PotentiallyAtMaxElements(AllSubtrees(
-                        document_top_field_estimated_size as u8,
-                        storage_flags.map(|s| s.serialized_size()),
-                    )),
+                    EstimatedLayerInformation {
+                        is_sum_tree: false,
+                        estimated_layer_count: PotentiallyAtMaxElements,
+                        estimated_layer_sizes: AllSubtrees(
+                            document_top_field_estimated_size as u8,
+                            NoSumTrees,
+                            storage_flags.map(|s| s.serialized_size()),
+                        ),
+                    },
                 );
             }
 
@@ -953,21 +1023,26 @@ impl Drive {
         );
 
         // Apply means stateful query
-        let query_stateless_with_max_value_size = estimated_costs_only_with_layer_info
-            .as_mut()
-            .map(|_| document_and_contract_info.document_type.max_size());
+        let query_type = if estimated_costs_only_with_layer_info.is_none() {
+            StatefulDirectQuery
+        } else {
+            StatelessDirectQuery {
+                in_tree_using_sums: false,
+                query_target: QueryTargetValue(document_and_contract_info.document_type.estimated_size() as u32),
+            }
+        };
 
         if override_document
-            && document_and_contract_info
+            && !document_and_contract_info
                 .document_info
-                .is_document_and_serialization()
+                .is_document_size()
             && self.grove_has_raw(
                 primary_key_path,
                 document_and_contract_info
                     .document_info
                     .id_key_value_info()
                     .as_key_ref_request()?,
-                query_stateless_with_max_value_size,
+                query_type,
                 transaction,
                 &mut batch_operations,
             )?
@@ -1193,8 +1268,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!(3211, added_bytes);
-        assert_eq!(2878800, processing_fee);
+        assert_eq!((3247,2914000), (added_bytes,processing_fee));
     }
 
     #[test]
@@ -1242,12 +1316,11 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!(1414, added_bytes);
-        assert_eq!(1870600, processing_fee);
+        assert_eq!((1428,1895000), (added_bytes,processing_fee));
     }
 
     #[test]
-    fn test_add_dashpay_profile_worst_case_cost_fee() {
+    fn test_add_dashpay_profile_average_case_cost_fee() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -1291,8 +1364,8 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!(1414, added_bytes);
-        assert_eq!(150644400, processing_fee);
+        assert_eq!(1428, added_bytes);
+        assert_eq!(145603600, processing_fee);
     }
 
     #[ignore]
@@ -1502,8 +1575,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!(1966, added_bytes);
-        assert_eq!(2572200, processing_fee);
+        assert_eq!((1986,2604600), (added_bytes,processing_fee));
 
         drive
             .grove

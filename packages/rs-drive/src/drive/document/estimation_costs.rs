@@ -5,7 +5,7 @@ use crate::drive::defaults::{
 };
 use crate::drive::document::contract_documents_keeping_history_primary_key_path_for_document_id;
 use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{EstimatedIntermediateFlagSizes, EstimatedValueSize};
+use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
 use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
@@ -13,10 +13,10 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use dpp::data_contract::extra::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
-use grovedb::Error::MerkError;
-use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerInformation::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use intmap::IntMap;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -50,7 +50,15 @@ impl Drive {
             };
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
-                PotentiallyAtMaxElements(AllSubtrees(DEFAULT_HASH_SIZE_U8, average_flags_size)),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: PotentiallyAtMaxElements,
+                    estimated_layer_sizes: AllSubtrees(
+                        DEFAULT_HASH_SIZE_U8,
+                        NoSumTrees,
+                        average_flags_size,
+                    ),
+                },
             );
             let document_id_in_primary_path =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -66,9 +74,10 @@ impl Drive {
             // on the lower level we have many items by date, and 1 ref to the current item
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(document_id_in_primary_path),
-                ApproximateElements(
-                    AVERAGE_NUMBER_OF_UPDATES as u32,
-                    Mix {
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
+                    estimated_layer_sizes: Mix {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
@@ -78,7 +87,7 @@ impl Drive {
                         )),
                         references_size: Some((1, reference_size, average_flags_size, 1)),
                     },
-                ),
+                },
             );
         } else {
             // we just have the elements
@@ -94,22 +103,27 @@ impl Drive {
             let flags_size = StorageFlags::approximate_size(true, approximate_size);
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
-                PotentiallyAtMaxElements(AllItems(
-                    DEFAULT_HASH_SIZE_U8,
-                    document_type.estimated_size() as u32,
-                    Some(flags_size),
-                )),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: PotentiallyAtMaxElements,
+                    estimated_layer_sizes: AllItems(
+                        DEFAULT_HASH_SIZE_U8,
+                        document_type.estimated_size() as u32,
+                        Some(flags_size),
+                    ),
+                },
             );
         }
     }
 
-    pub(super) fn stateless_delete_for_costs(
-        element_estimated_size: u32,
+    pub(super) fn stateless_delete_of_non_tree_for_costs(
+        element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
+        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-    ) -> Result<Option<(EstimatedValueSize, EstimatedIntermediateFlagSizes)>, Error> {
+    ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         // Keep for debugging
         // if estimated_costs_only_with_layer_info.is_some() {
         //     for k in estimated_costs_only_with_layer_info.as_ref().unwrap().keys() {
@@ -120,16 +134,15 @@ impl Drive {
         //     }
         // }
         estimated_costs_only_with_layer_info.as_ref().map_or(
-            Ok::<Option<(u32, IntMap<u32>)>, Error>(None),
+            Ok(BatchDeleteUpTreeApplyType::StatefulBatchDelete { is_known_to_be_subtree_with_sum }),
             |layer_info| {
-                let flags_size_map = (CONTRACT_DOCUMENTS_PATH_HEIGHT..(key_info_path.len() as u16))
+                let mut layer_map = (CONTRACT_DOCUMENTS_PATH_HEIGHT..(key_info_path.len() as u16))
                     .into_iter()
                     .map(|s| {
                         let subpath =
                             KeyInfoPath::from_vec(key_info_path.0[..(s as usize)].to_vec());
-                        let size = layer_info
+                        let layer_info = layer_info
                             .get(&subpath)
-                            .map(|estimated_layer_information| estimated_layer_information.sizes())
                             .ok_or(Error::Fee(FeeError::CorruptedEstimatedLayerInfoMissing(
                                 format!(
                                     "layer info missing at path {}",
@@ -140,15 +153,17 @@ impl Drive {
                                         .join("/")
                                 ),
                             )))?;
-
-                        let flag_size = size
-                            .layered_flags_size()
-                            .map_err(MerkError)?
-                            .unwrap_or_default();
-                        Ok((s as u64, flag_size))
+                        
+                        Ok((s as u64, layer_info.clone()))
                     })
-                    .collect::<Result<IntMap<u32>, Error>>()?;
-                Ok(Some((element_estimated_size, flags_size_map)))
+                    .collect::<Result<IntMap<EstimatedLayerInformation>, Error>>()?;
+                // We need to update the current layer to only have 1 element that we want to delete
+                let mut last_layer_information = layer_map.remove(key_info_path.len() as u64).ok_or(Error::Fee(FeeError::CorruptedEstimatedLayerInfoMissing(
+                    "last layer info missing".to_owned(),
+                )))?;
+                last_layer_information.estimated_layer_sizes = element_estimated_sizes;
+                layer_map.insert(key_info_path.len() as u64, last_layer_information);
+                Ok(BatchDeleteUpTreeApplyType::StatelessBatchDelete { estimated_layer_info: layer_map })
             },
         )
     }
