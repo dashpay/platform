@@ -1,5 +1,5 @@
 use crate::errors::consensus::basic::{
-    IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
+    IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
@@ -92,10 +92,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     let code = e.code();
 
     match e {
-        DPPConsensusError::JsonSchemaError(e) => {
-            // TODO: rework JSONSchema error
-            e.to_string().into()
-        }
+        DPPConsensusError::JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),
         DPPConsensusError::UnsupportedProtocolVersionError(e) => {
             UnsupportedProtocolVersionErrorWasm::from(e).into()
         }
