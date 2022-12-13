@@ -54,8 +54,6 @@ pub const DEFAULT_HASH_SIZE: u32 = 32;
 pub const DEFAULT_HASH_SIZE_U8: u8 = 32;
 /// Default hash size as u16
 pub const DEFAULT_HASH_SIZE_U16: u16 = 32;
-/// Default float size
-pub const SOME_TREE_SIZE: Option<u16> = Some(32);
 /// Some optimized document reference size
 pub const OPTIMIZED_DOCUMENT_REFERENCE: u16 = 34; // 1 + hops + DEFAULT_HASH_SIZE
 /// Default float size

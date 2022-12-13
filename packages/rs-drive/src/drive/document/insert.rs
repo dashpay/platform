@@ -76,9 +76,7 @@ use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{
-    BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType,
-};
+use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::data_contract::extra::{DriveContractExt, IndexLevel};

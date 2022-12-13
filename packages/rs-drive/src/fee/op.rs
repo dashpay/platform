@@ -35,12 +35,12 @@ use costs::storage_cost::removal::Identifier;
 use costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
-use costs::storage_cost::StorageCost;
+
 use costs::OperationCost;
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{batch::GroveDbOp, Element, PathQuery};
+use grovedb::{batch::GroveDbOp, Element};
 use std::collections::BTreeMap;
 
 use crate::drive::flags::StorageFlags;

@@ -41,16 +41,15 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, OPTIMIZED_DOCUMENT_REFERENCE};
+use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path, document_reference_size, make_document_reference,
-    unique_event_id,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentWithoutSerialization,
+    DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
@@ -65,7 +64,6 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
@@ -546,9 +544,6 @@ impl Drive {
                             })
                             .collect::<Vec<KeyInfo>>(),
                     );
-
-                    let reference_size = document_reference_size(document_type)
-                        + StorageFlags::approximate_size(true, None);
 
                     if !index.unique {
                         key_info_path.push(KnownKey(vec![0]));

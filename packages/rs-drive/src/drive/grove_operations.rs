@@ -41,7 +41,6 @@ use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPat
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
 use std::collections::HashMap;
 
-use crate::drive::defaults::SOME_TREE_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 
