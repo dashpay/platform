@@ -13,15 +13,20 @@ const verifyStatus = {
 };
 
 /**
+ * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
  *
  * @return {verifyVoteExtensionHandler}
  */
-function verifyVoteExtensionHandlerFactory() {
+function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContextCollection) {
   /**
    * @typedef verifyVoteExtensionHandler
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
   async function verifyVoteExtensionHandler() {
+    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
+      .getWithdrawalTransactionsMap();
+
     return new ResponseVerifyVoteExtension({
       status: verifyStatus.ACCEPT,
     });
