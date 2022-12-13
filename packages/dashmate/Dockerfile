@@ -1,4 +1,4 @@
-FROM node:16-alpine as builder
+FROM dashpay/node:16-alpine as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -46,7 +46,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM node:16-alpine
+FROM dashpay/node:16-alpine
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
