@@ -125,14 +125,16 @@ impl Drive {
         >,
     ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         // Keep for debugging
-        // if estimated_costs_only_with_layer_info.is_some() {
-        //     for k in estimated_costs_only_with_layer_info.as_ref().unwrap().keys() {
-        //         let path = k.to_path().iter()
-        //             .map(|k| hex::encode(k.as_slice()))
-        //             .join("/");
-        //         dbg!(path);
-        //     }
-        // }
+        if estimated_costs_only_with_layer_info.is_some() {
+            for (k, l) in estimated_costs_only_with_layer_info.as_ref().unwrap() {
+                let path = k
+                    .to_path()
+                    .iter()
+                    .map(|k| hex::encode(k.as_slice()))
+                    .join("/");
+                dbg!(path, l);
+            }
+        }
         estimated_costs_only_with_layer_info.as_ref().map_or(
             Ok(BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
@@ -159,12 +161,12 @@ impl Drive {
                     .collect::<Result<IntMap<EstimatedLayerInformation>, Error>>()?;
                 // We need to update the current layer to only have 1 element that we want to delete
                 let mut last_layer_information = layer_map
-                    .remove(key_info_path.len() as u64)
+                    .remove((key_info_path.len() - 1) as u64)
                     .ok_or(Error::Fee(FeeError::CorruptedEstimatedLayerInfoMissing(
                         "last layer info missing".to_owned(),
                     )))?;
                 last_layer_information.estimated_layer_sizes = element_estimated_sizes;
-                layer_map.insert(key_info_path.len() as u64, last_layer_information);
+                layer_map.insert((key_info_path.len() - 1) as u64, last_layer_information);
                 Ok(BatchDeleteUpTreeApplyType::StatelessBatchDelete {
                     estimated_layer_info: layer_map,
                 })

@@ -1936,7 +1936,7 @@ mod tests {
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        let expected_added_bytes = if using_history { 1291 } else { 1014 };
+        let expected_added_bytes = if using_history { 1291 } else { 1015 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
