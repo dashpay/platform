@@ -28,8 +28,8 @@ impl ValidationResultWasm {
     pub fn errors(&self) -> Vec<JsValue> {
         self.0
             .errors()
-            .into_iter()
-            .map(|e| from_consensus_error_ref(e))
+            .iter()
+            .map(from_consensus_error_ref)
             .collect()
     }
 }

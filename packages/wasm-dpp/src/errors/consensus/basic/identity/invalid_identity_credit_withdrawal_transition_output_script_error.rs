@@ -21,7 +21,7 @@ impl From<&InvalidIdentityCreditWithdrawalTransitionOutputScriptError>
 impl InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm {
     #[wasm_bindgen(js_name=getOutputScript)]
     pub fn output_script(&self) -> Buffer {
-        let script = self.inner.output_script().clone();
+        let script = self.inner.output_script();
         Buffer::from_bytes(script.to_bytes().as_ref())
     }
 

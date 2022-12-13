@@ -26,10 +26,10 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
         DocumentError::DocumentAlreadyExists {
             document_transition,
-        } => DocumentAlreadyExistsError::new(document_transition.into()).into(),
+        } => DocumentAlreadyExistsError::new(document_transition).into(),
         DocumentError::DocumentNotProvided {
             document_transition,
-        } => DocumentNotProvidedError::new(document_transition.into()).into(),
+        } => DocumentNotProvidedError::new(document_transition).into(),
 
         DocumentError::InvalidActionName { actions } => {
             InvalidActionNameError::new(to_vec_js(actions)).into()
@@ -41,7 +41,7 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         .into(),
         DocumentError::InvalidDocumentAction {
             document_transition,
-        } => InvalidDocumentActionError::new(document_transition.into()).into(),
+        } => InvalidDocumentActionError::new(document_transition).into(),
         DocumentError::InvalidInitialRevision { document } => {
             InvalidInitialRevisionError::new((*document).into()).into()
         }
