@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.3
-FROM dashpay/node:16-alpine as builder
+FROM node@sha256:6e983a17c0403ab6a3e1263054babd5d9752cfcecd41ad770cc8f938c6a64ebf as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -88,7 +88,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/drive && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM dashpay/node:16-alpine
+FROM node@sha256:6e983a17c0403ab6a3e1263054babd5d9752cfcecd41ad770cc8f938c6a64ebf
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
