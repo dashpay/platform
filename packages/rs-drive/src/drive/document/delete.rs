@@ -63,6 +63,7 @@ use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
 use crate::drive::grove_operations::DirectQueryType;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
@@ -72,7 +73,6 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -317,7 +317,11 @@ impl Drive {
             }
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                AllReference(DEFAULT_HASH_SIZE_U8, document_reference_size(document_type), storage_flags.map(|s| s.serialized_size())),
+                AllReference(
+                    DEFAULT_HASH_SIZE_U8,
+                    document_reference_size(document_type),
+                    storage_flags.map(|s| s.serialized_size()),
+                ),
                 &key_info_path,
                 // we know we are not deleting a tree
                 Some((false, false)),
@@ -337,9 +341,12 @@ impl Drive {
                 batch_operations,
             )?;
         } else {
-
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                AllReference(1, document_reference_size(document_type), storage_flags.map(|s| s.serialized_size())),
+                AllReference(
+                    1,
+                    document_reference_size(document_type),
+                    storage_flags.map(|s| s.serialized_size()),
+                ),
                 &key_info_path,
                 // we know we are not deleting a tree
                 Some((false, false)),
@@ -637,7 +644,9 @@ impl Drive {
         let contract_documents_primary_key_path =
             contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
 
-        let direct_query_type = if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+        let direct_query_type = if let Some(estimated_costs_only_with_layer_info) =
+            estimated_costs_only_with_layer_info
+        {
             Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
                 contract,
                 estimated_costs_only_with_layer_info,
@@ -659,27 +668,24 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let document_info = if let DirectQueryType::StatelessDirectQuery {
-            query_target,
-            ..
-        } = direct_query_type
-        {
-            DocumentEstimatedAverageSize(query_target.len())
-        } else if let Some(document_element) = &document_element {
-            if let Element::Item(data, element_flags) = document_element {
-                let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
-                let storage_flags = StorageFlags::from_some_element_flags_ref(element_flags)?;
-                DocumentWithoutSerialization((document, storage_flags))
+        let document_info =
+            if let DirectQueryType::StatelessDirectQuery { query_target, .. } = direct_query_type {
+                DocumentEstimatedAverageSize(query_target.len())
+            } else if let Some(document_element) = &document_element {
+                if let Element::Item(data, element_flags) = document_element {
+                    let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
+                    let storage_flags = StorageFlags::from_some_element_flags_ref(element_flags)?;
+                    DocumentWithoutSerialization((document, storage_flags))
+                } else {
+                    return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
+                        "document being deleted is not an item",
+                    )));
+                }
             } else {
-                return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
-                    "document being deleted is not an item",
+                return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
+                    "document being deleted does not exist",
                 )));
-            }
-        } else {
-            return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
-                "document being deleted does not exist",
-            )));
-        };
+            };
 
         // third we need to delete the document for it's primary key
         self.remove_document_from_primary_storage(

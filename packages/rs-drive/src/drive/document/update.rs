@@ -65,9 +65,12 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 
-use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType};
-use dpp::data_contract::extra::DriveContractExt;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::{
+    BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
+    QueryType,
+};
+use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.
@@ -544,9 +547,8 @@ impl Drive {
                             .collect::<Vec<KeyInfo>>(),
                     );
 
-                    let reference_size = document_reference_size(
-                        document_type,
-                    ) + StorageFlags::approximate_size(true, None);
+                    let reference_size = document_reference_size(document_type)
+                        + StorageFlags::approximate_size(true, None);
 
                     if !index.unique {
                         key_info_path.push(KnownKey(vec![0]));
@@ -556,7 +558,9 @@ impl Drive {
                             key_info_path,
                             document.id.as_slice(),
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            BatchDeleteUpTreeApplyType::StatefulBatchDelete { is_known_to_be_subtree_with_sum: Some((false, false)) },
+                            BatchDeleteUpTreeApplyType::StatefulBatchDelete {
+                                is_known_to_be_subtree_with_sum: Some((false, false)),
+                            },
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -566,7 +570,9 @@ impl Drive {
                             key_info_path,
                             &[0],
                             Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                            BatchDeleteUpTreeApplyType::StatefulBatchDelete { is_known_to_be_subtree_with_sum: Some((false, false)) },
+                            BatchDeleteUpTreeApplyType::StatefulBatchDelete {
+                                is_known_to_be_subtree_with_sum: Some((false, false)),
+                            },
                             transaction,
                             &mut batch_operations,
                         )?;

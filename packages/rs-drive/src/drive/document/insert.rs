@@ -45,7 +45,14 @@ use std::option::Option::None;
 
 use crate::contract::Contract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{contract_document_type_path_vec, contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_keeping_history_primary_key_path_for_unknown_document_id, contract_documents_keeping_history_storage_time_reference_path_size, contract_documents_primary_key_path, document_reference_size, make_document_reference, unique_event_id};
+use crate::drive::document::{
+    contract_document_type_path_vec,
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
+    contract_documents_keeping_history_storage_time_reference_path_size,
+    contract_documents_primary_key_path, document_reference_size, make_document_reference,
+    unique_event_id,
+};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentRefWithoutSerialization,
@@ -68,11 +75,13 @@ use crate::common::encode::encode_unsigned_integer;
 use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType};
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::{
+    BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType,
+};
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -147,7 +156,9 @@ impl Drive {
                 BatchInsertTreeApplyType::StatelessBatchInsert {
                     in_tree_using_sums: false,
                     is_sum_tree: false,
-                    flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+                    flags_len: storage_flags
+                        .map(|s| s.serialized_size())
+                        .unwrap_or_default(),
                 }
             };
             // we first insert an empty tree if the document is new
@@ -574,7 +585,9 @@ impl Drive {
                 BatchInsertTreeApplyType::StatelessBatchInsert {
                     in_tree_using_sums: false,
                     is_sum_tree: false,
-                    flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+                    flags_len: storage_flags
+                        .map(|s| s.serialized_size())
+                        .unwrap_or_default(),
                 }
             };
 
@@ -684,7 +697,12 @@ impl Drive {
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_using_sums: false,
-                    target: QueryTargetValue(document_reference_size(document_and_contract_info.document_type) + storage_flags.map(|s| s.serialized_size()).unwrap_or_default()),
+                    target: QueryTargetValue(
+                        document_reference_size(document_and_contract_info.document_type)
+                            + storage_flags
+                                .map(|s| s.serialized_size())
+                                .unwrap_or_default(),
+                    ),
                 }
             };
 
@@ -758,7 +776,9 @@ impl Drive {
             BatchInsertTreeApplyType::StatelessBatchInsert {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
-                flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+                flags_len: storage_flags
+                    .map(|s| s.serialized_size())
+                    .unwrap_or_default(),
             }
         };
 
@@ -913,7 +933,9 @@ impl Drive {
             BatchInsertTreeApplyType::StatelessBatchInsert {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
-                flags_len: storage_flags.map(|s| s.serialized_size()).unwrap_or_default(),
+                flags_len: storage_flags
+                    .map(|s| s.serialized_size())
+                    .unwrap_or_default(),
             }
         };
 
@@ -1028,14 +1050,14 @@ impl Drive {
         } else {
             StatelessDirectQuery {
                 in_tree_using_sums: false,
-                query_target: QueryTargetValue(document_and_contract_info.document_type.estimated_size() as u32),
+                query_target: QueryTargetValue(
+                    document_and_contract_info.document_type.estimated_size() as u32,
+                ),
             }
         };
 
         if override_document
-            && !document_and_contract_info
-                .document_info
-                .is_document_size()
+            && !document_and_contract_info.document_info.is_document_size()
             && self.grove_has_raw(
                 primary_key_path,
                 document_and_contract_info
@@ -1268,7 +1290,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((3247,2914000), (added_bytes,processing_fee));
+        assert_eq!((3247, 2914000), (added_bytes, processing_fee));
     }
 
     #[test]
@@ -1316,7 +1338,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1428,1895000), (added_bytes,processing_fee));
+        assert_eq!((1428, 1895000), (added_bytes, processing_fee));
     }
 
     #[test]
@@ -1575,7 +1597,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1986,2604600), (added_bytes,processing_fee));
+        assert_eq!((1986, 2604600), (added_bytes, processing_fee));
 
         drive
             .grove

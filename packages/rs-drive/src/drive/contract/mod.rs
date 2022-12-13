@@ -55,13 +55,13 @@ use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive, RootTree};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
@@ -622,7 +622,10 @@ impl Drive {
                     BatchInsertTreeApplyType::StatelessBatchInsert {
                         in_tree_using_sums: false,
                         is_sum_tree: false,
-                        flags_len: element_flags.as_ref().map(|e| e.len() as u32).unwrap_or_default(),
+                        flags_len: element_flags
+                            .as_ref()
+                            .map(|e| e.len() as u32)
+                            .unwrap_or_default(),
                     }
                 };
 

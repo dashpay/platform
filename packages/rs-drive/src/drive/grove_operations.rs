@@ -177,7 +177,7 @@ impl QueryTarget {
                 let len = if *is_sum_tree { 11 } else { 3 };
                 *flags_len + len
             }
-            QueryTarget::QueryTargetValue(len) => {*len}
+            QueryTarget::QueryTargetValue(len) => *len,
         }
     }
 }
