@@ -125,16 +125,16 @@ impl Drive {
         >,
     ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         // Keep for debugging
-        if estimated_costs_only_with_layer_info.is_some() {
-            for (k, l) in estimated_costs_only_with_layer_info.as_ref().unwrap() {
-                let path = k
-                    .to_path()
-                    .iter()
-                    .map(|k| hex::encode(k.as_slice()))
-                    .join("/");
-                dbg!(path, l);
-            }
-        }
+        // if estimated_costs_only_with_layer_info.is_some() {
+        //     for (k, l) in estimated_costs_only_with_layer_info.as_ref().unwrap() {
+        //         let path = k
+        //             .to_path()
+        //             .iter()
+        //             .map(|k| hex::encode(k.as_slice()))
+        //             .join("/");
+        //         dbg!(path, l);
+        //     }
+        // }
         estimated_costs_only_with_layer_info.as_ref().map_or(
             Ok(BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
