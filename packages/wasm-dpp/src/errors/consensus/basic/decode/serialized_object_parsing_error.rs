@@ -19,7 +19,7 @@ impl SerializedObjectParsingErrorWasm {
 impl SerializedObjectParsingErrorWasm {
     #[wasm_bindgen(js_name=getParsingError)]
     pub fn get_parsing_error(&self) -> JsError {
-        self.parsing_error
+        self.parsing_error.clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]

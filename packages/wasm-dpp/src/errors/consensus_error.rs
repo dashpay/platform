@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     UnsupportedProtocolVersionErrorWasm,
 };
-use dpp::consensus::ConsensusError as DPPConsensusError;
+use dpp::consensus::{ConsensusError as DPPConsensusError};
 use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
@@ -53,11 +53,7 @@ use crate::errors::consensus::state::document::{
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{
-    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm,
-    IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm,
-    InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
-};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsDisabledErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm};
 use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
@@ -161,9 +157,6 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IdentityAlreadyExistsError(e) => {
             IdentityAlreadyExistsErrorWasm::from(e).into()
         }
-        // TODO: implement those
-        // #[cfg(test)]
-        // DPPConsensusError::TestConsensusError(TestConsensusError { message }) => {}
         DPPConsensusError::SerializedObjectParsingError { parsing_error } => {
             SerializedObjectParsingErrorWasm::new(
                 wasm_bindgen::JsError::new(parsing_error.to_string().as_ref()),
@@ -197,8 +190,10 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::SignatureError(e) => from_signature_error(e),
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
-        // TODO: remove
-        _ => e.to_string().into(),
+        #[cfg(test)]
+        DPPConsensusError::TestConsensusError(_) => {
+            "This is an internal error for testing and does not require WASM binding".into()
+        }
     }
 }
 
@@ -293,8 +288,9 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::MaxIdentityPublicKeyLimitReachedError { max_items } => {
             MaxIdentityPublicKeyLimitReachedErrorWasm::new(*max_items, code).into()
         }
-        // TODO: Not sure, seems like this error has been removed from the js-dpp
-        // StateError::IdentityPublicKeyDisabledError { public_key_index } => {}
+        StateError::IdentityPublicKeyIsDisabledError { public_key_index } => {
+            IdentityPublicKeyIsDisabledErrorWasm::new(*public_key_index, code).into()
+        }
         StateError::DataTriggerError(data_trigger_error) => {
             match data_trigger_error.deref() {
                 DataTriggerError::DataTriggerConditionError {
@@ -342,12 +338,8 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                     code,
                 )
                 .into(),
-                // TODO: remove when all if the above is implemented
-                _ => "Not implemented".into(),
             }
         }
-        // TODO: remove when all of the above is implemented
-        _ => "Not implemented".into(),
     }
 }
 
