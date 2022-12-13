@@ -402,7 +402,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        if apply == false {
+        if !apply {
             return self.insert_contract_cbor(
                 contract_cbor,
                 contract_id,
@@ -638,7 +638,7 @@ impl Drive {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
                             storage_flags.as_ref(),
-                            apply_type.clone(),
+                            apply_type,
                             transaction,
                             &mut batch_operations,
                         )?;

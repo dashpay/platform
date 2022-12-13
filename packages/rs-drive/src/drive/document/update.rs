@@ -45,7 +45,7 @@ use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path, document_reference_size, make_document_reference,
+    contract_documents_primary_key_path, make_document_reference,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{

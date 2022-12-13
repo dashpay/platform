@@ -803,7 +803,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 *storage_flags,
-                apply_type.clone(),
+                apply_type,
                 transaction,
                 batch_operations,
             )?;
@@ -847,7 +847,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 *storage_flags,
-                apply_type.clone(),
+                apply_type,
                 transaction,
                 batch_operations,
             )?;
@@ -963,7 +963,7 @@ impl Drive {
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 storage_flags,
-                apply_type.clone(),
+                apply_type,
                 transaction,
                 batch_operations,
             )?;
