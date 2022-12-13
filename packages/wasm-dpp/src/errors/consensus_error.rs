@@ -195,10 +195,6 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::SignatureError(e) => from_signature_error(e),
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
-        #[cfg(test)]
-        DPPConsensusError::TestConsensusError(_) => {
-            "This is an internal error for testing and does not require WASM binding".into()
-        }
     }
 }
 
