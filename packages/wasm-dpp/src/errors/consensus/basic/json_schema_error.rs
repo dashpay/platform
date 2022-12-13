@@ -1,6 +1,7 @@
 use dpp::errors::consensus::basic::JsonSchemaError;
 use serde_json::Value;
 
+use dpp::jsonschema::error::ValidationErrorKind;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=JsonSchemaError)]
@@ -12,65 +13,146 @@ pub struct JsonSchemaErrorWasm {
     property_name: String,
 }
 
-struct Kek {
-    keyword: String,
-    params: serde_json::Map<String, Value>,
-    property_name: String,
+#[derive(Default)]
+struct Params {
+    pub keyword: String,
+    pub params: serde_json::Map<String, Value>,
+    pub property_name: String,
+}
+
+pub struct ParamsBuilder {
+    kek: Params,
+}
+
+impl ParamsBuilder {
+    fn new() -> Self {
+        Self {
+            kek: Params::default(),
+        }
+    }
+
+    fn set_keyword(mut self, keyword: impl Into<String>) -> Self {
+        self.kek.keyword = keyword.into();
+        self
+    }
+
+    fn set_property_name(mut self, property_name: impl Into<String>) -> Self {
+        self.kek.property_name = property_name.into();
+        self
+    }
+
+    fn add_param(mut self, key: impl Into<String>, value: Value) -> Self {
+        self.kek.params.insert(key.into(), value);
+        self
+    }
+
+    fn build(self) -> Params {
+        self.kek
+    }
 }
 
 impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
     fn from(e: &JsonSchemaError) -> Self {
-        let map = serde_json::Map::new();
-        let params = Value::Object(map);
+        let kek = match e.kind() {
+            ValidationErrorKind::Required { property } => ParamsBuilder::new()
+                .set_keyword("const")
+                .set_property_name(property.to_string())
+                .add_param("missingProperty", property.clone())
+                .build(),
+            ValidationErrorKind::AdditionalItems { .. } => {
+                ParamsBuilder::new().set_keyword("additionalItems").build()
+            }
+            ValidationErrorKind::AdditionalProperties { .. } => ParamsBuilder::new()
+                .set_keyword("additionalProperties")
+                .build(),
+            ValidationErrorKind::AnyOf => ParamsBuilder::new().set_keyword("anyOf").build(),
+            ValidationErrorKind::BacktrackLimitExceeded { .. } => ParamsBuilder::new()
+                .set_keyword("backtrackLimitExceeded")
+                .build(),
+            ValidationErrorKind::Constant { expected_value } => ParamsBuilder::new()
+                .set_keyword("const")
+                .add_param("allowedValue", expected_value.clone())
+                .build(),
+            ValidationErrorKind::Contains => ParamsBuilder::new().set_keyword("contains").build(),
+            ValidationErrorKind::ContentEncoding { content_encoding } => ParamsBuilder::new()
+                .set_keyword("contentEncoding")
+                .add_param("contentEncoding", content_encoding.clone().into())
+                .build(),
+            ValidationErrorKind::ContentMediaType { content_media_type } => ParamsBuilder::new()
+                .set_keyword("contentMediaType")
+                .add_param("contentMediaType", content_media_type.clone().into())
+                .build(),
+            ValidationErrorKind::Enum { options } => ParamsBuilder::new()
+                .set_keyword("enum")
+                .add_param("enum", options.clone())
+                .build(),
+            ValidationErrorKind::ExclusiveMaximum { limit } => ParamsBuilder::new()
+                .set_keyword("exclusiveMaximum")
+                .add_param("exclusiveMaximum", limit.clone())
+                .build(),
+            ValidationErrorKind::ExclusiveMinimum { limit } => ParamsBuilder::new()
+                .set_keyword("exclusiveMinimum")
+                .add_param("exclusiveMinimum", limit.clone())
+                .build(),
+            ValidationErrorKind::FalseSchema => {}
+            ValidationErrorKind::FileNotFound { .. } => {
+                ParamsBuilder::new().set_keyword("fileNotFound").build()
+            }
+            ValidationErrorKind::Format { format } => ParamsBuilder::new()
+                .set_keyword("format")
+                .add_param("format", format.to_string().into())
+                .build(),
+            // ValidationErrorKind::FromUtf8 { .. } => {}
+            // ValidationErrorKind::Utf8 { .. } => {}
+            // ValidationErrorKind::JSONParse { .. } => {}
+            // ValidationErrorKind::InvalidReference { .. } => {}
+            // ValidationErrorKind::InvalidURL { .. } => {}
+            ValidationErrorKind::MaxItems { .. } => {
+                ParamsBuilder::new().set_keyword("maxItems").build()
+            }
+            ValidationErrorKind::Maximum { .. } => {
+                ParamsBuilder::new().set_keyword("maximum").build()
+            }
+            // ValidationErrorKind::MaxLength { .. } => {}
+            // ValidationErrorKind::MaxProperties { .. } => {}
+            ValidationErrorKind::MinItems { .. } => {
+                ParamsBuilder::new().set_keyword("minItems").build()
+            }
+            ValidationErrorKind::Minimum { .. } => {
+                ParamsBuilder::new().set_keyword("minimum").build()
+            }
+            // ValidationErrorKind::MinLength { .. } => {}
+            // ValidationErrorKind::MinProperties { .. } => {}
+            // ValidationErrorKind::MultipleOf { .. } => {}
+            // ValidationErrorKind::Not { .. } => {}
+            // ValidationErrorKind::OneOfMultipleValid => {}
+            // ValidationErrorKind::OneOfNotValid => {}
+            // ValidationErrorKind::Pattern { .. } => {}
+            // ValidationErrorKind::PropertyNames { .. } => {}
+            // ValidationErrorKind::Schema => {}
+            ValidationErrorKind::Type { .. } => ParamsBuilder::new().set_keyword("type").build(),
+            ValidationErrorKind::UniqueItems => {
+                ParamsBuilder::new().set_keyword("uniqueItems").build()
+            }
+            // ValidationErrorKind::UnknownReferenceScheme { .. } => {}
+            // ValidationErrorKind::Resolver { .. } => {}
+            _ => {
+                unimplemented!()
+            }
+        };
 
-        // let kek = match e.kind() {
-        //     ValidationErrorKind::AdditionalItems { .. } => {}
-        //     ValidationErrorKind::AdditionalProperties { .. } => {}
-        //     ValidationErrorKind::AnyOf => {}
-        //     ValidationErrorKind::BacktrackLimitExceeded { .. } => {}
-        //     ValidationErrorKind::Constant { .. } => {}
-        //     ValidationErrorKind::Contains => {}
-        //     ValidationErrorKind::ContentEncoding { .. } => {}
-        //     ValidationErrorKind::ContentMediaType { .. } => {}
-        //     ValidationErrorKind::Enum { .. } => {}
-        //     ValidationErrorKind::ExclusiveMaximum { .. } => {}
-        //     ValidationErrorKind::ExclusiveMinimum { .. } => {}
-        //     ValidationErrorKind::FalseSchema => {}
-        //     ValidationErrorKind::FileNotFound { .. } => {}
-        //     ValidationErrorKind::Format { .. } => {}
-        //     ValidationErrorKind::FromUtf8 { .. } => {}
-        //     ValidationErrorKind::Utf8 { .. } => {}
-        //     ValidationErrorKind::JSONParse { .. } => {}
-        //     ValidationErrorKind::InvalidReference { .. } => {}
-        //     ValidationErrorKind::InvalidURL { .. } => {}
-        //     ValidationErrorKind::MaxItems { .. } => {}
-        //     ValidationErrorKind::Maximum { .. } => {}
-        //     ValidationErrorKind::MaxLength { .. } => {}
-        //     ValidationErrorKind::MaxProperties { .. } => {}
-        //     ValidationErrorKind::MinItems { .. } => {}
-        //     ValidationErrorKind::Minimum { .. } => {}
-        //     ValidationErrorKind::MinLength { .. } => {}
-        //     ValidationErrorKind::MinProperties { .. } => {}
-        //     ValidationErrorKind::MultipleOf { .. } => {}
-        //     ValidationErrorKind::Not { .. } => {}
-        //     ValidationErrorKind::OneOfMultipleValid => {}
-        //     ValidationErrorKind::OneOfNotValid => {}
-        //     ValidationErrorKind::Pattern { .. } => {}
-        //     ValidationErrorKind::PropertyNames { .. } => {}
-        //     ValidationErrorKind::Required { .. } => {}
-        //     ValidationErrorKind::Schema => {}
-        //     ValidationErrorKind::Type { .. } => {}
-        //     ValidationErrorKind::UniqueItems => {}
-        //     ValidationErrorKind::UnknownReferenceScheme { .. } => {}
-        //     ValidationErrorKind::Resolver { .. } => {}
-        // }
+        let Params {
+            keyword,
+            params,
+            property_name,
+        } = kek;
 
         Self {
-            keyword: "".to_string(),
+            keyword,
             instance_path: e.instance_path().to_string(),
             schema_path: e.schema_path().to_string(),
-            params,
-            property_name: "".to_string(),
+            params: Value::Object(params),
+            property_name,
         }
     }
 }
