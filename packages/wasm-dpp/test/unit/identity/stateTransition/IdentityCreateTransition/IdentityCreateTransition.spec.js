@@ -1,27 +1,16 @@
 const IdentityPublicKeyJS = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
-const stateTransitionTypes = require(
-  '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
-);
-
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const IdentifierJS = require('@dashevo/dpp/lib/identifier/Identifier');
-
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('IdentityCreateTransition', () => {
-  let rawStateTransition;
   let stateTransitionJS;
   let stateTransition;
   let IdentityCreateTransition;
-  let IdentityPublicKey;
   let KeyType;
   let KeyPurpose;
   let KeySecurityLevel;
-  let Identifier;
+  let IdentityPublicKey;
 
   const mockRawPublicKey = (params = {}) => ({
     id: 0,
@@ -36,7 +25,7 @@ describe('IdentityCreateTransition', () => {
 
   before(async () => {
     ({
-      IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel, Identifier,
+      IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
     } = await loadWasmDpp());
   });
 
@@ -102,10 +91,11 @@ describe('IdentityCreateTransition', () => {
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
       const publicKeys = [
-        new IdentityPublicKeyJS(mockRawPublicKey({ id: 0 })),
-        new IdentityPublicKeyJS(mockRawPublicKey({ id: 1 })),
+        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
+        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
       ];
 
+      // TODO: fix issue with passing public keys directly instead of toObject()
       stateTransition.setPublicKeys(publicKeys.map((key) => key.toObject()));
       stateTransitionJS.setPublicKeys(publicKeys);
 
@@ -126,14 +116,15 @@ describe('IdentityCreateTransition', () => {
   describe('#addPublicKeys', () => {
     it('should add more public keys', () => {
       const publicKeys = [
-        new IdentityPublicKeyJS(mockRawPublicKey({ id: 0 })),
-        new IdentityPublicKeyJS(mockRawPublicKey({ id: 1 })),
+        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
+        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
       ];
 
       stateTransitionJS.publicKeys = [];
       stateTransitionJS.addPublicKeys(publicKeys);
 
       stateTransition.setPublicKeys([]);
+      // TODO: fix issue with passing public keys directly instead of toObject()
       stateTransition.addPublicKeys(publicKeys.map((key) => key.toObject()));
 
       expect(stateTransition.getPublicKeys().map((key) => key.toObject()))
