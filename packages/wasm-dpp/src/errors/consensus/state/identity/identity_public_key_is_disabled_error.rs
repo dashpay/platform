@@ -23,6 +23,9 @@ impl IdentityPublicKeyIsDisabledErrorWasm {
 
 impl IdentityPublicKeyIsDisabledErrorWasm {
     pub fn new(public_key_index: KeyID, code: u32) -> Self {
-        Self { public_key_index, code }
+        Self {
+            public_key_index,
+            code,
+        }
     }
 }

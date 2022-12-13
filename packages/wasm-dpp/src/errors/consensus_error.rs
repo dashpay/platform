@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     UnsupportedProtocolVersionErrorWasm,
 };
-use dpp::consensus::{ConsensusError as DPPConsensusError};
+use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
@@ -53,7 +53,12 @@ use crate::errors::consensus::state::document::{
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
-use crate::errors::consensus::state::identity::{IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm, IdentityPublicKeyIsDisabledErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm};
+use crate::errors::consensus::state::identity::{
+    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm,
+    IdentityPublicKeyIsDisabledErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm,
+    InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm,
+    MaxIdentityPublicKeyLimitReachedErrorWasm,
+};
 use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
@@ -291,55 +296,53 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::IdentityPublicKeyIsDisabledError { public_key_index } => {
             IdentityPublicKeyIsDisabledErrorWasm::new(*public_key_index, code).into()
         }
-        StateError::DataTriggerError(data_trigger_error) => {
-            match data_trigger_error.deref() {
-                DataTriggerError::DataTriggerConditionError {
-                    data_contract_id,
-                    document_transition_id,
-                    message,
-                    document_transition,
-                    owner_id,
-                } => DataTriggerConditionErrorWasm::new(
-                    data_contract_id.clone(),
-                    document_transition_id.clone(),
-                    message.clone(),
-                    document_transition.clone(),
-                    owner_id.clone(),
-                    code,
-                )
-                .into(),
-                DataTriggerError::DataTriggerExecutionError {
-                    data_contract_id,
-                    document_transition_id,
-                    message,
-                    execution_error,
-                    document_transition,
-                    owner_id,
-                } => DataTriggerExecutionErrorWasm::new(
-                    data_contract_id.clone(),
-                    document_transition_id.clone(),
-                    message.clone(),
-                    wasm_bindgen::JsError::new(execution_error.to_string().as_ref()),
-                    document_transition.clone(),
-                    owner_id.clone(),
-                    code,
-                )
-                .into(),
-                DataTriggerError::DataTriggerInvalidResultError {
-                    data_contract_id,
-                    document_transition_id,
-                    document_transition,
-                    owner_id,
-                } => DataTriggerInvalidResultErrorWasm::new(
-                    data_contract_id.clone(),
-                    document_transition_id.clone(),
-                    document_transition.clone(),
-                    owner_id.clone(),
-                    code,
-                )
-                .into(),
-            }
-        }
+        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
+            DataTriggerError::DataTriggerConditionError {
+                data_contract_id,
+                document_transition_id,
+                message,
+                document_transition,
+                owner_id,
+            } => DataTriggerConditionErrorWasm::new(
+                data_contract_id.clone(),
+                document_transition_id.clone(),
+                message.clone(),
+                document_transition.clone(),
+                owner_id.clone(),
+                code,
+            )
+            .into(),
+            DataTriggerError::DataTriggerExecutionError {
+                data_contract_id,
+                document_transition_id,
+                message,
+                execution_error,
+                document_transition,
+                owner_id,
+            } => DataTriggerExecutionErrorWasm::new(
+                data_contract_id.clone(),
+                document_transition_id.clone(),
+                message.clone(),
+                wasm_bindgen::JsError::new(execution_error.to_string().as_ref()),
+                document_transition.clone(),
+                owner_id.clone(),
+                code,
+            )
+            .into(),
+            DataTriggerError::DataTriggerInvalidResultError {
+                data_contract_id,
+                document_transition_id,
+                document_transition,
+                owner_id,
+            } => DataTriggerInvalidResultErrorWasm::new(
+                data_contract_id.clone(),
+                document_transition_id.clone(),
+                document_transition.clone(),
+                owner_id.clone(),
+                code,
+            )
+            .into(),
+        },
     }
 }
 
