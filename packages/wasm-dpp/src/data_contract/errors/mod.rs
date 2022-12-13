@@ -22,8 +22,11 @@ pub fn from_data_contract_to_js_error(e: DataContractError) -> JsValue {
         DataContractError::InvalidDocumentTypeError {
             doc_type,
             data_contract,
-        } => invalid_document_type::InvalidDocumentTypeInDataContractError::new(doc_type, data_contract.into())
-            .into(),
+        } => invalid_document_type::InvalidDocumentTypeInDataContractError::new(
+            doc_type,
+            data_contract.into(),
+        )
+        .into(),
         _ => todo!(),
     }
 }
