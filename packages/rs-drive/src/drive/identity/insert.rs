@@ -9,7 +9,8 @@ use std::collections::HashMap;
 use crate::contract::types::encode_u16;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::SOME_TREE_SIZE;
+use crate::drive::grove_operations::QueryTarget::QueryTargetTree;
+use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType, QueryType};
 use crate::drive::object_size_info::ElementInfo::Element;
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyElement;
 use crate::drive::{identity_tree_path, key_hashes_tree_path, Drive, RootTree};
@@ -32,7 +33,7 @@ impl Drive {
     pub fn insert_new_identity(
         &self,
         identity: Identity,
-        storage_flags: StorageFlags,
+        storage_flags: &StorageFlags,
         verify: bool,
         block_info: &BlockInfo,
         apply: bool,
@@ -48,7 +49,7 @@ impl Drive {
             identity,
             storage_flags,
             verify,
-            estimated_costs_only_with_layer_info.as_mut(),
+            &mut estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
         )?;
@@ -64,7 +65,7 @@ impl Drive {
     pub(crate) fn add_insert_identity_operations(
         &self,
         identity: Identity,
-        storage_flags: StorageFlags,
+        storage_flags: &StorageFlags,
         verify: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -84,12 +85,20 @@ impl Drive {
             metadata,
         } = identity;
 
+        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            DirectQueryType::StatefulDirectQuery
+        } else {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: false,
+                query_target: QueryTargetTree(storage_flags.serialized_size(), false),
+            }
+        };
         // If we are asking to verify we check to make sure the tree for this identity doesn't yet exist
         if verify {
             let exists = self.grove_has_raw(
                 identity_tree_path,
                 id.as_slice(),
-                if apply { None } else { SOME_TREE_SIZE },
+                apply_type,
                 transaction,
                 drive_operations,
             )?;
@@ -118,17 +127,16 @@ impl Drive {
         ));
 
         // We insert the revision
-        self.set_revision(
+        drive_operations.push(self.set_revision_operation(
             id,
             revision,
             storage_flags.to_element_flags(),
-            drive_operations,
-        )?;
+        ));
 
         // We insert the key tree and keys
         self.create_key_tree_with_keys_operations(
             id,
-            keys.into_values().collect(),
+            public_keys.into_values().collect(),
             storage_flags.to_element_flags(),
             apply,
             transaction,
@@ -136,45 +144,45 @@ impl Drive {
         )
     }
 
-    /// Adds operations to the op batch to insert a new identity in the `Identities` subtree
-    /// with its own empty subtree.
-    pub fn add_insert_identity_operations(
-        &self,
-        identity: Identity,
-        storage_flags: Option<&StorageFlags>,
-        batch: &mut GroveDbOpBatch,
-    ) -> Result<(), Error> {
-        // Serialize identity
-        let identity_bytes = identity.to_buffer().map_err(|_| {
-            Error::Identity(IdentityError::IdentitySerialization(
-                "failed to serialize identity to CBOR",
-            ))
-        })?;
-
-        // Adds an operation to the op batch which inserts an empty subtree with flags
-        // at the key of the given identity in the `Identities` subtree.
-        batch.add_insert_empty_tree_with_flags(
-            vec![vec![RootTree::Identities as u8]],
-            identity.id.buffer.to_vec(),
-            storage_flags,
-        );
-
-        // Adds an operation to the op batch which inserts the serialized identity
-        // in the `IDENTITY_KEY` key of the new subtree that was just created.
-        batch.add_insert(
-            vec![
-                vec![RootTree::Identities as u8],
-                identity.id.buffer.to_vec(),
-            ],
-            IDENTITY_KEY.to_vec(),
-            Element::Item(
-                identity_bytes,
-                StorageFlags::map_to_some_element_flags(storage_flags),
-            ),
-        );
-
-        Ok(())
-    }
+    // /// Adds operations to the op batch to insert a new identity in the `Identities` subtree
+    // /// with its own empty subtree.
+    // pub fn add_insert_identity_operations(
+    //     &self,
+    //     identity: Identity,
+    //     storage_flags: Option<&StorageFlags>,
+    //     batch: &mut GroveDbOpBatch,
+    // ) -> Result<(), Error> {
+    //     // Serialize identity
+    //     let identity_bytes = identity.to_buffer().map_err(|_| {
+    //         Error::Identity(IdentityError::IdentitySerialization(
+    //             "failed to serialize identity to CBOR",
+    //         ))
+    //     })?;
+    //
+    //     // Adds an operation to the op batch which inserts an empty subtree with flags
+    //     // at the key of the given identity in the `Identities` subtree.
+    //     batch.add_insert_empty_tree_with_flags(
+    //         vec![vec![RootTree::Identities as u8]],
+    //         identity.id.buffer.to_vec(),
+    //         storage_flags,
+    //     );
+    //
+    //     // Adds an operation to the op batch which inserts the serialized identity
+    //     // in the `IDENTITY_KEY` key of the new subtree that was just created.
+    //     batch.add_insert(
+    //         vec![
+    //             vec![RootTree::Identities as u8],
+    //             identity.id.buffer.to_vec(),
+    //         ],
+    //         IDENTITY_KEY.to_vec(),
+    //         Element::Item(
+    //             identity_bytes,
+    //             StorageFlags::map_to_some_element_flags(storage_flags),
+    //         ),
+    //     );
+    //
+    //     Ok(())
+    // }
 
     // pub fn insert_identity(
     //     &self,
@@ -209,7 +217,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: &StorageFlags,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut batch = GroveDbOpBatch::new();
@@ -257,6 +265,7 @@ impl Drive {
 mod tests {
     use crate::common::helpers::setup::setup_drive;
     use crate::drive::block_info::BlockInfo;
+    use dpp::identity::Identity;
     use grovedb::Element;
     use tempfile::TempDir;
 
@@ -314,8 +323,9 @@ mod tests {
         drive
             .insert_new_identity(
                 identity,
-                StorageFlags { epoch: 0 },
+                &StorageFlags::SingleEpoch(0),
                 false,
+                &BlockInfo::default(),
                 true,
                 Some(&db_transaction),
             )

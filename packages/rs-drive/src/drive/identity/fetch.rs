@@ -4,8 +4,8 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::identity::Identity;
 use crate::query::{Query, QueryItem};
+use dpp::identity::Identity;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 

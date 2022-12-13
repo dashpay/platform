@@ -1,4 +1,6 @@
 use crate::drive::defaults::MAX_ELEMENT_SIZE;
+use crate::drive::grove_operations::DirectQueryType;
+use crate::drive::grove_operations::QueryTarget::{QueryTargetTree, QueryTargetValue};
 use crate::drive::identity::{
     identity_key_location_vec, identity_key_location_within_identity_vec, identity_key_tree_path,
     identity_path, identity_path_vec, identity_query_keys_full_tree_path,
@@ -10,10 +12,12 @@ use crate::drive::{key_hashes_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use crate::fee::op::FunctionOp::Sha256;
 use crate::identity::key::IdentityKey;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::reference_path::ReferencePathType::AbsolutePathReference;
 use grovedb::Element::Reference;
+use grovedb::{ElementFlags, TransactionArg};
 
 impl Drive {
     /// Insert a new key into an identity operations
@@ -44,10 +48,20 @@ impl Drive {
             byte_count: key_len as u16,
         }));
         if verify {
+            //todo: find the estimated key size
+            let query_type = if estimated_costs_only_with_layer_info.is_none() {
+                DirectQueryType::StatefulDirectQuery
+            } else {
+                DirectQueryType::StatelessDirectQuery {
+                    in_tree_using_sums: false,
+                    query_target: QueryTargetValue(MAX_ELEMENT_SIZE),
+                }
+            };
+
             let exists = self.grove_has_raw(
                 key_hashes_tree,
                 key_hash.as_slice(),
-                if apply { None } else { Some(MAX_ELEMENT_SIZE) }, //if you want to verify you need to know the state
+                query_type, //if you want to verify you need to know the state
                 transaction,
                 drive_operations,
             )?;
@@ -101,10 +115,20 @@ impl Drive {
                 let purpose_path =
                     identity_query_keys_purpose_tree_path(identity_id, purpose_vec.as_slice());
 
+                //todo: is this really a tree?
+                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    DirectQueryType::StatefulDirectQuery
+                } else {
+                    DirectQueryType::StatelessDirectQuery {
+                        in_tree_using_sums: false,
+                        query_target: QueryTargetTree(storage_flags.serialized_size(), false),
+                    }
+                };
+
                 let exists = self.grove_has_raw(
                     purpose_path,
                     &[security_level],
-                    if apply { None } else { Some(MAX_ELEMENT_SIZE) },
+                    apply_type,
                     transaction,
                     drive_operations,
                 )?;

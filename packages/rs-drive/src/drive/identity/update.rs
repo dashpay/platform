@@ -21,7 +21,7 @@ impl Drive {
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let new_balance_bytes = balance.to_be_bytes().to_vec();
-        DriveOperation::for_path_key_element(
+        DriveOperation::for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeBalance).to_vec(),
             Element::new_item_with_flags(new_balance_bytes, element_flags),
@@ -37,7 +37,7 @@ impl Drive {
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let new_negative_credit_bytes = negative_credit.to_be_bytes().to_vec();
-        DriveOperation::for_path_key_element(
+        DriveOperation::for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit).to_vec(),
             Element::new_item_with_flags(new_negative_credit_bytes, element_flags),
@@ -54,7 +54,7 @@ impl Drive {
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let revision_bytes = revision.to_be_bytes().to_vec();
-        DriveOperation::for_path_key_element(
+        DriveOperation::for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),
             Element::new_item_with_flags(revision_bytes, Some(element_flags)),
