@@ -63,7 +63,7 @@ impl DataContractCreateTransition {
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
                 .get_u64(SIGNATURE_PUBLIC_KEY_ID)
-                .unwrap_or_default(),
+                .unwrap_or_default() as KeyID,
             entropy: raw_data_contract_update_transition
                 .get_bytes(ENTROPY)
                 .unwrap_or_else(|_| [0u8; 32].to_vec())

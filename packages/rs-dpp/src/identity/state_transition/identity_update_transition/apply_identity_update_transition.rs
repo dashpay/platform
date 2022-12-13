@@ -71,7 +71,7 @@ pub async fn apply_identity_update_transition(
                 .cloned()
                 .map(|mut pk| {
                     pk.set_signature(vec![]);
-                    pk
+                    (pk.id, pk)
                 }),
         );
         let public_key_hashes: Vec<Vec<u8>> = state_transition

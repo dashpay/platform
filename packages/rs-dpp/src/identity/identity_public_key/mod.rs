@@ -22,7 +22,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
 
-pub type KeyID = u16;
+pub type KeyID = u32;
 pub type TimestampMillis = u64;
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];

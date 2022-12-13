@@ -24,7 +24,7 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
 pub struct Identity {
     pub protocol_version: u32,
     pub id: Identifier,
-    pub public_keys: BTreeMap<u16, IdentityPublicKey>,
+    pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
     #[serde(skip)]
@@ -45,18 +45,18 @@ impl Identity {
     }
 
     /// Set Identity public key
-    pub fn set_public_keys(mut self, pub_key: BTreeMap<u16, IdentityPublicKey>) -> Self {
+    pub fn set_public_keys(mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) -> Self {
         self.public_keys = pub_key;
         self
     }
 
     /// Get Identity public keys revision
-    pub fn get_public_keys(&self) -> &BTreeMap<u16, IdentityPublicKey> {
+    pub fn get_public_keys(&self) -> &BTreeMap<KeyID, IdentityPublicKey> {
         &self.public_keys
     }
 
     /// Get Identity public keys revision
-    pub fn get_public_keys_mut(&mut self) -> &mut BTreeMap<u16, IdentityPublicKey> {
+    pub fn get_public_keys_mut(&mut self) -> &mut BTreeMap<KeyID, IdentityPublicKey> {
         &mut self.public_keys
     }
 

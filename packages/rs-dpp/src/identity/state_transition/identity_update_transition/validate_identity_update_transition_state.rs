@@ -137,12 +137,17 @@ where
 
         let raw_public_keys: Vec<Value> = identity
             .public_keys
-            .iter()
+            .values()
             .map(|pk| pk.to_raw_json_object(false))
             .collect::<Result<_, SerdeParsingError>>()?;
 
         if !state_transition.get_public_keys_to_add().is_empty() {
-            identity.add_public_keys(state_transition.get_public_keys_to_add().iter().cloned());
+            identity.add_public_keys(
+                state_transition
+                    .get_public_keys_to_add()
+                    .iter()
+                    .map(|k| (k.id, k.clone())),
+            );
 
             let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
             if !result.is_valid() {

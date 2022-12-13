@@ -134,6 +134,7 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
             IdentityRootStructure::IdentityTreeRevision => &[0],
             IdentityRootStructure::IdentityTreeBalance => &[1],
             IdentityRootStructure::IdentityTreeKeys => &[2],
+            IdentityRootStructure::IdentityTreeNegativeCredit => &[2],
         }
     }
 }

@@ -105,6 +105,8 @@ pub enum RootTree {
     Misc = 5,
     /// Asset Unlock Transactions
     WithdrawalTransactions = 6,
+    /// Balances
+    Balances = 7,
 }
 
 /// Storage cost
@@ -132,6 +134,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Pools => &[4],
             RootTree::Misc => &[5],
             RootTree::WithdrawalTransactions => &[6],
+            RootTree::Balances => &[7],
         }
     }
 }

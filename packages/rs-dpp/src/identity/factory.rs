@@ -1,11 +1,12 @@
 use crate::identifier::Identifier;
-use crate::identity::{Identity, IdentityPublicKey, CURRENT_IDENTITY_VERSION};
+use crate::identity::identity_public_key::factory::KeyCount;
+use crate::identity::{Identity, IdentityPublicKey};
 use dashcore::network::constants::PROTOCOL_VERSION;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 impl Identity {
-    pub fn random_identity_with_rng(key_count: u16, rng: &mut StdRng) -> Self {
+    pub fn random_identity_with_rng(key_count: KeyCount, rng: &mut StdRng) -> Self {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
         let revision = rng.gen::<u64>();
         let balance = rng.gen::<u64>();
@@ -25,7 +26,7 @@ impl Identity {
         }
     }
 
-    pub fn random_identity(key_count: u16, seed: Option<u64>) -> Self {
+    pub fn random_identity(key_count: KeyCount, seed: Option<u64>) -> Self {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -33,7 +34,7 @@ impl Identity {
         Self::random_identity_with_rng(key_count, &mut rng)
     }
 
-    pub fn random_identities(count: u16, key_count: u16, seed: Option<u64>) -> Vec<Self> {
+    pub fn random_identities(count: u16, key_count: KeyCount, seed: Option<u64>) -> Vec<Self> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),

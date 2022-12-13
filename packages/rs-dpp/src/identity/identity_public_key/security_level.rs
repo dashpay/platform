@@ -17,9 +17,9 @@ pub enum SecurityLevel {
     MEDIUM = 3,
 }
 
-impl TryFrom<usize> for SecurityLevel {
+impl TryFrom<u32> for SecurityLevel {
     type Error = anyhow::Error;
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::MASTER),
             1 => Ok(Self::CRITICAL),

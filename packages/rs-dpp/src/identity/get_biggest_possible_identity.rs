@@ -1,5 +1,5 @@
+use crate::identity::KeyID;
 use getrandom::getrandom;
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use serde_json::Value;
 
@@ -29,20 +29,23 @@ pub fn get_biggest_possible_identity() -> Identity {
                 SecurityLevel::HIGH
             };
 
-            IdentityPublicKey {
-                id: i,
-                key_type: KeyType::BLS12_381,
-                purpose: Purpose::AUTHENTICATION,
-                security_level,
-                read_only: false,
-                data: vec![255u8; 48],
+            (
+                i as KeyID,
+                IdentityPublicKey {
+                    id: i as KeyID,
+                    key_type: KeyType::BLS12_381,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level,
+                    read_only: false,
+                    data: vec![255u8; 48],
 
-                //? is that correct?
-                disabled_at: None,
-                signature: vec![],
-            }
+                    //? is that correct?
+                    disabled_at: None,
+                    signature: vec![],
+                },
+            )
         })
-        .collect_vec();
+        .collect();
 
     Identity {
         id: generate_random_identifier_struct(),
