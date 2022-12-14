@@ -1,8 +1,8 @@
 const sinon = require('sinon');
-const MasternodeSyncAssetEnum = require('../../src/enums/masternodeSyncAsset');
-const ServiceStatusEnum = require('../../src/enums/serviceStatus');
-const DockerStatusEnum = require('../../src/enums/dockerStatus');
-const determineStatus = require('../../src/status/determineStatus');
+const MasternodeSyncAssetEnum = require('../../../src/enums/masternodeSyncAsset');
+const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
+const DockerStatusEnum = require('../../../src/enums/dockerStatus');
+const determineStatus = require('../../../src/status/determineStatus');
 
 describe('determineStatus', () => {
   let dockerComposeMock;

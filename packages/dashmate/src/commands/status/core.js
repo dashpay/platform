@@ -13,7 +13,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {createRpcClient} createRpcClient
    * @param {Config} config
-   * @param statusProvider statusProvider
+   * @param {getCoreScope} getCoreScope
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -22,9 +22,9 @@ class CoreStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    statusProvider,
+    getCoreScope,
   ) {
-    const scope = await statusProvider.getCoreScope();
+    const scope = await getCoreScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
@@ -46,11 +46,12 @@ class CoreStatusCommand extends ConfigBaseCommand {
       } = scope;
 
       const plain = {
-        'Version': colors.status(version, latestVersion)(version),
+        Version: colors.status(version, latestVersion)(version),
+        Network: network,
+        Chain: chain,
+        Status: colors.status(status)(status),
+        Difficulty: difficulty,
         'Latest version': latestVersion,
-        'Network': network,
-        'Chain': chain,
-        'Status': colors.status(status)(status),
         'Sync asset': syncAsset,
         'Peer count': peersCount,
         'P2P service': p2pService,
@@ -60,7 +61,6 @@ class CoreStatusCommand extends ConfigBaseCommand {
         'Header height': headerHeight,
         'Verification Progress': `${verificationProgress * 100}%`,
         'Remote Block Height': remoteBlockHeight || 'N/A',
-        'Difficulty': difficulty,
       };
 
       return printObject(plain, flags.format);

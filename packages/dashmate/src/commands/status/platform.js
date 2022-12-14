@@ -15,7 +15,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {createRpcClient} createRpcClient
    * @param {Config} config
-   * @param statusProvider
+   * @param {getPlatformScope} getPlatformScope
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -24,7 +24,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    statusProvider,
+    getPlatformScope,
   ) {
     if (config.get('network') === 'mainnet') {
       // eslint-disable-next-line no-console
@@ -37,7 +37,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
 
     // Collect platform data
-    const scope = await statusProvider.getPlatformScope();
+    const scope = await getPlatformScope();
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (!scope.coreIsSynced) {
@@ -82,10 +82,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       } = tenderdash;
 
       plain['Tenderdash Version'] = tenderdashVersion;
-      plain['Network'] = tenderdashNetwork;
       plain['Block height'] = platformBlockHeight;
       plain['Peer count'] = platformPeers;
       plain['App hash'] = platformLatestAppHash;
+
+      plain.Network = tenderdashNetwork;
     }
 
     return printObject(plain, flags.format);

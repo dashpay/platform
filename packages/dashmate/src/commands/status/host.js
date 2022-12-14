@@ -8,8 +8,8 @@ class HostStatusCommand extends ConfigBaseCommand {
   /**
    * @return {Promise<void>}
    */
-  async runWithDependencies(args, flags, statusProvider) {
-    const scope = await statusProvider.getHostScope();
+  async runWithDependencies(args, flags, getHostScope) {
+    const scope = await getHostScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {

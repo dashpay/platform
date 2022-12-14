@@ -44,6 +44,13 @@ const sendToAddress = require('./core/wallet/sendToAddress');
 const registerMasternode = require('./core/wallet/registerMasternode');
 const waitForBalanceToConfirm = require('./core/wallet/waitForBalanceToConfirm');
 
+const getCoreScopeFactory = require('./status/scopes/core');
+const getMasternodeScopeFactory = require('./status/scopes/masternode');
+const getPlatformScopeFactory = require('./status/scopes/platform');
+const getOverviewScopeFactory = require('./status/scopes/overview');
+const getServiceScopeFactory = require('./status/scopes/services');
+const getHostScopeFactory = require('./status/scopes/host');
+
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const featureFlagTaskFactory = require('./listr/tasks/platform/featureFlagTaskFactory');
@@ -54,7 +61,6 @@ const createTenderdashRpcClient = require('./tenderdash/createTenderdashRpcClien
 const initializeTenderdashNodeFactory = require('./tenderdash/initializeTenderdashNodeFactory');
 const setupLocalPresetTaskFactory = require('./listr/tasks/setup/setupLocalPresetTaskFactory');
 const setupRegularPresetTaskFactory = require('./listr/tasks/setup/setupRegularPresetTaskFactory');
-const statusProviderFactory = require('./status/statusProviderFactory');
 const stopNodeTaskFactory = require('./listr/tasks/stopNodeTaskFactory');
 const restartNodeTaskFactory = require('./listr/tasks/restartNodeTaskFactory');
 const resetNodeTaskFactory = require('./listr/tasks/resetNodeTaskFactory');
@@ -205,7 +211,6 @@ async function createDIContainer() {
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
-    statusProvider: asFunction(statusProviderFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
@@ -213,6 +218,12 @@ async function createDIContainer() {
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
     saveCertificateTask: asValue(saveCertificateTask),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
+    getCoreScope: asFunction(getCoreScopeFactory).singleton(),
+    getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
+    getPlatformScope: asFunction(getPlatformScopeFactory).singleton(),
+    getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
+    getServiceScope: asFunction(getServiceScopeFactory).singleton(),
+    getHostScope: asFunction(getHostScopeFactory).singleton(),
   });
 
   /**

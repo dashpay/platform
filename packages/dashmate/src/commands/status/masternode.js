@@ -15,7 +15,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {createRpcClient} createRpcClient
    * @param {Config} config
-   * @param statusProvider statusProvider
+   * @param getMasternodeScope getMasternodeScope
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -24,7 +24,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     dockerCompose,
     createRpcClient,
     config,
-    statusProvider,
+    getMasternodeScope,
   ) {
     if (config.get('core.masternode.enable') === false) {
       // eslint-disable-next-line no-console
@@ -32,7 +32,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const scope = await statusProvider.getMasternodeScope();
+    const scope = await getMasternodeScope();
 
     const { core, masternode } = scope;
     const { verificationProgress } = core;

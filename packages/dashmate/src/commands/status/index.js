@@ -11,16 +11,16 @@ class StatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {statusProvider} statusProvider
    * @param {dockerCompose} dockerCompose
+   * @param {getOverviewScope} getOverviewScope
    * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     flags,
-    statusProvider,
     dockerCompose,
+    getOverviewScope,
     config,
   ) {
     if (!(await dockerCompose.isServiceRunning(config.toEnvs()))) {
@@ -29,7 +29,7 @@ class StatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const scope = await statusProvider.getOverviewScope();
+    const scope = await getOverviewScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
@@ -40,7 +40,7 @@ class StatusCommand extends ConfigBaseCommand {
       } = core;
 
       const plain = {
-        'Network': network,
+        Network: network,
         'Core Version': version,
         'Core Status': colors.status(status)(status),
         'Core Size': `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB`,
