@@ -1,4 +1,5 @@
 use dpp::errors::consensus::basic::JsonSchemaError;
+use serde::Serialize;
 use serde_json::Value;
 use std::ops::Deref;
 
@@ -56,7 +57,7 @@ impl From<&ValidationErrorKind> for Params {
     fn from(validation_error_kind: &ValidationErrorKind) -> Self {
         match validation_error_kind {
             ValidationErrorKind::Required { property } => ParamsBuilder::new()
-                .set_keyword("const")
+                .set_keyword("required")
                 .set_property_name(property.to_string())
                 .add_param("missingProperty", property.clone())
                 .build(),
@@ -260,7 +261,8 @@ impl JsonSchemaErrorWasm {
 
     #[wasm_bindgen(js_name=getParams)]
     pub fn params(&self) -> Result<JsValue, JsError> {
-        serde_wasm_bindgen::to_value(&self.params).map_err(|e| e.into())
+        let ser = serde_wasm_bindgen::Serializer::json_compatible();
+        self.params.serialize(&ser).map_err(|e| e.into())
     }
 
     #[wasm_bindgen(js_name=getCode)]
