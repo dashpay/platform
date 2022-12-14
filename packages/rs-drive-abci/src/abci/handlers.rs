@@ -156,7 +156,7 @@ impl TenderdashAbci for Platform {
         let process_block_fees_result = self.process_block_fees(
             &block_execution_context.block_info,
             &block_execution_context.epoch_info,
-            &request.fees,
+            request.fees,
             transaction,
         )?;
 

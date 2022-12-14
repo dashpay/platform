@@ -43,6 +43,7 @@ use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayout
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use drive::drive::fee_pools::pending_updates::add_update_pending_epoch_pool_update_operations;
 use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
@@ -79,6 +80,7 @@ impl Platform {
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
+        block_fees: &BlockFeeResult,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<Option<StorageDistributionLeftoverCredits>, Error> {
@@ -107,12 +109,21 @@ impl Platform {
             return Ok(None);
         }
 
+        // TODO: Distribute pending updates
+
         // Distribute storage fees accumulated during previous epoch
         let storage_distribution_leftover_credits = self
             .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
                 current_epoch.index,
                 transaction,
                 batch,
+            )?;
+
+        self.drive
+            .add_delete_pending_epoch_pool_updates_except_specified_operations(
+                batch,
+                &block_fees.fee_refunds,
+                transaction,
             )?;
 
         Ok(Some(storage_distribution_leftover_credits))
@@ -126,7 +137,7 @@ impl Platform {
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
-        block_fees: &BlockFeeResult,
+        block_fees: BlockFeeResult,
         transaction: TransactionArg,
     ) -> Result<ProcessedBlockFeesResult, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index);
@@ -137,6 +148,7 @@ impl Platform {
             self.add_process_epoch_change_operations(
                 block_info,
                 epoch_info,
+                &block_fees,
                 transaction,
                 &mut batch,
             )?
@@ -179,12 +191,24 @@ impl Platform {
 
         let fees_in_pools = self.add_distribute_block_fees_into_pools_operations(
             &current_epoch,
-            block_fees,
+            &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
             storage_distribution_leftover_credits,
             transaction,
             &mut batch,
         )?;
+
+        let pending_epoch_pool_updates = if !epoch_info.is_epoch_change {
+            self.drive
+                .fetch_and_merge_with_existing_pending_epoch_pool_updates(
+                    block_fees.fee_refunds,
+                    transaction,
+                )?
+        } else {
+            block_fees.fee_refunds
+        };
+
+        add_update_pending_epoch_pool_update_operations(&mut batch, pending_epoch_pool_updates)?;
 
         self.drive.grove_apply_batch(batch, false, transaction)?;
 

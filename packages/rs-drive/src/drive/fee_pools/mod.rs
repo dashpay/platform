@@ -28,10 +28,13 @@
 //
 
 use crate::drive::RootTree;
-use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+use crate::fee_pools::epochs_root_tree_key_constants::{
+    KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL,
+};
 
 /// Epochs module
 pub mod epochs;
+pub mod pending_updates;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
 
@@ -43,6 +46,14 @@ pub fn pools_path() -> [&'static [u8]; 1] {
 /// Returns the path to the Pools subtree as a mutable vector.
 pub fn pools_vec_path() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Pools as u8]]
+}
+
+/// Returns the path to pending pool updates
+pub fn pools_pending_updates_path() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Pools as u8],
+        KEY_PENDING_POOL_UPDATES.to_vec(),
+    ]
 }
 
 /// Returns the path to the aggregate storage fee distribution pool.

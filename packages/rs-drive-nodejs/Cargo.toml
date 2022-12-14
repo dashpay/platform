@@ -13,7 +13,6 @@ crate-type = ["cdylib"]
 drive = { path = "../rs-drive" }
 drive-abci = { path = "../rs-drive-abci" }
 num = "0.4.0"
-intmap = { version="2.0.0", features=["serde"] }
 
 [dependencies.neon]
 version = "0.10.1"

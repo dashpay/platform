@@ -555,6 +555,7 @@ describe('Drive', () => {
     describe('BlockEnd', () => {
       beforeEach(async () => {
         await drive.getAbci().initChain({});
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
@@ -587,15 +588,18 @@ describe('Drive', () => {
         this.timeout(10000);
 
         await drive.createInitialStateStructure();
+
         await drive.createContract(dataContract, blockInfo);
 
         await drive.getAbci().initChain({});
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
         });
+
         await drive.getAbci().blockEnd({
           fees: {
             storageFee: 100,
