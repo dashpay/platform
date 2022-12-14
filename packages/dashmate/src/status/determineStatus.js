@@ -22,7 +22,7 @@ module.exports = {
    * @returns {ServiceStatusEnum}
    */
   core: (dockerStatus, syncAsset) => {
-    if (dockerStatus === DockerStatusEnum.running) {
+    if (syncAsset && dockerStatus === DockerStatusEnum.running) {
       if (syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
         return ServiceStatusEnum.up;
       }

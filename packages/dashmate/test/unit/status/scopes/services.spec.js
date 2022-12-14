@@ -1,7 +1,7 @@
 const getServicesScopeFactory = require('../../../../src/status/scopes/services');
 
 describe('getServicesScopeFactory', () => {
-  describe('getServicesScope', () => {
+  describe('#getServicesScope', () => {
     let mockDockerCompose;
 
     let config;

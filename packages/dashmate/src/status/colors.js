@@ -28,18 +28,20 @@ module.exports = {
   version: (version, latestVersion) => {
     if (version === latestVersion) {
       return chalk.green;
-    } if (version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
+    } if (!latestVersion || version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
       return chalk.yellow;
     }
     return chalk.red;
   },
   blockHeight: (blockHeight, headerHeight, remoteBlockHeight) => {
-    if (blockHeight === headerHeight || blockHeight >= remoteBlockHeight) {
+    if ((!remoteBlockHeight && blockHeight === headerHeight)
+      || blockHeight >= remoteBlockHeight) {
       return chalk.green;
-    } if ((remoteBlockHeight - blockHeight) < 3) {
+    } if ((!remoteBlockHeight && (headerHeight - blockHeight < 3))
+      || (remoteBlockHeight - blockHeight) < 3) {
       return chalk.yellow;
     }
-    return chalk.green;
+    return chalk.red;
   },
   poSePenalty: (poSePenalty, enabledCount) => {
     if (poSePenalty === 0) {

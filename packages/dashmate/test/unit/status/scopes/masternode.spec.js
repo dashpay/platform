@@ -3,7 +3,7 @@ const getMasternodeScopeFactory = require('../../../../src/status/scopes/mastern
 const MasternodeStateEnum = require('../../../../src/enums/masternodeState');
 
 describe('getMasternodeScopeFactory', () => {
-  describe('getMasternodeScope', () => {
+  describe('#getMasternodeScope', () => {
     let mockRpcClient;
     let mockCreateRpcClient;
     let mockDockerCompose;

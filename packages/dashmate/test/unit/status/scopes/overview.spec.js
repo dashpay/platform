@@ -4,7 +4,7 @@ const DockerStatusEnum = require('../../../../src/enums/dockerStatus');
 const ServiceStatusEnum = require('../../../../src/enums/serviceStatus');
 
 describe('getOverviewScopeFactory', () => {
-  describe('getOverviewScope', () => {
+  describe('#getOverviewScope', () => {
     let mockGetCoreScope;
     let mockGetPlatformScope;
     let mockGetMasternodeScope;

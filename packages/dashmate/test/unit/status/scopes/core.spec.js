@@ -6,7 +6,7 @@ const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
 
 describe('getCoreScopeFactory', () => {
-  describe('getCoreScope', () => {
+  describe('#getCoreScope', () => {
     let mockRpcClient;
     let mockCreateRpcClient;
     let mockDetermineDockerStatus;
