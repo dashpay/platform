@@ -8,6 +8,7 @@ describe('DataContractFactory', () => {
   let DataContractFactory;
   let DataContractValidator;
   let DataContract;
+  let InvalidDataContractError;
 
   let factory;
   let jsDataContract;
@@ -99,7 +100,7 @@ describe('DataContractFactory', () => {
         expect.fail('should throw InvalidDataContractError');
       } catch (e) {
         // TODO SerializedObjectParsingError binding type required
-        //expect(e).to.be.an.instanceOf(SerializedObjectPasingError);
+        // expect(e).to.be.an.instanceOf(SerializedObjectPasingError);
         expect(e).to.match(/Parsing of serialized object failed/);
       }
     });

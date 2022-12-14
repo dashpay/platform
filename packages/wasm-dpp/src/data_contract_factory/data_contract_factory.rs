@@ -122,7 +122,7 @@ impl DataContractFactoryWasm {
         match result {
             Ok(data_contract) => Ok(data_contract.into()),
             Err(dpp::ProtocolError::InvalidDataContractError { errors, .. }) => {
-                let js_errors = errors.iter().map(from_consensus_error).collect();
+                let js_errors = errors.into_iter().map(from_consensus_error).collect();
                 Err(InvalidDataContractError::new(js_errors, object).into())
             }
             Err(other) => Err(from_dpp_err(other)),
