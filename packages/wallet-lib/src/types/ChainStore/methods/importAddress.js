@@ -1,9 +1,6 @@
-const logger = require('../../../logger');
 const sortTransactions = require('../../../utils/sortTransactions');
 
 function importAddress(address, reconsiderTransactions = true) {
-  logger.silly(`ChainStore - import address ${address}`);
-
   if (this.state.addresses.has(address.toString())) {
     return;
   }

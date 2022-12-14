@@ -92,7 +92,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     let code = e.code();
 
     match e {
-        DPPConsensusError::JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),
+        DPPConsensusError::JsonSchemaError(e) => JsonSchemaErrorWasm::new(e, code).into(),
         DPPConsensusError::UnsupportedProtocolVersionError(e) => {
             UnsupportedProtocolVersionErrorWasm::from(e).into()
         }

@@ -13,6 +13,7 @@ pub struct JsonSchemaErrorWasm {
     schema_path: String,
     params: Value,
     property_name: String,
+    code: u32,
 }
 
 #[derive(Default)]
@@ -219,8 +220,8 @@ impl From<&ValidationErrorKind> for Params {
     }
 }
 
-impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
-    fn from(e: &JsonSchemaError) -> Self {
+impl JsonSchemaErrorWasm {
+    pub fn new(e: &JsonSchemaError, code: u32) -> Self {
         let Params {
             keyword,
             params,
@@ -233,6 +234,7 @@ impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
             schema_path: e.schema_path().to_string(),
             params: Value::Object(params),
             property_name,
+            code,
         }
     }
 }
@@ -267,6 +269,6 @@ impl JsonSchemaErrorWasm {
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        unimplemented!()
+        self.code
     }
 }

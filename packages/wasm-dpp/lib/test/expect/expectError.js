@@ -2,10 +2,6 @@ const { expect } = require('chai');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
-// const ValidationResult = require('../../validation/ValidationResult');
-// const AbstractConsensusError = require('../../errors/consensus/AbstractConsensusError');
-// const JsonSchemaError = require('../../errors/consensus/basic/JsonSchemaError');
-
 const expectError = {
   /**
    * @param {ValidationResult} result

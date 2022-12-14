@@ -6,12 +6,10 @@ const {
     MerkleBlock,
 } = require('@dashevo/dashcore-lib');
 
-const TransactionSyncStreamWorker = require('../../../src/plugins/Workers/TransactionSyncStreamWorker/TransactionSyncStreamWorker');
+const TransactionsSyncWorker = require('../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
 
 const LocalForageAdapterMock = require('../../../src/test/mocks/LocalForageAdapterMock');
 const createTransactionInAccount = require('../../../src/test/mocks/createTransactionInAccount');
-
-const createAndAttachTransportMocksToWallet = require('../../../src/test/mocks/createAndAttachTransportMocksToWallet')
 
 const { Wallet } = require('../../../src');
 
@@ -25,12 +23,10 @@ describe('Account', function suite() {
     let walletId;
     let wallet;
     let account;
-    let txStreamMock;
     let address;
     let addressAtIndex19;
     let testHDKey;
     let merkleBlockMock;
-    let transportMock;
     let storageAdapterMock;
 
     beforeEach(async function beforeEach() {
@@ -40,7 +36,7 @@ describe('Account', function suite() {
         testHDKey = new HDPrivateKey(testHDKey).toString();
 
         // Override default value of executeOnStart to prevent worker from starting
-        worker = new TransactionSyncStreamWorker({executeOnStart: false});
+        worker = new TransactionsSyncWorker({executeOnStart: false});
 
         storageAdapterMock = new LocalForageAdapterMock();
 
@@ -53,8 +49,6 @@ describe('Account', function suite() {
             adapter: storageAdapterMock,
             network: 'livenet'
         });
-
-        ({txStreamMock, transportMock} = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
 
         account = await wallet.getAccount();
 
@@ -72,6 +66,7 @@ describe('Account', function suite() {
     describe('getUTXO', () => {
         it('should work if storage adapter behaves like a local forage', async () => {
             await createTransactionInAccount(account);
+            account.storage.getDefaultChainStore().updateChainHeight(120);
 
             // Saving state to restore it later
             await account.storage.saveState();

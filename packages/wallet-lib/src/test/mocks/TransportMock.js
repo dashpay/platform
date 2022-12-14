@@ -6,6 +6,8 @@ class TransportMock extends EventEmitter {
     super();
     this.sinonSandbox = sinonSandbox;
 
+    this.height = 42;
+
     this.getBestBlockHeight = sinonSandbox.stub().returns(42);
     this.subscribeToTransactionsWithProofs = sinonSandbox.stub().returns(transactionStreamMock);
     this.getBlockHeaderByHeight = sinonSandbox.stub()
@@ -24,6 +26,27 @@ class TransportMock extends EventEmitter {
     this.getTransaction = sinonSandbox.stub();
     this.getBlockHeaderByHash = sinonSandbox.stub();
     this.getStatus = sinonSandbox.stub().resolves(getStatus.call(this));
+
+    const provider = new EventEmitter();
+    provider.stop = sinonSandbox.stub().callsFake(() => {
+      provider.emit('STOPPED');
+    });
+    provider.readHistorical = sinonSandbox.spy();
+    provider.startContinuousSync = sinonSandbox.spy();
+    provider.spvChain = {
+      getLongestChain() {
+        return [];
+      },
+      orphanChunks: [],
+      startBlockHeight: 1,
+    };
+
+    this.client = {
+      blockHeadersProvider: provider,
+      core: {
+        subscribeToTransactionsWithProofs: sinonSandbox.stub().returns(transactionStreamMock),
+      },
+    };
   }
 }
 
