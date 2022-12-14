@@ -55,7 +55,7 @@ jobs:
       - name: Build packages
         run: yarn build
         env:
-          - CARGO_BUILD_PROFILE: release
+          CARGO_BUILD_PROFILE: release
 
       - name: Download prebuild artifacts
         uses: actions/download-artifact@v2
