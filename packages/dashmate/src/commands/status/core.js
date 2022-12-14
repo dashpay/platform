@@ -1,3 +1,4 @@
+/* eslint-disable quote-props */
 const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
@@ -46,11 +47,11 @@ class CoreStatusCommand extends ConfigBaseCommand {
       } = scope;
 
       const plain = {
-        Version: colors.status(version, latestVersion)(version),
-        Network: network,
-        Chain: chain,
-        Status: colors.status(status)(status),
-        Difficulty: difficulty,
+        'Network': network,
+        'Version': colors.status(version, latestVersion)(version),
+        'Chain': chain,
+        'Status': colors.status(status)(status),
+        'Difficulty': difficulty,
         'Latest version': latestVersion,
         'Sync asset': syncAsset,
         'Peer count': peersCount,

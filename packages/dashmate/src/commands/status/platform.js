@@ -1,3 +1,4 @@
+/* eslint-disable dot-notation */
 const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
@@ -81,12 +82,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         network: tenderdashNetwork,
       } = tenderdash;
 
+      plain['Network'] = tenderdashNetwork;
       plain['Tenderdash Version'] = tenderdashVersion;
       plain['Block height'] = platformBlockHeight;
       plain['Peer count'] = platformPeers;
       plain['App hash'] = platformLatestAppHash;
-
-      plain.Network = tenderdashNetwork;
     }
 
     return printObject(plain, flags.format);
