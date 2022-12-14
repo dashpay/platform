@@ -62,7 +62,7 @@ pub mod fee_pools;
 pub mod flags;
 /// Genesis time module
 pub mod genesis_time;
-mod grove_operations;
+pub(crate) mod grove_operations;
 /// Identity module
 pub mod identity;
 pub mod initialization;

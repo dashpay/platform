@@ -193,6 +193,7 @@ impl Epoch {
         GroveDbOp::delete_tree_op(
             self.get_vec_path(),
             epoch_key_constants::KEY_PROPOSERS.to_vec(),
+            false,
         )
     }
 

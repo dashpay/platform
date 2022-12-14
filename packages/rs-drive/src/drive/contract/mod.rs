@@ -55,6 +55,8 @@ use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElementSize,
 };
@@ -400,7 +402,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        if apply == false {
+        if !apply {
             return self.insert_contract_cbor(
                 contract_cbor,
                 contract_id,
@@ -614,6 +616,19 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
+                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    BatchInsertTreeApplyType::StatefulBatchInsert
+                } else {
+                    BatchInsertTreeApplyType::StatelessBatchInsert {
+                        in_tree_using_sums: false,
+                        is_sum_tree: false,
+                        flags_len: element_flags
+                            .as_ref()
+                            .map(|e| e.len() as u32)
+                            .unwrap_or_default(),
+                    }
+                };
+
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
                 for index in document_type.top_level_indices() {
@@ -623,7 +638,7 @@ impl Drive {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
                             storage_flags.as_ref(),
-                            estimated_costs_only_with_layer_info.is_none(),
+                            apply_type,
                             transaction,
                             &mut batch_operations,
                         )?;
@@ -939,17 +954,22 @@ impl Drive {
         let mut original_contract_stored_data = vec![];
 
         // no estimated_costs_only_with_layer_info, means we want to apply to state
-        let query_state_less_max_value_size = if estimated_costs_only_with_layer_info.is_none() {
-            None
+        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
+            DirectQueryType::StatefulDirectQuery
         } else {
-            Some(CONTRACT_MAX_SERIALIZED_SIZE)
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: false,
+                // we can ignore flags as this is just an approximation
+                // and it's doubtful that contracts will always be inserted at max size
+                query_target: QueryTargetValue(CONTRACT_MAX_SERIALIZED_SIZE as u32),
+            }
         };
 
         // We can do a get direct because there are no references involved
         if let Ok(Some(stored_element)) = self.grove_get_direct(
             contract_root_path(contract.id.as_bytes()),
             &[0],
-            query_state_less_max_value_size,
+            direct_query_type,
             transaction,
             &mut drive_operations,
         ) {
