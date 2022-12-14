@@ -1,3 +1,61 @@
+## [0.24.0-dev.9](https://github.com/dashpay/platform/compare/v0.23.0...v0.24.0-dev.9) (2022-12-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous data is not compatible with new Drive
+
+### Features
+
+* average estimated processing fees ([#642](https://github.com/dashpay/platform/issues/642))
+* **dpp:** bls adapter for WASM DPP ([#633](https://github.com/dashpay/platform/issues/633))
+* **drive:** add time and protocolVersion fields to query metadata response ([#611](https://github.com/dashpay/platform/issues/611))
+* **drive:** provide latest core chain lock on init chain ([#659](https://github.com/dashpay/platform/issues/659))
+* **drive:** support for V0.7 of groveDB ([#665](https://github.com/dashpay/platform/issues/665))
+* **drive:** use proposal block execution context in state repository ([#653](https://github.com/dashpay/platform/issues/653))
+* **drive:** use single block execution context ([#627](https://github.com/dashpay/platform/issues/627))
+
+
+### Bug Fixes
+
+* build not working because of deprecated wasm-bindgen feature ([#639](https://github.com/dashpay/platform/issues/639))
+* **dapi:** fail to reconnect to tenderdash in case of ENOTFOUND ([#621](https://github.com/dashpay/platform/issues/621))
+* **dashmate:** broken helper docker image ([#630](https://github.com/dashpay/platform/issues/630))
+* **dashmate:** ZeroSSL certificate renewal ([#624](https://github.com/dashpay/platform/issues/624))
+* **drive:** multi transactions doesn't work properly ([#636](https://github.com/dashpay/platform/issues/636))
+
+
+### Performance Improvements
+
+* **drive:** do not call process proposal after prepare ([#656](https://github.com/dashpay/platform/issues/656))
+
+
+### Code Refactoring
+
+* use FeeResult to collect block fees ([#652](https://github.com/dashpay/platform/issues/652))
+
+
+### Build System
+
+* support Rust and JS packages
+
+### Continuous Integration
+
+* code scanning ([#626](https://github.com/dashpay/platform/issues/626))
+* fix env syntax in release workflow ([#664](https://github.com/dashpay/platform/issues/664))
+* support Rust and JS packages
+
+
+### Miscellaneous Chores
+
+* **dpp:** switch dpp to working revision
+* **drive:** comprehensive logging for same block execution ([#657](https://github.com/dashpay/platform/issues/657))
+* ensure consistent Rust dependencies ([#658](https://github.com/dashpay/platform/issues/658))
+* remove lodash per-method deps ([#661](https://github.com/dashpay/platform/issues/661))
+* replace grpc-web with @improbable-eng/grpc-web ([#628](https://github.com/dashpay/platform/issues/628))
+* merged rs-platform monorepo
+
+
 ## [0.23.0](https://github.com/dashpay/platform/compare/v0.22.16...v0.23.0) (2022-12-05)
 
 ### ⚠ BREAKING CHANGES
