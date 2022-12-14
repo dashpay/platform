@@ -56,7 +56,8 @@ pub use ordering::OrderClause;
 use crate::common::bytes_for_system_value;
 use crate::contract::{document::Document, Contract};
 use crate::drive::block_info::BlockInfo;
-use crate::drive::object_size_info::KeyValueInfo;
+
+use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QueryError;
@@ -525,8 +526,8 @@ impl<'a> DriveQuery<'a> {
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path,
-                        KeyValueInfo::KeyRefRequest(&start_at_document_key),
-                        None,
+                        &start_at_document_key,
+                        StatefulQuery,
                         transaction,
                         drive_operations,
                     )
@@ -1255,8 +1256,8 @@ impl<'a> DriveQuery<'a> {
         for (_, value, _) in key_value_elements.iter_mut() {
             let element = Element::deserialize(value).unwrap();
             match element {
-                Element::Item(val, _) => values.push(val),
-                Element::Tree(..) | Element::Reference(..) => {
+                Element::Item(val, _) | Element::SumItem(val, _) => values.push(val),
+                Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
                     return Err(Error::GroveDB(GroveError::InvalidQuery(
                         "path query should only point to items: got trees",
                     )));
@@ -1518,7 +1519,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
         query
             .execute_no_proof(&drive, None, None)
@@ -1599,7 +1600,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
         query
             .execute_no_proof(&drive, None, None)
@@ -1625,7 +1626,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query should be valid for empty array");
 
         query
@@ -1656,7 +1657,7 @@ mod tests {
         });
 
         let where_cbor = common::value_to_cbor(query_value, None);
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query is valid for too many elements");
 
         query
@@ -1687,7 +1688,7 @@ mod tests {
         // The is actually valid, however executing it is not
         // This is in order to optimize query execution
 
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("the query should be created");
 
         query

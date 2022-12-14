@@ -122,7 +122,11 @@ function prepareProposalHandlerFactory(
     // Revert consensus logger after deliverTx
     proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
 
-    const coreChainLockUpdate = await createCoreChainLockUpdate(round, consensusLogger);
+    const coreChainLockUpdate = await createCoreChainLockUpdate(
+      coreChainLockedHeight,
+      round,
+      consensusLogger,
+    );
 
     const {
       consensusParamUpdates,

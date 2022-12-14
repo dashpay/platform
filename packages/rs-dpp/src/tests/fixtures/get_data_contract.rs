@@ -1,3 +1,4 @@
+use std::option::Option::None;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -280,7 +281,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     let mut data_contract = factory
-        .create(owner_id, documents)
+        .create(owner_id, documents, None)
         .expect("data in fixture should be correct");
 
     data_contract

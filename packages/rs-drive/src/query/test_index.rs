@@ -9,9 +9,9 @@ mod tests {
     use dpp::data_contract::extra::{DocumentType, Index, IndexProperty};
 
     fn construct_indexed_document_type() -> DocumentType {
-        DocumentType {
-            name: "a".to_string(),
-            indices: vec![
+        DocumentType::new(
+            "a".to_string(),
+            vec![
                 Index {
                     properties: vec![IndexProperty {
                         name: "a".to_string(),
@@ -57,11 +57,11 @@ mod tests {
                     unique: false,
                 },
             ],
-            properties: Default::default(),
-            required_fields: Default::default(),
-            documents_keep_history: false,
-            documents_mutable: false,
-        }
+            Default::default(),
+            Default::default(),
+            false,
+            false,
+        )
     }
 
     #[test]
