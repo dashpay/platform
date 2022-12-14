@@ -6,6 +6,10 @@ pub enum FeeError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    /// Corrupted estimated layer info missing error
+    #[error("corrupted estimated layer info missing error: {0}")]
+    CorruptedEstimatedLayerInfoMissing(String),
+
     /// Corrupted storage fee not an item error
     #[error("corrupted storage fee not an item error: {0}")]
     CorruptedStorageFeeNotItem(&'static str),

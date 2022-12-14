@@ -95,15 +95,18 @@ describe('validatePublicKeysFactory', () => {
     it('should be present', () => {
       delete rawPublicKeys[1].id;
 
-      const result = validatePublicKeys(rawPublicKeys);
-
+      const result = publicKeysValidator.validateKeys(rawPublicKeys);
       expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
+      console.dir(error.getParams());
+
       expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('id');
+
+      console.dir(error);
     });
 
     it('should be a number', () => {

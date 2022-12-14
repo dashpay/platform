@@ -625,7 +625,6 @@ fn test_query_many() {
 fn test_reference_proof_single_index() {
     let (drive, contract) = setup_family_tests_only_first_name_index(1, true, 73509);
 
-    dbg!(drive.grove.verify_grovedb());
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
@@ -4093,7 +4092,7 @@ fn test_query_a_b_c_d_e_contract() {
     let factory = DataContractFactory::new(1, data_contract_validator);
 
     let contract = factory
-        .create(owner_id, documents)
+        .create(owner_id, documents, None)
         .expect("data in fixture should be correct");
 
     let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

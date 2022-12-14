@@ -11,35 +11,22 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
 const extendVoteHandlerFactory = require('../../../../lib/abci/handlers/extendVoteHandlerFactory');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('extendVoteHandlerFactory', () => {
   let extendVoteHandler;
   let blockExecutionContextMock;
-  let request;
-  let round;
-  let proposalBlockExecutionContextCollectionMock;
 
   beforeEach(function beforeEach() {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
+    const loggerMock = new LoggerMock(this.sinon);
+
+    blockExecutionContextMock.getConsensusLogger.returns(loggerMock);
 
     blockExecutionContextMock.getWithdrawalTransactionsMap.returns({});
 
-    extendVoteHandler = extendVoteHandlerFactory(proposalBlockExecutionContextCollectionMock);
-
-    round = 42;
-    request = { round };
-  });
-
-  it('should return ResponseExtendVote', async () => {
-    const result = await extendVoteHandler(request);
-
-    expect(proposalBlockExecutionContextCollectionMock.get).to.be.calledOnceWithExactly(round);
-
-    expect(result).to.be.an.instanceOf(ResponseExtendVote);
+    extendVoteHandler = extendVoteHandlerFactory(blockExecutionContextMock);
   });
 
   it('should return ResponseExtendVote with vote extensions if withdrawal transactions are present', async () => {
@@ -53,7 +40,7 @@ describe('extendVoteHandlerFactory', () => {
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     });
 
-    const result = await extendVoteHandler(request);
+    const result = await extendVoteHandler();
 
     expect(result).to.be.an.instanceOf(ResponseExtendVote);
     expect(result.voteExtensions).to.deep.equal([

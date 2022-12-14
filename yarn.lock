@@ -1281,14 +1281,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f":
+"@dashevo/abci@github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908":
   version: 0.24.0-dev.1
-  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=8764d7f13156200cd3a767c73cc491b4dc07b29f"
+  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
     protocol-buffers-encodings: ^1.1.0
-  checksum: 86504da08f35d618a19ce99b3e2500580d6e20c34859be911efc35951099b42c4d641de0a92a83e0bb712df013ac57c97f9bf63a9d0e56b40db089864f5e1574
+  checksum: 9f404e8177dcf8d2c90afdece98ad942a7ee86be2f0e3986b1eae3a0f984f9fb8616c199cea92707d3964d24c239ff65d542182611914ec1dfbe5f7d6cb937f3
   languageName: node
   linkType: hard
 
@@ -1307,8 +1307,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    lodash.clone: ~4.5.0
-    lodash.matches: ^4.6.0
+    lodash: ^4.17.21
     mathjs: ^10.4.3
     mocha: ^9.1.2
   languageName: unknown
@@ -1359,7 +1358,7 @@ __metadata:
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
-    lodash.sample: ^4.2.1
+    lodash: ^4.17.21
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
@@ -1425,7 +1424,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     google-protobuf: ^3.12.2
     jayson: ^3.3.4
-    lodash: ^4.17.19
+    lodash: ^4.17.21
     lru-cache: ^5.1.1
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
@@ -1601,10 +1600,7 @@ __metadata:
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
-    lodash.clonedeep: ^4.5.0
-    lodash.clonedeepwith: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.set: ^4.3.2
+    lodash: ^4.17.21
     long: ^5.2.0
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
@@ -1627,7 +1623,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f"
+    "@dashevo/abci": "github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^2.4.2
@@ -1658,12 +1654,9 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     find-my-way: ^2.2.2
-    google-protobuf: ^3.12.2
     js-merkle: ^0.1.5
     levelup: ^4.4.0
-    lodash.clonedeep: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.set: ^4.3.2
+    lodash: ^4.17.21
     long: ^5.2.0
     memdown: ^5.1.0
     mocha: ^9.1.2
@@ -1712,7 +1705,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    lodash.get: ^4.4.2
+    lodash: ^4.17.21
     long: ^5.2.0
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
@@ -1888,7 +1881,7 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
     karma-webpack: ^5.0.0
-    lodash: ^4.17.19
+    lodash: ^4.17.21
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
@@ -1945,7 +1938,7 @@ __metadata:
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
-    lodash.clonedeep: ^4.5.0
+    lodash: ^4.17.21
     long: ^5.2.0
     mocha: ^9.1.2
     path-browserify: ^1.0.1
@@ -5689,11 +5682,7 @@ __metadata:
     hasbin: ^1.2.3
     jayson: ^3.3.4
     listr2: 3.5.0
-    lodash.clonedeep: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.isequal: ^4.5.0
-    lodash.merge: ^4.6.2
-    lodash.set: ^4.3.2
+    lodash: ^4.17.21
     memory-streams: ^0.1.3
     node-fetch: ^2.6.1
     node-forge: ^1.3.1
@@ -9439,27 +9428,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"lodash.clone@npm:~4.5.0":
-  version: 4.5.0
-  resolution: "lodash.clone@npm:4.5.0"
-  checksum: 5839f22acf3a43c026ac4325f7bcd378f34967415cd0b9fd7efa9bbbf38dc665900d36e040944c5afab94a51ff8a24f6cfc3781fe439705cbad5c722e9506b16
-  languageName: node
-  linkType: hard
-
-"lodash.clonedeep@npm:^4.5.0":
-  version: 4.5.0
-  resolution: "lodash.clonedeep@npm:4.5.0"
-  checksum: 92c46f094b064e876a23c97f57f81fbffd5d760bf2d8a1c61d85db6d1e488c66b0384c943abee4f6af7debf5ad4e4282e74ff83177c9e63d8ff081a4837c3489
-  languageName: node
-  linkType: hard
-
-"lodash.clonedeepwith@npm:^4.5.0":
-  version: 4.5.0
-  resolution: "lodash.clonedeepwith@npm:4.5.0"
-  checksum: 9fbf4ebfa04b381df226a2298eba680327bea3d0d5d19c5118de7ae218fd219186e30e9fd0d33b13729f34ffbc83c1cf09cb27aff265ba94cb602b8a2b1e71c9
-  languageName: node
-  linkType: hard
-
 "lodash.debounce@npm:^4.0.8":
   version: 4.0.8
   resolution: "lodash.debounce@npm:4.0.8"
@@ -9502,31 +9470,10 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"lodash.matches@npm:^4.6.0":
-  version: 4.6.0
-  resolution: "lodash.matches@npm:4.6.0"
-  checksum: 002617abb63d3735d8600e5e74d499a02edbef090c33acf1198f46b3ec924752729bbac2eb4f26ec00b0ce3b382fd03fdf25d19cfff08ec735180fcb36cd3fe4
-  languageName: node
-  linkType: hard
-
 "lodash.merge@npm:^4.6.1, lodash.merge@npm:^4.6.2":
   version: 4.6.2
   resolution: "lodash.merge@npm:4.6.2"
   checksum: ad580b4bdbb7ca1f7abf7e1bce63a9a0b98e370cf40194b03380a46b4ed799c9573029599caebc1b14e3f24b111aef72b96674a56cfa105e0f5ac70546cdc005
-  languageName: node
-  linkType: hard
-
-"lodash.sample@npm:^4.2.1":
-  version: 4.2.1
-  resolution: "lodash.sample@npm:4.2.1"
-  checksum: 8d93c1db133b7c7c5d6f87eb6e512c83dc97baf1de56a2013eff17fd8ddffa5a0901541e320933d9fdb6a4d90e8a597d44bb7aa1e4fa6eca4da534802941e4ab
-  languageName: node
-  linkType: hard
-
-"lodash.set@npm:^4.3.2":
-  version: 4.3.2
-  resolution: "lodash.set@npm:4.3.2"
-  checksum: a9122f49eef9f2d0fc9061a33d87f8e5b8c6b23d46e8b9e9ce1529d3588d79741bd1145a3abdfa3b13082703e65af27ff18d8a07bfc22b9be32f3fc36f763f70
   languageName: node
   linkType: hard
 
@@ -11813,14 +11760,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"qs@npm:6.7.0":
-  version: 6.7.0
-  resolution: "qs@npm:6.7.0"
-  checksum: dfd5f6adef50e36e908cfa70a6233871b5afe66fbaca37ecc1da352ba29eb2151a3797991948f158bb37fccde51bd57845cb619a8035287bfc24e4591172c347
-  languageName: node
-  linkType: hard
-
-"qs@npm:^6.11.0":
+"qs@npm:^6.7.3":
   version: 6.11.0
   resolution: "qs@npm:6.11.0"
   dependencies:

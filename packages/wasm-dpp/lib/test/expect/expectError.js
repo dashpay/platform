@@ -31,7 +31,7 @@ const expectError = {
    */
   async expectJsonSchemaError(result, count = 1) {
     const wasmDpp = await loadWasmDpp();
-    await expectError.expectValidationError(result, wasmDpp.ValidationResult, count);
+    await expectError.expectValidationError(result, wasmDpp.JsonSchemaError, count);
   },
 };
 

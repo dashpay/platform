@@ -1,7 +1,7 @@
 /**
  * Begin block ABCI
  *
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
@@ -14,7 +14,7 @@
  * @return {endBlock}
  */
 function endBlockFactory(
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   validatorSet,
   createValidatorSetUpdate,
   getFeatureFlagForHeight,
@@ -28,11 +28,10 @@ function endBlockFactory(
    * @typedef endBlock
    *
    * @param {Object} request
-   * @param {number} [request.height]
-   * @param {number} [request.round]
-   * @param {number} [request.processingFees]
-   * @param {number} [request.storageFees]
-   * @param {number} [request.coreChainLockedHeight]
+   * @param {number} request.height
+   * @param {number} request.round
+   * @param {FeeResult} request.fees
+   * @param {number} request.coreChainLockedHeight
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
@@ -47,22 +46,14 @@ function endBlockFactory(
     const {
       height,
       round,
-      processingFees,
-      storageFees,
+      fees,
       coreChainLockedHeight,
     } = request;
-
-    consensusLogger.debug('EndBlock ABCI method requested');
-
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
 
     // Call RS ABCI
 
     const rsRequest = {
-      fees: {
-        processingFees,
-        storageFees,
-      },
+      fees,
     };
 
     consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
@@ -72,6 +63,11 @@ function endBlockFactory(
     consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
     const { currentEpochIndex } = proposalBlockExecutionContext.getEpochInfo();
+
+    const {
+      processingFee: processingFees,
+      storageFee: storageFees,
+    } = fees;
 
     if (processingFees > 0 || storageFees > 0) {
       consensusLogger.debug({
@@ -90,19 +86,17 @@ function endBlockFactory(
     }
 
     const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);
+
     const validatorSetUpdate = await rotateAndCreateValidatorSetUpdate(
       height,
       coreChainLockedHeight,
       round,
       consensusLogger,
     );
+
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });
 
-    const prepareProposalTimings = executionTimer.stopTimer('roundExecution');
-
-    consensusLogger.info(
-      `Round execution took ${prepareProposalTimings} seconds`,
-    );
+    executionTimer.stopTimer('roundExecution', true);
 
     return {
       consensusParamUpdates,

@@ -56,11 +56,14 @@ fi
 #  wasm-opt -Os "$OUTPUT_FILE" -o "$OUTPUT_FILE"
 #fi
 
-# Converting wasm into bease64 so it can be bundled
+# Converting wasm into base64 so it can be bundled
 echo "Converting wasm binary into base64 module for bundling with Webpack"
 WASM_BUILD_BASE_64=$(base64 -i "$OUTPUT_FILE")
 echo 'module.exports = "'${WASM_BUILD_BASE_64}'"' > "$OUTPUT_FILE_JS"
 
+mkdir "$PWD/dist/"
+
 echo "Copying wasm typings"
 mkdir "$PWD/dist/wasm"
 cp "$WASM_TYPINGS_PATH" "$DIST_TYPINGS"
+echo "Typings copied"

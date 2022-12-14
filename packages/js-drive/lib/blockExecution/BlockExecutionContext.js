@@ -220,6 +220,28 @@ class BlockExecutionContext {
   }
 
   /**
+   * Set PrepareProposal Result
+   *
+   * @param {Object} prepareProposalResult
+   *
+   * @returns {BlockExecutionContext}
+   */
+  setPrepareProposalResult(prepareProposalResult) {
+    this.prepareProposalResult = prepareProposalResult;
+
+    return this;
+  }
+
+  /**
+   * Get PrepareProposal Result
+   *
+   * @return {Object}
+   */
+  getPrepareProposalResult() {
+    return this.prepareProposalResult;
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -234,6 +256,7 @@ class BlockExecutionContext {
     this.round = null;
     this.epochInfo = null;
     this.timeMs = null;
+    this.prepareProposalResult = null;
   }
 
   /**
@@ -257,11 +280,12 @@ class BlockExecutionContext {
     this.height = blockExecutionContext.height;
     this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
     this.version = blockExecutionContext.version;
-    this.consensusLogger = blockExecutionContext.consensusLogger;
+    this.consensusLogger = blockExecutionContext.consensusLogger || null;
     this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
     this.round = blockExecutionContext.round;
     this.epochInfo = blockExecutionContext.epochInfo;
     this.timeMs = blockExecutionContext.timeMs;
+    this.prepareProposalResult = blockExecutionContext.prepareProposalResult || null;
   }
 
   /**
@@ -281,11 +305,13 @@ class BlockExecutionContext {
     this.version = Consensus.fromObject(object.version);
     this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
     this.round = object.round;
+    this.prepareProposalResult = object.prepareProposalResult;
   }
 
   /**
    * @param {Object} options
    * @param {boolean} [options.skipConsensusLogger=false]
+   * @param {boolean} [options.skipPrepareProposalResult=false]
    * @return {{
    *  dataContracts: Object[],
    *  height: number,
@@ -320,6 +346,10 @@ class BlockExecutionContext {
 
     if (!options.skipConsensusLogger) {
       object.consensusLogger = this.consensusLogger;
+    }
+
+    if (!options.skipPrepareProposalResult) {
+      object.prepareProposalResult = this.prepareProposalResult;
     }
 
     return object;

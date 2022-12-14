@@ -94,7 +94,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let maybe_invalid_public_key =
         find_invalid_public_key(&mut state_transition, identity_public_keys, bls);
     if let Some(invalid_key) = maybe_invalid_public_key {
-        validation_result.add_error(BasicError::InvalidIdentityPublicKeySignatureError {
+        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError {
             public_key_id: invalid_key.get_id(),
         })
     }

@@ -37,6 +37,7 @@ use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
+use drive::fee::FeeResult;
 use serde::{Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
@@ -80,22 +81,9 @@ pub struct BlockBeginResponse {
 #[serde(rename_all = "camelCase")]
 pub struct BlockEndRequest {
     /// The fees for the block
-    pub fees: FeesAggregate,
-}
-
-/// Total credit refund amount for the Epoch
-pub type EpochRefund = (u16, u64);
-
-/// A struct to aggregate processing and storage fees
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeesAggregate {
-    /// The aggregate processing fees
-    pub processing_fees: u64,
-    /// The aggregate storage fees
-    pub storage_fees: u64,
-    // The aggregate refund amount by epoch
-    // pub refunds_by_epoch: Vec<EpochRefund>,
+    /// Avoid of serialization to optimize transfer through Node.JS binding
+    #[serde(skip)]
+    pub fees: FeeResult,
 }
 
 /// A struct for handling block end responses

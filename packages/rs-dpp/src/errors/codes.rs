@@ -64,8 +64,8 @@ impl ErrorWithCode for StateError {
             // Document
             Self::DocumentAlreadyPresentError { .. } => 4004,
             Self::DocumentNotFoundError { .. } => 4005,
-            Self::DocumentOwnerMismatchError { .. } => 4006,
-            Self::DocumentTimestampMismatchError { .. } => 4007,
+            Self::DocumentOwnerIdMismatchError { .. } => 4006,
+            Self::DocumentTimestampsMismatchError { .. } => 4007,
             Self::DocumentTimestampWindowViolationError { .. } => 4008,
             Self::DuplicateUniqueIndexError { .. } => 4009,
             Self::InvalidDocumentRevisionError { .. } => 4010,
@@ -78,10 +78,10 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::MaxIdentityPublicKeyLimitReached { .. } => 4020,
+            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
-            Self::IdentityPublicKeyDisabledError { .. } => 4023,
+            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
         }
     }
 }
@@ -128,7 +128,7 @@ impl ErrorWithCode for BasicError {
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
             Self::IndexError(ref e) => e.get_code(),
             Self::IdentityNotFoundError { .. } => 2000,
-            Self::InvalidDataContractId { .. } => 1011,
+            Self::InvalidDataContractIdError { .. } => 1011,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -136,7 +136,7 @@ impl ErrorWithCode for BasicError {
             Self::StateTransitionMaxSizeExceededError { .. } => 1045,
 
             // Identity
-            Self::InvalidIdentityPublicKeySignatureError { .. } => 1056,
+            Self::InvalidIdentityKeySignatureError { .. } => 1056,
         }
     }
 }
