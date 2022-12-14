@@ -3,6 +3,8 @@ import init, * as dpp_module from './wasm/wasm_dpp';
 import wasmBase from './wasm/wasm_dpp_bg.js';
 import patchIdentifier from "./lib/patchIdentifier";
 
+
+
 let isInitialized = false;
 
 export default async function loadDpp() {
@@ -17,7 +19,7 @@ export default async function loadDpp() {
       let wasmUrl = URL.createObjectURL(blob);
       await init(wasmUrl);
       isInitialized = true;
-    }  else {
+    } else {
       dpp_module.initSync(bytes);
       isInitialized = true;
     }

@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
-    util::json_value::{self, ReplaceWith},
+    util::json_value::{self, JsonValueExt, ReplaceWith},
 };
 
 use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
@@ -77,7 +77,15 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(&self)?;
+        let mut value = serde_json::to_value(self)?;
+        let (identifier_paths, binary_paths) = self
+            .base
+            .data_contract
+            .get_identifiers_and_binary_paths(&self.base.document_type);
+
+        value.replace_binary_paths(identifier_paths, ReplaceWith::Base58)?;
+        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+
         Ok(value)
     }
 }

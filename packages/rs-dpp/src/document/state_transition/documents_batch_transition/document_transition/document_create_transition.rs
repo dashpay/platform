@@ -28,6 +28,7 @@ pub struct DocumentCreateTransition {
     pub created_at: Option<i64>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
+
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
@@ -107,7 +108,17 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(&self)?;
+        let mut value = serde_json::to_value(self)?;
+        let (identifier_paths, binary_paths) = self
+            .base
+            .data_contract
+            .get_identifiers_and_binary_paths(&self.base.document_type);
+
+        // here is the thing -> we should exclude the identifiers from document_create transition
+
+        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
+        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+
         Ok(value)
     }
 }

@@ -53,6 +53,7 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 pub struct DocumentFactory {
     protocol_version: u32,
     document_validator: DocumentValidator,
+    // fetch and validate data contract should be also implemented
     fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
 }
 
@@ -83,7 +84,7 @@ impl DocumentFactory {
             });
         }
 
-        let document_entropy = entropy_generator::generate();
+        let document_entropy = entropy_generator::generate()?;
 
         let document_required_fields = data_contract
             .get_document_schema(&document_type)?
@@ -144,21 +145,21 @@ impl DocumentFactory {
         let mut raw_documents_transitions: Vec<JsonValue> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
         let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
-        let flattened_documents = documents.iter().flat_map(|(_, v)| v);
+        let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
 
-        if Self::is_empty(flattened_documents.clone()) {
+        if Self::is_empty(flattened_documents_iter.clone()) {
             return Err(ProtocolError::NoDocumentsSuppliedError);
         }
 
         let is_the_same =
-            Self::is_ownership_the_same(flattened_documents.clone().map(|d| &d.owner_id));
+            Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id));
         if !is_the_same {
             return Err(ProtocolError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
             });
         }
 
-        let owner_id = flattened_documents
+        let owner_id = flattened_documents_iter
             .clone()
             .next()
             .unwrap()
@@ -272,8 +273,8 @@ impl DocumentFactory {
         data.into_iter().next().is_none()
     }
 
-    fn is_ownership_the_same<'a>(docs: impl IntoIterator<Item = &'a Identifier>) -> bool {
-        docs.into_iter().all_equal()
+    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
+        ids.into_iter().all_equal()
     }
 }
 
@@ -324,7 +325,6 @@ mod test {
                 json!({ "name": name }),
             )
             .expect("document creation shouldn't fail");
-
         assert_eq!(document_type, document.document_type);
         assert_eq!(
             name,

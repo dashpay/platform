@@ -5,7 +5,6 @@ use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use wasm_bindgen::convert::{FromWasmAbi, IntoWasmAbi};
 use wasm_bindgen::prelude::*;
 
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
@@ -16,10 +15,18 @@ use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::with_js_error;
+use crate::{console_log, with_js_error};
 use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
+pub use state_transition::*;
+mod factory;
+mod state_transition;
+mod validator;
+
+pub use document_batch_transition::DocumentsBatchTransitionWASM;
+pub use factory::DocumentFactoryWASM;
+pub use validator::DocumentValidatorWasm;
 
 pub(super) enum BinaryType {
     Identifier,
@@ -48,20 +55,27 @@ impl DocumentWasm {
             .inner()
             .get_identifiers_and_binary_paths(document_type);
 
-        raw_document
+        // the errors are ignore, because I'm not sure what is the expected input for Identifiers and ByteArray
+        // Should they come as string or as array of integers
+        let _ = raw_document
             .replace_identifier_paths(
                 identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
             )
-            .with_js_error()?;
-        raw_document
+            .with_js_error();
+        let _ = raw_document
             .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
-            .with_js_error()?;
+            .with_js_error();
 
         let document =
             Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
                 .with_js_error()?;
 
+        console_log!(
+            "the created document is {}: {}",
+            document.document_type,
+            document.data
+        );
         Ok(document.into())
     }
 
@@ -95,6 +109,11 @@ impl DocumentWasm {
         self.0.data_contract.clone().into()
     }
 
+    #[wasm_bindgen(js_name=setOwnerId)]
+    pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
+        self.0.owner_id = owner_id.inner();
+    }
+
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
         self.0.owner_id.clone().into()
@@ -123,8 +142,8 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&mut self) -> Vec<u8> {
-        self.0.entropy.to_vec()
+    pub fn get_entropy(&mut self) -> Buffer {
+        Buffer::from_bytes(&self.0.entropy)
     }
 
     #[wasm_bindgen(js_name=setData)]
@@ -147,11 +166,13 @@ impl DocumentWasm {
         let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths();
         for property_path in identifier_paths {
             if property_path == path {
-                // this should be safe as we take the whole value. Additionally we never create an object directly from abi reference
-                // If we ever do we should replace it with serde version
-                //? what if the  js_value_to_set is not an Identifier???
-                let id = unsafe { IdentifierWrapper::from_abi(js_value_to_set.into_abi()) };
-                let new_value = serde_json::to_value(id.inner().as_bytes()).with_js_error()?;
+                let id_value = js_value_to_set.with_serde_to_json_value()?;
+                let id_string = id_value
+                    .as_str()
+                    .context("the value must be a string")
+                    .with_js_error()?;
+                let id = Identifier::from_string(id_string, Encoding::Base58).with_js_error()?;
+                let new_value = serde_json::to_value(id.as_bytes()).with_js_error()?;
 
                 return self.0.set(&path, new_value).with_js_error();
             } else if property_path.starts_with(&path) {
@@ -169,6 +190,7 @@ impl DocumentWasm {
                             .into();
                     let new_value = serde_json::to_value(id.inner().as_bytes()).with_js_error()?;
                     value.insert_with_path(suffix, new_value).with_js_error()?;
+
                     return self.0.set(&path, value).with_js_error();
                 }
             }
@@ -180,7 +202,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=get)]
     pub fn get(&mut self, path: String) -> JsValue {
-        let binary_type = self.get_binary_type(&path);
+        let binary_type = self.get_binary_type_of_path(&path);
 
         if let Some(value) = self.0.get(&path) {
             match binary_type {
@@ -287,7 +309,7 @@ impl DocumentWasm {
 }
 
 impl DocumentWasm {
-    fn get_binary_type(&self, path: &String) -> BinaryType {
+    fn get_binary_type_of_path(&self, path: &String) -> BinaryType {
         let maybe_binary_properties = self
             .0
             .data_contract

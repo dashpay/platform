@@ -22,6 +22,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 pub mod document_factory;
 pub mod document_validator;
 pub mod errors;
+pub mod fetch_and_validate_data_contract;
 pub mod generate_document_id;
 pub mod state_transition;
 
@@ -221,6 +222,11 @@ impl Document {
     /// Set the Document's data
     pub fn set_data(&mut self, data: JsonValue) {
         self.data = data;
+    }
+
+    /// Get entropy
+    pub fn get_entropy(&self) -> &[u8] {
+        &self.entropy
     }
 
     pub fn get_identifiers_and_binary_paths(&self) -> (Vec<&str>, Vec<&str>) {

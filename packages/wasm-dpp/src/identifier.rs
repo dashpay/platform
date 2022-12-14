@@ -97,6 +97,7 @@ impl IdentifierWrapper {
         self.wrapped.buffer.len()
     }
 
+    #[wasm_bindgen(js_name=toBytes)]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.wrapped.buffer.to_vec()
     }

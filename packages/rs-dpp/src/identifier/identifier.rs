@@ -118,7 +118,6 @@ impl Serialize for Identifier {
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
         let data: String = Deserialize::deserialize(d)?;
-
         // by default we use base58 as Identifier type should be encoded in that way
         Identifier::from_string_with_encoding_string(&data, Some("base58"))
             .map_err(|e| serde::de::Error::custom(e.to_string()))

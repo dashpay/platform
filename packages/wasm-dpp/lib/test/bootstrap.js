@@ -5,12 +5,15 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
 const chaiExclude = require('chai-exclude');
+const crypto = require('crypto');
 
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
 use(chaiString);
 use(chaiExclude);
+
+globalThis.crypto = crypto.webcrypto
 
 beforeEach(function beforeEach() {
   if (!this.sinonSandbox) {

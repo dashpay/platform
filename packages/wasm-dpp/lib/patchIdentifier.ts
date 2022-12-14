@@ -11,8 +11,8 @@ export default function (dppModule: typeof dpp_module) {
     //@ts-ignore
     Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
 
-    Identifier.prototype.valueOf = function() {
-        return Buffer.from(this.inner());
+    Identifier.prototype.valueOf = function () {
+        return Buffer.from(this.toBytes());
     }
 
     // @ts-ignore
@@ -24,7 +24,7 @@ export default function (dppModule: typeof dpp_module) {
     };
 
     // @ts-ignore
-    Identifier.prototype.inspect = function(...args) {
+    Identifier.prototype.inspect = function (...args) {
         return this.valueOf().inspect(...args);
     }
 
@@ -35,3 +35,4 @@ export default function (dppModule: typeof dpp_module) {
     //  //@ts-ignore
     //  Identifier.prototype[inspect.custom] = Identifier.prototype.inspect;
 }
+

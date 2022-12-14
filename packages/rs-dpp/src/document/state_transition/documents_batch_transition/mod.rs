@@ -178,8 +178,6 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
         json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
-        json_value
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
 
         let mut transitions = vec![];
         for transition in self.transitions.iter() {
