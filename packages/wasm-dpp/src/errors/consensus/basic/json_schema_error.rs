@@ -1,7 +1,8 @@
 use dpp::errors::consensus::basic::JsonSchemaError;
 use serde_json::Value;
+use std::ops::Deref;
 
-use dpp::jsonschema::error::ValidationErrorKind;
+use dpp::jsonschema::error::{TypeKind, ValidationErrorKind};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=JsonSchemaError)]
@@ -51,19 +52,21 @@ impl ParamsBuilder {
     }
 }
 
-impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
-    fn from(e: &JsonSchemaError) -> Self {
-        let kek = match e.kind() {
+impl From<&ValidationErrorKind> for Params {
+    fn from(validation_error_kind: &ValidationErrorKind) -> Self {
+        match validation_error_kind {
             ValidationErrorKind::Required { property } => ParamsBuilder::new()
                 .set_keyword("const")
                 .set_property_name(property.to_string())
                 .add_param("missingProperty", property.clone())
                 .build(),
-            ValidationErrorKind::AdditionalItems { .. } => {
-                ParamsBuilder::new().set_keyword("additionalItems").build()
-            }
-            ValidationErrorKind::AdditionalProperties { .. } => ParamsBuilder::new()
+            ValidationErrorKind::AdditionalItems { limit } => ParamsBuilder::new()
+                .set_keyword("additionalItems")
+                .add_param("maxItems", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::AdditionalProperties { unexpected } => ParamsBuilder::new()
                 .set_keyword("additionalProperties")
+                .add_param("additionalProperties", unexpected.clone().into())
                 .build(),
             ValidationErrorKind::AnyOf => ParamsBuilder::new().set_keyword("anyOf").build(),
             ValidationErrorKind::BacktrackLimitExceeded { .. } => ParamsBuilder::new()
@@ -94,7 +97,9 @@ impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
                 .set_keyword("exclusiveMinimum")
                 .add_param("exclusiveMinimum", limit.clone())
                 .build(),
-            ValidationErrorKind::FalseSchema => {}
+            ValidationErrorKind::FalseSchema => {
+                ParamsBuilder::new().set_keyword("falseSchema").build()
+            }
             ValidationErrorKind::FileNotFound { .. } => {
                 ParamsBuilder::new().set_keyword("fileNotFound").build()
             }
@@ -102,50 +107,124 @@ impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
                 .set_keyword("format")
                 .add_param("format", format.to_string().into())
                 .build(),
-            // ValidationErrorKind::FromUtf8 { .. } => {}
-            // ValidationErrorKind::Utf8 { .. } => {}
-            // ValidationErrorKind::JSONParse { .. } => {}
-            // ValidationErrorKind::InvalidReference { .. } => {}
-            // ValidationErrorKind::InvalidURL { .. } => {}
-            ValidationErrorKind::MaxItems { .. } => {
-                ParamsBuilder::new().set_keyword("maxItems").build()
+            ValidationErrorKind::FromUtf8 { .. } => {
+                ParamsBuilder::new().set_keyword("fromUtf8").build()
             }
-            ValidationErrorKind::Maximum { .. } => {
-                ParamsBuilder::new().set_keyword("maximum").build()
+            ValidationErrorKind::Utf8 { .. } => ParamsBuilder::new().set_keyword("utf8").build(),
+            ValidationErrorKind::JSONParse { .. } => {
+                ParamsBuilder::new().set_keyword("JSONParse").build()
             }
-            // ValidationErrorKind::MaxLength { .. } => {}
-            // ValidationErrorKind::MaxProperties { .. } => {}
-            ValidationErrorKind::MinItems { .. } => {
-                ParamsBuilder::new().set_keyword("minItems").build()
+            ValidationErrorKind::InvalidReference { reference } => ParamsBuilder::new()
+                .set_keyword("invalidReference")
+                .add_param("invalidReference", reference.clone().into())
+                .build(),
+            ValidationErrorKind::InvalidURL { .. } => {
+                ParamsBuilder::new().set_keyword("invalidURL").build()
             }
-            ValidationErrorKind::Minimum { .. } => {
-                ParamsBuilder::new().set_keyword("minimum").build()
+            ValidationErrorKind::MaxItems { limit } => ParamsBuilder::new()
+                .set_keyword("maxItems")
+                .add_param("maxItems", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::Maximum { limit } => ParamsBuilder::new()
+                .set_keyword("maximum")
+                .add_param("maximum", limit.clone())
+                .build(),
+            ValidationErrorKind::MaxLength { limit } => ParamsBuilder::new()
+                .set_keyword("maxLength")
+                .add_param("maxLength", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::MaxProperties { limit } => ParamsBuilder::new()
+                .set_keyword("maxProperties")
+                .add_param("maxProperties", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::MinItems { limit } => ParamsBuilder::new()
+                .set_keyword("minItems")
+                .add_param("maximum", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::Minimum { limit } => ParamsBuilder::new()
+                .set_keyword("minimum")
+                .add_param("minimum", limit.clone())
+                .build(),
+            ValidationErrorKind::MinLength { limit } => ParamsBuilder::new()
+                .set_keyword("minLength")
+                .add_param("minLength", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::MinProperties { limit } => ParamsBuilder::new()
+                .set_keyword("minProperties")
+                .add_param("minProperties", Value::from(*limit))
+                .build(),
+            ValidationErrorKind::MultipleOf { multiple_of } => ParamsBuilder::new()
+                .set_keyword("multipleOf")
+                .add_param("multipleOf", Value::from(*multiple_of))
+                .build(),
+            ValidationErrorKind::Not { schema } => ParamsBuilder::new()
+                .set_keyword("not")
+                .add_param("not", schema.clone())
+                .build(),
+            ValidationErrorKind::OneOfMultipleValid => ParamsBuilder::new()
+                .set_keyword("oneOfMultipleValid")
+                .build(),
+            ValidationErrorKind::OneOfNotValid => {
+                ParamsBuilder::new().set_keyword("oneOfNotValid").build()
             }
-            // ValidationErrorKind::MinLength { .. } => {}
-            // ValidationErrorKind::MinProperties { .. } => {}
-            // ValidationErrorKind::MultipleOf { .. } => {}
-            // ValidationErrorKind::Not { .. } => {}
-            // ValidationErrorKind::OneOfMultipleValid => {}
-            // ValidationErrorKind::OneOfNotValid => {}
-            // ValidationErrorKind::Pattern { .. } => {}
-            // ValidationErrorKind::PropertyNames { .. } => {}
-            // ValidationErrorKind::Schema => {}
-            ValidationErrorKind::Type { .. } => ParamsBuilder::new().set_keyword("type").build(),
+            ValidationErrorKind::Pattern { pattern } => ParamsBuilder::new()
+                .set_keyword("pattern")
+                .add_param("pattern", pattern.clone().into())
+                .build(),
+            ValidationErrorKind::PropertyNames { error } => {
+                let Params {
+                    keyword,
+                    params,
+                    property_name,
+                } = Params::from(&error.kind);
+
+                ParamsBuilder::new()
+                    .set_keyword("propertyNames")
+                    .add_param("instancePath", error.instance_path.to_string().into())
+                    .add_param("schemaPath", error.schema_path.to_string().into())
+                    .add_param("instance", error.instance.deref().clone())
+                    .add_param("params", params.into())
+                    .add_param("keyword", keyword.into())
+                    .add_param("propertyName", property_name.into())
+                    .build()
+            }
+            ValidationErrorKind::Schema => ParamsBuilder::new().set_keyword("schema").build(),
+            ValidationErrorKind::Type { kind } => {
+                let val: Value = match kind {
+                    TypeKind::Single(single) => single.to_string().into(),
+                    TypeKind::Multiple(multiple) => multiple
+                        .into_iter()
+                        .map(|single| Value::from(single.to_string()))
+                        .collect::<Vec<Value>>()
+                        .into(),
+                };
+                ParamsBuilder::new()
+                    .set_keyword("type")
+                    .add_param("type", val)
+                    .build()
+            }
             ValidationErrorKind::UniqueItems => {
                 ParamsBuilder::new().set_keyword("uniqueItems").build()
             }
-            // ValidationErrorKind::UnknownReferenceScheme { .. } => {}
-            // ValidationErrorKind::Resolver { .. } => {}
-            _ => {
-                unimplemented!()
-            }
-        };
+            ValidationErrorKind::UnknownReferenceScheme { scheme } => ParamsBuilder::new()
+                .set_keyword("unknownReferenceScheme")
+                .add_param("unknownReferenceScheme", scheme.clone().into())
+                .build(),
+            ValidationErrorKind::Resolver { url, error: _ } => ParamsBuilder::new()
+                .set_keyword("resolver")
+                .add_param("url", url.to_string().into())
+                .build(),
+        }
+    }
+}
 
+impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
+    fn from(e: &JsonSchemaError) -> Self {
         let Params {
             keyword,
             params,
             property_name,
-        } = kek;
+        } = Params::from(e.kind());
 
         Self {
             keyword,
