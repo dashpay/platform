@@ -11,6 +11,7 @@ use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
+pub mod state_transition;
 
 #[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
