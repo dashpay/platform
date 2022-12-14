@@ -9,6 +9,7 @@ class WorkingWorker extends Worker {
       dependencies: [
         'storage', 'walletId',
       ],
+      workerIntervalTime: 500
     });
   }
 

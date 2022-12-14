@@ -1,4 +1,5 @@
 import { Transaction } from "@dashevo/dashcore-lib";
+import DAPIClient from "@dashevo/dapi-client";
 import stateTransitionTypes from "@dashevo/dpp/lib/stateTransition/stateTransitionTypes";
 import Identity from "@dashevo/dpp/lib/identity/Identity";
 
@@ -81,8 +82,15 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
     const accountPromise = client.wallet.getAccount();
     // Breaking the event loop to emit an event
     await wait(0);
-    // Emitting stream end event to mark finish of the account sync
+
+    // Simulate headers sync finish
+    const { blockHeadersProvider } = client.wallet.transport.client;
+    blockHeadersProvider.emit(DAPIClient.BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED)
+    await wait(0);
+
+    // Emitting TX stream end event to mark finish of the tx sync
     txStreamMock.emit(TxStreamMock.EVENTS.end);
+
     // Wait for account to resolve
     await accountPromise;
 

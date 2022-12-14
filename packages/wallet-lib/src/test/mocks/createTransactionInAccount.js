@@ -20,6 +20,9 @@ async function createTransactionInAccount(account) {
     height: 100,
     blockHash: '0000000000000000000000000000000000000000000000000000000000000000',
   }]]);
+
+  const chainStore = account.storage.getDefaultChainStore();
+  chainStore.updateLastSyncedBlockHeight(100);
   // console.log(account.storage.wallets.get('361032c8a0').state.paths)
   return walletTransaction;
 }

@@ -11,7 +11,7 @@ const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 //   debug    4
 //   silly    5
 
-const logger = winston.createLogger({
+const createLogger = (formats = []) => winston.createLogger({
   level: LOG_LEVEL,
   transports: [
     new winston.transports.Console({
@@ -26,6 +26,7 @@ const logger = winston.createLogger({
             return result;
           },
         },
+        ...formats,
         winston.format.colorize(),
         winston.format.printf(({
           level, message,
@@ -34,6 +35,24 @@ const logger = winston.createLogger({
     }),
   ],
 });
+
+const logger = createLogger();
+
+const loggers = {};
+logger.getForWallet = (walletId) => {
+  if (!loggers[walletId]) {
+    const format = {
+      transform: (info) => {
+        const message = `[Wallet: ${walletId}] ${info.message}`;
+        return { ...info, message };
+      },
+    };
+
+    loggers[walletId] = createLogger([format]);
+  }
+
+  return loggers[walletId];
+};
 
 logger.verbose(`Logger uses "${LOG_LEVEL}" level`, { level: LOG_LEVEL });
 
