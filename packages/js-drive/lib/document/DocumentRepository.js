@@ -1,6 +1,6 @@
 const { createHash } = require('crypto');
 
-const lodashCloneDeep = require('lodash.clonedeep');
+const lodashCloneDeep = require('lodash/cloneDeep');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const DummyFeeResult = require('@dashevo/dpp/lib/stateTransition/fee/DummyFeeResult');

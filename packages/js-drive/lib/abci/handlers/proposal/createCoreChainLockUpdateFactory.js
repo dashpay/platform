@@ -7,23 +7,21 @@ const {
 } = require('@dashevo/abci/types');
 /**
  *
- * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @return {createCoreChainLockUpdate}
  */
 function createCoreChainLockUpdateFactory(
-  proposalBlockExecutionContext,
   latestCoreChainLock,
 ) {
   /**
    * @typedef createCoreChainLockUpdate
+   * @param {number} contextCoreChainLockedHeight
    * @param {number} round
    * @param {BaseLogger} consensusLogger
    * @return {Promise<CoreChainLock>}
    */
-  async function createCoreChainLockUpdate(round, consensusLogger) {
+  async function createCoreChainLockUpdate(contextCoreChainLockedHeight, round, consensusLogger) {
     // Update Core Chain Locks
-    const contextCoreChainLockedHeight = proposalBlockExecutionContext.getCoreChainLockedHeight();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
     let coreChainLockUpdate;

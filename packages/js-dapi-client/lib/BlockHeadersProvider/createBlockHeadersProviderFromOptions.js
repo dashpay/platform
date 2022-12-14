@@ -1,6 +1,6 @@
-const networks = require('@dashevo/dashcore-lib/lib/networks');
 const DAPIClientError = require('../errors/DAPIClientError');
 const BlockHeadersProvider = require('./BlockHeadersProvider');
+const ReconnectableStream = require('../transport/ReconnectableStream');
 
 const validateNumber = (value, name, min = NaN, max = NaN) => {
   if (typeof value !== 'number') {
@@ -11,7 +11,7 @@ const validateNumber = (value, name, min = NaN, max = NaN) => {
     throw new DAPIClientError(`'${name}' can not be less than ${min}`);
   }
 
-  if (!Number.isNaN(max) && value > min) {
+  if (!Number.isNaN(max) && value > max) {
     throw new DAPIClientError(`'${name}' can not be more than ${max}`);
   }
 };
@@ -32,44 +32,59 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     blockHeadersProvider = options.blockHeadersProvider;
   }
 
+  const createContinuousSyncStream = (fromBlockHeight) => ReconnectableStream
+    .create(
+      coreMethods.subscribeToBlockHeadersWithChainLocks,
+      {
+        maxRetriesOnError: -1,
+      },
+    )({
+      fromBlockHeight,
+    });
+
+  const createHistoricalSyncStream = (fromBlockHeight, count) => {
+    const { subscribeToBlockHeadersWithChainLocks } = coreMethods;
+    return subscribeToBlockHeadersWithChainLocks({
+      fromBlockHeight,
+      count,
+    });
+  };
+
   if (options.blockHeadersProviderOptions) {
+    const { network } = options;
+
     const blockHeadersProviderOptions = {
       ...BlockHeadersProvider.defaultOptions,
       ...options.blockHeadersProviderOptions,
+      network,
     };
 
     const {
-      network,
-      autoStart,
       maxParallelStreams,
       targetBatchSize,
       fromBlockHeight,
       maxRetries,
     } = blockHeadersProviderOptions;
 
-    if (network && !networks.get(network)) {
-      throw new DAPIClientError(`Invalid network '${options.network}'`);
-    }
-
-    if (typeof autoStart !== 'boolean') {
-      throw new DAPIClientError('\'autoStart\' option must have boolean type');
-    }
-
     validateNumber(maxParallelStreams, 'maxParallelStreams', 1);
     validateNumber(targetBatchSize, 'targetBatchSize', 1);
     validateNumber(fromBlockHeight, 'fromBlockHeight', 1);
-    validateNumber(maxRetries, 'maxRetries', 0);
+    validateNumber(maxRetries, 'maxRetries', 0, 100);
 
     blockHeadersProvider = new BlockHeadersProvider(
       blockHeadersProviderOptions,
+      createHistoricalSyncStream,
+      createContinuousSyncStream,
     );
   }
 
   if (!blockHeadersProvider) {
-    blockHeadersProvider = new BlockHeadersProvider();
+    blockHeadersProvider = new BlockHeadersProvider(
+      {},
+      createContinuousSyncStream,
+      createHistoricalSyncStream,
+    );
   }
-
-  blockHeadersProvider.setCoreMethods(coreMethods);
 
   return blockHeadersProvider;
 }

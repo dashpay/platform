@@ -69,10 +69,19 @@ describe('Drive', () => {
     });
 
     it('should return null if contract not exists', async () => {
-      const result = await drive.fetchContract(Buffer.alloc(32));
+      const result = await drive.fetchContract(Buffer.alloc(32), blockInfo.epoch);
 
-      expect(result).to.be.instanceOf(Array);
-      expect(result).to.have.lengthOf(0);
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [fetchedDataContract, feeResult] = result;
+
+      expect(fetchedDataContract).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
     });
 
     it('should return contract if contract is present', async () => {
@@ -85,7 +94,7 @@ describe('Drive', () => {
 
       const [fetchedDataContract, feeResult] = result;
 
-      expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
+      expect(fetchedDataContract.toBuffer()).to.deep.equal(dataContract.toBuffer());
 
       expect(feeResult).to.be.an.instanceOf(FeeResult);
 
@@ -103,7 +112,7 @@ describe('Drive', () => {
 
       const [fetchedDataContract] = result;
 
-      expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
+      expect(fetchedDataContract.toBuffer()).to.deep.equal(dataContract.toBuffer());
     });
   });
 

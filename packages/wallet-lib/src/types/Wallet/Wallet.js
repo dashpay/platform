@@ -30,7 +30,6 @@ const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
 const generateNewWalletId = require('./methods/generateNewWalletId');
 
 const createTransportFromOptions = require('../../transport/createTransportFromOptions');
-const ChainSyncMediator = require('./ChainSyncMediator');
 
 /**
  * Instantiate a basic Wallet object,
@@ -49,7 +48,7 @@ class Wallet extends EventEmitter {
    *
    * @param opts
    */
-  constructor(opts = defaultOptions) {
+  constructor(opts = { ...defaultOptions }) {
     super();
     // Immediate prototype method-composition are used in order to give access in constructor.
     Object.assign(Wallet.prototype, {
@@ -112,17 +111,23 @@ class Wallet extends EventEmitter {
     // Notice : Most of the time, wallet id is deterministic
     this.generateNewWalletId();
 
-    this.storage = new Storage({
-      rehydrate: true,
-      autosave: true,
-    });
+    const storageOpts = {};
+    if (opts.storage) {
+      if (typeof opts.storage.purgeOnError === 'boolean') {
+        storageOpts.purgeOnError = opts.storage.purgeOnError;
+      }
+
+      if (typeof opts.storage.autoSave === 'boolean') {
+        storageOpts.autosave = opts.storage.autoSave;
+      }
+
+      if (typeof opts.storage.autosaveIntervalTime === 'number') {
+        storageOpts.autosaveIntervalTime = opts.storage.autosaveIntervalTime;
+      }
+    }
+    this.storage = new Storage(storageOpts);
 
     this.storage.application.network = this.network;
-    this.storage.configure({
-      adapter: opts.adapter,
-      walletId: this.walletId,
-      network: this.network,
-    });
 
     if (createdFromNewMnemonic) {
       // As it is pretty complicated to pass any of wallet options
@@ -142,6 +147,12 @@ class Wallet extends EventEmitter {
         skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
       };
     }
+
+    this.storage.configure({
+      adapter: opts.adapter,
+      walletId: this.walletId,
+      network: this.network,
+    });
 
     const plugins = opts.plugins || defaultOptions.plugins;
     this.plugins = {};
@@ -168,8 +179,12 @@ class Wallet extends EventEmitter {
         opts.transport = {};
       }
 
+      // Assign networkName to the transport instead of this.network,
+      // because it needs to distinguish between testnet and regtest/devnet,
+      // and Dashcore.Network aliases regtest/devnet to testnet
+
       // eslint-disable-next-line no-param-reassign
-      opts.transport.network = this.network;
+      opts.transport.network = networkName;
 
       this.transport = createTransportFromOptions(opts.transport);
     }
@@ -181,8 +196,6 @@ class Wallet extends EventEmitter {
     const Identities = require('../Identities/Identities');
     this.identities = new Identities(this);
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
-
-    this.chainSyncMediator = new ChainSyncMediator();
   }
 }
 

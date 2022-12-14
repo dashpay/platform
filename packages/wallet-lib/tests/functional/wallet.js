@@ -142,7 +142,7 @@ describe('Wallet-lib - functional', function suite() {
         transport: {
           seeds,
         },
-        network: wallet.network,
+        network: process.env.NETWORK,
       });
       const restoredAccount = await restoredWallet.getAccount();
 

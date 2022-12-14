@@ -42,6 +42,9 @@ pub enum ContractError {
     #[error("Corrupted Serialization: {0}")]
     CorruptedSerialization(&'static str),
 
+    #[error("Corrupted Code Execution: {0}")]
+    CorruptedCodeExecution(&'static str),
+
     #[error(transparent)]
     StructureError(#[from] StructureError),
 

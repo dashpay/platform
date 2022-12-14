@@ -12,8 +12,10 @@ use std::borrow::Borrow;
 fn element_to_string(element: &Element) -> &'static str {
     match element {
         Element::Item(..) => "item",
+        Element::SumItem(..) => "sumItem",
         Element::Reference(..) => "reference",
         Element::Tree(..) => "tree",
+        Element::SumTree(..) => "sumTree",
     }
 }
 
@@ -133,21 +135,19 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
     js_object.set(cx, "type", js_type_string)?;
 
     let maybe_js_value: Option<Handle<JsValue>> = match element {
-        Element::Item(item, _) => {
+        Element::Item(item, _) | Element::SumItem(item, ..) => {
             let js_buffer = JsBuffer::external(cx, item);
             Some(js_buffer.upcast())
         }
         Element::Reference(reference, _, _) => {
             let reference = reference_to_dictionary(cx, reference)?;
-
             Some(reference)
         }
-        Element::Tree(Some(tree), _) => {
+        Element::Tree(Some(tree), _) | Element::SumTree(Some(tree), ..) => {
             let js_buffer = JsBuffer::external(cx, tree);
-
             Some(js_buffer.upcast())
         }
-        Element::Tree(None, _) => None,
+        Element::Tree(None, _) | Element::SumTree(None, ..) => None,
     };
 
     if let Some(js_value) = maybe_js_value {

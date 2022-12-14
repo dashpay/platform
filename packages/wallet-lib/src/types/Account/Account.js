@@ -56,11 +56,11 @@ class Account extends EventEmitter {
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
+    this.logger = logger.getForWallet(this.walletId);
 
-    logger.debug(`Loading up wallet ${this.walletId}`);
+    this.logger.debug(`Loading up wallet ${this.walletId}`);
 
     this.identities = wallet.identities;
-    this.chainSyncMediator = wallet.chainSyncMediator;
 
     this.state = {
       isInitialized: false,
@@ -111,14 +111,21 @@ class Account extends EventEmitter {
       this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
     });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
-    this.storage.on(EVENTS.BLOCKHEIGHT_CHANGED, (ev) => this.emit(ev.type, ev));
-    this.storage.on(EVENTS.BLOCK, (ev) => this.emit(ev.type, ev));
+
+    this.on(EVENTS.HEADERS_SYNC_PROGRESS,
+      (data) => wallet.emit(EVENTS.HEADERS_SYNC_PROGRESS, data));
+    this.on(EVENTS.TRANSACTIONS_SYNC_PROGRESS,
+      (data) => wallet.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, data));
+    this.on(EVENTS.CONFIRMED_TRANSACTION,
+      (data) => wallet.emit(EVENTS.CONFIRMED_TRANSACTION, data));
+    this.on(EVENTS.BLOCKHEIGHT_CHANGED,
+      (data) => wallet.emit(EVENTS.BLOCKHEIGHT_CHANGED, data));
 
     if (this.debug) {
       this.emit = (...args) => {
         const { type } = args[1];
         const payload = JSON.stringify(args[1].payload);
-        logger.debug(`${this.walletId}:${this.index} - Emitted event ${type} - ${payload} `);
+        this.logger.debug(`${this.walletId}:${this.index} - Emitted event ${type} - ${payload} `);
         super.emit(...args);
       };
     }
@@ -213,8 +220,12 @@ class Account extends EventEmitter {
   // It would gives that responsability to createAccount to create
   // (and therefore push to accounts).
   async init(wallet) {
+    if (this.state.isInitialized) {
+      return true;
+    }
     await _addAccountToWallet(this, wallet);
     await _initializeAccount(this, wallet.plugins);
+    return true;
   }
 
   async isInitialized() {
@@ -402,7 +413,6 @@ Account.prototype.getWorker = require('./methods/getWorker');
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 Account.prototype.injectPlugin = require('./methods/injectPlugin');
 Account.prototype.importTransactions = require('./methods/importTransactions');
-Account.prototype.importBlockHeader = require('./methods/importBlockHeader');
 Account.prototype.createPathsForTransactions = require('./methods/createPathsForTransactions');
 Account.prototype.generateNewPaths = require('./methods/generateNewPaths');
 Account.prototype.addPathsToStore = require('./methods/addPathsToStore');

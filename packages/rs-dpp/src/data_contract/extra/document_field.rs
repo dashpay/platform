@@ -126,6 +126,50 @@ impl DocumentFieldType {
         }
     }
 
+    /// The middle size rounded down halfway between min and max size
+    pub fn middle_size(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_size().unwrap();
+        let max_size = self.max_size().unwrap();
+        Some((min_size + max_size) / 2)
+    }
+
+    /// The middle size rounded up halfway between min and max size
+    pub fn middle_size_ceil(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_size().unwrap();
+        let max_size = self.max_size().unwrap();
+        Some((min_size + max_size + 1) / 2)
+    }
+
+    /// The middle size rounded down halfway between min and max byte size
+    pub fn middle_byte_size(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_byte_size().unwrap();
+        let max_size = self.max_byte_size().unwrap();
+        Some((min_size + max_size) / 2)
+    }
+
+    /// The middle size rounded up halfway between min and max byte size
+    pub fn middle_byte_size_ceil(&self) -> Option<u16> {
+        match self {
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            _ => {}
+        }
+        let min_size = self.min_byte_size().unwrap() as u32;
+        let max_size = self.max_byte_size().unwrap() as u32;
+        Some(((min_size + max_size + 1) / 2) as u16)
+    }
+
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
         let min_size = self.min_size().unwrap();
         let max_size = self.max_size().unwrap();
@@ -450,26 +494,23 @@ impl DocumentFieldType {
                 if let Value::Map(map) = value {
                     let mut value_map = cbor_owned_map_to_btree_map(map);
                     let mut r_vec = vec![];
-                    inner_fields
-                        .into_iter()
-                        .map(|(key, field)| {
-                            if let Some(value) = value_map.remove(key) {
-                                let mut serialized_value = field
-                                    .document_type
-                                    .encode_value_with_size(value, field.required)?;
-                                r_vec.append(&mut serialized_value);
-                                Ok(())
-                            } else if field.required {
-                                Err(ContractError::MissingRequiredKey(
-                                    "a required field is not present",
-                                ))
-                            } else {
-                                // We don't have something that wasn't required
-                                r_vec.push(0);
-                                Ok(())
-                            }
-                        })
-                        .collect::<Result<(), ContractError>>()?;
+                    inner_fields.iter().try_for_each(|(key, field)| {
+                        if let Some(value) = value_map.remove(key) {
+                            let mut serialized_value = field
+                                .document_type
+                                .encode_value_with_size(value, field.required)?;
+                            r_vec.append(&mut serialized_value);
+                            Ok(())
+                        } else if field.required {
+                            Err(ContractError::MissingRequiredKey(
+                                "a required field is not present",
+                            ))
+                        } else {
+                            // We don't have something that wasn't required
+                            r_vec.push(0);
+                            Ok(())
+                        }
+                    })?;
                     Ok(r_vec)
                 } else {
                     Err(get_field_type_matching_error())
@@ -621,26 +662,23 @@ impl DocumentFieldType {
                     value.as_map().ok_or_else(get_field_type_matching_error)?,
                 );
                 let mut r_vec = vec![];
-                inner_fields
-                    .iter()
-                    .map(|(key, field)| {
-                        if let Some(value) = value_map.get(key) {
-                            let value = field
-                                .document_type
-                                .encode_value_ref_with_size(value, field.required)?;
-                            r_vec.extend(value.as_slice());
-                            Ok(())
-                        } else if field.required {
-                            Err(ContractError::MissingRequiredKey(
-                                "a required field is not present",
-                            ))
-                        } else {
-                            // We don't have something that wasn't required
-                            r_vec.push(0);
-                            Ok(())
-                        }
-                    })
-                    .collect::<Result<(), ContractError>>()?;
+                inner_fields.iter().try_for_each(|(key, field)| {
+                    if let Some(value) = value_map.get(key) {
+                        let value = field
+                            .document_type
+                            .encode_value_ref_with_size(value, field.required)?;
+                        r_vec.extend(value.as_slice());
+                        Ok(())
+                    } else if field.required {
+                        Err(ContractError::MissingRequiredKey(
+                            "a required field is not present",
+                        ))
+                    } else {
+                        // We don't have something that wasn't required
+                        r_vec.push(0);
+                        Ok(())
+                    }
+                })?;
                 Ok(r_vec)
             }
             DocumentFieldType::Array(array_field_type) => {
@@ -648,7 +686,7 @@ impl DocumentFieldType {
                     let mut r_vec = array.len().encode_var_vec();
 
                     array
-                        .into_iter()
+                        .iter()
                         .map(|value| {
                             let mut serialized_value =
                                 array_field_type.encode_value_ref_with_size(value)?;
@@ -673,7 +711,7 @@ impl DocumentFieldType {
         if value.is_null() {
             return Ok(vec![]);
         }
-        return match self {
+        match self {
             DocumentFieldType::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
@@ -762,7 +800,7 @@ impl DocumentFieldType {
                     "we should never try encoding an array",
                 ))
             }
-        };
+        }
     }
 
     // Given a field type and a value this function chooses and executes the right encoding method

@@ -1,4 +1,3 @@
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
@@ -118,26 +117,11 @@ class DataContractStoreRepository {
       );
     }
 
-    const result = await this.storage.getDrive().fetchContract(
+    const [dataContract, feeResult] = await this.storage.getDrive().fetchContract(
       id,
       options && options.blockInfo ? options.blockInfo.epoch : undefined,
       Boolean(options.useTransaction),
     );
-
-    if (result.length === 0) {
-      return new StorageResult(
-        null,
-        [],
-      );
-    }
-
-    const [encodedDataContract, feeResult] = result;
-
-    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
-      encodedDataContract,
-    );
-
-    rawDataContract.protocolVersion = protocolVersion;
 
     const operations = [];
     if (feeResult) {
@@ -145,7 +129,7 @@ class DataContractStoreRepository {
     }
 
     return new StorageResult(
-      new DataContract(rawDataContract),
+      dataContract,
       operations,
     );
   }
