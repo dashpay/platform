@@ -100,8 +100,6 @@ describe('validatePublicKeysFactory', () => {
 
       const [error] = result.getErrors();
 
-      console.dir(error.getParams());
-
       expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('id');
