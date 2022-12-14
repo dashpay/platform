@@ -12,12 +12,14 @@ const expectError = {
     const wasmDpp = await loadWasmDpp();
     if (!errorClass) {
       // eslint-disable-next-line no-param-reassign
-      errorClass = wasmDpp.ValidationResult;
+      errorClass = TypeError;
     }
     expect(result).to.be.an.instanceOf(wasmDpp.ValidationResult);
     expect(result.getErrors()).to.have.lengthOf(count);
 
-    result.getErrors().forEach((error) => expect(error).to.be.an.instanceOf(errorClass));
+    result.getErrors().forEach((error) => {
+      expect(error).to.be.an.instanceOf(errorClass);
+    });
   },
 
   /**
