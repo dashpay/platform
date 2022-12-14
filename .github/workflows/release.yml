@@ -412,3 +412,92 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+
+  release-dashmate:
+    name: Release Dashmate packages
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-12]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Install macOS build deps
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm docker colima
+          colima start
+          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y nsis
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      # Workaround for lack of yarn 3 support in oclif
+      - name: Patch package-json
+        run: |
+          echo "$(jq '. |= .+ { "dependencies": {"debug": "^4.3.4", "lodash": "^4.17.21", "strip-ansi": "^6.0.1", "fs-extra": "^8.1" },}' package.json)" > package.json
+
+      - name: Install dependencies
+        run: yarn install
+        env:
+          YARN_ENABLE_IMMUTABLE_INSTALLS: false
+
+      - name: Build packages
+        run: yarn build
+        env:
+          CARGO_BUILD_PROFILE: release
+      
+      - name: Generate manifest JSON
+        run: yarn workspace dashmate oclif manifest
+
+      - name: Pack tarballs
+        run: yarn workspace dashmate oclif pack tarballs
+        if: runner.os == 'Linux'
+
+      - name: Pack Linux deb
+        run: |
+          yarn install
+          yarn workspace dashmate oclif pack deb
+        if: runner.os == 'Linux'
+
+      - name: Pack Windows exe
+        run: |
+          yarn install
+          yarn workspace dashmate oclif pack win
+        if: runner.os == 'Linux'
+
+      - name: Pack macos pkg
+        run: yarn workspace dashmate oclif pack macos
+        if: runner.os == 'macOS'
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dashmate
+          path: packages/dashmate/dist
