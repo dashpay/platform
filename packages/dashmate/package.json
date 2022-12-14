@@ -111,6 +111,9 @@
     ],
     "commands": "./src/commands",
     "bin": "dashmate",
+    "macos": {
+      "identifier": "org.dash.dashmate"
+    },
     "plugins": [
       "@oclif/plugin-help"
     ],
