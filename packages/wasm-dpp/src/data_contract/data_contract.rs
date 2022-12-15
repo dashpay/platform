@@ -33,14 +33,19 @@ impl std::convert::Into<DataContract> for DataContractWasm {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DataContractParameters {
+pub(crate) struct DataContractParameters {
     #[serde(rename = "$schema")]
     schema: String,
     #[serde(rename = "$id")]
     id: Vec<u8>,
     owner_id: Vec<u8>,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
     documents: serde_json::Value,
-    #[serde(rename = "$defs")]
+    #[serde(
+        skip_serializing_if = "serde_json::Value::is_null",
+        default,
+        rename = "$defs"
+    )]
     defs: serde_json::Value,
     protocol_version: u32,
     version: u32,
@@ -174,7 +179,10 @@ impl DataContractWasm {
                 }
                 definitions.insert(k, v);
             }
-            self.0.defs = definitions;
+            if definitions.is_empty() {
+                bail_js!("`defitions` cannot be empty");
+            }
+            self.0.defs = Some(definitions);
         } else {
             bail_js!("the parameter 'definitions' is not an JS object");
         }
@@ -227,12 +235,27 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        with_js_error!(self.0.serialize(&serializer))
+        let object = with_js_error!(self.0.serialize(&serializer))?;
+
+        js_sys::Reflect::set(
+            &object,
+            &Into::<JsValue>::into("$id".to_owned()),
+            &Into::<JsValue>::into(Buffer::from_bytes(&self.0.id.buffer)),
+        )
+        .expect("target is an object");
+        js_sys::Reflect::set(
+            &object,
+            &Into::<JsValue>::into("ownerId".to_owned()),
+            &Into::<JsValue>::into(Buffer::from_bytes(&self.0.owner_id.buffer)),
+        )
+        .expect("target is an object");
+        Ok(object)
     }
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        self.to_object()
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(self.0.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=toBuffer)]

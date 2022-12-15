@@ -4092,7 +4092,7 @@ fn test_query_a_b_c_d_e_contract() {
     let factory = DataContractFactory::new(1, data_contract_validator);
 
     let contract = factory
-        .create(owner_id, documents, None)
+        .create(owner_id, documents)
         .expect("data in fixture should be correct");
 
     let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

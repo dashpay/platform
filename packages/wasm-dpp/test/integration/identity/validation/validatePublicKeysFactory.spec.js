@@ -103,8 +103,6 @@ describe('validatePublicKeysFactory', () => {
       expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('id');
-
-      console.dir(error);
     });
 
     it('should be a number', () => {

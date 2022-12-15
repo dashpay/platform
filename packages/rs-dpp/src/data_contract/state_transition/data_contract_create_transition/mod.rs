@@ -80,6 +80,10 @@ impl DataContractCreateTransition {
         &self.data_contract
     }
 
+    pub fn get_protocol_version(&self) -> u32 {
+        self.protocol_version
+    }
+
     pub fn set_data_contract(&mut self, data_contract: DataContract) {
         self.data_contract = data_contract;
     }
