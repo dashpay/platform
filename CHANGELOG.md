@@ -15,6 +15,8 @@
 
 * fix entrypoint path in release workflow ([#671](https://github.com/dashpay/platform/issues/671))
 
+
+
 ## [0.24.0-dev.9](https://github.com/dashpay/platform/compare/v0.23.0...v0.24.0-dev.9) (2022-12-14)
 
 
