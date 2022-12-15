@@ -55,7 +55,7 @@ jobs:
       - name: Build packages
         run: yarn build
         env:
-          CARGO_BUILD_PROFILE: release
+          - CARGO_BUILD_PROFILE: release
 
       - name: Download prebuild artifacts
         uses: actions/download-artifact@v2
@@ -734,7 +734,7 @@ jobs:
         uses: docker://messense/rust-musl-cross:x86_64-musl
         with:
           workdir: /github/workspace/
-          entrypoint: node/docker/build.sh
+          entrypoint: packages/rs-drive-nodejs/docker/build.sh
           args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} -l ${{ steps.set-libc.outputs.result }}
 
       - name: Build for Linux (aarch64)
@@ -742,7 +742,7 @@ jobs:
         uses: docker://messense/rust-musl-cross:aarch64-musl
         with:
           workdir: /github/workspace/
-          entrypoint: node/docker/build.sh
+          entrypoint: packages/rs-drive-nodejs/docker/build.sh
           args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} -l ${{ steps.set-libc.outputs.result }}
 
       - name: Build for Mac OS
