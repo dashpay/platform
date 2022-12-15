@@ -38,7 +38,7 @@ use crate::abci::messages::{
 };
 use crate::block::{BlockExecutionContext, BlockInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
-use rs_drive::grovedb::TransactionArg;
+use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -123,7 +123,9 @@ impl TenderdashAbci for Platform {
         self.drive.update_withdrawal_statuses(
             request.last_synced_core_height,
             request.core_chain_locked_height,
-            request.block_time_ms as f64,
+            request.block_time_ms,
+            request.block_height,
+            epoch_info.current_epoch_index,
             transaction,
         )?;
 
@@ -159,8 +161,11 @@ impl TenderdashAbci for Platform {
             ),
         ))?;
 
-        self.drive
-            .pool_withdrawals_into_transactions(request.block_time_ms as f64, transaction)?;
+        self.drive.pool_withdrawals_into_transactions(
+            request.block_time_ms,
+            request.block_height,
+            transaction,
+        )?;
 
         // Process fees
         let process_block_fees_result = self.process_block_fees(
@@ -196,12 +201,10 @@ mod tests {
         use dashcore::hashes::hex::FromHex;
         use dashcore::BlockHash;
         use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
-        use rs_drive::common::helpers::identities::create_test_masternode_identities;
-        use rs_drive::drive::batch::GroveDbOpBatch;
-        use rs_drive::rpc::core::MockCoreRPCLike;
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee::FeeResult;
+        use drive::rpc::core::MockCoreRPCLike;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
         use std::ops::Div;
@@ -403,6 +406,8 @@ mod tests {
 
                     let block_end_request = BlockEndRequest {
                         fees: FeeResult::from_fees(storage_fees_per_block, 1600),
+                        block_time_ms: 1,
+                        block_height: 1,
                     };
 
                     let block_end_response = platform
@@ -562,6 +567,7 @@ mod tests {
                             storage_fees: storage_fees_per_block,
                         },
                         block_time_ms: 0,
+                        block_height: 1,
                     };
 
                     let block_end_response = platform
@@ -602,6 +608,8 @@ mod tests {
 
                     let block_end_request = BlockEndRequest {
                         fees: FeeResult::from_fees(storage_fees_per_block, 1600),
+                        block_time_ms: 1,
+                        block_height: 1,
                     };
 
                     let block_end_response = platform

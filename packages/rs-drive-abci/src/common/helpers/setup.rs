@@ -33,9 +33,10 @@
 //!
 
 use crate::platform::Platform;
-use rs_drive::{
+use drive::{
     contract::DataContract,
-    drive::{flags::StorageFlags, Drive},
+    drive::{block_info::BlockInfo, Drive},
+    fee_pools::epochs::Epoch,
     query::TransactionArg,
 };
 use tempfile::TempDir;
@@ -69,9 +70,13 @@ pub fn setup_system_data_contract(
         .apply_contract_cbor(
             data_contract.to_cbor().unwrap(),
             Some(data_contract.id.to_buffer()),
-            1f64,
+            BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            },
             true,
-            StorageFlags { epoch: 1 },
+            None,
             transaction,
         )
         .unwrap();

@@ -36,7 +36,6 @@ use std::ops::RangeFull;
 use dashcore::consensus::Encodable;
 use dashcore::{Script, TxOut};
 use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{AssetUnlockBaseTransactionInfo, AssetUnlockBasePayload};
-use dashcore_rpc::RpcApi;
 
 use dpp::contracts::withdrawals_contract;
 use dpp::identity::convert_credits_to_satoshi;
@@ -44,6 +43,7 @@ use dpp::prelude::{DataContract, Document, Identifier};
 use dpp::util::hash;
 use dpp::util::json_value::JsonValueExt;
 use dpp::util::string_encoding::Encoding;
+use grovedb::query_result_type::QueryResultElement;
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
 
@@ -51,11 +51,14 @@ use serde_json::{json, Number, Value as JsonValue};
 
 use crate::common;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::flags::StorageFlags;
+use crate::drive::block_info::BlockInfo;
+use crate::drive::contract::ContractFetchInfo;
+use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use crate::fee_pools::epochs::Epoch;
 
 /// constant id for transaction counter
 pub const WITHDRAWAL_TRANSACTIONS_COUNTER_ID: [u8; 1] = [0];
@@ -93,32 +96,47 @@ impl Drive {
         &self,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
+        let mut inner_query = Query::new();
+
+        inner_query.insert_all();
+
+        let expired_index_query = PathQuery::new(
+            vec![
+                vec![RootTree::WithdrawalTransactions as u8],
+                WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS.to_vec(),
+            ],
+            SizedQuery::new(inner_query, Some(1), None),
+        );
+
         let (expired_index_elements, _) = self
             .grove
-            .query_raw(path_query, QueryKeyElementPairResultType, transaction)
+            .query_raw(
+                &expired_index_query,
+                QueryKeyElementPairResultType,
+                transaction,
+            )
             .unwrap()?;
 
         if expired_index_elements.len() > 0 {
             let expired_index_element_pair = expired_index_elements.into_iter().next().unwrap();
 
-            if let KeyElementPairResultItem((key, expired_index_element)) =
+            if let QueryResultElement::KeyElementPairResultItem((key, Element::Item(bytes, _))) =
                 expired_index_element_pair
             {
-                if let Element::Item(bytes, _) = expired_index_element {
-                    let index = u64::from_be_bytes(bytes);
+                let index = u64::from_be_bytes(bytes.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Transaction index has wrong length",
+                    ))
+                })?);
 
-                    self.grove.delete(
-                        vec![
-                            vec![RootTree::WithdrawalTransactions as u8],
-                            WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS,
-                        ],
-                        key,
-                        None,
-                        transaction,
-                    )?;
+                let path: [&[u8]; 2] = [
+                    Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+                    &WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS,
+                ];
 
-                    return Ok(index);
-                }
+                self.grove.delete(path, &key, None, transaction).unwrap()?;
+
+                return Ok(index);
             }
         }
 
@@ -159,7 +177,9 @@ impl Drive {
         &self,
         documents: &mut Vec<Document>,
         data_contract: &DataContract,
-        block_time: f64,
+        block_time: u64,
+        block_height: u64,
+        current_epoch_index: u16,
         transaction: TransactionArg,
     ) -> Result<Vec<WithdrawalTransaction>, Error> {
         let mut withdrawals: Vec<(Vec<u8>, Vec<u8>)> = vec![];
@@ -268,10 +288,14 @@ impl Drive {
                     ))
                 })?,
                 withdrawals_contract::types::WITHDRAWAL,
-                Some(&document.owner_id.to_buffer()),
-                block_time,
+                Some(document.owner_id.to_buffer()),
+                BlockInfo {
+                    time_ms: block_time,
+                    height: block_height,
+                    epoch: Epoch::new(current_epoch_index),
+                },
                 true,
-                StorageFlags { epoch: 1 },
+                None,
                 transaction,
             )?;
         }
@@ -282,10 +306,12 @@ impl Drive {
     ///
     pub fn pool_withdrawals_into_transactions(
         &self,
-        block_time: f64,
+        block_time: u64,
+        block_height: u64,
+        current_epoch_index: u16,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let (data_contract, _) = self.fetch_contract(
+        let maybe_data_contract = self.get_cached_contract_with_fetch_info(
             Identifier::from_string(
                 &withdrawals_contract::system_ids().contract_id,
                 Encoding::Base58,
@@ -297,10 +323,9 @@ impl Drive {
             })?
             .to_buffer(),
             transaction,
-            self.cache.borrow_mut(),
-        )?;
+        );
 
-        let data_contract = data_contract.ok_or(Error::Drive(
+        let contract_fetch_info = maybe_data_contract.ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
         ))?;
 
@@ -311,8 +336,10 @@ impl Drive {
 
         let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
             &mut documents,
-            data_contract.borrow(),
+            &contract_fetch_info.contract,
             block_time,
+            block_height,
+            current_epoch_index,
             transaction,
         )?;
 
@@ -425,10 +452,12 @@ impl Drive {
         &self,
         last_synced_core_height: u64,
         core_chain_locked_height: u64,
-        block_time: f64,
+        block_time: u64,
+        block_height: u64,
+        current_epoch_index: u16,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let (data_contract, _) = self.fetch_contract(
+        let maybe_data_contract = self.get_cached_contract_with_fetch_info(
             Identifier::from_string(
                 &withdrawals_contract::system_ids().contract_id,
                 Encoding::Base58,
@@ -440,10 +469,9 @@ impl Drive {
             })?
             .to_buffer(),
             transaction,
-            self.cache.borrow_mut(),
-        )?;
+        );
 
-        let data_contract = data_contract.ok_or(Error::Drive(
+        let contract_fetch_info = maybe_data_contract.ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
         ))?;
 
@@ -488,16 +516,20 @@ impl Drive {
                 } else {
                     let bytes = transaction_index.to_be_bytes();
 
-                    self.grove.insert(
-                        vec![
-                            vec![RootTree::WithdrawalTransactions as u8],
-                            WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS,
-                        ],
-                        &bytes,
-                        Element::Item(bytes, None),
-                        None,
-                        transaction,
-                    )?;
+                    let path = [
+                        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions).as_slice(),
+                        &WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS,
+                    ];
+
+                    self.grove
+                        .insert(
+                            path,
+                            &bytes,
+                            Element::Item(bytes.to_vec(), None),
+                            None,
+                            transaction,
+                        )
+                        .unwrap()?;
 
                     withdrawals_contract::statuses::EXPIRED
                 };
@@ -522,16 +554,20 @@ impl Drive {
                             "Can't cbor withdrawal document",
                         ))
                     })?,
-                    &data_contract.to_cbor().map_err(|_| {
+                    &contract_fetch_info.contract.to_cbor().map_err(|_| {
                         Error::Drive(DriveError::CorruptedCodeExecution(
                             "Can't cbor withdrawal data contract",
                         ))
                     })?,
                     withdrawals_contract::types::WITHDRAWAL,
-                    Some(&document.owner_id.to_buffer()),
-                    block_time,
+                    Some(document.owner_id.to_buffer()),
+                    BlockInfo {
+                        time_ms: block_time,
+                        height: block_height,
+                        epoch: Epoch::new(current_epoch_index),
+                    },
                     true,
-                    StorageFlags { epoch: 1 },
+                    None,
                     transaction,
                 )?;
             }
@@ -624,14 +660,16 @@ impl Drive {
                 self.batch_delete(
                     withdrawals_path,
                     id,
-                    true,
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
                     transaction,
                     &mut batch_operations,
                 )?;
             }
 
             self.apply_batch_drive_operations(
-                true,
+                None,
                 transaction,
                 batch_operations,
                 &mut drive_operations,
@@ -703,7 +741,9 @@ mod tests {
                 .build_withdrawal_transactions_from_documents(
                     &mut documents,
                     &data_contract,
-                    1f64,
+                    1u64,
+                    1u64,
+                    1,
                     Some(&transaction),
                 )
                 .expect("to build transactions from documents");

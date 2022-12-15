@@ -31,8 +31,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 
-use dashcore_rpc::{Auth, Client};
-use grovedb::{GroveDb, Transaction, TransactionArg};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
