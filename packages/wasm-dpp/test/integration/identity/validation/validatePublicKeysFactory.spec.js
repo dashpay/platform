@@ -15,13 +15,11 @@ describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;
   let bls;
-  let PublicKeysValidator;
   let publicKeysValidator;
-  let InvalidIdentityPublicKeyDataErrorWasm;
+
+  let PublicKeysValidator;
   let PublicKeyValidationError;
-  let KeyType;
-  let KeyPurpose;
-  let KeySecurityLevel;
+  let IdentityPublicKey;
 
   let DuplicatedIdentityPublicKeyError;
   let DuplicatedIdentityPublicKeyIdError;
@@ -32,8 +30,8 @@ describe('validatePublicKeysFactory', () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
     ({
-      PublicKeysValidator, KeyType, KeyPurpose, KeySecurityLevel,
-      InvalidIdentityPublicKeyDataError: InvalidIdentityPublicKeyDataErrorWasm,
+      PublicKeysValidator, IdentityPublicKey,
+      InvalidIdentityPublicKeyDataError,
       DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
       InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
       PublicKeyValidationError,
@@ -337,8 +335,8 @@ describe('validatePublicKeysFactory', () => {
   });
 
   it('should return invalid result if key has an invalid combination of purpose and security level', async () => {
-    rawPublicKeys[1].purpose = KeyPurpose.ENCRYPTION;
-    rawPublicKeys[1].securityLevel = KeySecurityLevel.MASTER;
+    rawPublicKeys[1].purpose = IdentityPublicKey.PURPOSES.ENCRYPTION;
+    rawPublicKeys[1].securityLevel = IdentityPublicKey.SECURITY_LEVELS.MASTER;
 
     const result = validatePublicKeys(rawPublicKeys);
 
@@ -361,7 +359,7 @@ describe('validatePublicKeysFactory', () => {
   it('should pass valid BLS12_381 public key', () => {
     rawPublicKeys = [{
       id: 0,
-      type: KeyType.BLS12_381,
+      type: IdentityPublicKey.TYPES.BLS12_381,
       purpose: 0,
       securityLevel: 0,
       readOnly: true,
@@ -376,7 +374,7 @@ describe('validatePublicKeysFactory', () => {
   it('should pass valid ECDSA_HASH160 public key', () => {
     rawPublicKeys = [{
       id: 0,
-      type: KeyType.ECDSA_HASH160,
+      type: IdentityPublicKey.TYPES.ECDSA_HASH160,
       purpose: 0,
       securityLevel: 0,
       readOnly: true,
@@ -391,7 +389,7 @@ describe('validatePublicKeysFactory', () => {
   it('should return invalid result if BLS12_381 public key is invalid', async () => {
     rawPublicKeys = [{
       id: 0,
-      type: KeyType.BLS12_381,
+      type: IdentityPublicKey.TYPES.BLS12_381,
       purpose: 0,
       securityLevel: 0,
       readOnly: true,
@@ -400,7 +398,7 @@ describe('validatePublicKeysFactory', () => {
 
     const result = publicKeysValidator.validateKeys(rawPublicKeys);
 
-    await await expectValidationError(result, InvalidIdentityPublicKeyDataErrorWasm);
+    await expectValidationError(result, InvalidIdentityPublicKeyDataError);
 
     const [error] = result.getErrors();
 

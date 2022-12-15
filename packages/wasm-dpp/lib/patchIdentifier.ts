@@ -1,4 +1,4 @@
-import * as dpp_module from "../wasm/wasm_dpp";
+import * as dpp_module from "../lib/dpp";
 // import { inspect } from 'util';
 
 export default function (dppModule: typeof dpp_module) {
