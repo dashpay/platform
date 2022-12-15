@@ -33,7 +33,15 @@
 //! epoch changes.
 //!
 
-use crate::abci::messages::BlockFeeResult;
+use std::option::Option::None;
+
+use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use drive::drive::fee_pools::pending_updates::add_update_pending_epoch_pool_update_operations;
+use drive::fee_pools::epochs::Epoch;
+use drive::grovedb::TransactionArg;
+
+use crate::abci::messages::BlockFees;
 use crate::block::BlockInfo;
 use crate::error::Error;
 use crate::execution::fee_pools::constants::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
@@ -41,13 +49,6 @@ use crate::execution::fee_pools::distribute_storage_pool::StorageDistributionLef
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
-use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
-use drive::drive::fee_pools::pending_updates::add_update_pending_epoch_pool_update_operations;
-use drive::fee::FeeResult;
-use drive::fee_pools::epochs::Epoch;
-use drive::grovedb::TransactionArg;
-use std::option::Option::None;
 
 /// From the Dash Improvement Proposal:
 
@@ -80,7 +81,7 @@ impl Platform {
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
-        block_fees: &BlockFeeResult,
+        block_fees: &BlockFees,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<Option<StorageDistributionLeftoverCredits>, Error> {
@@ -137,7 +138,7 @@ impl Platform {
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
-        block_fees: BlockFeeResult,
+        block_fees: BlockFees,
         transaction: TransactionArg,
     ) -> Result<ProcessedBlockFeesResult, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index);
@@ -208,7 +209,7 @@ impl Platform {
             block_fees.fee_refunds
         };
 
-        add_update_pending_epoch_pool_update_operations(&mut batch, pending_epoch_pool_updates)?;
+        add_update_pending_epoch_pool_update_operations(&mut batch, pending_epoch_pool_updates);
 
         self.drive.grove_apply_batch(batch, false, transaction)?;
 
@@ -221,22 +222,18 @@ impl Platform {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use crate::execution::fee_pools::epoch::EPOCH_CHANGE_TIME_MS;
+    use chrono::Utc;
+    use rust_decimal::prelude::ToPrimitive;
+
     mod add_process_epoch_change_operations {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use chrono::Utc;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use rust_decimal::prelude::ToPrimitive;
+        use super::*;
 
         mod helpers {
-            use crate::abci::messages::BlockFeeResult;
-            use crate::block::BlockInfo;
-            use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-            use crate::platform::Platform;
-            use drive::drive::batch::GroveDbOpBatch;
-            use drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_EPOCHS;
-            use drive::fee::FeeResult;
-            use drive::fee_pools::epochs::Epoch;
-            use drive::grovedb::TransactionArg;
+            use super::*;
 
             /// Process and validate an epoch change
             pub fn process_and_validate_epoch_change(
@@ -252,7 +249,7 @@ mod tests {
 
                 // Add some storage fees to distribute next time
                 if should_distribute {
-                    let block_fees = BlockFeeResult::from_fees(1000000000, 1000);
+                    let block_fees = BlockFees::from_fees(1000000000, 1000);
 
                     let mut batch = GroveDbOpBatch::new();
 
@@ -290,12 +287,15 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
+                let block_fees = BlockFees::default();
+
                 let mut batch = GroveDbOpBatch::new();
 
                 let distribute_storage_pool_result = platform
                     .add_process_epoch_change_operations(
                         &block_info,
                         &epoch_info,
+                        &block_fees,
                         transaction,
                         &mut batch,
                     )
@@ -414,21 +414,12 @@ mod tests {
     }
 
     mod process_block_fees {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use chrono::Utc;
+        use super::*;
+
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use rust_decimal::prelude::ToPrimitive;
 
         mod helpers {
-            use crate::abci::messages::BlockFeeResult;
-            use crate::block::BlockInfo;
-            use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-            use crate::platform::Platform;
-            use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-            use drive::fee::FeeResult;
-            use drive::fee_pools::epochs::Epoch;
-            use drive::grovedb::TransactionArg;
+            use super::*;
 
             /// Process and validate block fees
             pub fn process_and_validate_block_fees(
@@ -456,10 +447,10 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
-                let block_fees = BlockFeeResult::from_fees(1000, 10000);
+                let block_fees = BlockFees::from_fees(1000, 10000);
 
                 let distribute_storage_pool_result = platform
-                    .process_block_fees(&block_info, &epoch_info, &block_fees, transaction)
+                    .process_block_fees(&block_info, &epoch_info, block_fees.clone(), transaction)
                     .expect("should process block fees");
 
                 // Should process epoch change

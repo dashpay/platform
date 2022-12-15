@@ -83,13 +83,13 @@ pub struct BlockBeginResponse {
 pub struct BlockEndRequest {
     /// The fees for the block
     /// Avoid of serialization to optimize transfer through Node.JS binding
-    pub fees: BlockFeeResult,
+    pub fees: BlockFees,
 }
 
 /// Aggregated fees after block execution
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct BlockFeeResult {
+pub struct BlockFees {
     /// Processing fee
     pub processing_fee: u64,
     /// Storage fee
@@ -98,7 +98,7 @@ pub struct BlockFeeResult {
     pub fee_refunds: CreditsPerEpoch,
 }
 
-impl BlockFeeResult {
+impl BlockFees {
     /// Create block fee result from fees
     pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
         Self {

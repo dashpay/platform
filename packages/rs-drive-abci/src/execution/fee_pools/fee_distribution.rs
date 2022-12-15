@@ -34,7 +34,7 @@
 
 use crate::error::execution::ExecutionError;
 
-use crate::abci::messages::BlockFeeResult;
+use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
@@ -384,7 +384,7 @@ impl Platform {
     pub fn add_distribute_block_fees_into_pools_operations(
         &self,
         current_epoch: &Epoch,
-        block_fees: &BlockFeeResult,
+        block_fees: &BlockFees,
         cached_aggregated_storage_fees: Option<u64>,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
@@ -1304,7 +1304,7 @@ mod tests {
     }
 
     mod add_distribute_block_fees_into_pools_operations {
-        use crate::abci::messages::BlockFeeResult;
+        use crate::abci::messages::BlockFees;
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee::FeeResult;
@@ -1327,7 +1327,7 @@ mod tests {
             platform
                 .add_distribute_block_fees_into_pools_operations(
                     &current_epoch_tree,
-                    &BlockFeeResult::from_fees(storage_fees, processing_fees),
+                    &BlockFees::from_fees(storage_fees, processing_fees),
                     None,
                     Some(&transaction),
                     &mut batch,
@@ -1381,7 +1381,7 @@ mod tests {
             platform
                 .add_distribute_block_fees_into_pools_operations(
                     &current_epoch_tree,
-                    &BlockFeeResult::from_fees(storage_fees, processing_fees),
+                    &BlockFees::from_fees(storage_fees, processing_fees),
                     None,
                     Some(&transaction),
                     &mut batch,

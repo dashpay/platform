@@ -18,8 +18,8 @@ use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
-    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFeeResult,
-    InitChainRequest, Serializable,
+    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
+    Serializable,
 };
 use drive_abci::platform::Platform;
 use neon::prelude::*;
@@ -2072,7 +2072,7 @@ impl PlatformWrapper {
 
             let result = transaction_result.and_then(|transaction_arg| {
                 let request = BlockEndRequest {
-                    fees: BlockFeeResult {
+                    fees: BlockFees {
                         processing_fee,
                         storage_fee,
                         fee_refunds,

@@ -192,7 +192,7 @@ mod tests {
         use std::ops::Div;
 
         use crate::abci::messages::{
-            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFeeResult,
+            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
             InitChainRequest,
         };
         use crate::common::helpers::setup::setup_platform;
@@ -360,7 +360,7 @@ mod tests {
                     }
 
                     let block_end_request = BlockEndRequest {
-                        fees: BlockFeeResult::from_fees(storage_fees_per_block, 1600),
+                        fees: BlockFees::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform
@@ -512,7 +512,7 @@ mod tests {
                     );
 
                     let block_end_request = BlockEndRequest {
-                        fees: BlockFeeResult::from_fees(storage_fees_per_block, 1600),
+                        fees: BlockFees::from_fees(storage_fees_per_block, 1600),
                     };
 
                     let block_end_response = platform
