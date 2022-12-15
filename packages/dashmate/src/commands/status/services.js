@@ -23,7 +23,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
     config,
     getServicesScope,
   ) {
-    const scope = await getServicesScope();
+    const scope = await getServicesScope(config);
 
     const outputRows = [];
 

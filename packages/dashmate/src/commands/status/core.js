@@ -25,7 +25,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
     config,
     getCoreScope,
   ) {
-    const scope = await getCoreScope();
+    const scope = await getCoreScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
@@ -33,7 +33,8 @@ class CoreStatusCommand extends ConfigBaseCommand {
         network,
         chain,
         latestVersion,
-        status,
+        dockerStatus,
+        serviceStatus,
         syncAsset,
         peersCount,
         p2pService,
@@ -50,9 +51,10 @@ class CoreStatusCommand extends ConfigBaseCommand {
         'Network': network,
         'Version': colors.status(version, latestVersion)(version),
         'Chain': chain,
-        'Status': colors.status(status)(status),
+        'Docker Status': dockerStatus,
+        'Service Status': colors.status(serviceStatus)(serviceStatus),
         'Difficulty': difficulty,
-        'Latest version': latestVersion,
+        'Latest version': latestVersion || 'N/A',
         'Sync asset': syncAsset,
         'Peer count': peersCount,
         'P2P service': p2pService,
@@ -60,7 +62,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
         'RPC service': rpcService,
         'Block height': colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight),
         'Header height': headerHeight,
-        'Verification Progress': `${verificationProgress * 100}%`,
+        'Verification Progress': `${(verificationProgress * 100).toFixed(2)}%`,
         'Remote Block Height': remoteBlockHeight || 'N/A',
       };
 

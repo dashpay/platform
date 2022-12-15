@@ -10,6 +10,8 @@ const request = async (url) => {
     });
   } catch (e) {
     if (e.name === 'FetchError' || e.name === 'AbortError') {
+      // eslint-disable-next-line no-console
+      console.warn(`Could not fetch: ${e}`);
       return null;
     }
     throw e;
@@ -50,6 +52,13 @@ module.exports = {
   github: {
     release: async (repoSlug) => {
       const json = await requestJSON(`https://api.github.com/repos/${repoSlug}/releases/latest`);
+
+      if (json.message) {
+        // eslint-disable-next-line no-console
+        console.warn(`Github API: ${json.message}`);
+
+        return null;
+      }
 
       return json.tag_name.substring(1);
     },

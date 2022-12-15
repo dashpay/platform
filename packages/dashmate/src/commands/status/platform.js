@@ -38,7 +38,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
 
     // Collect platform data
-    const scope = await getPlatformScope();
+    const scope = await getPlatformScope(config);
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (!scope.coreIsSynced) {

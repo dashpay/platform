@@ -65,53 +65,55 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
     platform.rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
-    try {
-      const httpPort = config.get('platform.dapi.envoy.http.port');
-      const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
-      const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+    if (serviceStatus === ServiceStatusEnum.up) {
+      try {
+        const httpPort = config.get('platform.dapi.envoy.http.port');
+        const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
+        const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
 
-      const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
-        fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
-        fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
-      ]);
+        const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
+          fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
+          fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
+        ]);
 
-      const [httpPortState, gRPCPortState, p2pPortState] = await Promise.all([
-        providers.mnowatch.checkPortStatus(httpPort),
-        providers.mnowatch.checkPortStatus(gRPCPort),
-        providers.mnowatch.checkPortStatus(p2pPort),
-      ]);
+        const [httpPortState, gRPCPortState, p2pPortState] = await Promise.all([
+          providers.mnowatch.checkPortStatus(httpPort),
+          providers.mnowatch.checkPortStatus(gRPCPort),
+          providers.mnowatch.checkPortStatus(p2pPort),
+        ]);
 
-      const [tenderdashStatus, tenderdashNetInfo] = await Promise.all([
-        tenderdashStatusResponse.json(),
-        tenderdashNetInfoResponse.json(),
-      ]);
+        const [tenderdashStatus, tenderdashNetInfo] = await Promise.all([
+          tenderdashStatusResponse.json(),
+          tenderdashNetInfoResponse.json(),
+        ]);
 
-      platform.httpPortState = httpPortState;
-      platform.gRPCPortState = gRPCPortState;
-      platform.p2pPortState = p2pPortState;
+        platform.httpPortState = httpPortState;
+        platform.gRPCPortState = gRPCPortState;
+        platform.p2pPortState = p2pPortState;
 
-      const { version, network } = tenderdashStatus.node_info;
+        const { version, network } = tenderdashStatus.node_info;
 
-      const catchingUp = tenderdashStatus.sync_info.catching_up;
-      const lastBlockHeight = tenderdashStatus.sync_info.latest_block_height;
-      const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
+        const catchingUp = tenderdashStatus.sync_info.catching_up;
+        const lastBlockHeight = tenderdashStatus.sync_info.latest_block_height;
+        const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
 
-      const platformPeers = tenderdashNetInfo.n_peers;
+        const platformPeers = tenderdashNetInfo.n_peers;
 
-      platform.tenderdash.version = version;
-      platform.tenderdash.lastBlockHeight = lastBlockHeight;
-      platform.tenderdash.catchingUp = catchingUp;
-      platform.tenderdash.peers = platformPeers;
-      platform.tenderdash.network = network;
-      platform.tenderdash.latestAppHash = latestAppHash;
-    } catch (e) {
-      if (e.name === 'FetchError') {
-        platform.tenderdash.serviceStatus = ServiceStatusEnum.error;
+        platform.tenderdash.version = version;
+        platform.tenderdash.lastBlockHeight = lastBlockHeight;
+        platform.tenderdash.catchingUp = catchingUp;
+        platform.tenderdash.peers = platformPeers;
+        platform.tenderdash.network = network;
+        platform.tenderdash.latestAppHash = latestAppHash;
+      } catch (e) {
+        if (e.name === 'FetchError') {
+          platform.tenderdash.serviceStatus = ServiceStatusEnum.error;
 
-        // eslint-disable-next-line no-console
-        console.error(e);
-      } else {
-        throw e;
+          // eslint-disable-next-line no-console
+          console.error(e);
+        } else {
+          throw e;
+        }
       }
     }
 

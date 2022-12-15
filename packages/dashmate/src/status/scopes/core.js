@@ -51,6 +51,7 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
       difficulty: null,
       verificationProgress: null,
       sizeOnDisk: null,
+      syncAsset: null,
     };
 
     core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core');
@@ -69,6 +70,7 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
 
     const { AssetName: syncAsset } = mnsyncStatus.result;
     core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset);
+    core.syncAsset = syncAsset;
 
     const {
       chain, difficulty, blocks, headers, verificationprogress, size_on_disk,

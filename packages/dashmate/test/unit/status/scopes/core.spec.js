@@ -87,6 +87,7 @@ describe('getCoreScopeFactory', () => {
       expect(scope.p2pPortState).to.be.equal('OPEN');
       expect(scope.remoteBlockHeight).to.be.equal(1337);
       expect(scope.sizeOnDisk).to.be.equal(1337);
+      expect(scope.syncAsset).to.be.equal(MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED);
     });
 
     it('should throw ServiceIsNotRunning error if core is not started', async () => {

@@ -32,7 +32,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const scope = await getMasternodeScope();
+    const scope = await getMasternodeScope(config);
 
     const { core, masternode } = scope;
     const { verificationProgress } = core;

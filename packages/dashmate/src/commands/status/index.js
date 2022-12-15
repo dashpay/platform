@@ -81,7 +81,7 @@ class StatusCommand extends ConfigBaseCommand {
       plain['Platform Enabled'] = platform.enabled;
 
       if (platform.enabled) {
-        plain['Platform Status'] = colors.status(platform.tenderdash.serviceStatus)(platform.serviceStatus);
+        plain['Platform Status'] = colors.status(platform.tenderdash.serviceStatus)(platform.tenderdash.serviceStatus);
 
         if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
           plain['Platform Version'] = platform.tenderdash.version;
