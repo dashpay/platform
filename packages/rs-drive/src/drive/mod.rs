@@ -68,6 +68,8 @@ pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
 pub mod query;
+#[cfg(test)]
+mod test_utils;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
