@@ -908,7 +908,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
- "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "dpp",
  "enum-map",
  "grovedb",
