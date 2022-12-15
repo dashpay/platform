@@ -6,7 +6,10 @@ function markAddressAsUsed(address) {
 
   if (searchResult) {
     const [, addressData] = searchResult;
-    logger.silly(`KeyChain - Marking ${address} ${addressData.path} as used`);
+    if (!addressData.isUsed) {
+      logger.silly(`KeyChain - Marking ${address} ${addressData.path} as used`);
+    }
+
     addressData.isUsed = true;
 
     return this.maybeLookAhead();

@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/bench-suite",
   "private": true,
-  "version": "0.24.0-dev.8",
+  "version": "0.24.0-dev.10",
   "description": "Dash Platform benchmark tool",
   "scripts": {
     "bench": "node ./bin/bench.js",
@@ -15,8 +15,7 @@
     "console-table-printer": "^2.11.0",
     "dash": "workspace:*",
     "dotenv-safe": "^8.2.0",
-    "lodash.clone": "~4.5.0",
-    "lodash.matches": "^4.6.0",
+    "lodash": "^4.17.21",
     "mathjs": "^10.4.3",
     "mocha": "^9.1.2"
   },

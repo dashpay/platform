@@ -62,12 +62,14 @@ pub mod fee_pools;
 pub mod flags;
 /// Genesis time module
 pub mod genesis_time;
-mod grove_operations;
+pub(crate) mod grove_operations;
 /// Identity module
 pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
 pub mod query;
+#[cfg(test)]
+mod test_utils;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};

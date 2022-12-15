@@ -1,4 +1,4 @@
-const lodashMerge = require('lodash.merge');
+const lodashMerge = require('lodash/merge');
 
 const {
   NETWORK_LOCAL,

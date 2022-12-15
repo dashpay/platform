@@ -586,7 +586,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "0.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
+source = "git+https://github.com/dashpay/grovedb?rev=6864631af1042e2f61ea9533ec72d95204df41f0#6864631af1042e2f61ea9533ec72d95204df41f0"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -806,6 +806,7 @@ dependencies = [
  "hex",
  "rustversion",
  "secp256k1",
+ "serde",
 ]
 
 [[package]]
@@ -821,7 +822,6 @@ dependencies = [
  "hex",
  "rustversion",
  "secp256k1",
- "serde",
 ]
 
 [[package]]
@@ -868,7 +868,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
  "env_logger",
  "futures",
  "getrandom",
@@ -908,7 +908,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
- "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "dpp",
  "enum-map",
  "grovedb",
@@ -1268,8 +1268,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.6.1"
-source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
+version = "0.7.1"
+source = "git+https://github.com/dashpay/grovedb?rev=6864631af1042e2f61ea9533ec72d95204df41f0#6864631af1042e2f61ea9533ec72d95204df41f0"
 dependencies = [
  "bincode",
  "costs",
@@ -1694,10 +1694,9 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "0.6.1"
-source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
+version = "0.7.1"
+source = "git+https://github.com/dashpay/grovedb?rev=6864631af1042e2f61ea9533ec72d95204df41f0#6864631af1042e2f61ea9533ec72d95204df41f0"
 dependencies = [
- "anyhow",
  "blake3",
  "byteorder",
  "colored",
@@ -2865,10 +2864,11 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "0.2.0"
-source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
+source = "git+https://github.com/dashpay/grovedb?rev=6864631af1042e2f61ea9533ec72d95204df41f0#6864631af1042e2f61ea9533ec72d95204df41f0"
 dependencies = [
  "blake3",
  "costs",
+ "hex",
  "integer-encoding",
  "lazy_static",
  "num_cpus",
@@ -3251,7 +3251,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=f8f3c70488448c26d67c3751dd73120b76cdcf0c#f8f3c70488448c26d67c3751dd73120b76cdcf0c"
+source = "git+https://github.com/dashpay/grovedb?rev=6864631af1042e2f61ea9533ec72d95204df41f0#6864631af1042e2f61ea9533ec72d95204df41f0"
 dependencies = [
  "hex",
  "itertools",
@@ -3306,6 +3306,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-bindgen-futures"
+version = "0.4.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23639446165ca5a5de86ae1d8896b737ae80319560fbaa4c2887b7da6e7ebd7d"
+dependencies = [
+ "cfg-if 1.0.0",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "wasm-bindgen-macro"
 version = "0.2.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3345,6 +3357,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

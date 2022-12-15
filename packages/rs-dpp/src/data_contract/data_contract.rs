@@ -78,8 +78,9 @@ pub struct DataContract {
     #[serde(rename = "documents")]
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
-    #[serde(rename = "$defs", default)]
-    pub defs: BTreeMap<DefinitionName, JsonSchema>,
+    // TODO we may ensure in compile time that defs are not empty if we define a type for it
+    #[serde(skip_serializing_if = "Option::is_none", rename = "$defs", default)]
+    pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
     #[serde(skip)]
     pub metadata: Option<Metadata>,
@@ -129,28 +130,24 @@ impl DataContract {
         let version = data_contract_map.get_u32(property_names::VERSION)?;
 
         // Defs
-        let defs = match data_contract_map.get("$defs") {
-            None => BTreeMap::new(),
-            Some(definition_value) => {
-                let definition_map = definition_value.as_map();
-                match definition_map {
-                    None => BTreeMap::new(),
-                    Some(cbor_map) => {
-                        let mut res = BTreeMap::<String, JsonValue>::new();
-                        for (key, value) in cbor_map {
-                            let key_string = key.as_text().ok_or_else(|| {
-                                ProtocolError::DecodingError(String::from(
-                                    "Expect $defs keys to be strings",
-                                ))
-                            })?;
-                            let json_value = cbor_value_to_json_value(value)?;
-                            res.insert(String::from(key_string), json_value);
-                        }
-                        res
-                    }
+        let defs = data_contract_map
+            .get("$defs")
+            .map(CborValue::as_map)
+            .flatten()
+            .map(|definition_map| {
+                let mut res = BTreeMap::<String, JsonValue>::new();
+                for (key, value) in definition_map {
+                    let key_string = key.as_text().ok_or_else(|| {
+                        ProtocolError::DecodingError(String::from(
+                            "Expect $defs keys to be strings",
+                        ))
+                    })?;
+                    let json_value = cbor_value_to_json_value(value)?;
+                    res.insert(String::from(key_string), json_value);
                 }
-            }
-        };
+                Ok(res)
+            })
+            .map_or(Ok(None), |r: Result<_, ProtocolError>| r.map(Some))?;
 
         // Documents
         let documents_cbor_value = data_contract_map
@@ -263,10 +260,10 @@ impl DataContract {
 
         contract_cbor_map.insert(property_names::DOCUMENTS, docs);
 
-        if !self.defs.is_empty() {
+        if let Some(defs) = &self.defs {
             contract_cbor_map.insert(
                 property_names::DEFINITIONS,
-                CborValue::serialized(&self.defs)
+                CborValue::serialized(defs)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
             );
         }
@@ -302,8 +299,8 @@ impl DataContract {
         self.version
     }
 
-    pub fn definitions(&self) -> &BTreeMap<String, JsonValue> {
-        &self.defs
+    pub fn definitions(&self) -> Option<&BTreeMap<String, JsonValue>> {
+        self.defs.as_ref()
     }
 
     // Returns hash from Data Contract

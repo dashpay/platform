@@ -25,7 +25,8 @@ describe('Account - getTransaction', function suite() {
       "blockHash": "000001deee9f99e8219a9abcaaea135dbaae8a9b0f1ea214e6b6a37a5c5b115d",
       "height": 555506,
       "isInstantLocked": true,
-      "isChainLocked": true
+      "isChainLocked": true,
+      "time": new Date(1628846677000)
     });
   });
 

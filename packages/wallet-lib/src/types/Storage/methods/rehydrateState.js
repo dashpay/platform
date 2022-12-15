@@ -20,24 +20,22 @@ const rehydrateState = async function rehydrateState() {
             const { chains } = storage;
 
             Object.keys(chains).forEach((chainNetwork) => {
-              const { chain, wallet } = storage.chains[chainNetwork];
-
+              const chain = storage.chains[chainNetwork];
               const chainStore = this.getChainStore(chainNetwork);
 
               if (chainStore) {
                 chainStore.importState(chain);
               }
-
-              const walletStore = this.getWalletStore(walletId);
-
-              if (walletStore) {
-                walletStore.importState(wallet);
-              }
             });
           } catch (e) {
-            logger.error('Error importing persistent storage, resyncing from start', e);
+            logger.debug('[Storage] Error importing persistent storage', {
+              message: e.message,
+            });
 
-            this.adapter.setItem(`wallet_${walletId}`, null);
+            if (this.purgeOnError) {
+              logger.debug(`[Storage] Wiping storage for wallet ${walletId}`);
+              this.adapter.setItem(`wallet_${walletId}`, null);
+            }
           }
         }
       }

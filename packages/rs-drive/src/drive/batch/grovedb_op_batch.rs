@@ -98,8 +98,9 @@ impl GroveDbOpBatch {
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
-    pub fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
-        self.operations.push(GroveDbOp::delete_tree_op(path, key))
+    pub fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool) {
+        self.operations
+            .push(GroveDbOp::delete_tree_op(path, key, is_sum_tree))
     }
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
