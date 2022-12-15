@@ -30,6 +30,15 @@ jobs:
         env:
           TAG_PREFIX: v
 
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
