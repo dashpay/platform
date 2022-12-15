@@ -6,6 +6,11 @@
 * Consensus Errors and ValidationResult bindings ([#643](https://github.com/dashpay/platform/issues/643))
 
 
+### Bug Fixes
+
+* **dashmate**: outdated Drive and DAPI images ([#668](https://github.com/dashpay/platform/issues/668))
+
+
 ### Continuous Integration
 
 * fix entrypoint path in release workflow ([#671](https://github.com/dashpay/platform/issues/671))
