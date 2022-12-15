@@ -54,8 +54,8 @@ use crate::fee::default_costs::{
 use crate::fee::op::DriveOperation::{
     CalculatedCostOperation, GroveOperation, PreCalculatedFeeResult,
 };
-use crate::fee::refunds::FeeRefunds;
-use crate::fee::FeeResult;
+use crate::fee::result::refunds::FeeRefunds;
+use crate::fee::{get_overflow_error, FeeResult};
 use crate::fee_pools::epochs::Epoch;
 
 /// Base ops
@@ -302,10 +302,6 @@ pub trait DriveCost {
     fn ephemeral_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
     /// Storage cost
     fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
-}
-
-pub(crate) fn get_overflow_error(str: &'static str) -> Error {
-    Error::Fee(FeeError::Overflow(str))
 }
 
 impl DriveCost for OperationCost {

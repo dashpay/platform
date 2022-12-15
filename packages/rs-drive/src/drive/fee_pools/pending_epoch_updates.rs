@@ -35,14 +35,15 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::refunds::CreditsPerEpoch;
+use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::get_overflow_error;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 
 impl Drive {
     /// Fetches existing pending epoch pool updates using specified epochs
     /// and returns merged result
-    pub fn fetch_and_merge_with_existing_pending_epoch_pool_updates(
+    pub fn fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
         &self,
         mut credits_per_epoch: CreditsPerEpoch,
         transaction: TransactionArg,
@@ -113,7 +114,7 @@ impl Drive {
     }
 
     /// Adds operations to delete pending epoch pool updates except specified epochs
-    pub fn add_delete_pending_epoch_pool_updates_except_specified_operations(
+    pub fn add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
         &self,
         batch: &mut GroveDbOpBatch,
         credits_per_epoch: &CreditsPerEpoch,
@@ -138,7 +139,7 @@ impl Drive {
             let epoch_index =
                 u16::from_be_bytes(encoded_epoch_index.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
-                        "epoch index for pending pool updates must be i64",
+                        "epoch index for pending pool updates must be u16",
                     ))
                 })?);
 
@@ -155,21 +156,25 @@ impl Drive {
     }
 }
 
-/// Returns the index of the unpaid Epoch.
-pub fn add_update_pending_epoch_pool_update_operations(
+/// Adds GroveDB batch operations to update pending epoch storage pool updates
+pub fn add_update_pending_epoch_storage_pool_update_operations(
     batch: &mut GroveDbOpBatch,
     credits_per_epoch: CreditsPerEpoch,
-) {
+) -> Result<(), Error> {
     for (epoch_index_key, credits) in credits_per_epoch {
         let epoch_index = epoch_index_key as u16;
         let encoded_epoch_index = epoch_index.to_be_bytes().to_vec();
 
-        let signed_credits = -(credits as i64);
+        let signed_credits = -i64::try_from(credits).map_err(|_| {
+            get_overflow_error("can't convert credits to negative amount for pending updates")
+        })?;
 
         let element = Element::new_item(signed_credits.to_be_bytes().to_vec());
 
         batch.add_insert(pools_pending_updates_path(), encoded_epoch_index, element);
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -177,7 +182,7 @@ mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    mod fetch_and_merge_with_existing_pending_epoch_pool_updates {
+    mod fetch_and_merge_with_existing_pending_epoch_storage_pool_updates {
         use super::*;
 
         #[test]
@@ -193,7 +198,11 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            add_update_pending_epoch_pool_update_operations(&mut batch, initial_pending_updates);
+            add_update_pending_epoch_storage_pool_update_operations(
+                &mut batch,
+                initial_pending_updates,
+            )
+            .expect("should update pending epoch updates");
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
@@ -205,7 +214,7 @@ mod tests {
                 CreditsPerEpoch::from_iter(vec![(1, 15), (3, 25), (30, 195), (41, 150)]);
 
             let updated_pending_updates = drive
-                .fetch_and_merge_with_existing_pending_epoch_pool_updates(
+                .fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
                     new_pending_updates,
                     Some(&transaction),
                 )
@@ -218,7 +227,7 @@ mod tests {
         }
     }
 
-    mod add_delete_pending_epoch_pool_updates_except_specified_operations {
+    mod add_delete_pending_epoch_storage_pool_updates_except_specified_operations {
         use super::*;
         use grovedb::batch::Op;
 
@@ -235,7 +244,11 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            add_update_pending_epoch_pool_update_operations(&mut batch, initial_pending_updates);
+            add_update_pending_epoch_storage_pool_update_operations(
+                &mut batch,
+                initial_pending_updates,
+            )
+            .expect("should update pending epoch updates");
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
@@ -248,7 +261,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             drive
-                .add_delete_pending_epoch_pool_updates_except_specified_operations(
+                .add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
                     &mut batch,
                     &new_pending_updates,
                     Some(&transaction),

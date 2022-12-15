@@ -68,8 +68,8 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyE
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
 
 use crate::common::encode::encode_unsigned_integer;
 use crate::contract::document::Document;
@@ -79,6 +79,7 @@ use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
+use crate::fee::result::FeeResult;
 use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
 
 impl Drive {

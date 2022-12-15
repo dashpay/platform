@@ -27,14 +27,23 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::drive::RootTree;
+use crate::drive::batch::GroveDbOpBatch;
+use crate::drive::{Drive, RootTree};
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
+use crate::fee_pools::epochs::{paths, Epoch};
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL,
 };
+use crate::query::QueryItem;
+use grovedb::{PathQuery, Query, TransactionArg};
+use itertools::Itertools;
 
 /// Epochs module
 pub mod epochs;
-pub mod pending_updates;
+pub mod pending_epoch_updates;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
 
@@ -67,6 +76,66 @@ pub fn aggregate_storage_fees_distribution_pool_path() -> [&'static [u8]; 2] {
 /// Returns the path to the aggregate storage fee distribution pool as a mutable vector.
 pub fn aggregate_storage_fees_distribution_pool_vec_path() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Pools as u8], KEY_STORAGE_FEE_POOL.to_vec()]
+}
+
+impl Drive {
+    pub fn add_update_epoch_storage_fee_pools_operations(
+        &self,
+        batch: &mut GroveDbOpBatch,
+        credits_per_epochs: CreditsPerEpoch,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        if credits_per_epochs.len() == 0 {
+            return Ok(());
+        }
+
+        let min_epoch_index_key = credits_per_epochs.keys().min().ok_or(Error::Drive(
+            DriveError::CorruptedCodeExecution("can't find min epoch index"),
+        ))?;
+        let min_epoch_index = min_epoch_index_key.to_owned() as u16;
+        let min_encoded_epoch_index = paths::encode_epoch_index_key(min_epoch_index)?.to_vec();
+
+        let max_epoch_index_key = credits_per_epochs.keys().max().ok_or(Error::Drive(
+            DriveError::CorruptedCodeExecution("can't find max epoch index"),
+        ))?;
+        let max_epoch_index = max_epoch_index_key.to_owned() as u16;
+        let max_encoded_epoch_index = paths::encode_epoch_index_key(max_epoch_index)?.to_vec();
+
+        let mut storage_fee_pool_query = Query::new();
+        storage_fee_pool_query.insert_key(KEY_POOL_STORAGE_FEES.to_vec());
+
+        let mut epochs_query = Query::new();
+
+        epochs_query.insert_range_inclusive(min_encoded_epoch_index..=max_encoded_epoch_index);
+
+        epochs_query.set_subquery(storage_fee_pool_query);
+
+        let (storage_fee_pools, _) = self
+            .grove
+            .query(
+                &PathQuery::new_unsized(pools_vec_path(), epochs_query),
+                transaction,
+            )
+            .unwrap()
+            .map_err(Error::GroveDB)?;
+
+        if storage_fee_pools.len() != credits_per_epochs.len() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "number of fetched epoch  storage fee pools must be equal to requested for update",
+            )));
+        }
+
+        for (i, (epoch_index_key, credits)) in credits_per_epochs
+            .into_iter()
+            .sorted_by_key(|x| x.0)
+            .enumerate()
+        {
+            let encoded_epoch_index_key =
+                paths::encode_epoch_index_key(epoch_index_key as u16)?.to_vec();
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

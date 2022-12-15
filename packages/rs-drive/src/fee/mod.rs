@@ -32,28 +32,18 @@ use enum_map::EnumMap;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::{BaseOp, DriveOperation};
-use crate::fee::refunds::FeeRefunds;
+use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
-/// Default costs module
 pub mod default_costs;
+pub mod epoch;
 pub mod op;
+pub mod result;
 
-/// Fee result refunds
-pub mod refunds;
+/// Default original fee multiplier
+pub const DEFAULT_ORIGINAL_FEE_MULTIPLIER: f64 = 2.0;
 
-/// Fee Result
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct FeeResult {
-    /// Storage fee
-    pub storage_fee: u64,
-    /// Processing fee
-    pub processing_fee: u64,
-    /// Credits to refund to identities
-    pub fee_refunds: FeeRefunds,
-    /// Removed bytes not needing to be refunded to identities
-    pub removed_bytes_from_system: u32,
-}
+pub type Credits = u64;
 
 /// Calculates fees for the given operations. Returns the storage and processing costs.
 pub fn calculate_fee(
@@ -84,35 +74,6 @@ pub fn calculate_fee(
     Ok(aggregate_fee_result)
 }
 
-impl FeeResult {
-    /// Creates a FeeResult instance with specified storage and processing fees
-    pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
-        FeeResult {
-            storage_fee,
-            processing_fee,
-            ..Default::default()
-        }
-    }
-
-    /// Adds and self assigns result between two Fee Results
-    pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), Error> {
-        self.storage_fee = self
-            .storage_fee
-            .checked_add(rhs.storage_fee)
-            .ok_or(Error::Fee(FeeError::Overflow("storage fee overflow error")))?;
-        self.processing_fee =
-            self.processing_fee
-                .checked_add(rhs.processing_fee)
-                .ok_or(Error::Fee(FeeError::Overflow(
-                    "processing fee overflow error",
-                )))?;
-        self.fee_refunds.checked_add_assign(rhs.fee_refunds)?;
-        self.removed_bytes_from_system = self
-            .removed_bytes_from_system
-            .checked_add(rhs.removed_bytes_from_system)
-            .ok_or(Error::Fee(FeeError::Overflow(
-                "removed_bytes_from_system overflow error",
-            )))?;
-        Ok(())
-    }
+pub(crate) fn get_overflow_error(str: &'static str) -> Error {
+    Error::Fee(FeeError::Overflow(str))
 }

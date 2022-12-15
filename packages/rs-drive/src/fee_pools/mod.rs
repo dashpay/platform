@@ -28,8 +28,9 @@
 //
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use crate::drive::fee_pools::pools_vec_path;
+use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use crate::fee::Credits;
 use crate::fee_pools::epochs::Epoch;
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
@@ -66,7 +67,7 @@ pub fn add_create_pending_pool_updates_tree_operations(batch: &mut GroveDbOpBatc
 }
 
 /// Updates the storage fee distribution pool with a new storage fee
-pub fn update_storage_fee_distribution_pool_operation(storage_fee: u64) -> GroveDbOp {
+pub fn update_storage_fee_distribution_pool_operation(storage_fee: Credits) -> GroveDbOp {
     GroveDbOp::insert_op(
         pools_vec_path(),
         KEY_STORAGE_FEE_POOL.to_vec(),
@@ -75,7 +76,7 @@ pub fn update_storage_fee_distribution_pool_operation(storage_fee: u64) -> Grove
 }
 
 /// Updates the unpaid epoch index
-pub fn update_unpaid_epoch_index_operation(epoch_index: u16) -> GroveDbOp {
+pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp {
     GroveDbOp::insert_op(
         pools_vec_path(),
         KEY_UNPAID_EPOCH_INDEX.to_vec(),

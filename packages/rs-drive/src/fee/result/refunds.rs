@@ -1,16 +1,47 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Fee pool constants.
+//!
+//! This module defines constants related to fee distribution pools.
+//!
+
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-use crate::fee::op::get_overflow_error;
+use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::get_overflow_error;
 use bincode::Options;
 use costs::storage_cost::removal::{Identifier, StorageRemovalPerEpochByIdentifier};
-use intmap::IntMap;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::{IntoIter, Iter};
 use std::collections::BTreeMap;
-
-/// Credits per Epoch
-pub type CreditsPerEpoch = IntMap<u64>;
 
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
@@ -30,6 +61,7 @@ impl FeeRefunds {
                 bytes_per_epochs
                     .into_iter()
                     .map(|(epoch_index, bytes)| {
+                        // TODO We should use multipliers
                         (bytes as u64)
                             .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
                             .ok_or_else(|| {
@@ -66,7 +98,7 @@ impl FeeRefunds {
             } else {
                 int_map_b
             };
-            // reinsert the now combined intmap
+            // reinsert the now combined IntMap
             self.0.insert(identifier, to_insert_int_map);
         }
         Ok(())
@@ -82,7 +114,7 @@ impl FeeRefunds {
         self.0.iter()
     }
 
-    /// Passthrough method for into interation
+    /// Passthrough method for into iteration
     pub fn into_iter(self) -> IntoIter<Identifier, CreditsPerEpoch> {
         self.0.into_iter()
     }

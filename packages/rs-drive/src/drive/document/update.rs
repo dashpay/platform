@@ -57,8 +57,8 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, Path
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -68,6 +68,7 @@ use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
+use crate::fee::result::FeeResult;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {

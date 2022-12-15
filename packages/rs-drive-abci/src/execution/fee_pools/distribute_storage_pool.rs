@@ -35,10 +35,10 @@
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::fee_pools::constants;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
+use drive::fee::constants;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
@@ -111,11 +111,9 @@ impl Platform {
                 // TODO: It's not convenient and confusing when in one case you should push operation to batch
                 //  and sometimes you pass batch inside to add operations. Also, in future a single operation function
                 //  could become a multiple operations function so you need to change many code. Also, you can't use helpers which batch provides
-                batch.push(
-                    epoch_tree.update_storage_credits_for_distribution_operation(
-                        current_epoch_pool_storage_credits + epoch_fee_share,
-                    ),
-                );
+                batch.push(epoch_tree.update_storage_fee_pool_operation(
+                    current_epoch_pool_storage_credits + epoch_fee_share,
+                ));
 
                 storage_distribution_leftover_credits = storage_distribution_leftover_credits
                     .checked_sub(epoch_fee_share)

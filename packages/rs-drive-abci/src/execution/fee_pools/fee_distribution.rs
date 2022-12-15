@@ -40,7 +40,7 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
 use drive::error::fee::FeeError;
-use drive::fee::FeeResult;
+use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
@@ -401,10 +401,7 @@ impl Platform {
 
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
 
-        batch.push(
-            current_epoch
-                .update_processing_credits_for_distribution_operation(total_processing_fees),
-        );
+        batch.push(current_epoch.update_processing_fee_pool_operation(total_processing_fees));
 
         // update storage fee pool
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
@@ -429,14 +426,13 @@ impl Platform {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use drive::error::Error;
-        use drive::fee_pools::epochs::Epoch;
-        use drive::grovedb;
+        use super::*;
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
@@ -479,9 +475,7 @@ mod tests {
 
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(
-                unpaid_epoch_tree_0.update_processing_credits_for_distribution_operation(10000),
-            );
+            batch.push(unpaid_epoch_tree_0.update_processing_fee_pool_operation(10000));
 
             let proposers_count = 100u16;
 
@@ -550,9 +544,7 @@ mod tests {
 
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(
-                unpaid_epoch_tree_0.update_processing_credits_for_distribution_operation(10000),
-            );
+            batch.push(unpaid_epoch_tree_0.update_processing_fee_pool_operation(10000));
 
             let proposers_count = 100u16;
 
@@ -636,9 +628,7 @@ mod tests {
 
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(
-                unpaid_epoch_tree_0.update_processing_credits_for_distribution_operation(10000),
-            );
+            batch.push(unpaid_epoch_tree_0.update_processing_fee_pool_operation(10000));
 
             let proposers_count = 200u16;
 
@@ -733,12 +723,9 @@ mod tests {
 
             unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(
-                unpaid_epoch.update_processing_credits_for_distribution_operation(processing_fees),
-            );
+            batch.push(unpaid_epoch.update_processing_fee_pool_operation(processing_fees));
 
-            batch
-                .push(unpaid_epoch.update_storage_credits_for_distribution_operation(storage_fees));
+            batch.push(unpaid_epoch.update_storage_fee_pool_operation(storage_fees));
 
             current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
 
@@ -819,12 +806,9 @@ mod tests {
 
             unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(
-                unpaid_epoch.update_processing_credits_for_distribution_operation(processing_fees),
-            );
+            batch.push(unpaid_epoch.update_processing_fee_pool_operation(processing_fees));
 
-            batch
-                .push(unpaid_epoch.update_storage_credits_for_distribution_operation(storage_fees));
+            batch.push(unpaid_epoch.update_storage_fee_pool_operation(storage_fees));
 
             current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
 
@@ -913,13 +897,7 @@ mod tests {
     }
 
     mod find_oldest_epoch_needing_payment {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use crate::error::execution::ExecutionError;
-        use crate::error::Error;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use drive::fee_pools::epochs::Epoch;
-        use drive::fee_pools::update_unpaid_epoch_index_operation;
+        use super::*;
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
@@ -1166,16 +1144,10 @@ mod tests {
     }
 
     mod add_epoch_pool_to_proposers_payout_operations {
+        use super::*;
         use crate::common::helpers::fee_pools::{
             create_test_masternode_share_identities_and_documents, refetch_identities,
         };
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use crate::execution::fee_pools::fee_distribution::UnpaidEpoch;
-        use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee_pools::epochs::Epoch;
-        use rust_decimal::Decimal;
-        use rust_decimal_macros::dec;
 
         #[test]
         fn test_payout_to_proposers() {
@@ -1196,14 +1168,9 @@ mod tests {
 
             unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(
-                unpaid_epoch_tree
-                    .update_processing_credits_for_distribution_operation(processing_fees),
-            );
+            batch.push(unpaid_epoch_tree.update_processing_fee_pool_operation(processing_fees));
 
-            batch.push(
-                unpaid_epoch_tree.update_storage_credits_for_distribution_operation(storage_fees),
-            );
+            batch.push(unpaid_epoch_tree.update_storage_fee_pool_operation(storage_fees));
 
             next_epoch_tree.add_init_current_operations(
                 1.0,
@@ -1304,11 +1271,7 @@ mod tests {
     }
 
     mod add_distribute_block_fees_into_pools_operations {
-        use crate::abci::messages::BlockFees;
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee::FeeResult;
-        use drive::fee_pools::epochs::Epoch;
+        use super::*;
 
         #[test]
         fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {

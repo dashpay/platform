@@ -79,7 +79,7 @@ impl Epoch {
         self.add_init_empty_without_storage_operations(batch);
 
         // init storage fee item to 0
-        batch.push(self.update_storage_credits_for_distribution_operation(0));
+        batch.push(self.update_storage_fee_pool_operation(0));
     }
 
     /// Adds to the groveDB op batch initialization operations for the epoch.
@@ -136,10 +136,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
-    pub fn update_processing_credits_for_distribution_operation(
-        &self,
-        processing_fee: u64,
-    ) -> GroveDbOp {
+    pub fn update_processing_fee_pool_operation(&self, processing_fee: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_vec_path(),
             KEY_POOL_PROCESSING_FEES.to_vec(),
@@ -153,7 +150,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    pub fn update_storage_credits_for_distribution_operation(&self, storage_fee: u64) -> GroveDbOp {
+    pub fn update_storage_fee_pool_operation(&self, storage_fee: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_vec_path(),
             KEY_POOL_STORAGE_FEES.to_vec(),
@@ -562,7 +559,7 @@ mod tests {
 
             let epoch = super::Epoch::new(7000);
 
-            let op = epoch.update_processing_credits_for_distribution_operation(42);
+            let op = epoch.update_processing_fee_pool_operation(42);
 
             match drive.grove_apply_operation(op, false, Some(&transaction)) {
                 Ok(_) => assert!(
@@ -587,7 +584,7 @@ mod tests {
 
             let processing_fee: u64 = 42;
 
-            let op = epoch.update_processing_credits_for_distribution_operation(42);
+            let op = epoch.update_processing_fee_pool_operation(42);
 
             drive
                 .grove_apply_operation(op, false, Some(&transaction))
@@ -611,7 +608,7 @@ mod tests {
 
             let epoch = super::Epoch::new(7000);
 
-            let op = epoch.update_storage_credits_for_distribution_operation(42);
+            let op = epoch.update_storage_fee_pool_operation(42);
 
             match drive.grove_apply_operation(op, false, Some(&transaction)) {
                 Ok(_) => assert!(
@@ -636,7 +633,7 @@ mod tests {
 
             let storage_fee = 42;
 
-            let op = epoch.update_storage_credits_for_distribution_operation(storage_fee);
+            let op = epoch.update_storage_fee_pool_operation(storage_fee);
 
             drive
                 .grove_apply_operation(op, false, Some(&transaction))

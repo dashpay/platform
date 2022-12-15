@@ -37,18 +37,20 @@ use std::option::Option::None;
 
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
-use drive::drive::fee_pools::pending_updates::add_update_pending_epoch_pool_update_operations;
+use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 
 use crate::abci::messages::BlockFees;
 use crate::block::BlockInfo;
 use crate::error::Error;
-use crate::execution::fee_pools::constants::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use crate::execution::fee_pools::distribute_storage_pool::StorageDistributionLeftoverCredits;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
+use drive::fee::constants::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
+use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 
 /// From the Dash Improvement Proposal:
 
@@ -121,7 +123,7 @@ impl Platform {
             )?;
 
         self.drive
-            .add_delete_pending_epoch_pool_updates_except_specified_operations(
+            .add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
                 batch,
                 &block_fees.fee_refunds,
                 transaction,
@@ -201,7 +203,7 @@ impl Platform {
 
         let pending_epoch_pool_updates = if !epoch_info.is_epoch_change {
             self.drive
-                .fetch_and_merge_with_existing_pending_epoch_pool_updates(
+                .fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
                     block_fees.fee_refunds,
                     transaction,
                 )?
@@ -209,7 +211,10 @@ impl Platform {
             block_fees.fee_refunds
         };
 
-        add_update_pending_epoch_pool_update_operations(&mut batch, pending_epoch_pool_updates);
+        add_update_pending_epoch_storage_pool_update_operations(
+            &mut batch,
+            pending_epoch_pool_updates,
+        )?;
 
         self.drive.grove_apply_batch(batch, false, transaction)?;
 

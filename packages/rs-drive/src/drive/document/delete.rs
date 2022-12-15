@@ -70,8 +70,9 @@ use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::result::FeeResult;
 use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
 
 impl Drive {

@@ -1,3 +1,8 @@
+use crate::fee::Credits;
+use intmap::IntMap;
+
+mod distribution;
+
 /// Genesis epoch index
 pub const GENESIS_EPOCH_INDEX: u16 = 0;
 
@@ -9,3 +14,7 @@ pub const PERPETUAL_STORAGE_YEARS: u16 = 50;
 
 /// Perpetual storage epochs
 pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR;
+
+pub type CreditsPerEpoch = IntMap<Credits>;
+
+pub type EpochIndex = u16;

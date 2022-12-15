@@ -37,6 +37,7 @@ use grovedb::{Element, TransactionArg};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::Epoch;
 
 use crate::fee_pools::epochs::epoch_key_constants;
@@ -149,9 +150,7 @@ impl Drive {
 
         storage_pool_credits
             .checked_add(processing_pool_credits)
-            .ok_or(Error::Fee(FeeError::Overflow(
-                "overflow getting total credits for distribution",
-            )))
+            .ok_or_else(|| get_overflow_error("overflow getting total credits for distribution"))
     }
 }
 
@@ -268,9 +267,9 @@ mod tests {
 
         let mut batch = GroveDbOpBatch::new();
 
-        batch.push(epoch.update_processing_credits_for_distribution_operation(processing_fee));
+        batch.push(epoch.update_processing_fee_pool_operation(processing_fee));
 
-        batch.push(epoch.update_storage_credits_for_distribution_operation(storage_fee));
+        batch.push(epoch.update_storage_fee_pool_operation(storage_fee));
 
         drive
             .grove_apply_batch(batch, false, Some(&transaction))

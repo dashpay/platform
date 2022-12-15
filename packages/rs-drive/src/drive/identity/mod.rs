@@ -47,8 +47,9 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::result::FeeResult;
 
 pub mod withdrawal_queue;
 

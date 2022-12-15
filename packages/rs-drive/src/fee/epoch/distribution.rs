@@ -32,12 +32,13 @@
 //! This module defines constants related to fee distribution pools.
 //!
 
-use drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_YEARS;
+use crate::error::fee::FeeError;
+use crate::error::Error;
+use crate::fee::epoch::{CreditsPerEpoch, EpochIndex, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
+use crate::fee::{get_overflow_error, Credits};
+use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-
-/// Default original fee multiplier
-pub const DEFAULT_ORIGINAL_FEE_MULTIPLIER: f64 = 2.0;
 
 // TODO: Should be updated from the doc
 
@@ -55,6 +56,61 @@ pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_YEARS as usize] = 
     dec!(0.00600), dec!(0.00525), dec!(0.00475), dec!(0.00425), dec!(0.00375),
     dec!(0.00325), dec!(0.00275), dec!(0.00225), dec!(0.00175), dec!(0.00125),
 ];
+
+pub type DistributionLeftoverCredits = Credits;
+
+pub fn distribute_storage_fee_to_epochs(
+    storage_fee: u64,
+    start_epoch_index: EpochIndex,
+    credits_per_epochs: Option<CreditsPerEpoch>,
+) -> Result<DistributionLeftoverCredits, Error> {
+    let storage_fee_dec = Decimal::from_u64(storage_fee).ok_or(Error::Fee(
+        FeeError::CorruptedCodeExecution("storage fees are not fitting in a Decimal"),
+    ))?;
+
+    let mut distribution_leftover_credits = storage_fee;
+
+    let mut credits_per_epochs = credits_per_epochs.unwrap_or_default();
+
+    let epochs_per_year = Decimal::from(EPOCHS_PER_YEAR);
+
+    for year in 0..PERPETUAL_STORAGE_YEARS {
+        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
+
+        let year_fee_share = storage_fee_dec * distribution_for_that_year_ratio;
+
+        let epoch_fee_share_dec = year_fee_share / epochs_per_year;
+
+        let epoch_fee_share = epoch_fee_share_dec
+            .floor()
+            .to_u64()
+            .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
+
+        let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
+
+        for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
+            let epoch_index_key = epoch_index as u64;
+
+            let current_epoch_credits = credits_per_epochs
+                .get(epoch_index_key)
+                .map_or(0, |i| i.to_owned());
+
+            let result_storage_fee = current_epoch_credits
+                .checked_add(epoch_fee_share)
+                .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
+
+            credits_per_epochs.insert(epoch_index_key, result_storage_fee);
+
+            distribution_leftover_credits = distribution_leftover_credits
+                .checked_sub(epoch_fee_share)
+                .ok_or(Error::Fee(FeeError::CorruptedCodeExecution(
+                    "leftovers bigger than initial value",
+                )))?;
+        }
+    }
+
+    Ok(distribution_leftover_credits)
+}
 
 #[cfg(test)]
 mod tests {
