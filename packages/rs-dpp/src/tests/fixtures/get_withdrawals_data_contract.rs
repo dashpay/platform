@@ -31,7 +31,7 @@ pub fn get_withdrawals_data_contract_fixture(owner_id: Option<Identifier>) -> Da
     let withdrawals_schema = WITHDRAWALS_SCHEMA.clone();
 
     let mut data_contract = factory
-        .create(owner_id, withdrawals_schema)
+        .create(owner_id, withdrawals_schema, None)
         .expect("data in fixture should be correct");
 
     data_contract.id = Identifier::from_string(

@@ -366,6 +366,7 @@ impl Drive {
             })?
             .to_buffer(),
             withdrawals_contract::types::WITHDRAWAL,
+            None,
             transaction,
         )?;
 
