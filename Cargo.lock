@@ -816,7 +816,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashevo/rust-dashcore?branch=master#6092d584487918c5330fec93152e4df06a714067"
+source = "git+https://github.com/dashevo/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067#6092d584487918c5330fec93152e4df06a714067"
 dependencies = [
  "anyhow",
  "bech32",
@@ -830,7 +830,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#6092d584487918c5330fec93152e4df06a714067"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067#6092d584487918c5330fec93152e4df06a714067"
 dependencies = [
  "anyhow",
  "bech32",
@@ -844,7 +844,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/jawid-h/rust-dashcore-rpc?branch=fix/attempt-to-fix#278adf755c44bf63af751482d9b4c9ae595c0259"
+source = "git+https://github.com/jawid-h/rust-dashcore-rpc?branch=fix/attempt-to-fix#2b4156aac527eb91ee9882f6575766b59a226ef9"
 dependencies = [
  "dashcore-rpc-json",
  "jsonrpc",
@@ -856,9 +856,9 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/jawid-h/rust-dashcore-rpc?branch=fix/attempt-to-fix#278adf755c44bf63af751482d9b4c9ae595c0259"
+source = "git+https://github.com/jawid-h/rust-dashcore-rpc?branch=fix/attempt-to-fix#2b4156aac527eb91ee9882f6575766b59a226ef9"
 dependencies = [
- "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067)",
  "serde",
  "serde_json",
  "serde_with",
@@ -908,7 +908,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067)",
  "env_logger",
  "futures",
  "getrandom",
@@ -948,7 +948,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
- "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067)",
  "dashcore-rpc",
  "dpp",
  "enum-map",
@@ -978,7 +978,7 @@ dependencies = [
  "bs58",
  "chrono",
  "ciborium",
- "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067)",
  "dpp",
  "drive",
  "hex",
