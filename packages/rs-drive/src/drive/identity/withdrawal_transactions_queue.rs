@@ -486,6 +486,19 @@ impl Drive {
                 let status = if core_transactions.contains(&transaction_id) {
                     withdrawals_contract::statuses::COMPLETE
                 } else {
+                    let bytes = transaction_index.to_be_bytes();
+
+                    self.grove.insert(
+                        vec![
+                            vec![RootTree::WithdrawalTransactions as u8],
+                            WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS,
+                        ],
+                        &bytes,
+                        Element::Item(bytes, None),
+                        None,
+                        transaction,
+                    )?;
+
                     withdrawals_contract::statuses::EXPIRED
                 };
 
