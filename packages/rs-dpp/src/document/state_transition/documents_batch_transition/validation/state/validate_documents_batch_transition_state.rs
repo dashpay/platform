@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
-    data_contract::DataContract,
     data_trigger::DataTriggerExecutionContext,
     document::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
@@ -224,7 +223,7 @@ fn check_ownership(
     };
     if &fetched_document.owner_id != owner_id {
         result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentOwnerMismatchError {
+            StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id.clone(),
                 document_owner_id: owner_id.to_owned(),
                 existing_document_owner_id: fetched_document.owner_id.clone(),
@@ -307,7 +306,7 @@ fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> Va
 
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
         result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentTimestampMismatchError {
+            StateError::DocumentTimestampsMismatchError {
                 document_id: document_transition.base().id.clone(),
             },
         )));

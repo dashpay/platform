@@ -10,13 +10,14 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const FeeResult = require('@dashevo/rs-drive/FeeResult');
+
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
-
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
-const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 
+const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const PredictedFeeLowerThanActualError = require('../../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
 const NegativeBalanceError = require('../../../../../lib/abci/handlers/errors/NegativeBalanceError');
@@ -32,12 +33,11 @@ describe('deliverTxFactory', () => {
   let dataContractCreateTransitionFixture;
   let dpp;
   let unserializeStateTransitionMock;
-  let blockExecutionContextMock;
   let validationResult;
   let executionTimerMock;
   let loggerMock;
   let round;
-  let proposalBlockExecutionContextCollectionMock;
+  let proposalBlockExecutionContextMock;
 
   beforeEach(async function beforeEach() {
     round = 42;
@@ -79,12 +79,8 @@ describe('deliverTxFactory', () => {
 
     unserializeStateTransitionMock = this.sinon.stub();
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeight.returns(42);
-
-    proposalBlockExecutionContextCollectionMock = {
-      get: this.sinon.stub().returns(blockExecutionContextMock),
-    };
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock.getHeight.returns(42);
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -97,7 +93,7 @@ describe('deliverTxFactory', () => {
     deliverTx = deliverTxFactory(
       unserializeStateTransitionMock,
       dppMock,
-      proposalBlockExecutionContextCollectionMock,
+      proposalBlockExecutionContextMock,
       executionTimerMock,
     );
   });
@@ -109,8 +105,7 @@ describe('deliverTxFactory', () => {
 
     expect(response).to.deep.equal({
       code: 0,
-      processingFees: 0,
-      storageFees: 0,
+      fees: FeeResult.create(),
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
@@ -122,10 +117,8 @@ describe('deliverTxFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       documentsBatchTransitionFixture,
     );
-    expect(blockExecutionContextMock.addDataContract).to.not.be.called();
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
+    expect(proposalBlockExecutionContextMock.addDataContract).to.not.be.called();
+
     const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
 
     // TODO: enable once fee calculation is done
@@ -146,8 +139,7 @@ describe('deliverTxFactory', () => {
 
     expect(response).to.deep.equal({
       code: 0,
-      processingFees: 0,
-      storageFees: 0,
+      fees: FeeResult.create(),
     });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
@@ -159,10 +151,7 @@ describe('deliverTxFactory', () => {
     expect(dppMock.stateTransition.apply).to.be.calledOnceWith(
       dataContractCreateTransitionFixture,
     );
-    expect(proposalBlockExecutionContextCollectionMock.get).to.have.been.calledOnceWithExactly(
-      round,
-    );
-    expect(blockExecutionContextMock.addDataContract).to.be.calledOnceWith(
+    expect(proposalBlockExecutionContextMock.addDataContract).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.getDataContract(),
     );
 

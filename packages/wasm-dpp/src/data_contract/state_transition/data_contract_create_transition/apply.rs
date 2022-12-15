@@ -2,12 +2,10 @@ use std::ops::Deref;
 
 use dpp::{
     data_contract::state_transition::apply_data_contract_create_transition_factory::ApplyDataContractCreateTransition,
-    state_repository::StateRepositoryLike,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     DataContractCreateTransitionWasm,
 };

@@ -84,10 +84,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn fetch_documents<T>(
         &self,
-        contract_id: &Identifier,
-        data_contract_type: &str,
-        where_query: serde_json::Value,
-        execution_context: &StateTransitionExecutionContext,
+        _contract_id: &Identifier,
+        _data_contract_type: &str,
+        _where_query: serde_json::Value,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Vec<T>>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
@@ -97,34 +97,34 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_document(
         &self,
-        document: &Document,
-        execution_context: &StateTransitionExecutionContext,
+        _document: &Document,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
     async fn update_document(
         &self,
-        document: &Document,
-        execution_context: &StateTransitionExecutionContext,
+        _document: &Document,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
     async fn remove_document(
         &self,
-        data_contract: &DataContract,
-        data_contract_type: &str,
-        document_id: &Identifier,
-        execution_context: &StateTransitionExecutionContext,
+        _data_contract: &DataContract,
+        _data_contract_type: &str,
+        _document_id: &Identifier,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
     async fn fetch_transaction<T>(
         &self,
-        id: &str,
-        execution_context: &StateTransitionExecutionContext,
+        _id: &str,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Option<T>>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
@@ -134,8 +134,8 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn fetch_identity<T>(
         &self,
-        id: &Identifier,
-        execution_context: &StateTransitionExecutionContext,
+        _id: &Identifier,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Option<T>>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
@@ -145,16 +145,16 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn store_identity_public_key_hashes(
         &self,
-        identity_id: &Identifier,
-        public_key_hashes: Vec<Vec<u8>>,
-        execution_context: &StateTransitionExecutionContext,
+        _identity_id: &Identifier,
+        _public_key_hashes: Vec<Vec<u8>>,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
     async fn fetch_identity_by_public_key_hashes<T>(
         &self,
-        public_key_hashed: Vec<Vec<u8>>,
+        _public_key_hashed: Vec<Vec<u8>>,
     ) -> anyhow::Result<Vec<T>>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
@@ -171,23 +171,23 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn verify_instant_lock(
         &self,
-        instant_lock: &InstantLock,
-        execution_context: &StateTransitionExecutionContext,
+        _instant_lock: &InstantLock,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<bool> {
         todo!()
     }
 
     async fn is_asset_lock_transaction_out_point_already_used(
         &self,
-        out_point_buffer: &[u8],
-        execution_context: &StateTransitionExecutionContext,
+        _out_point_buffer: &[u8],
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<bool> {
         todo!()
     }
 
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
-        out_point_buffer: &[u8],
+        _out_point_buffer: &[u8],
     ) -> anyhow::Result<()> {
         todo!()
     }
@@ -201,16 +201,16 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_identity(
         &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
+        _identity: &Identity,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
     async fn update_identity(
         &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
+        _identity: &Identity,
+        _execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         todo!()
     }
@@ -221,8 +221,8 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn enqueue_withdrawal_transaction(
         &self,
-        index: u64,
-        transaction_bytes: Vec<u8>,
+        _index: u64,
+        _transaction_bytes: Vec<u8>,
     ) -> anyhow::Result<()> {
         todo!()
     }

@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.24.0-dev.8",
+  "version": "0.24.0-dev.10",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -66,7 +66,7 @@
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashpay/js-abci#8764d7f13156200cd3a767c73cc491b4dc07b29f",
+    "@dashevo/abci": "github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.19.44",
     "@dashevo/dashd-rpc": "^2.4.2",
@@ -87,11 +87,8 @@
     "dotenv-expand": "^5.1.0",
     "dotenv-safe": "^8.2.0",
     "find-my-way": "^2.2.2",
-    "google-protobuf": "^3.12.2",
     "js-merkle": "^0.1.5",
-    "lodash.clonedeep": "^4.5.0",
-    "lodash.get": "^4.4.2",
-    "lodash.set": "^4.3.2",
+    "lodash": "^4.17.21",
     "long": "^5.2.0",
     "node-graceful": "^3.0.1",
     "pino": "^6.4.0",

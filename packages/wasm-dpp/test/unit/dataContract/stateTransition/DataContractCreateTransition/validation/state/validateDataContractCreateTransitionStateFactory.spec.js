@@ -9,15 +9,17 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
   let stateTransition;
   let executionContext;
   let ValidationResult;
-  let fetchDataContract;
   let DataContractCreateTransition;
-  let ApplyDataContractCreateTransition;
   let StateTransitionExecutionContext;
   let factory;
+  let dataContractFetched;
 
   before(async () => {
     ({
-      DataContractCreateTransition, StateTransitionExecutionContext, validateDataContractCreateTransitionState, ValidationResult
+      DataContractCreateTransition,
+      StateTransitionExecutionContext,
+      validateDataContractCreateTransitionState,
+      ValidationResult,
     } = await loadWasmDpp());
   });
 
@@ -38,14 +40,14 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     const stateRepositoryLike = {
       fetchDataContract: () => {
         dataContractFetched = true;
-      }
+      },
     };
 
-    factory = (stateTransition) => { return validateDataContractCreateTransitionState(stateRepositoryLike, stateTransition); };
+    factory = (t) => validateDataContractCreateTransitionState(stateRepositoryLike, t);
   });
 
   // TODO wait for error types
-  // it('should return invalid result if Data Contract with specified contractId is already exist', async () => {
+  // it('should return invalid result if Data Contract is already exist', async () => {
   //   stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
   //   const result = await validateDataContractCreateTransitionState(stateTransition);

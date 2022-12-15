@@ -17,7 +17,7 @@ describe('DataContractCreateTransition', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(() => {
     dataContract = getDataContractFixture();
 
     stateTransition = new DataContractCreateTransition({
@@ -65,18 +65,19 @@ describe('DataContractCreateTransition', () => {
   describe('#toBuffer', () => {
     it('should return serialized State Transition', () => {
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
+      protocolVersionUInt32.writeUInt32LE(stateTransition.getProtocolVersion(), 0);
 
       const result = stateTransition.toBuffer();
-      expect(result.compare(protocolVersionUInt32, 0, 4, 0, 4)).to.be.true;
+      expect(result.compare(protocolVersionUInt32, 0, 4, 0, 4)).equals(0);
     });
   });
 
   describe('#getOwnerId', () => {
     it('should return owner id', async () => {
       const result = stateTransition.getOwnerId();
+      const reference = stateTransition.getDataContract().getOwnerId();
 
-      expect(result.toBuffer()).to.deep.equal(stateTransition.getDataContract().getOwnerId().toBuffer());
+      expect(result.toBuffer()).to.deep.equal(reference.toBuffer());
     });
   });
 

@@ -7,6 +7,7 @@ do
         t) target=${OPTARG};;
         a) arch=${OPTARG};;
         l) libc=${OPTARG};;
+        *) echo "invalid arguments" && exit 1;;
     esac
 done
 
@@ -18,10 +19,6 @@ then
     apt install -y gcc-aarch64-linux-gnu libstdc++-11-dev-arm64-cross
 fi
 
-## Install Node.JS
-curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
-apt install -y nodejs
-
 ## Update toolchain
 rustup update stable
 
@@ -32,4 +29,16 @@ chmod 777 -R /root/.cargo
 mkdir -p /github/workspace/target
 chmod 777 -R /github/workspace/target
 
-ARCH=$arch LIBC=$libc npm run build -- --release --target=$target
+## Install Node.JS
+curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+apt install -y nodejs
+
+corepack enable
+
+yarn install
+
+CARGO_BUILD_TARGET=$target \
+CARGO_BUILD_PROFILE=release \
+ARCH=$arch \
+LIBC=$libc \
+yarn workspace @dashevo/rs-drive run build

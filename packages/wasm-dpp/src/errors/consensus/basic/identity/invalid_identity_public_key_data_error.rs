@@ -26,11 +26,10 @@ impl InvalidIdentityPublicKeyDataErrorWasm {
 
     #[wasm_bindgen(js_name=getValidationError)]
     pub fn validation_error(&self) -> Option<PublicKeyValidationErrorWasm> {
-        if let Some(err) = self.inner.validation_error() {
-            Some(PublicKeyValidationErrorWasm::from(err.clone()))
-        } else {
-            None
-        }
+        self.inner
+            .validation_error()
+            .as_ref()
+            .map(|err| PublicKeyValidationErrorWasm::from(err.clone()))
     }
 
     #[wasm_bindgen(js_name=getCode)]

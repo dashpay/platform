@@ -5,3 +5,6 @@ pub use state_transition::*;
 mod data_contract;
 pub mod errors;
 mod state_transition;
+
+mod index;
+pub use index::*;

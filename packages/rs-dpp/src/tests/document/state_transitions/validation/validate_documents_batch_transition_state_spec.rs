@@ -305,7 +305,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     assert_eq!(4006, state_error.get_code());
     assert!(matches!(
         state_error,
-        StateError::DocumentOwnerMismatchError { document_id, document_owner_id, existing_document_owner_id } if  {
+        StateError::DocumentOwnerIdMismatchError { document_id, document_owner_id, existing_document_owner_id } if  {
             document_id == &transition_id &&
             existing_document_owner_id == &another_owner_id &&
             document_owner_id ==  &owner_id
@@ -372,7 +372,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
     assert_eq!(4007, state_error.get_code());
     assert!(matches!(
         state_error,
-        StateError::DocumentTimestampMismatchError { document_id }  if  {
+        StateError::DocumentTimestampsMismatchError { document_id }  if  {
             document_id == &transition_id
         }
     ));

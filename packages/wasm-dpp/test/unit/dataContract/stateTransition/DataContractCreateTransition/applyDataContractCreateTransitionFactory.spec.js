@@ -9,7 +9,7 @@ describe('applyDataContractCreateTransitionFactory', () => {
   let dataContract;
   let factory;
   let executionContext;
-  let DatacontractCreateTransition;
+  let DataContractCreateTransition;
   let ApplyDataContractCreateTransition;
   let StateTransitionExecutionContext;
 
@@ -17,11 +17,13 @@ describe('applyDataContractCreateTransitionFactory', () => {
 
   before(async () => {
     ({
-      DataContractCreateTransition, ApplyDataContractCreateTransition, StateTransitionExecutionContext,
-    } = await loadWasmDpp());   
+      DataContractCreateTransition,
+      ApplyDataContractCreateTransition,
+      StateTransitionExecutionContext,
+    } = await loadWasmDpp());
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(() => {
     dataContract = getDataContractFixture();
 
     stateTransition = new DataContractCreateTransition({
@@ -37,7 +39,7 @@ describe('applyDataContractCreateTransitionFactory', () => {
     const stateRepositoryLike = {
       storeDataContract: () => {
         dataContractStored = true;
-      }
+      },
     };
 
     factory = new ApplyDataContractCreateTransition(stateRepositoryLike);
@@ -45,8 +47,8 @@ describe('applyDataContractCreateTransitionFactory', () => {
     dataContractStored = false;
   });
 
-    it('should store a data contract from state transition in the repository', async () => {
-      await factory.applyDataContractCreateTransition(stateTransition);
-      expect(dataContractStored).to.be.true();
+  it('should store a data contract from state transition in the repository', async () => {
+    await factory.applyDataContractCreateTransition(stateTransition);
+    expect(dataContractStored).to.be.true();
   });
 });

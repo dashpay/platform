@@ -32,7 +32,7 @@ describe('DPNS', () => {
   before(async () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
-    client = await createClientWithFundedWallet(800000);
+    client = await createClientWithFundedWallet(1000000);
 
     await client.platform.identities.topUp(dpnsOwnerId, 300000);
   });
@@ -125,7 +125,7 @@ describe('DPNS', () => {
 
   describe('Any Identity', () => {
     before(async () => {
-      identity = await client.platform.identities.register(400000);
+      identity = await client.platform.identities.register(600000);
 
       await waitForSTPropagated();
     });

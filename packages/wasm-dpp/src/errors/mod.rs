@@ -6,4 +6,5 @@ pub mod consensus_error;
 mod from;
 mod js_conversion;
 mod public_key_validation_error;
+
 pub use public_key_validation_error::*;

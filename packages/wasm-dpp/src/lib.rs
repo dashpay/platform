@@ -19,7 +19,6 @@ mod identity;
 mod identity_facade;
 mod identity_public_key;
 mod metadata;
-pub mod mocks;
 mod state_repository;
 mod state_transition;
 

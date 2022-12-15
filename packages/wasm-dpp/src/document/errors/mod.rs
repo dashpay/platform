@@ -10,7 +10,7 @@ pub use invalid_initial_revision_error::*;
 pub use mismatch_owners_ids_error::*;
 pub use no_documents_supplied_error::*;
 
-use crate::mocks;
+use crate::errors::consensus_error::from_consensus_error;
 use crate::{utils::*, DocumentWasm};
 
 mod document_already_exists_error;
@@ -26,25 +26,22 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
         DocumentError::DocumentAlreadyExists {
             document_transition,
-        } => DocumentAlreadyExistsError::new(document_transition.into()).into(),
+        } => DocumentAlreadyExistsError::new(document_transition).into(),
         DocumentError::DocumentNotProvided {
             document_transition,
-        } => DocumentNotProvidedError::new(document_transition.into()).into(),
+        } => DocumentNotProvidedError::new(document_transition).into(),
 
         DocumentError::InvalidActionName { actions } => {
             InvalidActionNameError::new(to_vec_js(actions)).into()
         }
         DocumentError::InvalidDocument { errors, document } => InvalidDocumentError::new(
             (*document).into(),
-            errors
-                .into_iter()
-                .map(mocks::from_consensus_to_js_error)
-                .collect(),
+            errors.into_iter().map(from_consensus_error).collect(),
         )
         .into(),
         DocumentError::InvalidDocumentAction {
             document_transition,
-        } => InvalidDocumentActionError::new(document_transition.into()).into(),
+        } => InvalidDocumentActionError::new(document_transition).into(),
         DocumentError::InvalidInitialRevision { document } => {
             InvalidInitialRevisionError::new((*document).into()).into()
         }

@@ -1,4 +1,4 @@
-const lodashMerge = require('lodash.merge');
+const lodashMerge = require('lodash/merge');
 const path = require('path');
 
 const {
@@ -52,9 +52,9 @@ module.exports = lodashMerge({}, baseConfig, {
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-14',
+          chain_id: 'dash-testnet-15',
           initial_height: '0',
-          initial_core_chain_locked_height: 813581,
+          initial_core_chain_locked_height: 841668,
           initial_proposal_core_chain_lock: null,
           consensus_params: {
             block: {

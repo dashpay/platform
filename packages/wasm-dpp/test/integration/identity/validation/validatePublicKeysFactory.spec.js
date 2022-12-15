@@ -95,8 +95,7 @@ describe('validatePublicKeysFactory', () => {
     it('should be present', () => {
       delete rawPublicKeys[1].id;
 
-      const result = validatePublicKeys(rawPublicKeys);
-
+      const result = publicKeysValidator.validateKeys(rawPublicKeys);
       expectJsonSchemaError(result);
 
       const [error] = result.getErrors();

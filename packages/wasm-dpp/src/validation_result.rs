@@ -1,4 +1,4 @@
-use crate::errors::consensus_error::from_consensus_error;
+use crate::errors::consensus_error::from_consensus_error_ref;
 use dpp::validation::ValidationResult;
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
@@ -28,8 +28,8 @@ impl ValidationResultWasm {
     pub fn errors(&self) -> Vec<JsValue> {
         self.0
             .errors()
-            .into_iter()
-            .map(|e| from_consensus_error(e))
+            .iter()
+            .map(from_consensus_error_ref)
             .collect()
     }
 }

@@ -410,7 +410,7 @@ impl TryFrom<&str> for DataContract {
 impl<'a> TryFrom<&'a [u8]> for DataContract {
     type Error = ProtocolError;
 
-    fn try_from(v: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(_v: &[u8]) -> Result<Self, Self::Error> {
         todo!()
     }
 }
@@ -418,7 +418,7 @@ impl<'a> TryFrom<&'a [u8]> for DataContract {
 impl TryFrom<Vec<u8>> for DataContract {
     type Error = ProtocolError;
 
-    fn try_from(v: Vec<u8>) -> Result<Self, Self::Error> {
+    fn try_from(_v: Vec<u8>) -> Result<Self, Self::Error> {
         todo!()
     }
 }

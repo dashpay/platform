@@ -38,7 +38,6 @@ describe('Account - disconnect', function suite() {
     expect(emitted).to.deep.equal([
       'WORKER/DUMMYWORKER/STARTING',
       'WORKER/DUMMYWORKER/STARTED',
-      'WORKER/DUMMYWORKER/EXECUTED',
       'WORKER/DUMMYWORKER/STOPPED',
     ]);
   });

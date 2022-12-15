@@ -71,7 +71,7 @@ fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
 }
 
 /// Where operator arguments
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WhereOperator {
     /// Equal
     Equal,

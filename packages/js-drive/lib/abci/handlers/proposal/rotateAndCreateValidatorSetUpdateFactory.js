@@ -1,11 +1,11 @@
 /**
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @return {rotateAndCreateValidatorSetUpdate}
  */
 function rotateAndCreateValidatorSetUpdateFactory(
-  proposalBlockExecutionContextCollection,
+  proposalBlockExecutionContext,
   validatorSet,
   createValidatorSetUpdate,
 ) {
@@ -23,7 +23,6 @@ function rotateAndCreateValidatorSetUpdateFactory(
     round,
     consensusLogger,
   ) {
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
     const lastCommitInfo = proposalBlockExecutionContext.getLastCommitInfo();
 
     // Rotate validators
