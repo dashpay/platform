@@ -713,15 +713,15 @@ jobs:
       - name: Enable Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Set LIBC env
+      - name: Set LIBC argument
         uses: actions/github-script@v5
-        id: set-libc
+        id: set-libc-arg
         with:
           script: |
             let env = '';
 
             if (${{ matrix.compiler == 'musl' }}) {
-              env = 'musl'
+              env = '-l musl'
             }
 
             core.info(`Set LIBC env to "${env}"`);
@@ -735,7 +735,7 @@ jobs:
         with:
           workdir: /github/workspace/
           entrypoint: packages/rs-drive-nodejs/docker/build.sh
-          args: -a '${{ matrix.node_arch }}' -t '${{ steps.set-target.outputs.result }}' -l '${{ steps.set-libc.outputs.result }}'
+          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
 
       - name: Build for Linux (aarch64)
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.arch == 'aarch64' }}
@@ -743,7 +743,7 @@ jobs:
         with:
           workdir: /github/workspace/
           entrypoint: packages/rs-drive-nodejs/docker/build.sh
-          args: -a '${{ matrix.node_arch }}' -t '${{ steps.set-target.outputs.result }}' -l '${{ steps.set-libc.outputs.result }}'
+          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
 
       - name: Build for Mac OS
         if: ${{ matrix.os == 'macos-11' }}
