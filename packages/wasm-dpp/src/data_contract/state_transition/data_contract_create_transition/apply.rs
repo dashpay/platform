@@ -1,8 +1,6 @@
 use std::ops::Deref;
 
-use dpp::{
-    data_contract::state_transition::apply_data_contract_create_transition_factory::ApplyDataContractCreateTransition,
-};
+use dpp::data_contract::state_transition::apply_data_contract_create_transition_factory::ApplyDataContractCreateTransition;
 use wasm_bindgen::prelude::*;
 
 use crate::{
