@@ -32,8 +32,6 @@
 
 use crate::drive::config::DriveEncoding::DriveCbor;
 
-use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-
 /// Boolean if GroveDB batching is enabled by default
 pub const DEFAULT_GROVE_BATCHING_ENABLED: bool = true;
 /// Boolean if GroveDB batching consistency verification is enabled by default
