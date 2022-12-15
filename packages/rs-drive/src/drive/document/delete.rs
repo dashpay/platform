@@ -1404,13 +1404,16 @@ mod tests {
             )
             .expect("expected to be able to delete the document");
 
-        let removed_bytes = fee_result
+        let removed_credits = fee_result
             .fee_refunds
             .get(&random_owner_id)
             .unwrap()
             .get(0)
             .unwrap();
-        assert_eq!(added_bytes, *removed_bytes as u64);
+
+        let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+        assert_eq!(added_bytes, removed_bytes);
     }
 
     #[test]

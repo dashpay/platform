@@ -1522,13 +1522,18 @@ mod tests {
                 &person_0_original,
                 transaction.as_ref(),
             );
-            let removed_bytes = deletion_fees
+
+            let removed_credits = deletion_fees
                 .fee_refunds
                 .get(&owner_id)
                 .unwrap()
                 .get(0)
                 .unwrap();
-            assert_eq!(original_bytes, *removed_bytes as u64);
+
+            let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+            assert_eq!(original_bytes, removed_bytes);
+
             // let's re-add it again
             let original_fees = apply_person(
                 &drive,
@@ -1538,7 +1543,9 @@ mod tests {
                 true,
                 transaction.as_ref(),
             );
+
             let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
             assert_eq!(original_bytes, expected_added_bytes);
         }
 
@@ -1634,13 +1641,18 @@ mod tests {
                 &person_0_original,
                 transaction.as_ref(),
             );
-            let removed_bytes = deletion_fees
+
+            let removed_credits = deletion_fees
                 .fee_refunds
                 .get(&owner_id)
                 .unwrap()
                 .get(0)
                 .unwrap();
-            assert_eq!(original_bytes, *removed_bytes as u64);
+
+            let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+            assert_eq!(original_bytes, removed_bytes);
+
             // let's re-add it again
             let original_fees = apply_person(
                 &drive,
@@ -1650,11 +1662,13 @@ mod tests {
                 true,
                 transaction.as_ref(),
             );
+
             let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
             assert_eq!(original_bytes, expected_added_bytes);
         }
-        // now let's update it
 
+        // now let's update it
         let update_fees = apply_person(
             &drive,
             &contract,
@@ -1666,20 +1680,22 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let removed_bytes = update_fees
+
+        let removed_credits = update_fees
             .fee_refunds
             .get(&owner_id)
             .unwrap()
             .get(0)
             .unwrap();
 
+        let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
         let expected_added_bytes = if using_history { 601 } else { 599 };
         assert_eq!(added_bytes, expected_added_bytes);
 
         let expected_removed_bytes = if using_history { 598 } else { 596 };
-
-        assert_eq!(*removed_bytes, expected_removed_bytes);
+        assert_eq!(removed_bytes, expected_removed_bytes);
     }
 
     #[test]

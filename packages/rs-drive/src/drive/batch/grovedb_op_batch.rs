@@ -38,7 +38,7 @@ use grovedb::Element;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<GroveDbOp>,
