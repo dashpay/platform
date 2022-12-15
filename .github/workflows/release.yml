@@ -735,7 +735,7 @@ jobs:
         with:
           workdir: /github/workspace/
           entrypoint: packages/rs-drive-nodejs/docker/build.sh
-          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} -l ${{ steps.set-libc.outputs.result }}
+          args: -a '${{ matrix.node_arch }}' -t '${{ steps.set-target.outputs.result }}' -l '${{ steps.set-libc.outputs.result }}'
 
       - name: Build for Linux (aarch64)
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.arch == 'aarch64' }}
@@ -743,7 +743,7 @@ jobs:
         with:
           workdir: /github/workspace/
           entrypoint: packages/rs-drive-nodejs/docker/build.sh
-          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} -l ${{ steps.set-libc.outputs.result }}
+          args: -a '${{ matrix.node_arch }}' -t '${{ steps.set-target.outputs.result }}' -l '${{ steps.set-libc.outputs.result }}'
 
       - name: Build for Mac OS
         if: ${{ matrix.os == 'macos-11' }}
