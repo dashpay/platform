@@ -2381,7 +2381,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
-            ["@grpc/grpc-js", "npm:1.4.4"],\
             ["assert-browserify", "npm:2.0.0"],\
             ["axios", "npm:0.27.2"],\
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],\
@@ -2419,6 +2418,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["string_decoder", "npm:1.3.0"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
+            ["wasm-x11-hash", "npm:0.0.2"],\
             ["webpack", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:5.64.1"],\
             ["webpack-cli", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:4.9.1"]\
           ],\
@@ -2433,6 +2433,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
+            ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
@@ -2440,7 +2441,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["google-protobuf", "npm:3.19.1"],\
-            ["grpc-web", "npm:1.2.1"],\
             ["long", "npm:5.2.0"],\
             ["mocha", "npm:9.2.2"],\
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
@@ -2467,6 +2467,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["chai", "npm:4.3.4"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
@@ -2903,6 +2904,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
+            ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -2914,6 +2916,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["crypto-browserify", "npm:3.12.0"],\
             ["crypto-js", "npm:4.1.1"],\
+            ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["dotenv-safe", "npm:8.2.0"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2943,6 +2946,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["string_decoder", "npm:1.3.0"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
+            ["wasm-x11-hash", "npm:0.0.2"],\
             ["webpack", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:5.64.1"],\
             ["webpack-cli", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:4.9.1"],\
             ["winston", "npm:3.3.3"]\
@@ -3147,6 +3151,29 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@hutson-parse-repository-url-npm-3.0.2-ae5ef1b671-39992c5f18.zip/node_modules/@hutson/parse-repository-url/",\
           "packageDependencies": [\
             ["@hutson/parse-repository-url", "npm:3.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@improbable-eng/grpc-web", [\
+        ["npm:0.15.0", {\
+          "packageLocation": "./.yarn/cache/@improbable-eng-grpc-web-npm-0.15.0-b5e59cba5e-8c6322e681.zip/node_modules/@improbable-eng/grpc-web/",\
+          "packageDependencies": [\
+            ["@improbable-eng/grpc-web", "npm:0.15.0"]\
+          ],\
+          "linkType": "SOFT"\
+        }],\
+        ["virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0", {\
+          "packageLocation": "./.yarn/__virtual__/@improbable-eng-grpc-web-virtual-69d4d21791/0/cache/@improbable-eng-grpc-web-npm-0.15.0-b5e59cba5e-8c6322e681.zip/node_modules/@improbable-eng/grpc-web/",\
+          "packageDependencies": [\
+            ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
+            ["@types/google-protobuf", null],\
+            ["browser-headers", "npm:0.4.1"],\
+            ["google-protobuf", "npm:3.19.1"]\
+          ],\
+          "packagePeers": [\
+            "@types/google-protobuf",\
+            "google-protobuf"\
           ],\
           "linkType": "HARD"\
         }]\
@@ -6030,6 +6057,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["browser-headers", [\
+        ["npm:0.4.1", {\
+          "packageLocation": "./.yarn/cache/browser-headers-npm-0.4.1-a7f333378b-28b927dd90.zip/node_modules/browser-headers/",\
+          "packageDependencies": [\
+            ["browser-headers", "npm:0.4.1"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["browser-stdout", [\
         ["npm:1.3.1", {\
           "packageLocation": "./.yarn/cache/browser-stdout-npm-1.3.1-6b2376bf3f-b717b19b25.zip/node_modules/browser-stdout/",\
@@ -7577,7 +7613,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
             ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.64.1"],\
-            ["webpack-cli", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:4.9.1"]\
+            ["webpack-cli", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:4.9.1"],\
+            ["winston", "npm:3.3.3"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -9967,15 +10004,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/growl-npm-1.10.5-2d1da54198-4b86685de6.zip/node_modules/growl/",\
           "packageDependencies": [\
             ["growl", "npm:1.10.5"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["grpc-web", [\
-        ["npm:1.2.1", {\
-          "packageLocation": "./.yarn/cache/grpc-web-npm-1.2.1-3d331ff494-3860a37617.zip/node_modules/grpc-web/",\
-          "packageDependencies": [\
-            ["grpc-web", "npm:1.2.1"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -17709,6 +17737,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/walk-up-path-npm-1.0.0-54fda77042-b8019ac4fb.zip/node_modules/walk-up-path/",\
           "packageDependencies": [\
             ["walk-up-path", "npm:1.0.0"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["wasm-x11-hash", [\
+        ["npm:0.0.2", {\
+          "packageLocation": "./.yarn/cache/wasm-x11-hash-npm-0.0.2-e64121836c-67005c5d04.zip/node_modules/wasm-x11-hash/",\
+          "packageDependencies": [\
+            ["wasm-x11-hash", "npm:0.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\

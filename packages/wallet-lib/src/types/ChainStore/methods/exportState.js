@@ -1,33 +1,52 @@
+const { STORAGE } = require('../../../CONSTANTS');
+
 function exportState() {
   const { state } = this;
   const {
     blockHeaders,
     transactions,
-    blockHeight,
+    chainHeight,
     fees,
+    headersMetadata,
+    lastSyncedHeaderHeight,
+    lastSyncedBlockHeight,
   } = state;
 
   const serializedState = {
-    blockHeaders: {},
+    chainHeight,
+    blockHeaders: [],
     transactions: {},
     txMetadata: {},
     fees: {},
   };
 
-  let reorgSafeHeight = Infinity;
+  const reorgSafeHeight = chainHeight - STORAGE.REORG_SAFE_BLOCKS_COUNT;
+  const lastSyncedHeaderHeightToExport = Math.min(reorgSafeHeight, lastSyncedHeaderHeight);
+  const lastSyncedBlockHeightToExport = Math.min(reorgSafeHeight, lastSyncedBlockHeight);
 
-  if (blockHeight) {
-    reorgSafeHeight = blockHeight - 6;
-  }
+  const headersMetadataToExport = Object.fromEntries(
+    [...headersMetadata.entries()]
+      .filter(([, { height }]) => height <= lastSyncedHeaderHeightToExport),
+  );
 
-  [...blockHeaders.entries()].forEach(([blockHeaderHash, blockHeader]) => {
-    serializedState.blockHeaders[blockHeaderHash] = blockHeader.toString();
+  Object.assign(serializedState, {
+    lastSyncedHeaderHeight: lastSyncedHeaderHeightToExport,
+    lastSyncedBlockHeight: lastSyncedBlockHeightToExport,
+    headersMetadata: headersMetadataToExport,
   });
 
+  const ignoredHeadersCount = lastSyncedHeaderHeight - lastSyncedHeaderHeightToExport;
+  serializedState.blockHeaders = blockHeaders
+    .slice(0, blockHeaders.length - ignoredHeadersCount)
+    .map((header) => header.toString());
+
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
-    if (metadata && metadata.height && metadata.height <= reorgSafeHeight) {
+    if (metadata && metadata.height && metadata.height <= lastSyncedBlockHeightToExport) {
       serializedState.transactions[transactionHash] = transaction.toString();
-      serializedState.txMetadata[transactionHash] = metadata;
+      serializedState.txMetadata[transactionHash] = {
+        ...metadata,
+        time: metadata.time ? metadata.time.getTime() : -1,
+      };
     }
   });
 

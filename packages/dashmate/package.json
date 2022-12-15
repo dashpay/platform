@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.0-dev.8",
+  "version": "0.24.0-dev.10",
   "description": "Distribution package for Dash Masternode installation",
   "scripts": {
     "lint": "eslint .",

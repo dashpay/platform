@@ -33,15 +33,23 @@ describe('Plugins - Worker', function suite() {
     worker.execute = () => {
       didSomething += 1;
     };
-
     worker.startWorker();
     setTimeout(async () => {
-      expect(worker.workerPass).to.equal(4);
-      expect(didSomething).to.equal(4);
+      try {
+        expect(worker.workerPass).to.greaterThanOrEqual(4);
+        expect(didSomething).to.greaterThanOrEqual(4);
+      } catch (e) {
+        done(e);
+      }
+
       await worker.stopWorker();
       setTimeout(() => {
-        expect(worker.workerPass).to.equal(0);
-        expect(didSomething).to.equal(4);
+        try {
+          expect(worker.workerPass).to.equal(0);
+          expect(didSomething).to.greaterThanOrEqual(4);
+        } catch (e) {
+          done(e);
+        }
         done();
       }, 400);
     }, 999);

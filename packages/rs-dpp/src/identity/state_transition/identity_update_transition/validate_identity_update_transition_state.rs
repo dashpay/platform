@@ -86,7 +86,7 @@ where
                         })
                     }
                     if public_key_to_disable.is_disabled() {
-                        validation_result.add_error(StateError::IdentityPublicKeyDisabledError {
+                        validation_result.add_error(StateError::IdentityPublicKeyIsDisabledError {
                             public_key_index: *key_id,
                         })
                     }

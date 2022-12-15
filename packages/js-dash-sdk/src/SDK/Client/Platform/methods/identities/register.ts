@@ -12,6 +12,7 @@ export default async function register(
   this: Platform,
   fundingAmount : number = 1000000
 ): Promise<any> {
+    this.logger.debug(`[Identity#register] Register identity with funding amount ${fundingAmount}`);
     await this.initialize();
 
     const { client } = this;
@@ -24,15 +25,18 @@ export default async function register(
         outputIndex: assetLockOutputIndex
     } = await this.identities.utils.createAssetLockTransaction(fundingAmount);
 
+    this.logger.silly(`[Identity#register] Broadcast asset lock transaction "${assetLockTransaction.hash}"`);
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
 
+    this.logger.silly(`[Identity#register] Wait for asset lock proof "${assetLockTransaction.hash}"`);
     const assetLockProof = await this.identities.utils
       .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
     const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
       .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
+    this.logger.silly(`[Identity#register] Broadcast identity create ST"`);
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
@@ -66,6 +70,8 @@ export default async function register(
     identity.setMetadata(registeredIdentity.getMetadata());
     identity.setBalance(registeredIdentity.getBalance());
     identity.setPublicKeys(registeredIdentity.getPublicKeys());
+
+    this.logger.debug(`[Identity#register] Registered identity "${identity.getId()}"`);
 
     return identity;
 }
