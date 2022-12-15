@@ -61,6 +61,8 @@ use crate::fee::op::DriveOperation;
 pub const WITHDRAWAL_TRANSACTIONS_COUNTER_ID: [u8; 1] = [0];
 /// constant id for subtree containing transactions queue
 pub const WITHDRAWAL_TRANSACTIONS_QUEUE_ID: [u8; 1] = [1];
+/// constant id for subtree containing expired transaction ids
+pub const WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS: [u8; 1] = [2];
 
 type WithdrawalTransaction = (Vec<u8>, Vec<u8>);
 
@@ -78,6 +80,11 @@ pub fn add_initial_withdrawal_state_structure_operations(batch: &mut GroveDbOpBa
         vec![vec![RootTree::WithdrawalTransactions as u8]],
         WITHDRAWAL_TRANSACTIONS_QUEUE_ID.to_vec(),
     );
+
+    batch.add_insert_empty_tree(
+        vec![vec![RootTree::WithdrawalTransactions as u8]],
+        WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS.to_vec(),
+    );
 }
 
 impl Drive {
@@ -86,6 +93,35 @@ impl Drive {
         &self,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
+        let (expired_index_elements, _) = self
+            .grove
+            .query_raw(path_query, QueryKeyElementPairResultType, transaction)
+            .unwrap()?;
+
+        if expired_index_elements.len() > 0 {
+            let expired_index_element_pair = expired_index_elements.into_iter().next().unwrap();
+
+            if let KeyElementPairResultItem((key, expired_index_element)) =
+                expired_index_element_pair
+            {
+                if let Element::Item(bytes, _) = expired_index_element {
+                    let index = u64::from_be_bytes(bytes);
+
+                    self.grove.delete(
+                        vec![
+                            vec![RootTree::WithdrawalTransactions as u8],
+                            WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS,
+                        ],
+                        key,
+                        None,
+                        transaction,
+                    )?;
+
+                    return Ok(index);
+                }
+            }
+        }
+
         let result = self
             .grove
             .get(
@@ -437,6 +473,12 @@ impl Drive {
             })?;
 
             let transaction_id = hex::encode(transaction_id_bytes);
+
+            let transaction_index = document.data.get_u64("transactionIdex").map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Can't get transactionIdex from withdrawal document",
+                ))
+            })?;
 
             if core_transactions.contains(&transaction_id)
                 || core_chain_locked_height - transaction_sign_height > 48

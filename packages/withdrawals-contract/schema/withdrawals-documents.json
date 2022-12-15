@@ -56,6 +56,11 @@
         "description": "The Core height on which transaction was signed",
         "minimum": 1
       },
+      "transactionIndex": {
+        "type": "integer",
+        "description": "Sequential index used to create withdrawal transaction",
+        "minimum": 1
+      },
       "amount": {
         "type": "integer",
         "description": "The amount to be withdrawn",
@@ -98,7 +103,8 @@
       "coreFeePerByte",
       "pooling",
       "outputScript",
-      "status"
+      "status",
+      "transactionIndex"
     ]
   }
 }
