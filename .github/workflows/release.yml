@@ -497,7 +497,15 @@ jobs:
         run: yarn workspace dashmate oclif pack macos
         if: runner.os == 'macOS'
 
-      - uses: actions/upload-artifact@v3
+      - name: Upload artifacts to action summary
+        uses: actions/upload-artifact@v3
+        if: github.event_name != 'release'
         with:
           name: dashmate
-          path: packages/dashmate/dist
+          path: packages/dashmate/dist/**
+
+      - name: Upload artifacts to release
+        uses: softprops/action-gh-release@v0.1.15
+        if: github.event_name == 'release'
+        with:
+          files: packages/dashmate/dist/**
