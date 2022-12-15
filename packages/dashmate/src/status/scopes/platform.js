@@ -27,7 +27,7 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
     const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
 
     if (dockerStatus !== DockerStatusEnum.running) {
-      throw new Error('Docker container is not running');
+      throw new Error('drive_tenderdash container is not running');
     }
 
     const {
@@ -93,7 +93,7 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
       const { version, network } = tenderdashStatus.node_info;
 
       const catchingUp = tenderdashStatus.sync_info.catching_up;
-      const lastBlockHeight = tenderdashStatus.sync_info.catching_up;
+      const lastBlockHeight = tenderdashStatus.sync_info.latest_block_height;
       const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
 
       const platformPeers = tenderdashNetInfo.n_peers;

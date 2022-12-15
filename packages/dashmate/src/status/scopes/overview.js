@@ -15,16 +15,16 @@ function getOverviewScopeFactory(getCoreScope,
    * @returns {Promise<Object>}
    */
   async function getOverviewScope(config) {
-    const network = config.get('network');
     const masternodeEnabled = config.get('core.masternode.enable');
     const platformEnabled = config.get('network') !== 'mainnet' && config.name !== 'local_seed';
 
     const {
       serviceStatus, dockerStatus, verificationProgress,
-      blockHeight, sizeOnDisk, version,
+      blockHeight, sizeOnDisk, version, network,
     } = await getCoreScope(config);
 
     const core = {
+      network,
       version,
       dockerStatus,
       serviceStatus,

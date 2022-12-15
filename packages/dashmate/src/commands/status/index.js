@@ -29,25 +29,26 @@ class StatusCommand extends ConfigBaseCommand {
       this.exit();
     }
 
-    const scope = await getOverviewScope();
+    const scope = await getOverviewScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
         network, core, masternode, platform,
       } = scope;
       const {
-        status, version, verificationProgress, sizeOnDisk, blockHeight,
+        dockerStatus, serviceStatus, version, verificationProgress, sizeOnDisk, blockHeight,
       } = core;
 
       const plain = {
         Network: network,
         'Core Version': version,
-        'Core Status': colors.status(status)(status),
+        'Core Status': dockerStatus,
+        'Core Service Status': colors.status(serviceStatus)(serviceStatus),
         'Core Size': `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB`,
         'Core Height': blockHeight,
       };
 
-      if (status === 'syncing') {
+      if (serviceStatus === ServiceStatusEnum.syncing) {
         plain['Core Sync Progress'] = `${(verificationProgress * 100).toFixed(2)}%`;
       }
 

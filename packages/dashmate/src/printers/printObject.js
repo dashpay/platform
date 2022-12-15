@@ -20,10 +20,15 @@ function printObject(object, format) {
       break;
     }
     case OUTPUT_FORMATS.JSON: {
-      const cleanObject = {};
-      Object.keys(object).forEach((key) => {
-        cleanObject[key] = stripAnsi(object[key]);
-      });
+      let cleanObject = {};
+      if (Array.isArray(object)) {
+        cleanObject = [];
+        object.forEach((e) => cleanObject.push(stripAnsi(e)));
+      } else {
+        Object.keys(object).forEach((key) => {
+          cleanObject[key] = stripAnsi(object[key]);
+        });
+      }
       output = JSON.stringify(cleanObject);
       break;
     }

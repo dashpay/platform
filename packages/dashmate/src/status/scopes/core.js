@@ -1,8 +1,10 @@
+/* eslint-disable camelcase */
 const DockerStatusEnum = require('../../enums/dockerStatus');
 const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../core/extractCoreVersion');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
+const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
 /**
  * @returns {getCoreScopeFactory}
@@ -21,6 +23,10 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
     const network = config.get('network');
     const rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
     const p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
+
+    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
+      throw new ServiceIsNotRunningError(config.name, 'core');
+    }
 
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -44,6 +50,7 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
       headerHeight: null,
       difficulty: null,
       verificationProgress: null,
+      sizeOnDisk: null,
     };
 
     core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core');
@@ -64,7 +71,7 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
     core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset);
 
     const {
-      chain, difficulty, blocks, headers, verificationprogress,
+      chain, difficulty, blocks, headers, verificationprogress, size_on_disk,
     } = blockchainInfo.result;
 
     core.chain = chain;
@@ -72,6 +79,7 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
     core.blockHeight = blocks;
     core.headerHeight = headers;
     core.verificationProgress = verificationprogress;
+    core.sizeOnDisk = size_on_disk;
 
     const { subversion, connections } = networkInfo.result;
 

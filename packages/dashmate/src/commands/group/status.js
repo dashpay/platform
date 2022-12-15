@@ -1,3 +1,4 @@
+/* eslint-disable quote-props */
 const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
@@ -10,27 +11,46 @@ class GroupStatusCommand extends GroupBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {statusProvider} statusProvider
+   * @param {getOverviewScope} getOverviewScope
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     flags,
-    statusProvider,
+    getOverviewScope,
     configGroup,
   ) {
-    const status = [];
+    const scopeResults = await Promise.allSettled(configGroup.map(async (config) => {
+      // try-catch needed to pass config name in the error
+      try {
+        const { name } = config;
+        const scope = await getOverviewScope(config);
 
-    for (const config of configGroup) {
-      // eslint-disable-next-line no-console
-      console.log(`Node ${config.getName()}`);
+        return { name, scope };
+      } catch (e) {
+        throw new Error(`Could not retrieve data for node group ${config.name}, reason: ${e}`);
+      }
+    }));
 
-      const scope = await statusProvider.getOverviewScope(config);
+    const json = [];
+
+    for (const scopeResult of scopeResults) {
+      if (scopeResult.status !== 'fulfilled') {
+        // eslint-disable-next-line no-console
+        console.error(scopeResult.reason);
+
+        continue;
+      }
+
+      const { name, scope } = scopeResult.value;
 
       if (flags.format === OUTPUT_FORMATS.PLAIN) {
+        // eslint-disable-next-line no-console
+        console.log(`Node ${name}`);
+
         const plain = {
-          Network: config.get('network'),
+          'Network': scope.core.network,
           'Core Status': colors.status(scope.core.serviceStatus)(scope.core.serviceStatus),
           'Core Height': scope.core.blockHeight,
           'Platform Enabled': scope.platform.enabled,
@@ -39,9 +59,9 @@ class GroupStatusCommand extends GroupBaseCommand {
         if (scope.platform.enabled) {
           if (scope.platform.tenderdash.serviceStatus === ServiceStatusEnum.error) {
             plain['Platform Container'] = scope.platform.tenderdash.dockerStatus;
-            plain['Platform Status'] = scope.platform.tenderdash.serviceStatus;
+            plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus);
           } else {
-            plain['Platform Status'] = scope.platform.tenderdash.serviceStatus;
+            plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus);
             plain['Platform Version'] = scope.platform.tenderdash.version;
             plain['Platform Block Height'] = scope.platform.tenderdash.lastBlockHeight;
             plain['Platform Peers'] = scope.platform.tenderdash.peers;
@@ -51,8 +71,9 @@ class GroupStatusCommand extends GroupBaseCommand {
 
         printObject(plain, flags.format);
       } else {
-        status.push({
-          network: config.get('network'),
+        json.push({
+          configName: name,
+          network: scope.core.network,
           core: {
             status: scope.core.status,
             blockHeight: scope.core.blockHeight,
@@ -66,6 +87,10 @@ class GroupStatusCommand extends GroupBaseCommand {
           },
         });
       }
+    }
+
+    if (flags.format === OUTPUT_FORMATS.JSON) {
+      printObject(json, OUTPUT_FORMATS.JSON);
     }
   }
 }

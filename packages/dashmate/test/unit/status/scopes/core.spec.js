@@ -4,11 +4,13 @@ const DockerStatusEnum = require('../../../../src/enums/dockerStatus');
 const getCoreScopeFactory = require('../../../../src/status/scopes/core');
 const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
+const ServiceIsNotRunningError = require('../../../../src/docker/errors/ServiceIsNotRunningError');
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
     let mockRpcClient;
     let mockCreateRpcClient;
+    let mockDockerCompose;
     let mockDetermineDockerStatus;
     let mockGithubProvider;
     let mockMNOWatchProvider;
@@ -24,13 +26,14 @@ describe('getCoreScopeFactory', () => {
         getNetworkInfo: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
+      mockDockerCompose = { isServiceRunning: this.sinon.stub() };
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockGithubProvider = this.sinon.stub(providers.github, 'release');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockInsightProvider = this.sinon.stub(providers, 'insight');
 
       config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
-      getCoreScope = getCoreScopeFactory(null, mockCreateRpcClient);
+      getCoreScope = getCoreScopeFactory(mockDockerCompose, mockCreateRpcClient);
     });
 
     it('should just work', async function it() {
@@ -39,6 +42,7 @@ describe('getCoreScopeFactory', () => {
       config.get.withArgs('core.p2p.port').returns('8080');
       config.get.withArgs('externalIp').returns('localhost');
 
+      mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
 
       mockRpcClient.mnsync.returns({
@@ -82,6 +86,19 @@ describe('getCoreScopeFactory', () => {
       expect(scope.latestVersion).to.be.equal('v1337-dev');
       expect(scope.p2pPortState).to.be.equal('OPEN');
       expect(scope.remoteBlockHeight).to.be.equal(1337);
+      expect(scope.sizeOnDisk).to.be.equal(1337);
+    });
+
+    it('should throw ServiceIsNotRunning error if core is not started', async () => {
+      mockDockerCompose.isServiceRunning.resolves(false);
+
+      try {
+        await getCoreScope(config);
+
+        expect.fail('should throw error');
+      } catch (e) {
+        expect(e instanceof ServiceIsNotRunningError).to.be.true();
+      }
     });
 
     it('should not make any requests if docker status is bad', async function it() {
@@ -90,6 +107,7 @@ describe('getCoreScopeFactory', () => {
       config.get.withArgs('core.p2p.port').returns('8080');
       config.get.withArgs('externalIp').returns('localhost');
 
+      mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.restarting);
       mockInsightProvider.returns({ status: this.sinon.stub() });
 
@@ -121,6 +139,7 @@ describe('getCoreScopeFactory', () => {
         result:
           { size_on_disk: 1337, verificationprogress: 1 },
       });
+      mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
 
       mockGithubProvider.returns(Promise.reject());
@@ -139,6 +158,7 @@ describe('getCoreScopeFactory', () => {
 
     it('should throw if error during request to core', async () => {
       mockRpcClient.mnsync.throws(new Error());
+      mockDockerCompose.isServiceRunning.resolves(true);
 
       try {
         await getCoreScope(config);
