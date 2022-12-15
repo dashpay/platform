@@ -39,6 +39,7 @@ use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
+use itertools::Itertools;
 
 impl Drive {
     /// Fetches existing pending epoch pool updates using specified epochs
@@ -161,7 +162,7 @@ pub fn add_update_pending_epoch_storage_pool_update_operations(
     batch: &mut GroveDbOpBatch,
     credits_per_epoch: CreditsPerEpoch,
 ) -> Result<(), Error> {
-    for (epoch_index_key, credits) in credits_per_epoch {
+    for (epoch_index_key, credits) in credits_per_epoch.into_iter().sorted_by_key(|x| x.0) {
         let epoch_index = epoch_index_key as u16;
         let encoded_epoch_index = epoch_index.to_be_bytes().to_vec();
 
