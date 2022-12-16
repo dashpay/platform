@@ -36,6 +36,7 @@ use grovedb::{Element, TransactionArg};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::credits::Credits;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
 impl Drive {
@@ -43,7 +44,7 @@ impl Drive {
     pub fn get_aggregate_storage_fees_from_distribution_pool(
         &self,
         transaction: TransactionArg,
-    ) -> Result<u64, Error> {
+    ) -> Result<Credits, Error> {
         match self
             .grove
             .get(pools_path(), KEY_STORAGE_FEE_POOL.as_slice(), transaction)

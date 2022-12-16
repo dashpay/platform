@@ -1,7 +1,7 @@
-use crate::fee::Credits;
+use crate::fee::credits::{Credits, SignedCredits};
 use nohash_hasher::IntMap;
 
-mod distribution;
+pub mod distribution;
 
 /// Genesis epoch index
 pub const GENESIS_EPOCH_INDEX: u16 = 0;
@@ -18,3 +18,4 @@ pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_Y
 pub type EpochIndex = u16;
 
 pub type CreditsPerEpoch = IntMap<EpochIndex, Credits>;
+pub type SignedCreditsPerEpoch = IntMap<EpochIndex, SignedCredits>;

@@ -112,8 +112,6 @@ impl Platform {
             return Ok(None);
         }
 
-        // TODO: Distribute pending updates
-
         // Distribute storage fees accumulated during previous epoch
         let storage_distribution_leftover_credits = self
             .add_distribute_storage_fee_to_epochs_operations(

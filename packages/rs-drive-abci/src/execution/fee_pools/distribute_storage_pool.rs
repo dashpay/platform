@@ -39,7 +39,11 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
 use drive::fee::constants;
-use drive::fee::epoch::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
+use drive::fee::credits::{Creditable, SignedCredits};
+use drive::fee::epoch::distribution::distribute_storage_fee_to_epochs;
+use drive::fee::epoch::{
+    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
+};
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
@@ -51,10 +55,10 @@ pub type StorageDistributionLeftoverCredits = u64;
 
 impl Platform {
     /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
-    /// from the distribution pool to the epoch pools and returns the leftovers.
+    /// from the distribution pool and pending updates to the epoch pools and returns the leftovers.
     pub fn add_distribute_storage_fee_to_epochs_operations(
         &self,
-        current_epoch_index: u16,
+        current_epoch_index: EpochIndex,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<StorageDistributionLeftoverCredits, Error> {
@@ -62,66 +66,19 @@ impl Platform {
             .drive
             .get_aggregate_storage_fees_from_distribution_pool(transaction)?;
 
-        if storage_distribution_fees == 0 {
-            return Ok(0);
-        }
+        let credits_per_epochs = SignedCreditsPerEpoch::new();
 
-        // a separate buffer from which we withdraw to correctly calculate fee share
-        let mut storage_distribution_leftover_credits = storage_distribution_fees;
+        let mut leftovers = distribute_storage_fee_to_epochs(
+            storage_distribution_fees.to_signed()?,
+            current_epoch_index,
+            &mut credits_per_epochs,
+        )?;
 
-        let storage_distribution_fees =
-            Decimal::from_u64(storage_distribution_fees).ok_or(Error::Execution(
-                ExecutionError::Overflow("storage distribution fees are not fitting in a u64"),
-            ))?;
-
-        let epochs_per_year = Decimal::from(EPOCHS_PER_YEAR);
-
-        for year in 0..PERPETUAL_STORAGE_YEARS {
-            let distribution_for_that_year_ratio = constants::FEE_DISTRIBUTION_TABLE[year as usize];
-
-            let year_fee_share = storage_distribution_fees * distribution_for_that_year_ratio;
-
-            let epoch_fee_share_dec = year_fee_share / epochs_per_year;
-
-            let epoch_fee_share = epoch_fee_share_dec
-                .floor()
-                .to_u64()
-                .ok_or(Error::Execution(ExecutionError::Overflow(
-                    "storage distribution fees are not fitting in a u64",
-                )))?;
-
-            let year_start_epoch_index = current_epoch_index + EPOCHS_PER_YEAR * year;
-
-            for index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
-                let epoch_tree = Epoch::new(index);
-
-                let current_epoch_pool_storage_credits = self
-                    .drive
-                    .get_epoch_storage_credits_for_distribution(&epoch_tree, transaction)
-                    .or_else(|e| match e {
-                        // In case if we have a gap between current and previous epochs
-                        // multiple future epochs could be created in the current batch
-                        error::Error::GroveDB(grovedb::Error::PathNotFound(_))
-                        | error::Error::GroveDB(grovedb::Error::PathKeyNotFound(_))
-                        | error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                            Ok(0u64)
-                        }
-                        _ => Err(e),
-                    })?;
-
-                // TODO: It's not convenient and confusing when in one case you should push operation to batch
-                //  and sometimes you pass batch inside to add operations. Also, in future a single operation function
-                //  could become a multiple operations function so you need to change many code. Also, you can't use helpers which batch provides
-                batch.push(epoch_tree.update_storage_fee_pool_operation(
-                    current_epoch_pool_storage_credits + epoch_fee_share,
-                ));
-
-                storage_distribution_leftover_credits = storage_distribution_leftover_credits
-                    .checked_sub(epoch_fee_share)
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "leftover storage not fitting in a u64",
-                    )))?;
-            }
+        // TODO Better to use iterator do not load everything into memory
+        for (epoch_index, credits) in self.drive.fetch_pending_updates(transaction)? {
+            credits
+                .checked_add(leftovers)
+                .ok_or_else(|| get_overflow_error("dasd"))
         }
 
         Ok(storage_distribution_leftover_credits)
@@ -131,7 +88,7 @@ impl Platform {
 #[cfg(test)]
 mod tests {
 
-    mod distribute_storage_fee_distribution_pool {
+    mod add_distribute_storage_fees_to_epochs_operations {
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
         use drive::drive::batch::GroveDbOpBatch;

@@ -33,29 +33,66 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::fee_pools::pools_pending_updates_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::credits::{Creditable, SignedCredits};
+use crate::fee::epoch::SignedCreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
-use itertools::Itertools;
 
 impl Drive {
+    /// Fetches all pending epoch pool updates
+    pub fn fetch_pending_updates(
+        &self,
+        transaction: TransactionArg,
+    ) -> Result<SignedCreditsPerEpoch, Error> {
+        let mut query = Query::new();
+
+        query.insert_all();
+
+        let (query_result, _) = self
+            .grove
+            .query_raw(
+                &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                QueryResultType::QueryKeyElementPairResultType,
+                transaction,
+            )
+            .unwrap()
+            .map_err(Error::GroveDB)?;
+
+        query_result.to_key_elements().into_iter().map(|(epoch_index_key, element)| {
+            let epoch_index =
+                u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedSerialization(
+                        "epoch index for pending pool updates must be i64",
+                    ))
+                })?);
+
+            let Element::SumItem(..) = element else {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must be sum items")));
+            };
+
+            let credits: SignedCredits = element.sum_value().ok_or(
+            Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must have value")
+            ))?;
+
+            Ok((epoch_index, credits))
+        }).collect::<Result<SignedCreditsPerEpoch, Error>>()
+    }
+
     /// Fetches existing pending epoch pool updates using specified epochs
     /// and returns merged result
     pub fn fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
         &self,
-        mut credits_per_epoch: CreditsPerEpoch,
+        mut credits_per_epoch: SignedCreditsPerEpoch,
         transaction: TransactionArg,
-    ) -> Result<CreditsPerEpoch, Error> {
+    ) -> Result<SignedCreditsPerEpoch, Error> {
         let mut query = Query::new();
 
-        for (epoch_index_key, _) in credits_per_epoch.iter() {
-            let epoch_index = epoch_index_key.to_owned() as u16;
-            let encoded_epoch_index = epoch_index.to_be_bytes().to_vec();
+        for epoch_index in credits_per_epoch.keys() {
+            let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
-            query.insert_key(encoded_epoch_index);
+            query.insert_key(epoch_index_key);
         }
 
         // Query existing pending updates
@@ -70,9 +107,9 @@ impl Drive {
             .map_err(Error::GroveDB)?;
 
         // Merge with existing pending updates
-        for (encoded_epoch_index, element) in query_result.to_key_elements() {
+        for (epoch_index_key, element) in query_result.to_key_elements() {
             let epoch_index =
-                u16::from_be_bytes(encoded_epoch_index.as_slice().try_into().map_err(|_| {
+                u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
                         "epoch index for pending pool updates must be u16",
                     ))
@@ -82,29 +119,20 @@ impl Drive {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates should contain fetched epochs")));
             };
 
-            let Element::Item(encoded_existing_signed_credits, _) = element else {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates should contain only items")));
+            let Element::SumItem(..) = element else {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must be sum items")));
             };
 
-            let existing_signed_credits = i64::from_be_bytes(
-                encoded_existing_signed_credits
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization(
-                            "credits for pending pool updates must be i64",
-                        ))
-                    })?,
-            );
-
-            let existing_credits = existing_signed_credits.unsigned_abs();
-
-            let result_credits =
-                credits_to_update
-                    .checked_add(existing_credits)
-                    .ok_or(Error::Fee(FeeError::Overflow(
-                        "pending updates overflow error",
+            let existing_credits: SignedCredits =
+                element
+                    .sum_value()
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "pending updates credits must have value",
                     )))?;
+
+            let result_credits = credits_to_update
+                .checked_add(existing_credits)
+                .ok_or_else(|| get_overflow_error("pending updates credits overflow"))?;
 
             credits_per_epoch.insert(epoch_index, result_credits);
         }
@@ -116,7 +144,7 @@ impl Drive {
     pub fn add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
         &self,
         batch: &mut GroveDbOpBatch,
-        credits_per_epoch: &CreditsPerEpoch,
+        credits_per_epoch: &SignedCreditsPerEpoch,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         // TODO: Replace with key iterator
@@ -134,11 +162,11 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        for (encoded_epoch_index, _) in query_result.to_key_elements() {
+        for (epoch_index_key, _) in query_result.to_key_elements() {
             let epoch_index =
-                u16::from_be_bytes(encoded_epoch_index.as_slice().try_into().map_err(|_| {
+                u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
-                        "epoch index for pending pool updates must be u16",
+                        "pending updates epoch index for must be u16",
                     ))
                 })?);
 
@@ -146,7 +174,7 @@ impl Drive {
                 continue;
             }
 
-            batch.add_delete(pools_pending_updates_path(), encoded_epoch_index);
+            batch.add_delete(pools_pending_updates_path(), epoch_index_key);
         }
 
         Ok(())
@@ -156,19 +184,14 @@ impl Drive {
 /// Adds GroveDB batch operations to update pending epoch storage pool updates
 pub fn add_update_pending_epoch_storage_pool_update_operations(
     batch: &mut GroveDbOpBatch,
-    credits_per_epoch: CreditsPerEpoch,
+    credits_per_epoch: SignedCreditsPerEpoch,
 ) -> Result<(), Error> {
-    for (epoch_index_key, credits) in credits_per_epoch.into_iter().sorted_by_key(|x| x.0) {
-        let epoch_index = epoch_index_key as u16;
-        let encoded_epoch_index = epoch_index.to_be_bytes().to_vec();
+    for (epoch_index, credits) in credits_per_epoch {
+        let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
-        let signed_credits = -i64::try_from(credits).map_err(|_| {
-            get_overflow_error("can't convert credits to negative amount for pending updates")
-        })?;
+        let element = Element::new_sum_item(credits.to_signed()?);
 
-        let element = Element::new_item(signed_credits.to_be_bytes().to_vec());
-
-        batch.add_insert(pools_pending_updates_path(), encoded_epoch_index, element);
+        batch.add_insert(pools_pending_updates_path(), epoch_index_key, element);
     }
 
     Ok(())
@@ -191,7 +214,7 @@ mod tests {
             // Store initial set of pending updates
 
             let initial_pending_updates =
-                CreditsPerEpoch::from_iter(vec![(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
+                SignedCreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -208,7 +231,7 @@ mod tests {
             // Fetch and merge
 
             let new_pending_updates =
-                CreditsPerEpoch::from_iter(vec![(1, 15), (3, 25), (30, 195), (41, 150)]);
+                SignedCreditsPerEpoch::from_iter([(1, 15), (3, 25), (30, 195), (41, 150)]);
 
             let updated_pending_updates = drive
                 .fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
@@ -218,7 +241,7 @@ mod tests {
                 .expect("should fetch and merge pending updates");
 
             let expected_pending_updates =
-                CreditsPerEpoch::from_iter(vec![(1, 30), (3, 50), (30, 195), (41, 150)]);
+                SignedCreditsPerEpoch::from_iter([(1, 30), (3, 50), (30, 195), (41, 150)]);
 
             assert_eq!(updated_pending_updates, expected_pending_updates);
         }
@@ -237,7 +260,7 @@ mod tests {
             // Store initial set of pending updates
 
             let initial_pending_updates =
-                CreditsPerEpoch::from_iter(vec![(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
+                SignedCreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -253,7 +276,7 @@ mod tests {
 
             // Delete existing pending updates expect specified pending updates
 
-            let new_pending_updates = CreditsPerEpoch::from_iter(vec![(1, 15), (3, 25)]);
+            let new_pending_updates = SignedCreditsPerEpoch::from_iter([(1, 15), (3, 25)]);
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -266,7 +289,7 @@ mod tests {
                 .expect("should fetch and merge pending updates");
 
             let expected_pending_updates =
-                CreditsPerEpoch::from_iter(vec![(7, 95), (9, 100), (12, 120)]);
+                SignedCreditsPerEpoch::from_iter([(7, 95), (9, 100), (12, 120)]);
 
             assert_eq!(batch.len(), expected_pending_updates.len());
 
@@ -275,9 +298,9 @@ mod tests {
 
                 assert_eq!(operation.path.to_path(), pools_pending_updates_path());
 
-                let encoded_epoch_index = operation.key.get_key();
+                let epoch_index_key = operation.key.get_key();
                 let epoch_index = u16::from_be_bytes(
-                    encoded_epoch_index
+                    epoch_index_key
                         .try_into()
                         .expect("should convert to u16 bytes"),
                 );

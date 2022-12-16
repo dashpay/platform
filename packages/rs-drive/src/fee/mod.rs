@@ -28,6 +28,7 @@
 //
 
 use enum_map::EnumMap;
+use rust_decimal::Decimal;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -35,6 +36,7 @@ use crate::fee::op::{BaseOp, DriveOperation};
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
+pub mod credits;
 pub mod default_costs;
 pub mod epoch;
 pub mod op;
@@ -42,8 +44,6 @@ pub mod result;
 
 /// Default original fee multiplier
 pub const DEFAULT_ORIGINAL_FEE_MULTIPLIER: f64 = 2.0;
-
-pub type Credits = u64;
 
 /// Calculates fees for the given operations. Returns the storage and processing costs.
 pub fn calculate_fee(

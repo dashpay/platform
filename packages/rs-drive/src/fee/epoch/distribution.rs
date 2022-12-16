@@ -34,8 +34,11 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::epoch::{CreditsPerEpoch, EpochIndex, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
-use crate::fee::{get_overflow_error, Credits};
+use crate::fee::credits::{Creditable, SignedCredits};
+use crate::fee::epoch::{
+    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
+};
+use crate::fee::get_overflow_error;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -57,20 +60,20 @@ pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_YEARS as usize] = 
     dec!(0.00325), dec!(0.00275), dec!(0.00225), dec!(0.00175), dec!(0.00125),
 ];
 
-pub type DistributionLeftoverCredits = Credits;
+pub type DistributionLeftoverCredits = SignedCredits;
 
 pub fn distribute_storage_fee_to_epochs(
-    storage_fee: u64,
+    storage_fee: SignedCredits,
     start_epoch_index: EpochIndex,
-    credits_per_epochs: Option<CreditsPerEpoch>,
+    credits_per_epochs: &mut SignedCreditsPerEpoch,
 ) -> Result<DistributionLeftoverCredits, Error> {
-    let storage_fee_dec = Decimal::from_u64(storage_fee).ok_or(Error::Fee(
-        FeeError::CorruptedCodeExecution("storage fees are not fitting in a Decimal"),
-    ))?;
+    if storage_fee == 0 {
+        return Ok(0);
+    }
+
+    let storage_fee_dec: Decimal = storage_fee.into();
 
     let mut distribution_leftover_credits = storage_fee;
-
-    let mut credits_per_epochs = credits_per_epochs.unwrap_or_default();
 
     let epochs_per_year = Decimal::from(EPOCHS_PER_YEAR);
 
@@ -81,19 +84,19 @@ pub fn distribute_storage_fee_to_epochs(
 
         let epoch_fee_share_dec = year_fee_share / epochs_per_year;
 
-        let epoch_fee_share = epoch_fee_share_dec
+        let epoch_fee_share: SignedCredits = epoch_fee_share_dec
             .floor()
-            .to_u64()
+            .to_i64()
             .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
 
         let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
 
         for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
-            let current_epoch_credits = credits_per_epochs
+            let current_epoch_credits: SignedCredits = credits_per_epochs
                 .get(&epoch_index)
                 .map_or(0, |i| i.to_owned());
 
-            let result_storage_fee = current_epoch_credits
+            let result_storage_fee: SignedCredits = current_epoch_credits
                 .checked_add(epoch_fee_share)
                 .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
 
