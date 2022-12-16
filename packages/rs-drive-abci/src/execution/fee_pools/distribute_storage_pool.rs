@@ -38,9 +38,13 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
+use drive::error::drive::DriveError;
+use drive::error::fee::FeeError;
 use drive::fee::constants;
 use drive::fee::credits::{Creditable, SignedCredits};
-use drive::fee::epoch::distribution::distribute_storage_fee_to_epochs;
+use drive::fee::epoch::distribution::{
+    distribute_storage_fee_to_epochs, DistributionLeftoverCredits,
+};
 use drive::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
@@ -51,7 +55,6 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 
 /// Leftover credits after adding up and distributing storage fees.
-pub type StorageDistributionLeftoverCredits = u64;
 
 impl Platform {
     /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
@@ -61,7 +64,7 @@ impl Platform {
         current_epoch_index: EpochIndex,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<StorageDistributionLeftoverCredits, Error> {
+    ) -> Result<DistributionLeftoverCredits, Error> {
         let storage_distribution_fees = self
             .drive
             .get_aggregate_storage_fees_from_distribution_pool(transaction)?;
@@ -76,12 +79,25 @@ impl Platform {
 
         // TODO Better to use iterator do not load everything into memory
         for (epoch_index, credits) in self.drive.fetch_pending_updates(transaction)? {
-            credits
-                .checked_add(leftovers)
-                .ok_or_else(|| get_overflow_error("dasd"))
+            let credits_to_distribute = credits.checked_add(leftovers).ok_or_else(|| {
+                Error::Execution(ExecutionError::Overflow(
+                    "can't add leftovers to pending storage fees",
+                ))
+            })?;
+
+            // TODO: We should calculate for epochs which are before current one.
+            //   leftovers also should be less
+
+            leftovers = distribute_storage_fee_to_epochs(
+                credits_to_distribute,
+                epoch_index,
+                &mut credits_per_epochs,
+            )?;
         }
 
-        Ok(storage_distribution_leftover_credits)
+        // TODO: Nil negative pools
+
+        Ok(leftovers)
     }
 }
 
