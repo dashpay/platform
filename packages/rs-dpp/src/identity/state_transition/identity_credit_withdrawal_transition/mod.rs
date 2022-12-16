@@ -211,8 +211,16 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
         Ok(json_value)
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
 
         json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
 
