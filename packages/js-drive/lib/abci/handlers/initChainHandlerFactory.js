@@ -99,6 +99,10 @@ function initChainHandlerFactory(
       'Synchronized masternode identities',
     );
 
+    await groveDBStore.commitTransaction();
+
+    const appHash = await groveDBStore.getRootHash();
+
     // Set initial validator set
 
     await validatorSet.initialize(initialCoreChainLockedHeight);
@@ -112,10 +116,6 @@ function initChainHandlerFactory(
       0,
       consensusLogger,
     );
-
-    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    await groveDBStore.commitTransaction();
 
     consensusLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
