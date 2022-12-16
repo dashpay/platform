@@ -6,7 +6,7 @@ describe('IdentityPublicKey', () => {
   let IdentityPublicKey;
 
   beforeEach(async () => {
-    ({IdentityPublicKey} = await loadWasmDpp());
+    ({ IdentityPublicKey } = await loadWasmDpp());
 
     rawPublicKey = {
       id: 0,
