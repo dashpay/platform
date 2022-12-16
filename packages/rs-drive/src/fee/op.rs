@@ -52,7 +52,7 @@ use crate::fee::default_costs::{
     STORAGE_PROCESSING_CREDIT_PER_BYTE, STORAGE_SEEK_COST,
 };
 use crate::fee::op::DriveOperation::{
-    CalculatedCostOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use crate::fee::removed_bytes_from_epochs_by_identities::RemovedBytesFromEpochsByIdentities;
 use crate::fee::FeeResult;
@@ -137,25 +137,55 @@ impl BaseOp {
     }
 }
 
-/// Function ops
 #[derive(Debug, Enum)]
-pub enum FunctionOp {
-    /// SHA256
+pub enum HashFunction {
+    Sha256RipeMD160,
     Sha256,
-    /// SHA256_2
     Sha256_2,
-    /// BLAKE3
     Blake3,
 }
 
-impl FunctionOp {
-    /// Cost
-    pub fn cost(&self, _epoch: &Epoch) -> u64 {
+impl HashFunction {
+    fn block_size(&self) -> u16 {
         match self {
-            FunctionOp::Sha256 => 4000,
-            FunctionOp::Sha256_2 => 8000,
-            FunctionOp::Blake3 => 1000,
+            HashFunction::Sha256 => 64,
+            HashFunction::Sha256_2 => 64,
+            HashFunction::Blake3 => 64,
+            HashFunction::Sha256RipeMD160 => 64,
         }
+    }
+
+    fn rounds(&self) -> u16 {
+        match self {
+            HashFunction::Sha256 => 1,
+            HashFunction::Sha256_2 => 2,
+            HashFunction::Blake3 => 1,
+            HashFunction::Sha256RipeMD160 => 1,
+        }
+    }
+
+    //todo: put real costs in
+    fn base_cost(&self) -> u16 {
+        match self {
+            HashFunction::Sha256 => 30,
+            HashFunction::Sha256_2 => 30,
+            HashFunction::Blake3 => 30,
+            HashFunction::Sha256RipeMD160 => 30,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct FunctionOp {
+    pub(crate) hash: HashFunction,
+    pub(crate) byte_count: u16,
+}
+
+impl FunctionOp {
+    fn events(&self) -> u16 {
+        let blocks = self.byte_count / self.hash.block_size() + 1;
+        let events = blocks + self.hash.rounds() - 1;
+        events
     }
 }
 
@@ -164,6 +194,8 @@ impl FunctionOp {
 pub enum DriveOperation {
     /// Grove operation
     GroveOperation(GroveDbOp),
+    /// A drive operation
+    FunctionOperation(FunctionOp),
     /// Calculated cost operation
     CalculatedCostOperation(OperationCost),
     /// Pre Calculated Fee Result
@@ -180,6 +212,10 @@ impl DriveOperation {
             .into_iter()
             .map(|operation| match operation {
                 PreCalculatedFeeResult(f) => Ok(f),
+                FunctionOperation(op) => Ok(FeeResult {
+                    processing_fee: op.cost(epoch),
+                    ..Default::default()
+                }),
                 _ => {
                     let cost = operation.operation_cost()?;
                     let storage_fee = cost.storage_cost(epoch)?;
@@ -219,7 +255,10 @@ impl DriveOperation {
             ))),
             CalculatedCostOperation(c) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "pre calculated fees should be requested by operation costs",
+                "pre calculated fees should not be requested by operation costs",
+            ))),
+            FunctionOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "function operations should not be requested by operation costs",
             ))),
         }
     }

@@ -85,6 +85,14 @@ pub enum DriveError {
     CorruptedWithdrawalTransactionsCounterNotItem(&'static str),
 
     /// Error
+    #[error("corrupted element type error: {0}")]
+    CorruptedElementType(&'static str),
+
+    /// Error
+    #[error("corrupted balance not found error: {0}")]
+    CorruptedBalanceNotFound(String),
+
+    /// Error
     #[error("corrupted element flags error: {0}")]
     CorruptedElementFlags(&'static str),
 

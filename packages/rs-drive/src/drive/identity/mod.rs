@@ -32,9 +32,12 @@
 //! fetching identities from the subtree.
 //!
 
+use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use grovedb::batch::key_info::KeyInfo;
+use serde_json::to_vec;
 
 pub mod fetch;
 pub mod insert;
@@ -53,6 +56,14 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
         Into::<&[u8; 1]>::into(RootTree::Identities).to_vec(),
         identity_id.to_vec(),
     ]
+}
+
+pub(crate) fn balance_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities)]
+}
+
+pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
+    vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
 }
 
 pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
@@ -111,9 +122,14 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
 pub enum IdentityRootStructure {
     // Input data errors
     IdentityTreeRevision = 0,
-    IdentityTreeBalance = 1, // the balance being at 1 means it will be at the top of the tree
-    IdentityTreeKeys = 2,
-    IdentityTreeNegativeCredit = 3,
+    IdentityTreeKeys = 1,
+    IdentityTreeNegativeCredit = 2,
+}
+
+impl IdentityRootStructure {
+    fn to_drive_key_info(&self) -> DriveKeyInfo {
+        DriveKeyInfo::Key(Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys).to_vec())
+    }
 }
 
 impl From<IdentityRootStructure> for u8 {
@@ -132,8 +148,7 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
     fn from(identity_tree: IdentityRootStructure) -> Self {
         match identity_tree {
             IdentityRootStructure::IdentityTreeRevision => &[0],
-            IdentityRootStructure::IdentityTreeBalance => &[1],
-            IdentityRootStructure::IdentityTreeKeys => &[2],
+            IdentityRootStructure::IdentityTreeKeys => &[1],
             IdentityRootStructure::IdentityTreeNegativeCredit => &[2],
         }
     }
@@ -145,5 +160,5 @@ pub fn balance_from_bytes(identity_balance_bytes: &[u8]) -> Result<u64, Error> {
             "identity balance was not represented in 8 bytes",
         ))
     })?;
-    Ok(u64::from_be_bytes(balance_bytes))
+    Ok(i64::from_be_bytes(balance_bytes) as u64)
 }

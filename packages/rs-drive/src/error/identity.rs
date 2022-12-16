@@ -1,6 +1,10 @@
 /// Identity errors
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityError {
+    /// Identity already exists error
+    #[error("identity already exists error: {0}")]
+    IdentityAlreadyExists(&'static str),
+
     /// Missing required key error
     #[error("missing required key: {0}")]
     MissingRequiredKey(&'static str),
@@ -20,4 +24,8 @@ pub enum IdentityError {
     /// Identity serialization error
     #[error("identity serialization error: {0}")]
     IdentitySerialization(&'static str),
+
+    /// Critical balance overflow error
+    #[error("critical balance overflow error: {0}")]
+    CriticalBalanceOverflow(&'static str),
 }

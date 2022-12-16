@@ -1,15 +1,60 @@
 use crate::drive::flags::StorageFlags;
-use crate::drive::identity::IDENTITY_KEY;
+use crate::drive::grove_operations::DirectQueryType;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::identity::{balance_from_bytes, balance_path, balance_path_vec, IDENTITY_KEY};
+use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
+use crate::fee::op::DriveOperation;
 use crate::query::{Query, QueryItem};
 use dpp::identity::Identity;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
+use grovedb::Element::SumItem;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 
 impl Drive {
+    pub fn fetch_identity_balance(
+        &self,
+        identity_id: [u8; 32],
+        apply: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<u64, Error> {
+        let direct_query_type = if apply {
+            DirectQueryType::StatefulDirectQuery
+        } else {
+            // 8 is the size of a i64 used in sum trees
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: true,
+                query_target: QueryTargetValue(8),
+            }
+        };
+        let balance_path = balance_path();
+        let identity_balance_element = self.grove_get_direct(
+            balance_path,
+            identity_id.as_slice(),
+            direct_query_type,
+            transaction,
+            drive_operations,
+        )?;
+        if let Some(identity_balance_element) = identity_balance_element {
+            if let SumItem(identity_balance_element, element_flags) = identity_balance_element {
+                balance_from_bytes(identity_balance_element.as_slice())
+            } else {
+                Err(Error::Drive(DriveError::CorruptedElementType(
+                    "identity balance was present but was not identified as a sum item",
+                )))
+            }
+        } else {
+            Err(Error::Drive(DriveError::CorruptedBalanceNotFound(format!(
+                "balance not found for identity {}",
+                hex::encode(identity_id)
+            ))))
+        }
+    }
+
     /// Given an identity, fetches the identity with its flags from storage.
     pub fn fetch_identity(
         &self,

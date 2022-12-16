@@ -428,17 +428,15 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
 }
 
 /// Operations on Identities
-pub enum IdentityOperationType<'a> {
+pub enum IdentityOperationType {
     /// Inserts a new identity to the `Identities` subtree.
     InsertIdentity {
         /// The identity we wish to insert
         identity: Identity,
-        /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<&'a StorageFlags>,
     },
 }
 
-impl DriveOperationConverter for IdentityOperationType<'_> {
+impl DriveOperationConverter for IdentityOperationType {
     fn to_drive_operations(
         self,
         drive: &Drive,
@@ -449,16 +447,13 @@ impl DriveOperationConverter for IdentityOperationType<'_> {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         match self {
-            IdentityOperationType::InsertIdentity {
-                identity,
-                storage_flags,
-            } => drive.add_insert_identity_operations(
-                identity,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                storage_flags,
-                transaction,
-            ),
+            IdentityOperationType::InsertIdentity { identity } => drive
+                .add_insert_identity_operations(
+                    identity,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                ),
         }
     }
 }
@@ -470,7 +465,7 @@ pub enum DriveOperationType<'a> {
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
     /// An identity operation
-    IdentityOperation(IdentityOperationType<'a>),
+    IdentityOperation(IdentityOperationType),
 }
 
 impl DriveOperationConverter for DriveOperationType<'_> {

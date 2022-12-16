@@ -1,92 +1,115 @@
-use crate::drive::defaults::MAX_ELEMENT_SIZE;
-use crate::drive::grove_operations::DirectQueryType;
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, MAX_ELEMENT_SIZE};
+use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::QueryTarget::{QueryTargetTree, QueryTargetValue};
+use crate::drive::grove_operations::{BatchInsertApplyType, DirectQueryType};
+use crate::drive::identity::IdentityRootStructure::IdentityTreeKeys;
 use crate::drive::identity::{
-    identity_key_location_vec, identity_key_location_within_identity_vec, identity_key_tree_path,
-    identity_path, identity_path_vec, identity_query_keys_full_tree_path,
-    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path, IdentityRootStructure,
+    identity_key_location_within_identity_vec, identity_key_tree_path, identity_path,
+    identity_path_vec, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
+    identity_query_keys_tree_path,
 };
-use crate::drive::object_size_info::ElementInfo::Element;
-use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyElement;
+use crate::drive::object_size_info::DriveKeyInfo;
+use crate::drive::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyElement, PathKeyElementSize,
+};
+use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef};
 use crate::drive::{key_hashes_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
-use crate::fee::op::FunctionOp::Sha256;
-use crate::identity::key::IdentityKey;
+use crate::fee::op::DriveOperation::FunctionOperation;
+use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
+use dpp::identity::IdentityPublicKey;
+use dpp::identity::SecurityLevel::MEDIUM;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::reference_path::ReferencePathType::AbsolutePathReference;
-use grovedb::Element::Reference;
-use grovedb::{ElementFlags, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use serde::Serialize;
+use std::collections::HashMap;
 
 impl Drive {
     /// Insert a new key into an identity operations
     pub fn insert_new_key_operations(
         &self,
         identity_id: &[u8],
-        identity_key: IdentityKey,
-        element_flags: ElementFlags,
-        verify: bool,
+        identity_key: IdentityPublicKey,
+        storage_flags: &StorageFlags,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let serialized_identity_key = identity_key.serialize();
-        let IdentityKey {
+        let serialized_identity_key = identity_key.serialize().map_err(|e| {
+            Error::Identity(IdentityError::IdentitySerialization(e.to_string().as_str()))
+        })?;
+        let IdentityPublicKey {
             id,
-            key_type,
             purpose,
             security_level,
-            readonly,
-            public_key_bytes,
+            key_type,
+            data,
+            read_only,
+            disabled_at,
+            signature,
         } = identity_key;
         let key_hashes_tree = key_hashes_tree_path();
-        let key_len = public_key_bytes.len();
-        let key_hash = Sha256::digest(public_key_bytes.clone());
+        let key_len = data.len();
         drive_operations.push(FunctionOperation(FunctionOp {
             hash: HashFunction::Sha256,
             byte_count: key_len as u16,
         }));
-        if verify {
-            //todo: find the estimated key size
-            let query_type = if estimated_costs_only_with_layer_info.is_none() {
-                DirectQueryType::StatefulDirectQuery
-            } else {
-                DirectQueryType::StatelessDirectQuery {
-                    in_tree_using_sums: false,
-                    query_target: QueryTargetValue(MAX_ELEMENT_SIZE),
-                }
-            };
-
-            let exists = self.grove_has_raw(
-                key_hashes_tree,
-                key_hash.as_slice(),
-                query_type, //if you want to verify you need to know the state
-                transaction,
-                drive_operations,
-            )?;
-            if exists {
-                return Err(Error::Identity(IdentityError::IdentityAlreadyExists(
-                    "trying to insert a key that already exists",
-                )));
-            }
-        }
 
         let identity_path = identity_path_vec(identity_id);
 
+        let reference = Element::new_reference_with_max_hops_and_flags(
+            AbsolutePathReference(identity_path),
+            Some(1),
+            storage_flags.to_some_element_flags(),
+        );
+
+        let (apply_type, path_key_element_info) = if apply {
+            let key_hash = identity_key.hash()?;
+            let path_fixed_sized_key_element =
+                PathFixedSizeKeyElement((key_hashes_tree, key_hash.as_slice(), reference));
+            (
+                BatchInsertApplyType::StatefulBatchInsert,
+                path_fixed_sized_key_element,
+            )
+        } else {
+            let ref_size = reference.serialized_size() as u32;
+            let path_fixed_sized_key_element = PathKeyElementSize((
+                KeyInfoPath::from_known_path(key_hashes_tree),
+                KeyInfo::MaxKeySize {
+                    unique_id: b"key_hash".to_vec(),
+                    max_size: DEFAULT_HASH_SIZE_U8,
+                },
+                reference,
+            ));
+
+            // We use key_hash just not to use an empty string, but it doesn't matter what it is
+            // as long as it is unique
+            (
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_using_sums: false,
+                    target: QueryTargetValue(ref_size),
+                },
+                path_fixed_sized_key_element,
+            )
+        };
+
         // Let's first insert the hash with a reference to the identity
-        self.batch_insert(
-            PathFixedSizeKeyElement((
-                key_hashes_tree,
-                key_hash.as_slice(),
-                Element::new_reference_with_max_hops_and_flags(
-                    AbsolutePathReference(identity_path),
-                    Some(1),
-                    Some(element_flags.clone()),
-                ),
-            )),
+        let already_existed = self.batch_insert_if_not_exists(
+            path_key_element_info,
+            apply_type,
+            transaction,
             drive_operations,
         )?;
+
+        if already_existed {
+            return Err(Error::Identity(IdentityError::IdentityAlreadyExists(
+                "trying to insert a key that already exists",
+            )));
+        }
 
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path(identity_id);
@@ -96,7 +119,10 @@ impl Drive {
             PathFixedSizeKeyElement((
                 identity_key_tree,
                 key_id_bytes.as_slice(),
-                Element::new_item_with_flags(serialized_identity_key, Some(element_flags.clone())),
+                Element::new_item_with_flags(
+                    serialized_identity_key,
+                    storage_flags.to_some_element_flags(),
+                ),
             )),
             drive_operations,
         )?;
@@ -125,25 +151,14 @@ impl Drive {
                     }
                 };
 
-                let exists = self.grove_has_raw(
-                    purpose_path,
-                    &[security_level],
+                // We need to insert the security level if it doesn't yet exist
+                self.batch_insert_empty_tree_if_not_exists(
+                    PathFixedSizeKey((purpose_path, vec![security_level as u8])),
+                    Some(storage_flags),
                     apply_type,
                     transaction,
                     drive_operations,
                 )?;
-
-                if exists == false {
-                    // We need to insert the security level if it doesn't yet exist
-                    self.batch_insert(
-                        PathFixedSizeKeyElement((
-                            purpose_path,
-                            &[security_level],
-                            Element::empty_tree_with_flags(Some(element_flags.clone())),
-                        )),
-                        drive_operations,
-                    )?;
-                }
             }
         }
 
@@ -172,26 +187,26 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         keys: Vec<IdentityKey>,
-        element_flags: ElementFlags,
-        apply: bool,
+        storage_flags: &StorageFlags,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
         let identity_path = identity_path(identity_id.as_slice());
-        self.batch_insert(
-            PathFixedSizeKeyElement((
-                identity_path,
-                Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys),
-                Element::empty_tree_with_flags(Some(element_flags.clone())),
-            )),
-            drive_operations,
+        self.batch_insert_empty_tree(
+            identity_path,
+            IdentityTreeKeys.to_drive_key_info(),
+            Some(storage_flags),
+            &mut batch_operations,
         )?;
 
         // We create the query trees structure
         self.create_new_identity_key_query_trees_operations(
             identity_id,
             element_flags.clone(),
-            drive_operations,
+            &mut batch_operations,
         )?;
 
         for key in keys.into_iter() {
@@ -202,10 +217,10 @@ impl Drive {
                 false,
                 apply,
                 transaction,
-                drive_operations,
+                &mut batch_operations,
             )?;
         }
-        Ok(())
+        Ok(batch_operations)
     }
 
     /// This creates the key query tree structure operations and adds them to the
@@ -213,18 +228,16 @@ impl Drive {
     fn create_new_identity_key_query_trees_operations(
         &self,
         identity_id: [u8; 32],
-        element_flags: ElementFlags,
+        storage_flags: &StorageFlags,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let identity_key_tree = identity_key_tree_path(identity_id.as_slice());
 
         // We need to insert the query tree
-        self.batch_insert(
-            PathFixedSizeKeyElement((
-                identity_key_tree,
-                &[],
-                Element::empty_tree_with_flags(Some(element_flags.clone())),
-            )),
+        self.batch_insert_empty_tree(
+            identity_key_tree,
+            DriveKeyInfo::Key(vec![]),
+            Some(storage_flags),
             drive_operations,
         )?;
 
@@ -232,12 +245,10 @@ impl Drive {
 
         // There are 3 Purposes: Authentication, Encryption, Decryption
         for purpose in 0..3 {
-            self.batch_insert(
-                PathFixedSizeKeyElement((
-                    identity_query_key_tree,
-                    &[purpose],
-                    Element::empty_tree_with_flags(Some(element_flags.clone())),
-                )),
+            self.batch_insert_empty_tree(
+                identity_query_key_tree,
+                DriveKeyInfo::Key(vec![purpose]),
+                Some(storage_flags),
                 drive_operations,
             )?;
         }
@@ -246,12 +257,10 @@ impl Drive {
         let identity_key_authentication_tree =
             identity_query_keys_purpose_tree_path(identity_id.as_slice(), &[0]);
         for security_level in 0..4 {
-            self.batch_insert(
-                PathFixedSizeKeyElement((
-                    identity_key_authentication_tree,
-                    &[security_level],
-                    Element::empty_tree_with_flags(Some(element_flags.clone())),
-                )),
+            self.batch_insert_empty_tree(
+                identity_key_authentication_tree,
+                DriveKeyInfo::Key(vec![security_level]),
+                Some(storage_flags),
                 drive_operations,
             )?;
         }
@@ -262,6 +271,13 @@ impl Drive {
                 identity_id.as_slice(),
                 purpose_vec.as_slice(),
             );
+
+            self.batch_insert_empty_tree(
+                identity_key_purpose_tree,
+                DriveKeyInfo::Key(vec![MEDIUM as u8]),
+                Some(storage_flags),
+                drive_operations,
+            )?;
 
             self.batch_insert(
                 PathFixedSizeKeyElement((

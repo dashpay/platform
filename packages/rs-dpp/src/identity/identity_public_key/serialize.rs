@@ -1,15 +1,19 @@
-use crate::prelude::Identity;
+use crate::identity::IdentityPublicKey;
 use crate::ProtocolError;
 use bincode::Options;
 
-impl Identity {
+impl IdentityPublicKey {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
         bincode::DefaultOptions::default()
             .with_varint_encoding()
             .reject_trailing_bytes()
             .with_big_endian()
             .serialize(self)
-            .map_err(|_| ProtocolError::EncodingError(String::from("unable to serialize identity")))
+            .map_err(|_| {
+                ProtocolError::EncodingError(String::from(
+                    "unable to serialize identity public key",
+                ))
+            })
     }
 
     pub fn serialized_size(&self) -> usize {
@@ -28,7 +32,7 @@ impl Identity {
             .with_big_endian()
             .deserialize(bytes)
             .map_err(|_| {
-                ProtocolError::EncodingError(String::from("unable to deserialize identity"))
+                ProtocolError::EncodingError(String::from("unable to deserialize element"))
             })
     }
 }

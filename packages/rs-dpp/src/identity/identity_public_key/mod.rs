@@ -4,6 +4,7 @@ pub mod factory;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
+pub mod serialize;
 
 use std::convert::TryInto;
 
@@ -21,6 +22,7 @@ use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
+use bincode::{deserialize, serialize};
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
