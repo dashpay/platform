@@ -52,7 +52,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
 
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
+use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -588,7 +588,7 @@ impl Drive {
 
                         // here we should return an error if the element already exists
                         self.batch_insert(
-                            PathKeyElement::<0>((
+                            PathKeyRefElement::<0>((
                                 index_path,
                                 document.id.as_slice(),
                                 document_reference.clone(),
@@ -599,7 +599,7 @@ impl Drive {
                         // in one update you can't insert an element twice, so need to check the cache
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
-                            PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
+                            PathKeyRefElement::<0>((index_path, &[0], document_reference.clone())),
                             BatchInsertApplyType::StatefulBatchInsert,
                             transaction,
                             &mut batch_operations,

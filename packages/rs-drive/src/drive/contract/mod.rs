@@ -58,7 +58,7 @@ use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElementSize,
+    PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive, RootTree};
@@ -162,7 +162,7 @@ impl Drive {
             let contract_keeping_history_storage_path =
                 contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
                     encoded_time.as_slice(),
                     contract_element,
@@ -174,7 +174,7 @@ impl Drive {
                 Element::Reference(SiblingReference(encoded_time), Some(1), element_flags);
 
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
                     &[0],
                     reference_element,
@@ -190,7 +190,7 @@ impl Drive {
         } else {
             // the contract is just stored at key 0
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
-                PathFixedSizeKeyElement((contract_root_path, &[0], contract_element))
+                PathFixedSizeKeyRefElement((contract_root_path, &[0], contract_element))
             } else {
                 PathKeyElementSize((
                     KeyInfoPath::from_known_path(contract_root_path),

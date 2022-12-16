@@ -12,11 +12,11 @@ use crate::drive::identity::{
     identity_query_keys_tree_path,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElementSize,
+    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef};
 use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
-use crate::drive::{key_hashes_tree_path, Drive};
+use crate::drive::{key_hashes_tree_path, key_hashes_tree_path_vec, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation::FunctionOperation;
@@ -53,16 +53,13 @@ impl Drive {
             storage_flags.to_some_element_flags(),
         );
 
-        let key_hashes_tree = key_hashes_tree_path();
+        let key_hashes_tree = key_hashes_tree_path_vec();
 
         let (apply_type, path_key_element_info) = if estimated_costs_only_with_layer_info.is_none()
         {
             let key_hash = identity_key.hash()?;
-            let path_fixed_sized_key_element: PathKeyElementInfo<'_, 0> = PathKeyElementSize((
-                KeyInfoPath::from_known_path(key_hashes_tree),
-                KeyInfo::KnownKey(key_hash),
-                reference,
-            ));
+            let path_fixed_sized_key_element: PathKeyElementInfo<'_, 0> =
+                PathKeyElement((key_hashes_tree, key_hash, reference));
             (
                 BatchInsertApplyType::StatefulBatchInsert,
                 path_fixed_sized_key_element,
@@ -70,7 +67,7 @@ impl Drive {
         } else {
             let ref_size = reference.serialized_size() as u32;
             let path_fixed_sized_key_element = PathKeyElementSize((
-                KeyInfoPath::from_known_path(key_hashes_tree),
+                KeyInfoPath::from_known_owned_path(key_hashes_tree),
                 KeyInfo::MaxKeySize {
                     unique_id: b"key_hash".to_vec(),
                     max_size: DEFAULT_HASH_SIZE_U8,
@@ -106,14 +103,14 @@ impl Drive {
         )));
 
         // Let's first insert the hash with a reference to the identity
-        let already_existed = self.batch_insert_if_not_exists(
+        let inserted = self.batch_insert_if_not_exists(
             path_key_element_info,
             apply_type,
             transaction,
             drive_operations,
         )?;
 
-        if already_existed {
+        if !inserted {
             return Err(Error::Identity(IdentityError::IdentityAlreadyExists(
                 "trying to insert a key that already exists",
             )));
@@ -124,7 +121,7 @@ impl Drive {
 
         let key_id_bytes = encode_u32(id)?;
         self.batch_insert(
-            PathFixedSizeKeyElement((
+            PathFixedSizeKeyRefElement((
                 identity_key_tree,
                 key_id_bytes.as_slice(),
                 Element::new_item_with_flags(
@@ -179,7 +176,7 @@ impl Drive {
 
         let key_reference = identity_key_location_within_identity_vec(key_id_bytes.as_slice());
         self.batch_insert(
-            PathFixedSizeKeyElement((
+            PathFixedSizeKeyRefElement((
                 reference_path,
                 key_id_bytes.as_slice(),
                 Element::new_reference_with_flags(

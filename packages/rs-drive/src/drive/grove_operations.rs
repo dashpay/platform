@@ -45,7 +45,8 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize, PathKeyUnknownElementSize,
+    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
+    PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
@@ -613,11 +614,17 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         match path_key_element_info {
-            PathKeyElement((path, key, element)) => {
+            PathKeyRefElement((path, key, element)) => {
                 drive_operations.push(DriveOperation::for_known_path_key_element(
                     path,
                     key.to_vec(),
                     element,
+                ));
+                Ok(())
+            }
+            PathKeyElement((path, key, element)) => {
+                drive_operations.push(DriveOperation::for_known_path_key_element(
+                    path, key, element,
                 ));
                 Ok(())
             }
@@ -632,7 +639,7 @@ impl Drive {
             PathKeyUnknownElementSize(_) => Err(Error::Drive(DriveError::NotSupportedPrivate(
                 "inserting unsized documents into a batch is not currently supported",
             ))),
-            PathFixedSizeKeyElement((path, key, element)) => {
+            PathFixedSizeKeyRefElement((path, key, element)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
                 drive_operations.push(DriveOperation::for_known_path_key_element(
                     path_items,
@@ -654,7 +661,7 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<bool, Error> {
         match path_key_element_info {
-            PathKeyElement((path, key, element)) => {
+            PathKeyRefElement((path, key, element)) => {
                 let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let has_raw = self.grove_has_raw(
                     path_iter.clone(),
@@ -672,7 +679,23 @@ impl Drive {
                 }
                 Ok(!has_raw)
             }
-            PathFixedSizeKeyElement((path, key, element)) => {
+            PathKeyElement((path, key, element)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let has_raw = self.grove_has_raw(
+                    path_iter.clone(),
+                    key.as_slice(),
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                if !has_raw {
+                    drive_operations.push(DriveOperation::for_known_path_key_element(
+                        path, key, element,
+                    ));
+                }
+                Ok(!has_raw)
+            }
+            PathFixedSizeKeyRefElement((path, key, element)) => {
                 let has_raw = self.grove_has_raw(
                     path,
                     key,

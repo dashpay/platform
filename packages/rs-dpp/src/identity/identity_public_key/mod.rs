@@ -10,7 +10,7 @@ use std::convert::TryInto;
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-use dashcore::PublicKey;
+use dashcore::PublicKey as ECDSAPublicKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -19,6 +19,7 @@ pub use crate::identity::key_type::KeyType;
 pub use crate::identity::purpose::Purpose;
 pub use crate::identity::security_level::SecurityLevel;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
+use crate::util::hash::ripemd160_sha256;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
@@ -175,33 +176,32 @@ impl IdentityPublicKey {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }
 
-        if self.key_type == KeyType::ECDSA_HASH160 || self.key_type == KeyType::BIP13_SCRIPT_HASH {
-            return Ok(self.data.clone());
+        match self.key_type {
+            KeyType::ECDSA_SECP256K1 => {
+                let key = match self.data.len() {
+                    65 | 33 => ECDSAPublicKey::from_slice(&self.data.as_slice())
+                        .map_err(|e| anyhow!("unable to create pub key - {}", e))?,
+                    _ => {
+                        return Err(ProtocolError::ParsingError(format!(
+                            "the key length is invalid: {} Allowed sizes: 33 or 65 bytes for ecdsa key",
+                            self.data.len()
+                        )));
+                    }
+                };
+                Ok(key.pubkey_hash().to_vec())
+            }
+            KeyType::BLS12_381 => {
+                if self.data.len() != 48 {
+                    Err(ProtocolError::ParsingError(format!(
+                        "the key length is invalid: {} Allowed sizes: 48 bytes for bls key",
+                        self.data.len()
+                    )))
+                } else {
+                    Ok(ripemd160_sha256(self.data.as_slice()))
+                }
+            }
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.clone()),
         }
-
-        let original_key = match self.data.len() {
-            65 => {
-                let public_key = vec::vec_to_array::<65>(&self.data)
-                    .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-
-                PublicKey::from_slice(&public_key)
-                    .map_err(|e| anyhow!("unable to create pub key - {}", e))?
-            }
-
-            33 => {
-                let public_key = vec::vec_to_array::<33>(&self.data)
-                    .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-                PublicKey::from_slice(&public_key)
-                    .map_err(|e| anyhow!("unable to create pub key - {}", e))?
-            }
-            _ => {
-                return Err(ProtocolError::ParsingError(format!(
-                    "the key length is invalid: {} Allowed sizes: 33 or 65 bytes",
-                    self.data.len()
-                )));
-            }
-        };
-        Ok(original_key.pubkey_hash().to_vec())
     }
 
     pub fn as_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {

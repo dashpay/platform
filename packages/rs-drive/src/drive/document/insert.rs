@@ -61,7 +61,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyUnknownElementSize,
+    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
@@ -180,7 +180,7 @@ impl Drive {
                             document_type.name.as_str(),
                             document.id.as_slice(),
                         );
-                    PathFixedSizeKeyElement((
+                    PathFixedSizeKeyRefElement((
                         document_id_in_primary_path,
                         encoded_time.as_slice(),
                         element,
@@ -199,7 +199,7 @@ impl Drive {
                             document_type.name.as_str(),
                             document.id.as_slice(),
                         );
-                    PathFixedSizeKeyElement((
+                    PathFixedSizeKeyRefElement((
                         document_id_in_primary_path,
                         encoded_time.as_slice(),
                         element,
@@ -218,7 +218,7 @@ impl Drive {
                             document_type.name.as_str(),
                             document.id.as_slice(),
                         );
-                    PathFixedSizeKeyElement((
+                    PathFixedSizeKeyRefElement((
                         document_id_in_primary_path,
                         encoded_time.as_slice(),
                         element,
@@ -269,7 +269,7 @@ impl Drive {
                                     "can not get document id from estimated document",
                                 )))?,
                         );
-                    PathFixedSizeKeyElement((
+                    PathFixedSizeKeyRefElement((
                         document_id_in_primary_path,
                         &[0],
                         Element::Reference(
@@ -288,7 +288,7 @@ impl Drive {
                         serialized_document.to_vec(),
                         StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentRefWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
@@ -297,7 +297,7 @@ impl Drive {
                         serialized_document,
                         StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
                     KeyInfoPath::from_known_path(primary_key_path),
@@ -314,7 +314,7 @@ impl Drive {
                         serialized_document,
                         StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
                     );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
             };
             self.batch_insert(path_key_element_info, drive_operations)?;
@@ -325,7 +325,7 @@ impl Drive {
                         serialized_document.to_vec(),
                         StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
@@ -334,7 +334,7 @@ impl Drive {
                         serialized_document,
                         StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
                     );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentRefWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
@@ -343,7 +343,7 @@ impl Drive {
                         serialized_document,
                         StorageFlags::map_to_some_element_flags(*storage_flags),
                     );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
                 DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
                     KeyInfoPath::from_known_path(primary_key_path),

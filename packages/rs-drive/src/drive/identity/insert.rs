@@ -111,7 +111,7 @@ impl Drive {
         };
 
         // We insert the identity tree
-        let existed_already = self.batch_insert_empty_tree_if_not_exists(
+        let inserted = self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKey((identity_tree_path, id.to_buffer_vec())),
             Some(&storage_flags),
             apply_type,
@@ -119,7 +119,7 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        if existed_already {
+        if !inserted {
             return Err(Error::Identity(IdentityError::IdentityAlreadyExists(
                 "trying to insert an identity that already exists",
             )));

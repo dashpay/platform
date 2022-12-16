@@ -154,6 +154,11 @@ pub(crate) fn key_hashes_tree_path() -> [&'static [u8]; 1] {
     )]
 }
 
+/// Returns the path to the key hashes.
+pub(crate) fn key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::PublicKeyHashesToIdentities as u8]]
+}
+
 /// Returns the path to the masternode key hashes.
 pub(crate) fn masternode_key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(

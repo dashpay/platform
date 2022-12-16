@@ -43,7 +43,7 @@ use storage::worst_case_costs::WorstKeyLength;
 use DriveKeyInfo::{Key, KeyRef, KeySize};
 use KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
 use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
-use PathKeyElementInfo::{PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize};
+use PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement};
 use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
 use crate::contract::document::Document;
@@ -400,9 +400,11 @@ pub enum KeyElementInfo<'a> {
 /// Path key element info
 pub enum PathKeyElementInfo<'a, const N: usize> {
     /// A triple Path Key and Element
-    PathFixedSizeKeyElement(([&'a [u8]; N], &'a [u8], Element)),
+    PathFixedSizeKeyRefElement(([&'a [u8]; N], &'a [u8], Element)),
     /// A triple Path Key and Element
-    PathKeyElement((Vec<Vec<u8>>, &'a [u8], Element)),
+    PathKeyRefElement((Vec<Vec<u8>>, &'a [u8], Element)),
+    /// A triple Path Key and Element
+    PathKeyElement((Vec<Vec<u8>>, Vec<u8>, Element)),
     /// A triple of sum of Path lengths, Key length and Element size
     PathKeyElementSize((KeyInfoPath, KeyInfo, Element)),
     /// A triple of sum of Path lengths, Key length and Element size
@@ -418,7 +420,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         match path_info {
             PathIterator(path) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
-                    Ok(PathKeyElement((path, key, element)))
+                    Ok(PathKeyRefElement((path, key, element)))
                 }
                 KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                     KeyInfoPath::from_known_owned_path(path),
@@ -444,7 +446,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
             },
             PathFixedSizeIterator(path) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
-                    Ok(PathFixedSizeKeyElement((path, key, element)))
+                    Ok(PathFixedSizeKeyRefElement((path, key, element)))
                 }
                 KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                     KeyInfoPath::from_known_path(path),
@@ -465,7 +467,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
     ) -> Result<Self, Error> {
         match key_element {
             KeyElementInfo::KeyElement((key, element)) => {
-                Ok(PathFixedSizeKeyElement((path, key, element)))
+                Ok(PathFixedSizeKeyRefElement((path, key, element)))
             }
             KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                 KeyInfoPath::from_known_path(path),
@@ -484,7 +486,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         key_element: KeyElementInfo<'a>,
     ) -> Result<Self, Error> {
         match key_element {
-            KeyElementInfo::KeyElement((key, element)) => Ok(PathKeyElement((path, key, element))),
+            KeyElementInfo::KeyElement((key, element)) => {
+                Ok(PathKeyRefElement((path, key, element)))
+            }
             KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                 KeyInfoPath::from_known_owned_path(path),
                 key,

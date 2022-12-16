@@ -17,19 +17,6 @@ pub enum SecurityLevel {
     MEDIUM = 3,
 }
 
-impl TryFrom<u32> for SecurityLevel {
-    type Error = anyhow::Error;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::MASTER),
-            1 => Ok(Self::CRITICAL),
-            2 => Ok(Self::HIGH),
-            3 => Ok(Self::MEDIUM),
-            value => bail!("unrecognized security level: {}", value),
-        }
-    }
-}
-
 impl Into<CborValue> for SecurityLevel {
     fn into(self) -> CborValue {
         CborValue::from(self as u128)

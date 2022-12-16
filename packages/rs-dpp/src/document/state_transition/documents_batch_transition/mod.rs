@@ -250,7 +250,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
 pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> SecurityLevel {
     let maybe_security_level = v.get_u64(PROPERTY_SECURITY_LEVEL_REQUIREMENT);
     match maybe_security_level {
-        Ok(some_level) => (some_level as u32).try_into().unwrap_or(default),
+        Ok(some_level) => (some_level as u8).try_into().unwrap_or(default),
         Err(_) => default,
     }
 }
