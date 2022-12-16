@@ -1,11 +1,11 @@
 use crate::buffer::Buffer;
-use dpp::identifier::Identifier;
+use dpp::{identifier::Identifier, prelude::Revision};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDocumentRevisionError)]
 pub struct InvalidDocumentRevisionErrorWasm {
     document_id: Identifier,
-    current_revision: u32,
+    current_revision: Revision,
     code: u32,
 }
 
@@ -17,7 +17,7 @@ impl InvalidDocumentRevisionErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> u32 {
+    pub fn current_revision(&self) -> u64 {
         self.current_revision
     }
 
@@ -28,7 +28,7 @@ impl InvalidDocumentRevisionErrorWasm {
 }
 
 impl InvalidDocumentRevisionErrorWasm {
-    pub fn new(document_id: Identifier, current_revision: u32, code: u32) -> Self {
+    pub fn new(document_id: Identifier, current_revision: Revision, code: u32) -> Self {
         Self {
             document_id,
             current_revision,
