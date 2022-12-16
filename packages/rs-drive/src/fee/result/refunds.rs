@@ -60,8 +60,11 @@ impl FeeRefunds {
             .map(|(identifier, bytes_per_epochs)| {
                 bytes_per_epochs
                     .into_iter()
-                    .map(|(epoch_index, bytes)| {
+                    .map(|(key, bytes)| {
+                        let epoch_index = u16::try_from(key).map_err(|_| get_overflow_error("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
+
                         // TODO We should use multipliers
+
                         (bytes as u64)
                             .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
                             .ok_or_else(|| {
@@ -85,7 +88,7 @@ impl FeeRefunds {
                 let intersection = sint_map_a
                     .into_iter()
                     .map(|(k, v)| {
-                        let combined = if let Some(value_b) = int_map_b.remove(k) {
+                        let combined = if let Some(value_b) = int_map_b.remove(&k) {
                             v.checked_add(value_b)
                                 .ok_or(Error::Fee(FeeError::Overflow("storage fee overflow error")))
                         } else {

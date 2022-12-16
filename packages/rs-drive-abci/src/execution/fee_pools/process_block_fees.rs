@@ -116,7 +116,7 @@ impl Platform {
 
         // Distribute storage fees accumulated during previous epoch
         let storage_distribution_leftover_credits = self
-            .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+            .add_distribute_storage_fee_to_epochs_operations(
                 current_epoch.index,
                 transaction,
                 batch,

@@ -39,6 +39,7 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
 use drive::fee::constants;
+use drive::fee::epoch::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
@@ -51,7 +52,7 @@ pub type StorageDistributionLeftoverCredits = u64;
 impl Platform {
     /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
     /// from the distribution pool to the epoch pools and returns the leftovers.
-    pub fn add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+    pub fn add_distribute_storage_fee_to_epochs_operations(
         &self,
         current_epoch_index: u16,
         transaction: TransactionArg,
@@ -150,7 +151,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             platform
-                .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+                .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
                     Some(&transaction),
                     &mut batch,
@@ -200,7 +201,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             let leftovers = platform
-                .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+                .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
                     Some(&transaction),
                     &mut batch,
@@ -243,7 +244,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             let leftovers = platform
-                .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+                .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
                     Some(&transaction),
                     &mut batch,
@@ -363,7 +364,7 @@ mod tests {
 
             // distribute fees once more
             platform
-                .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+                .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
                     Some(&transaction),
                     &mut batch,

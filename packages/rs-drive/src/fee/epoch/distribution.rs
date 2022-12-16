@@ -89,17 +89,15 @@ pub fn distribute_storage_fee_to_epochs(
         let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
 
         for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
-            let epoch_index_key = epoch_index as u64;
-
             let current_epoch_credits = credits_per_epochs
-                .get(epoch_index_key)
+                .get(&epoch_index)
                 .map_or(0, |i| i.to_owned());
 
             let result_storage_fee = current_epoch_credits
                 .checked_add(epoch_fee_share)
                 .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
 
-            credits_per_epochs.insert(epoch_index_key, result_storage_fee);
+            credits_per_epochs.insert(epoch_index, result_storage_fee);
 
             distribution_leftover_credits = distribution_leftover_credits
                 .checked_sub(epoch_fee_share)

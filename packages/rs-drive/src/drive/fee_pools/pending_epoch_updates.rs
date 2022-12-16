@@ -74,13 +74,11 @@ impl Drive {
             let epoch_index =
                 u16::from_be_bytes(encoded_epoch_index.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
-                        "epoch index for pending pool updates must be u64",
+                        "epoch index for pending pool updates must be u16",
                     ))
                 })?);
 
-            let epoch_index_key = epoch_index as u64;
-
-            let Some(credits_to_update) = credits_per_epoch.get(epoch_index_key) else {
+            let Some(credits_to_update) = credits_per_epoch.get(&epoch_index) else {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates should contain fetched epochs")));
             };
 
@@ -108,7 +106,7 @@ impl Drive {
                         "pending updates overflow error",
                     )))?;
 
-            credits_per_epoch.insert(epoch_index_key, result_credits);
+            credits_per_epoch.insert(epoch_index, result_credits);
         }
 
         Ok(credits_per_epoch)
@@ -144,9 +142,7 @@ impl Drive {
                     ))
                 })?);
 
-            let epoch_index_key = epoch_index as u64;
-
-            if credits_per_epoch.contains_key(epoch_index_key) {
+            if credits_per_epoch.contains_key(&epoch_index) {
                 continue;
             }
 
@@ -285,9 +281,8 @@ mod tests {
                         .try_into()
                         .expect("should convert to u16 bytes"),
                 );
-                let epoch_index_key = epoch_index as u64;
 
-                assert!(expected_pending_updates.contains_key(epoch_index_key));
+                assert!(expected_pending_updates.contains_key(&epoch_index));
             }
         }
     }
