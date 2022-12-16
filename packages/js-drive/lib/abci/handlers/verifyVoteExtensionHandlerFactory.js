@@ -3,6 +3,9 @@ const {
     abci: {
       ResponseVerifyVoteExtension,
     },
+    types: {
+      VoteExtensionType,
+    },
   },
 } = require('@dashevo/abci/types');
 
@@ -19,9 +22,12 @@ const verifyStatus = {
 function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
   /**
    * @typedef verifyVoteExtensionHandler
+   *
+   * @param {abci.RequestVerifyVoteExtension} request
+   *
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
-  async function verifyVoteExtensionHandler() {
+  async function verifyVoteExtensionHandler({ voteExtensions }) {
     const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
       .child({
         abciMethod: 'verifyVoteExtension',
@@ -29,10 +35,43 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
 
     consensusLogger.debug('VerifyVote ABCI method requested');
 
-    // TODO Verify withdrawal vote extensions and add logs
+    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
+      .getWithdrawalTransactionsMap();
+
+    const voteExtensionsToCheck = Object.keys(unsignedWithdrawalTransactionsMap || {})
+      .sort()
+      .map((txHashHex) => ({
+        type: VoteExtensionType.THRESHOLD_RECOVER,
+        extension: Buffer.from(txHashHex, 'hex'),
+      }));
+
+    const allVoteExtensionsPresent = voteExtensionsToCheck.reduce((result, nextExtension) => {
+      const searchedVoteExtension = (voteExtensions || []).find((voteExtension) => (
+        voteExtension.type == nextExtension.type
+          && Buffer.compare(voteExtension.extension, nextExtension.extension)
+      ));
+
+      if (!searchedVoteExtension) {
+        const extensionString = nextExtension.extension.toString('hex');
+
+        const extensionTruncatedString = extensionString.substring(
+          0,
+          Math.min(30, extensionString.length),
+        );
+
+        consensusLogger.debug({
+          type: nextExtension.type,
+          extension: extensionString,
+        }, `${nextExtension.type} vote extension ${extensionTruncatedString}... was not found in verify request`);
+      }
+
+      return result && (searchedVoteExtension != undefined);
+    }, true);
+
+    let status = allVoteExtensionsPresent ? verifyStatus.ACCEPT : verifyStatus.REJECT;
 
     return new ResponseVerifyVoteExtension({
-      status: verifyStatus.ACCEPT,
+      status,
     });
   }
 
