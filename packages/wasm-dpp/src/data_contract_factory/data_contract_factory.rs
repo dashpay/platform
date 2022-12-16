@@ -12,7 +12,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     data_contract::errors::InvalidDataContractError,
-    errors::{consensus_error::from_consensus_error, from_dpp_err, RustConversionError},
+    errors::{
+        consensus::basic::decode::SerializedObjectParsingErrorWasm,
+        consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
+        RustConversionError,
+    },
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
 
@@ -139,7 +143,7 @@ impl DataContractFactoryWasm {
             .create_from_buffer(buffer, skip_validation.unwrap_or(false))
             .await
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .map_err(from_protocol_error)
     }
 
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]

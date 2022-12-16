@@ -9,6 +9,7 @@ describe('DataContractFactory', () => {
   let DataContractValidator;
   let DataContract;
   let InvalidDataContractError;
+  let SerializedObjectParsingError;
 
   let factory;
   let jsDataContract;
@@ -17,7 +18,11 @@ describe('DataContractFactory', () => {
 
   before(async () => {
     ({
-      DataContractFactory, DataContractValidator, DataContract, InvalidDataContractError,
+      DataContractFactory,
+      DataContractValidator,
+      DataContract,
+      InvalidDataContractError,
+      SerializedObjectParsingError,
     } = await loadWasmDpp());
   });
 
@@ -99,9 +104,8 @@ describe('DataContractFactory', () => {
         await factory.createFromBuffer(serializedDataContract);
         expect.fail('should throw InvalidDataContractError');
       } catch (e) {
-        // TODO SerializedObjectParsingError binding type required
-        // expect(e).to.be.an.instanceOf(SerializedObjectPasingError);
-        expect(e).to.match(/Parsing of serialized object failed/);
+        expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
+        expect(e.getParsingError()).to.match(/Decode protocol entity/);
       }
     });
   });
