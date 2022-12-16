@@ -7,7 +7,7 @@ const wait = require('../../util/wait');
  * @typedef {downloadCertificate}
  * @param {string} id
  * @param {string} apiKey
- * @returns {string}
+ * @returns {Promise<string>}
  */
 async function downloadCertificate(id, apiKey) {
   const maxTime = 10 * 60 * 1000; // 10 minutes
