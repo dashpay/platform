@@ -1,3 +1,4 @@
+use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::identity::{
@@ -9,6 +10,7 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use crate::fee::{calculate_fee, FeeResult};
 use grovedb::Element::Item;
 use grovedb::{Element, ElementFlags, TransactionArg};
 
@@ -66,7 +68,29 @@ impl Drive {
     }
 
     /// Balances are stored in the balance tree under the identity's id
-    pub fn add_to_identity_balance(
+    pub(crate) fn add_to_identity_balance(
+        &self,
+        identity_id: [u8; 32],
+        added_balance: u64,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.add_to_identity_balance_operations(
+            identity_id,
+            added_balance,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
+    /// Balances are stored in the balance tree under the identity's id
+    /// This gets operations based on apply flag (stateful vs stateless)
+    pub(crate) fn add_to_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
         added_balance: u64,
@@ -74,20 +98,48 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let previous_balance =
-            self.fetch_identity_balance(identity_id, apply, transaction, drive_operations)?;
+        let previous_balance = self.fetch_identity_balance_operations(
+            identity_id,
+            apply,
+            transaction,
+            drive_operations,
+        )?;
 
         let new_balance = previous_balance
             .checked_add(added_balance)
-            .ok_or(Error::Identity(IdentityError::BalanceOverflow(
+            .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
                 "identity overflow error",
             )))?;
         drive_operations.push(self.set_identity_balance_operation(identity_id, new_balance)?);
         Ok(())
     }
 
+    /// Balances are stored in the balance tree under the identity's id
+    pub(crate) fn remove_from_identity_balance(
+        &self,
+        identity_id: [u8; 32],
+        required_removed_balance: u64,
+        total_desired_removed_balance: u64,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.remove_from_identity_balance_operations(
+            identity_id,
+            required_removed_balance,
+            total_desired_removed_balance,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
     /// Balances are stored in the identity under key 0
-    pub fn remove_from_identity_balance(
+    /// This gets operations based on apply flag (stateful vs stateless)
+    pub(crate) fn remove_from_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
         required_removed_balance: u64,
@@ -96,8 +148,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let previous_balance =
-            self.fetch_identity_balance(identity_id, apply, transaction, drive_operations)?;
+        let previous_balance = self.fetch_identity_balance_operations(
+            identity_id,
+            apply,
+            transaction,
+            drive_operations,
+        )?;
 
         let (new_balance, negative_credit_amount) =
             if total_desired_removed_balance > previous_balance {
@@ -125,43 +181,56 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
     use grovedb::Element;
     use tempfile::TempDir;
 
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
+    use crate::fee_pools::epochs::Epoch;
 
     #[test]
-    fn test_insert_identity() {
+    fn test_update_identity_balance() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        let old_balance = identity.balance;
+
+        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+        drive
+            .add_new_identity(identity.clone(), &block, true, None)
+            .expect("expected to insert identity");
 
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
-            .expect("expected to create root tree successfully");
-
-        let identity_bytes = hex::decode("01000000a462696458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac6762616c616e636500687265766973696f6e006a7075626c69634b65797381a6626964006464617461582102abb64674c5df796559eb3cf92a84525cc1a6068e7ad9d4ff48a1f0b179ae29e164747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00").expect("expected to decode identity hex");
-
-        let identity = Identity::from_cbor(identity_bytes.as_slice())
-            .expect("expected to deserialize an identity");
-
-        let storage_flags = StorageFlags::SingleEpoch(0);
-
-        drive
-            .insert_identity(
-                &identity.id,
-                Element::Item(identity_bytes, Some(storage_flags.to_element_flags())),
+            .add_to_identity_balance(
+                identity.id.to_buffer(),
+                300,
+                &block,
                 true,
                 Some(&db_transaction),
             )
-            .expect("expected to insert identity");
+            .expect("expected to add to identity balance");
 
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("expected to be able to commit a transaction");
+
+        let (balance, fee_cost) = drive
+            .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+            .expect("expected to get balance");
+
+        assert_eq!(balance, old_balance + 300);
     }
 }

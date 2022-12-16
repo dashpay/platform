@@ -165,7 +165,7 @@ impl HashFunction {
     }
 
     //todo: put real costs in
-    fn base_cost(&self) -> u16 {
+    fn base_cost(&self, _epoch: &Epoch) -> u64 {
         match self {
             HashFunction::Sha256 => 30,
             HashFunction::Sha256_2 => 30,
@@ -178,14 +178,22 @@ impl HashFunction {
 #[derive(Debug)]
 pub struct FunctionOp {
     pub(crate) hash: HashFunction,
-    pub(crate) byte_count: u16,
+    pub(crate) rounds: u16,
 }
 
 impl FunctionOp {
-    fn events(&self) -> u16 {
-        let blocks = self.byte_count / self.hash.block_size() + 1;
-        let events = blocks + self.hash.rounds() - 1;
-        events
+    fn cost(&self, epoch: &Epoch) -> u64 {
+        self.rounds as u64 * self.hash.base_cost(epoch)
+    }
+
+    pub fn new_with_round_count(hash: HashFunction, rounds: u16) -> Self {
+        FunctionOp { hash, rounds }
+    }
+
+    pub fn new_with_byte_count(hash: HashFunction, byte_count: u16) -> Self {
+        let blocks = byte_count / hash.block_size() + 1;
+        let rounds = blocks + hash.rounds() - 1;
+        FunctionOp { hash, rounds }
     }
 }
 
@@ -371,9 +379,9 @@ impl DriveCost for OperationCost {
         let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
             .checked_mul(STORAGE_LOAD_CREDIT_PER_BYTE)
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
-        let hash_node_cost = (*hash_node_calls as u64)
-            .checked_mul(FunctionOp::Blake3.cost(epoch))
-            .ok_or_else(|| get_overflow_error("hash node cost overflow"))?;
+        // this can't overflow
+        let hash_node_cost =
+            FunctionOp::new_with_round_count(HashFunction::Blake3, *hash_node_calls).cost(epoch);
         seek_cost
             .checked_add(storage_added_bytes_ephemeral_cost)
             .and_then(|c| c.checked_add(storage_replaced_bytes_ephemeral_cost))

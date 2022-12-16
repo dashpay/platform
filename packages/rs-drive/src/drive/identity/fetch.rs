@@ -1,3 +1,4 @@
+use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -8,6 +9,7 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use crate::fee::{calculate_fee, FeeResult};
 use crate::query::{Query, QueryItem};
 use dpp::identity::Identity;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
@@ -15,7 +17,46 @@ use grovedb::Element::SumItem;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 
 impl Drive {
+    /// Fetches the Identity's balance from the backing store
+    /// Passing apply as false get the estimated cost instead
     pub fn fetch_identity_balance(
+        &self,
+        identity_id: [u8; 32],
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<u64, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.fetch_identity_balance_operations(
+            identity_id,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Fetches the Identity's balance from the backing store
+    /// Passing apply as false get the estimated cost instead
+    pub fn fetch_identity_balance_with_fees(
+        &self,
+        identity_id: [u8; 32],
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<(u64, FeeResult), Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let value = self.fetch_identity_balance_operations(
+            identity_id,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok((value, fees))
+    }
+
+    /// Creates the operations to get Identity's balance from the backing store
+    /// This gets operations based on apply flag (stateful vs stateless)
+    pub(crate) fn fetch_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
         apply: bool,

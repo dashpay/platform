@@ -17,13 +17,12 @@ impl Drive {
         &self,
         identity_bytes: Vec<u8>,
         block_info: &BlockInfo,
-        verify_is_new: bool,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let identity = Identity::from_cbor(identity_bytes.as_slice())?;
+        let identity = Identity::from_cbor(identity_bytes.as_slice()).map_err(Error::Protocol)?;
 
-        self.add_identity(identity, block_info, verify_is_new, apply, transaction)
+        self.add_new_identity(identity, block_info, apply, transaction)
     }
 
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
@@ -35,7 +34,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.add_identity_add_to_operations(
+        self.add_new_identity_add_to_operations(
             identity,
             &block_info,
             apply,
@@ -113,7 +112,7 @@ impl Drive {
 
         // We insert the identity tree
         let existed_already = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((identity_tree_path, id.as_slice())),
+            PathFixedSizeKey((identity_tree_path, id.to_buffer_vec())),
             Some(&storage_flags),
             apply_type,
             transaction,
@@ -133,14 +132,15 @@ impl Drive {
         // todo: we might not need the revision
         batch_operations.push(self.set_revision_operation(id.to_buffer(), revision));
 
-        // We insert the key tree and keys
-        batch_operations.extend(self.create_key_tree_with_keys_operations(
+        let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
             public_keys.into_values().collect(),
             &storage_flags,
             estimated_costs_only_with_layer_info,
             transaction,
-        ));
+        )?;
+        // We insert the key tree and keys
+        batch_operations.append(&mut create_tree_keys_operations);
 
         Ok(batch_operations)
     }
@@ -173,11 +173,10 @@ mod tests {
             .expect("expected to deserialize an identity");
 
         drive
-            .insert_identity(
+            .add_new_identity(
                 identity.clone(),
                 &BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
                 Some(&transaction),
             )
             .expect("expected to insert identity");
@@ -195,62 +194,23 @@ mod tests {
     #[test]
     fn test_insert_identity() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let identity = Identity::random_identity(5, Some(12345));
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         drive
-            .insert_new_identity(
-                identity,
-                &StorageFlags::SingleEpoch(0),
-                false,
-                &BlockInfo::default(),
-                true,
-                Some(&db_transaction),
-            )
+            .add_new_identity(identity, &BlockInfo::default(), true, Some(&db_transaction))
             .expect("expected to insert identity");
 
         drive
             .grove
             .commit_transaction(db_transaction)
-            .expect("expected to be able to commit a transaction");
-    }
-
-    #[test]
-    fn test_insert_identity_old() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
-
-        let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_root_tree(Some(&db_transaction))
-            .expect("expected to create root tree successfully");
-
-        let identity_bytes = hex::decode("01000000a462696458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac6762616c616e636500687265766973696f6e006a7075626c69634b65797381a6626964006464617461582102abb64674c5df796559eb3cf92a84525cc1a6068e7ad9d4ff48a1f0b179ae29e164747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00").expect("expected to decode identity hex");
-
-        let identity = Identity::from_cbor(identity_bytes.as_slice())
-            .expect("expected to deserialize an identity");
-
-        let storage_flags = StorageFlags::new_single_epoch(0, None);
-
-        drive
-            .insert_identity(
-                &identity.id,
-                Element::Item(identity_bytes, storage_flags.to_some_element_flags()),
-                true,
-                Some(&db_transaction),
-            )
-            .expect("expected to insert identity");
-
-        drive
-            .grove
-            .commit_transaction(db_transaction)
+            .unwrap()
             .expect("expected to be able to commit a transaction");
     }
 }

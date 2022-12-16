@@ -39,6 +39,7 @@ use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType};
 use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 /// Creates a test identity from an id and inserts it into Drive.
 pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: TransactionArg) -> Identity {
@@ -53,24 +54,22 @@ pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: Transactio
         signature: Default::default(),
     };
 
+    let mut public_keys = BTreeMap::new();
+
+    public_keys.insert(identity_key.id, identity_key);
+
     let identity = Identity {
         id: Identifier::new(id),
         revision: 1,
         balance: 0,
         protocol_version: 0,
-        public_keys: vec![identity_key],
+        public_keys,
         asset_lock_proof: None,
         metadata: None,
     };
 
     drive
-        .insert_identity(
-            identity.clone(),
-            BlockInfo::default(),
-            true,
-            None,
-            transaction,
-        )
+        .add_new_identity(identity.clone(), &BlockInfo::default(), true, transaction)
         .expect("should insert identity");
 
     identity

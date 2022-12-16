@@ -37,7 +37,7 @@ mod estimation_costs;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::common::encode::encode_unsigned_integer;
+use crate::common::encode::encode_u64;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::data_contract::extra::DriveContractExt;
 
@@ -158,7 +158,7 @@ impl Drive {
                 storage_flags.as_ref(),
                 insert_operations,
             )?;
-            let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = encode_u64(block_info.time_ms)?;
             let contract_keeping_history_storage_path =
                 contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(

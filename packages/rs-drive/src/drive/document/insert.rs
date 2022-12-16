@@ -71,7 +71,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 
-use crate::common::encode::encode_unsigned_integer;
+use crate::common::encode::encode_u64;
 use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
@@ -167,7 +167,7 @@ impl Drive {
                 transaction,
                 drive_operations,
             )?;
-            let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = encode_u64(block_info.time_ms)?;
             let path_key_element_info = match &document_and_contract_info.document_info {
                 DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(

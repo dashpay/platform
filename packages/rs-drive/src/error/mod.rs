@@ -2,6 +2,7 @@ use self::drive::DriveError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
 use dpp::data_contract::extra::ContractError;
+use dpp::ProtocolError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
@@ -52,4 +53,8 @@ pub enum Error {
     /// Document error
     #[error("document: {0}")]
     Document(#[from] DocumentError),
+
+    /// Protocol error
+    #[error("protocol: {0}")]
+    Protocol(#[from] ProtocolError),
 }

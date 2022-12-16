@@ -53,6 +53,8 @@ type BytesAddedInEpoch = u32;
 
 type OwnerId = [u8; 32];
 
+pub const SINGLE_EPOCH_FLAGS_SIZE: u32 = 3;
+
 /// Storage flags
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageFlags {

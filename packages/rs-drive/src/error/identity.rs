@@ -25,6 +25,10 @@ pub enum IdentityError {
     #[error("identity serialization error: {0}")]
     IdentitySerialization(&'static str),
 
+    /// Identity insufficient balance error
+    #[error("identity insufficient balance error: {0}")]
+    IdentityInsufficientBalance(&'static str),
+
     /// Critical balance overflow error
     #[error("critical balance overflow error: {0}")]
     CriticalBalanceOverflow(&'static str),

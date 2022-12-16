@@ -107,6 +107,8 @@ pub enum RootTree {
     WithdrawalTransactions = 6,
     /// Balances
     Balances = 7,
+    /// Masternode Key Hashes
+    MasternodePublicKeyKeyHashesToIdentities = 8,
 }
 
 /// Storage cost
@@ -135,6 +137,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Misc => &[5],
             RootTree::WithdrawalTransactions => &[6],
             RootTree::Balances => &[7],
+            RootTree::MasternodePublicKeyKeyHashesToIdentities => &[8],
         }
     }
 }
@@ -146,12 +149,16 @@ pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
 
 /// Returns the path to the key hashes.
 pub(crate) fn key_hashes_tree_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::KeyHashes)]
+    [Into::<&[u8; 1]>::into(
+        RootTree::PublicKeyHashesToIdentities,
+    )]
 }
 
 /// Returns the path to the masternode key hashes.
 pub(crate) fn masternode_key_hashes_tree_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::MasternodeKeyHashes)]
+    [Into::<&[u8; 1]>::into(
+        RootTree::MasternodePublicKeyKeyHashesToIdentities,
+    )]
 }
 
 /// Returns the path to a contract's document types.

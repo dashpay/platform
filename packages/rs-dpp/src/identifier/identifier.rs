@@ -79,6 +79,11 @@ impl Identifier {
         self.buffer
     }
 
+    /// Convenience method to get underlying buffer as a vec
+    pub fn to_buffer_vec(&self) -> Vec<u8> {
+        self.buffer.to_vec()
+    }
+
     pub fn to_string(&self, encoding: Encoding) -> String {
         string_encoding::encode(&self.buffer, encoding)
     }
