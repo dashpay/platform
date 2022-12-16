@@ -15,13 +15,12 @@ describe('IdentityPublicKey', () => {
 
     rawPublicKey = {
       id: 0,
-      type: KeyType.ECDSA_SECP256K1,
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
       purpose: KeyPurpose.AUTHENTICATION,
       securityLevel: KeySecurityLevel.MASTER,
       readOnly: false,
     };
-
     publicKey = new IdentityPublicKey(rawPublicKey);
   });
 
@@ -151,7 +150,7 @@ describe('IdentityPublicKey', () => {
     it('should return data in case ECDSA_HASH160', () => {
       rawPublicKey = {
         id: 0,
-        type: KeyType.ECDSA_HASH160,
+        type: IdentityPublicKey.TYPES.ECDSA_HASH160,
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
