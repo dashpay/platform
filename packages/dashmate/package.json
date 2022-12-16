@@ -56,8 +56,8 @@
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
-    "@oclif/core": "^1.16.3",
-    "@oclif/plugin-help": "^5.1.12",
+    "@oclif/core": "^1.21.0",
+    "@oclif/plugin-help": "^5.1.20",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
@@ -93,7 +93,7 @@
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "globby": "^11",
-    "oclif": "^3.2.2"
+    "oclif": "^3.4.2"
   },
   "files": [
     "bin",
@@ -111,6 +111,9 @@
     ],
     "commands": "./src/commands",
     "bin": "dashmate",
+    "macos": {
+      "identifier": "org.dash.dashmate"
+    },
     "plugins": [
       "@oclif/plugin-help"
     ],
