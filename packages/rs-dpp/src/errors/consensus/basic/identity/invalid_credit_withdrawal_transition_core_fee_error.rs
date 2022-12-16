@@ -3,18 +3,18 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Core fee {core_fee:?} must be part of fibonacci sequence")]
+#[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence")]
 pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
-    core_fee: u32,
+    core_fee_per_byte: u32,
 }
 
 impl InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
-    pub fn new(core_fee: u32) -> Self {
-        Self { core_fee }
+    pub fn new(core_fee_per_byte: u32) -> Self {
+        Self { core_fee_per_byte }
     }
 
-    pub fn core_fee(&self) -> u32 {
-        self.core_fee
+    pub fn core_fee_per_byte(&self) -> u32 {
+        self.core_fee_per_byte
     }
 }
 

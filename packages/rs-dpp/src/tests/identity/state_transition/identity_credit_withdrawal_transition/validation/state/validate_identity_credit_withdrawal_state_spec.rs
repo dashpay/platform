@@ -130,7 +130,9 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 anyhow::Ok(Some(identity))
             });
 
-        let (state_transition, validator) = setup_test(state_repository, Some(5));
+        let (mut state_transition, validator) = setup_test(state_repository, Some(5));
+
+        state_transition.revision = 1;
 
         let result = validator
             .validate_identity_credit_withdrawal_transition_state(&state_transition)

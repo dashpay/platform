@@ -282,14 +282,14 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         }
     }
 
-    mod core_fee {
+    mod core_fee_per_byte {
         use super::*;
 
         #[tokio::test]
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("coreFee");
+            raw_state_transition.remove_key("coreFeePerByte");
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -302,7 +302,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             match error.kind() {
                 ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"coreFee\"");
+                    assert_eq!(property.to_string(), "\"coreFeePerByte\"");
                 }
                 _ => panic!("Expected to be missing property"),
             }
@@ -312,7 +312,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFee", "1");
+            raw_state_transition.set_key_value("coreFeePerByte", "1");
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -320,7 +320,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFee");
+            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
             assert_eq!(error.keyword().unwrap(), "type");
         }
 
@@ -328,7 +328,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_less_than_1() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFee", -1);
+            raw_state_transition.set_key_value("coreFeePerByte", -1);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -336,7 +336,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFee");
+            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
             assert_eq!(error.keyword().unwrap(), "minimum");
         }
 
@@ -344,7 +344,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_in_a_fibonacci_sequence() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFee", 6);
+            raw_state_transition.set_key_value("coreFeePerByte", 6);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -356,7 +356,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.core_fee(), 6);
+            assert_eq!(error.core_fee_per_byte(), 6);
         }
     }
 

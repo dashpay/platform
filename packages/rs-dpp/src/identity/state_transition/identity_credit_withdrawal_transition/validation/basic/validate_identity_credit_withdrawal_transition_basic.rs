@@ -73,12 +73,14 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
 
         // validate core_fee is in fibonacci sequence
         let core_fee = transition_json
-            .get("coreFee")
+            .get("coreFeePerByte")
             .ok_or_else(|| {
-                SerdeParsingError::new("Expected credit withdrawal transition to have coreFee")
+                SerdeParsingError::new(
+                    "Expected credit withdrawal transition to have coreFeePerByte",
+                )
             })?
             .as_u64()
-            .ok_or_else(|| SerdeParsingError::new("Expected coreFee to be a uint"))?;
+            .ok_or_else(|| SerdeParsingError::new("Expected coreFeePerByte to be a uint"))?;
 
         if !is_fibonacci_number(core_fee) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(

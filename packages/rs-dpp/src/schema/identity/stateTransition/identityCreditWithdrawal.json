@@ -21,7 +21,7 @@
       "type": "integer",
       "minimum": 1000
     },
-    "coreFee": {
+    "coreFeePerByte": {
       "type": "integer",
       "minimum": 1
     },
@@ -46,6 +46,11 @@
     "signaturePublicKeyId": {
       "type": "integer",
       "minimum": 0
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "State transition revision"
     }
   },
   "additionalProperties": false,
@@ -54,10 +59,11 @@
     "type",
     "identityId",
     "amount",
-    "coreFee",
+    "coreFeePerByte",
     "pooling",
     "outputScript",
     "signature",
-    "signaturePublicKeyId"
+    "signaturePublicKeyId",
+    "revision"
   ]
 }
