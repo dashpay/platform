@@ -26,6 +26,8 @@ mod get_dashpay_document_fixture;
 mod get_document_transitions_fixture;
 mod get_document_validator_fixture;
 pub use get_document_validator_fixture::*;
+mod get_withdrawals_data_contract;
+pub use get_withdrawals_data_contract::*;
 
 mod get_masternode_reward_shares_documents_fixture;
 pub use get_masternode_reward_shares_documents_fixture::*;

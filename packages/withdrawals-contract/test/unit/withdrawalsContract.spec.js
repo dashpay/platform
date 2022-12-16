@@ -42,6 +42,7 @@ describe('Withdrawals contract', () => {
       beforeEach(() => {
         rawWithdrawalDocument = {
           transactionId: Buffer.alloc(32, 1),
+          transactionIndex: 42,
           amount: 1000,
           coreFeePerByte: 1,
           pooling: 0,
@@ -231,6 +232,46 @@ describe('Withdrawals contract', () => {
 
         it('should be at least 1', () => {
           rawWithdrawalDocument.transactionSignHeight = 0;
+
+          try {
+            dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.limit).to.equal(1);
+          }
+        });
+      });
+
+      describe('transactionIndex', () => {
+        it('should be integer', () => {
+          rawWithdrawalDocument.transactionIndex = 'string';
+
+          try {
+            dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
+
+            expect.fail('should throw error');
+          } catch (e) {
+            expect(e.name).to.equal('InvalidDocumentError');
+            expect(e.getErrors()).to.have.a.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error.name).to.equal('JsonSchemaError');
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
+          }
+        });
+
+        it('should be at least 1', () => {
+          rawWithdrawalDocument.transactionIndex = 0;
 
           try {
             dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
