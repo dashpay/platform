@@ -419,7 +419,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-12]
+        include:
+          - package_type: tarballs
+            os: ubuntu-22.04
+          - package_type: win
+            os: ubuntu-22.04
+          - package_type: deb
+            os: ubuntu-22.04
+          - package_type: macos
+            os: macos-12
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -477,25 +485,8 @@ jobs:
       - name: Generate manifest JSON
         run: yarn workspace dashmate oclif manifest
 
-      - name: Pack tarballs
-        run: yarn workspace dashmate oclif pack tarballs
-        if: runner.os == 'Linux'
-
-      - name: Pack Linux deb
-        run: |
-          yarn install
-          yarn workspace dashmate oclif pack deb
-        if: runner.os == 'Linux'
-
-      - name: Pack Windows exe
-        run: |
-          yarn install
-          yarn workspace dashmate oclif pack win
-        if: runner.os == 'Linux'
-
-      - name: Pack macos pkg
-        run: yarn workspace dashmate oclif pack macos
-        if: runner.os == 'macOS'
+      - name: Create package
+        run: yarn workspace dashmate oclif pack {{ matrix.package_type }}
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v3
