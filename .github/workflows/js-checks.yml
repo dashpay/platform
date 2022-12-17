@@ -38,7 +38,7 @@ jobs:
           node-version: '16'
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -90,7 +90,7 @@ jobs:
           node-version: '16'
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown

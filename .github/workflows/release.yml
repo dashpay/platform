@@ -31,7 +31,7 @@ jobs:
           TAG_PREFIX: v
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -714,7 +714,7 @@ jobs:
 
       - name: Setup Rust toolchain and target
         if: ${{ runner.os == 'macOS' }}
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: ${{ steps.set-target.outputs.result }}
