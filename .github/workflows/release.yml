@@ -641,22 +641,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             arch: x86_64
             node_arch: x64
             compiler: gnu
             platform: unknown-linux
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             arch: x86_64
             node_arch: x64
             compiler: musl
             platform: unknown-linux
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             arch: aarch64
             node_arch: arm64
             compiler: gnu
             platform: unknown-linux
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             arch: aarch64
             node_arch: arm64
             compiler: musl
