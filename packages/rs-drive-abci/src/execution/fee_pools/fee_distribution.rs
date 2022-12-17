@@ -38,7 +38,6 @@ use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
 use drive::error::fee::FeeError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::fee_pools::epochs::Epoch;
@@ -293,7 +292,7 @@ impl Platform {
                         ))
                     })?;
 
-                let share_percentage = Decimal::from(share_percentage_integer) / dec!(10000);
+                let share_percentage = Decimal::from(share_percentage_integer) / dec!(10000.0);
 
                 let reward = masternode_reward * share_percentage;
 
@@ -433,6 +432,8 @@ mod tests {
 
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
         use super::*;
+
+        use drive::error::Error as DriveError;
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
@@ -780,7 +781,9 @@ mod tests {
             ) {
                 Ok(_) => assert!(false, "expect tree not exists"),
                 Err(e) => match e {
-                    Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => assert!(true),
+                    DriveError::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }
@@ -889,7 +892,9 @@ mod tests {
             ) {
                 Ok(_) => assert!(false, "expect tree not exists"),
                 Err(e) => match e {
-                    Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => assert!(true),
+                    DriveError::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
+                        assert!(true)
+                    }
                     _ => assert!(false, "invalid error type"),
                 },
             }

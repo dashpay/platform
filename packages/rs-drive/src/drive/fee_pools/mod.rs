@@ -80,13 +80,14 @@ pub fn aggregate_storage_fees_distribution_pool_vec_path() -> Vec<Vec<u8>> {
 }
 
 impl Drive {
+    /// Adds GroveDB operations to update epoch storage fee pools with specified map of credits to epochs
     pub fn add_update_epoch_storage_fee_pools_operations(
         &self,
         batch: &mut GroveDbOpBatch,
         credits_per_epochs: SignedCreditsPerEpoch,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        if credits_per_epochs.len() == 0 {
+        if credits_per_epochs.is_empty() {
             return Ok(());
         }
 
@@ -131,8 +132,6 @@ impl Drive {
             .sorted_by_key(|x| x.0)
             .enumerate()
         {
-            let encoded_epoch_index_key = paths::encode_epoch_index_key(epoch_index)?.to_vec();
-
             let existing_storage_fee = SignedCredits::from_vec_bytes(storage_fee_pools.remove(i))?;
 
             let credits_to_update = existing_storage_fee.checked_add(credits).ok_or_else(|| {

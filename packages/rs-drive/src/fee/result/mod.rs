@@ -34,8 +34,8 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::credits::Credits;
 use crate::fee::result::refunds::FeeRefunds;
-use crate::fee::Credits;
 
 pub mod refunds;
 

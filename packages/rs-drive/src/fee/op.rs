@@ -191,13 +191,15 @@ impl DriveOperation {
                                 // this is not always considered an error
                                 (FeeRefunds::default(), amount)
                             }
-                            SectionedStorageRemoval(mut removalPerEpochByIdentifier) => {
-                                let system_amount = removalPerEpochByIdentifier
+                            SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
+                                let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
 
                                 (
-                                    FeeRefunds::from_storage_removal(removalPerEpochByIdentifier)?,
+                                    FeeRefunds::from_storage_removal(
+                                        removal_per_epoch_by_identifier,
+                                    )?,
                                     system_amount,
                                 )
                             }

@@ -37,9 +37,8 @@ use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
-use drive::fee::refunds::CreditsPerEpoch;
-use serde::{Deserialize, Deserializer, Serialize};
-use std::ops::Deref;
+use drive::fee::epoch::SignedCreditsPerEpoch;
+use serde::{Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -95,7 +94,7 @@ pub struct BlockFees {
     /// Storage fee
     pub storage_fee: u64,
     /// Fee refunds
-    pub fee_refunds: CreditsPerEpoch,
+    pub fee_refunds: SignedCreditsPerEpoch,
 }
 
 impl BlockFees {

@@ -60,8 +60,10 @@ pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_YEARS as usize] = 
     dec!(0.00325), dec!(0.00275), dec!(0.00225), dec!(0.00175), dec!(0.00125),
 ];
 
+/// Leftovers in result of divisions and rounding after storage fee distribution to epochs
 pub type DistributionLeftoverCredits = SignedCredits;
 
+/// Distributes storage fees to epochs and returns `DistributionLeftoverCredits`
 pub fn distribute_storage_fee_to_epochs(
     storage_fee: SignedCredits,
     start_epoch_index: EpochIndex,

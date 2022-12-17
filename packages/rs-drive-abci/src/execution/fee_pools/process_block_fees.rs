@@ -36,7 +36,6 @@
 use std::option::Option::None;
 
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
@@ -44,11 +43,10 @@ use drive::grovedb::TransactionArg;
 use crate::abci::messages::BlockFees;
 use crate::block::BlockInfo;
 use crate::error::Error;
-use crate::execution::fee_pools::distribute_storage_pool::StorageDistributionLeftoverCredits;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
-use drive::fee::constants::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
+use drive::fee::epoch::distribution::DistributionLeftoverCredits;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 
@@ -78,7 +76,7 @@ impl Platform {
     /// as well as the current+1000 epoch, then distributes storage fees accumulated
     /// during the previous epoch.
     ///
-    /// `StorageDistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
+    /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
     fn add_process_epoch_change_operations(
         &self,
         block_info: &BlockInfo,
@@ -86,7 +84,7 @@ impl Platform {
         block_fees: &BlockFees,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<Option<StorageDistributionLeftoverCredits>, Error> {
+    ) -> Result<Option<DistributionLeftoverCredits>, Error> {
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
             .previous_epoch_index
@@ -145,7 +143,7 @@ impl Platform {
 
         let mut batch = GroveDbOpBatch::new();
 
-        let storage_distribution_leftover_credits = if epoch_info.is_epoch_change {
+        let storage_fee_distribution_leftover_credits = if epoch_info.is_epoch_change {
             self.add_process_epoch_change_operations(
                 block_info,
                 epoch_info,
@@ -194,7 +192,7 @@ impl Platform {
             &current_epoch,
             &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
-            storage_distribution_leftover_credits,
+            storage_fee_distribution_leftover_credits,
             transaction,
             &mut batch,
         )?;

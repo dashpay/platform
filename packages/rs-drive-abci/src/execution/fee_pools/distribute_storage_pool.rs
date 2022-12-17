@@ -70,7 +70,7 @@ impl Platform {
             .drive
             .get_aggregate_storage_fees_from_distribution_pool(transaction)?;
 
-        let credits_per_epochs = SignedCreditsPerEpoch::new();
+        let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
         let mut leftovers = distribute_storage_fee_to_epochs(
             storage_distribution_fees.to_signed()?,

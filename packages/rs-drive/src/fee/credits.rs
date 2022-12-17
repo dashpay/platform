@@ -37,13 +37,22 @@ use crate::error::Error;
 use crate::fee::get_overflow_error;
 use rust_decimal::Decimal;
 
+/// Credits type
 pub type Credits = u64;
+
+/// Signed Credits type is used for internal computations and total credits
+/// balance verification
 pub type SignedCredits = i64;
 
+/// Trait for signed and unsigned credits
 pub trait Creditable: Into<Decimal> {
+    /// Convert unsigned credit to singed
     fn to_signed(&self) -> Result<SignedCredits, Error>;
+    /// Convert singed credit to unsigned
     fn to_unsigned(&self) -> Credits;
+    /// Decode bytes to credits
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error>;
+    /// Encode credits to bytes
     fn to_vec_bytes(&self) -> Vec<u8>;
 }
 
