@@ -67,7 +67,7 @@ jobs:
           CARGO_BUILD_PROFILE: release
 
       - name: Download prebuild artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: prebuilds
           path: packages/rs-drive-nodejs/prebuilds
@@ -444,18 +444,18 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up QEMU to run multi-arch builds
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker BuildX
         id: buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
         with:
-          version: v0.7.0
+          version: v0.9.1
           install: true
           driver-opts: image=moby/buildkit:buildx-stable-1
 
       - name: Enable buildkit cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
@@ -470,7 +470,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -583,7 +583,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -697,7 +697,7 @@ jobs:
         run: yarn install
 
       - name: Set target name
-        uses: actions/github-script@v5
+        uses: actions/github-script@v6
         id: set-target
         with:
           script: |
@@ -723,7 +723,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Set LIBC argument
-        uses: actions/github-script@v5
+        uses: actions/github-script@v6
         id: set-libc-arg
         with:
           script: |
@@ -763,7 +763,7 @@ jobs:
           CARGO_BUILD_PROFILE: release
 
       - name: Upload prebuild artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: prebuilds
           path: packages/rs-drive-nodejs/prebuilds/
