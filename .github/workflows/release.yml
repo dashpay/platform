@@ -23,7 +23,7 @@ jobs:
       - build-rs-drive-nodejs
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Check package version matches tag
         uses: geritol/match-tag-to-package-version@0.2.0
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -219,7 +219,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -330,7 +330,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -441,7 +441,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v1
@@ -529,7 +529,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -672,7 +672,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
