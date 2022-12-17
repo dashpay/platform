@@ -713,7 +713,7 @@ jobs:
           result-encoding: string
 
       - name: Setup Rust toolchain and target
-        if: ${{ matrix.os == 'macos-11' }}
+        if: ${{ runner.os == 'macOS' }}
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -739,7 +739,7 @@ jobs:
           result-encoding: string
 
       - name: Build for Linux (x86)
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64' }}
+        if: ${{ runner.os == 'Linux' && matrix.arch == 'x86_64' }}
         uses: docker://messense/rust-musl-cross:x86_64-musl
         with:
           workdir: /github/workspace/
@@ -747,7 +747,7 @@ jobs:
           args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
 
       - name: Build for Linux (aarch64)
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.arch == 'aarch64' }}
+        if: ${{ runner.os == 'Linux' && matrix.arch == 'aarch64' }}
         uses: docker://messense/rust-musl-cross:aarch64-musl
         with:
           workdir: /github/workspace/
@@ -755,7 +755,7 @@ jobs:
           args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
 
       - name: Build for Mac OS
-        if: ${{ matrix.os == 'macos-11' }}
+        if: ${{ runner.os == 'macOS' }}
         run: yarn workspace @dashevo/rs-drive run build
         env:
           ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
