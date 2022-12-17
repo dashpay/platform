@@ -34,7 +34,7 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, SignedCredits};
+use crate::fee::credits::SignedCredits;
 use crate::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
@@ -65,6 +65,7 @@ pub type DistributionLeftoverCredits = SignedCredits;
 pub fn distribute_storage_fee_to_epochs(
     storage_fee: SignedCredits,
     start_epoch_index: EpochIndex,
+    from_epoch_index: EpochIndex,
     credits_per_epochs: &mut SignedCreditsPerEpoch,
 ) -> Result<DistributionLeftoverCredits, Error> {
     if storage_fee == 0 {
@@ -92,11 +93,15 @@ pub fn distribute_storage_fee_to_epochs(
         let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
 
         for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
-            let current_epoch_credits: SignedCredits = credits_per_epochs
+            if epoch_index < from_epoch_index {
+                continue;
+            }
+
+            let epoch_credits: SignedCredits = credits_per_epochs
                 .get(&epoch_index)
                 .map_or(0, |i| i.to_owned());
 
-            let result_storage_fee: SignedCredits = current_epoch_credits
+            let result_storage_fee: SignedCredits = epoch_credits
                 .checked_add(epoch_fee_share)
                 .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
 

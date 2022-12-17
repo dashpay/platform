@@ -49,6 +49,7 @@ use drive::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
 use drive::fee_pools::epochs::Epoch;
+use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
@@ -74,6 +75,7 @@ impl Platform {
         let mut leftovers = distribute_storage_fee_to_epochs(
             storage_distribution_fees.to_signed()?,
             current_epoch_index,
+            current_epoch_index,
             &mut credits_per_epochs,
         )?;
 
@@ -85,17 +87,19 @@ impl Platform {
                 ))
             })?;
 
-            // TODO: We should calculate for epochs which are before current one.
-            //   leftovers also should be less
-
             leftovers = distribute_storage_fee_to_epochs(
                 credits_to_distribute,
                 epoch_index,
+                current_epoch_index,
                 &mut credits_per_epochs,
             )?;
         }
 
-        // TODO: Nil negative pools
+        self.drive.add_update_epoch_storage_fee_pools_operations(
+            batch,
+            credits_per_epochs,
+            transaction,
+        )?;
 
         Ok(leftovers)
     }

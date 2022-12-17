@@ -32,6 +32,7 @@
 //! This module defines constants related to fee distribution pools.
 //!
 
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::get_overflow_error;
 use rust_decimal::Decimal;
@@ -42,6 +43,8 @@ pub type SignedCredits = i64;
 pub trait Creditable: Into<Decimal> {
     fn to_signed(&self) -> Result<SignedCredits, Error>;
     fn to_unsigned(&self) -> Credits;
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error>;
+    fn to_vec_bytes(&self) -> Vec<u8>;
 }
 
 impl Creditable for Credits {
@@ -53,6 +56,20 @@ impl Creditable for Credits {
     fn to_unsigned(&self) -> Credits {
         self.clone()
     }
+
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
+        Ok(Self::from_be_bytes(vec.as_slice().try_into().map_err(
+            |_| {
+                Error::Drive(DriveError::CorruptedSerialization(
+                    "pending updates epoch index for must be u16",
+                ))
+            },
+        )?))
+    }
+
+    fn to_vec_bytes(&self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
 }
 impl Creditable for SignedCredits {
     fn to_signed(&self) -> Result<SignedCredits, Error> {
@@ -60,6 +77,20 @@ impl Creditable for SignedCredits {
     }
 
     fn to_unsigned(&self) -> Credits {
-        self.clone() as Credits
+        self.unsigned_abs()
+    }
+
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
+        Ok(Self::from_be_bytes(vec.as_slice().try_into().map_err(
+            |_| {
+                Error::Drive(DriveError::CorruptedSerialization(
+                    "pending updates epoch index for must be u16",
+                ))
+            },
+        )?))
+    }
+
+    fn to_vec_bytes(&self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
     }
 }

@@ -31,14 +31,15 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::credits::{Creditable, SignedCredits};
+use crate::fee::epoch::SignedCreditsPerEpoch;
+use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::{paths, Epoch};
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL,
 };
-use crate::query::QueryItem;
-use grovedb::{PathQuery, Query, TransactionArg};
+use grovedb::{Element, PathQuery, Query, TransactionArg};
 use itertools::Itertools;
 
 /// Epochs module
@@ -82,7 +83,7 @@ impl Drive {
     pub fn add_update_epoch_storage_fee_pools_operations(
         &self,
         batch: &mut GroveDbOpBatch,
-        credits_per_epochs: CreditsPerEpoch,
+        credits_per_epochs: SignedCreditsPerEpoch,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         if credits_per_epochs.len() == 0 {
@@ -110,7 +111,7 @@ impl Drive {
 
         epochs_query.set_subquery(storage_fee_pool_query);
 
-        let (storage_fee_pools, _) = self
+        let (mut storage_fee_pools, _) = self
             .grove
             .query(
                 &PathQuery::new_unsized(pools_vec_path(), epochs_query),
@@ -125,13 +126,26 @@ impl Drive {
             )));
         }
 
-        for (i, (epoch_index_key, credits)) in credits_per_epochs
+        for (i, (epoch_index, credits)) in credits_per_epochs
             .into_iter()
             .sorted_by_key(|x| x.0)
             .enumerate()
         {
-            let encoded_epoch_index_key =
-                paths::encode_epoch_index_key(epoch_index_key as u16)?.to_vec();
+            let encoded_epoch_index_key = paths::encode_epoch_index_key(epoch_index)?.to_vec();
+
+            let existing_storage_fee = SignedCredits::from_vec_bytes(storage_fee_pools.remove(i))?;
+
+            let credits_to_update = existing_storage_fee.checked_add(credits).ok_or_else(|| {
+                get_overflow_error("can't add credits to existing epoch pool storage fee")
+            })?;
+
+            let element = Element::new_item(credits_to_update.to_unsigned().to_vec_bytes());
+
+            batch.add_insert(
+                Epoch::new(epoch_index).get_vec_path(),
+                KEY_POOL_STORAGE_FEES.to_vec(),
+                element,
+            );
         }
 
         Ok(())
