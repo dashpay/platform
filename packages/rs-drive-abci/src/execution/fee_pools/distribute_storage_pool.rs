@@ -37,25 +37,13 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::{EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS};
-use drive::error::drive::DriveError;
-use drive::error::fee::FeeError;
-use drive::fee::constants;
-use drive::fee::credits::{Creditable, SignedCredits};
-use drive::fee::epoch::distribution::{
-    distribute_storage_fee_to_epochs, DistributionLeftoverCredits,
-};
-use drive::fee::epoch::{
-    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
-};
-use drive::fee_pools::epochs::Epoch;
-use drive::fee_pools::update_storage_fee_distribution_pool_operation;
+use drive::fee::credits::{Creditable, Credits};
+use drive::fee::epoch::distribution::distribute_storage_fee_to_epochs;
+use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
-use drive::{error, grovedb};
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
-use rust_decimal::Decimal;
 
-/// Leftover credits after adding up and distributing storage fees.
+/// Leftovers in result of divisions and rounding after storage fee distribution to epochs
+pub type DistributionLeftoverCredits = Credits;
 
 impl Platform {
     /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
@@ -101,7 +89,7 @@ impl Platform {
             transaction,
         )?;
 
-        Ok(leftovers)
+        Ok(leftovers.to_unsigned())
     }
 }
 
@@ -318,7 +306,7 @@ mod tests {
 
             let total_distributed: u64 = storage_fees.iter().sum();
 
-            assert_eq!(total_distributed + leftovers, storage_pool);
+            assert_eq!(total_distributed + leftovers as u64, storage_pool);
 
             /*
 

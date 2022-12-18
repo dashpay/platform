@@ -48,7 +48,8 @@ function calculateStateTransitionFee(stateTransition, options = {}) {
       .reduce((sum, [, credits]) => sum + credits, 0);
   }
 
-  const total = (storageFee + processingFee - feeRefundsSum) + DEFAULT_USER_TIP;
+  // Fee refunds are negative
+  const total = (storageFee + processingFee + feeRefundsSum) + DEFAULT_USER_TIP;
 
   executionContext.setLastCalculatedFeeDetails({ ...calculatedFees, feeRefundsSum, total });
 

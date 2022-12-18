@@ -1,4 +1,4 @@
-use drive::fee::FeeResult;
+use drive::fee::result::FeeResult;
 use neon::prelude::*;
 use std::ops::Deref;
 

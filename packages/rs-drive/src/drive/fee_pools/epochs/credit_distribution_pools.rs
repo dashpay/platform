@@ -37,6 +37,7 @@ use grovedb::{Element, TransactionArg};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::credits::Credits;
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::Epoch;
 
@@ -79,7 +80,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
-    ) -> Result<u64, Error> {
+    ) -> Result<Credits, Error> {
         let element = self
             .grove
             .get(
@@ -141,7 +142,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
-    ) -> Result<u64, Error> {
+    ) -> Result<Credits, Error> {
         let storage_pool_credits =
             self.get_epoch_storage_credits_for_distribution(epoch_tree, transaction)?;
 
@@ -160,6 +161,7 @@ mod tests {
     use crate::drive::batch::GroveDbOpBatch;
     use crate::error;
     use crate::error::fee::FeeError;
+    use crate::fee::credits::Credits;
     use crate::fee_pools::epochs::epoch_key_constants;
     use crate::fee_pools::epochs::Epoch;
     use grovedb::Element;
@@ -260,8 +262,8 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
-        let processing_fee: u64 = 42;
-        let storage_fee: u64 = 1000;
+        let processing_fee: Credits = 42;
+        let storage_fee: Credits = 1000;
 
         let epoch = Epoch::new(0);
 

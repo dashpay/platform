@@ -39,6 +39,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::error::fee::FeeError;
+use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
@@ -384,7 +385,7 @@ impl Platform {
         &self,
         current_epoch: &Epoch,
         block_fees: &BlockFees,
-        cached_aggregated_storage_fees: Option<u64>,
+        cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<FeesInPools, Error> {

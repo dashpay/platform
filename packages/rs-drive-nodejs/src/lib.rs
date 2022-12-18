@@ -1,9 +1,7 @@
 mod converter;
 mod fee_result;
 
-use neon::object::PropertyKey;
 use std::num::ParseIntError;
-use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::fee_result::FeeResultWrapper;
@@ -12,7 +10,8 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::error::Error;
-use drive::fee::refunds::CreditsPerEpoch;
+use drive::fee::credits::SignedCredits;
+use drive::fee::epoch::SignedCreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
@@ -2040,7 +2039,7 @@ impl PlatformWrapper {
 
         let js_fee_refunds: Handle<JsObject> = js_fees.get(&mut cx, "feeRefunds")?;
 
-        let mut fee_refunds: CreditsPerEpoch = Default::default();
+        let mut fee_refunds: SignedCreditsPerEpoch = Default::default();
 
         for js_epoch_index_value in js_fee_refunds
             .get_own_property_names(&mut cx)?
@@ -2054,7 +2053,7 @@ impl PlatformWrapper {
                 .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
 
             let js_credits: Handle<JsNumber> = js_fee_refunds.get(&mut cx, js_epoch_index)?;
-            let credits = js_credits.value(&mut cx) as u64;
+            let credits = js_credits.value(&mut cx) as SignedCredits;
 
             fee_refunds.insert(epoch_index, credits);
         }

@@ -187,7 +187,6 @@ mod tests {
         use chrono::{Duration, Utc};
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee::FeeResult;
         use rust_decimal::prelude::ToPrimitive;
         use std::ops::Div;
 

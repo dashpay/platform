@@ -644,6 +644,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
+    use crate::fee::credits::Creditable;
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::query::DriveQuery;
     use crate::{
@@ -1520,10 +1521,10 @@ mod tests {
                 .fee_refunds
                 .get(&owner_id)
                 .unwrap()
-                .get(0)
+                .get(&0)
                 .unwrap();
 
-            let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
             assert_eq!(original_bytes, removed_bytes);
 
@@ -1639,10 +1640,10 @@ mod tests {
                 .fee_refunds
                 .get(&owner_id)
                 .unwrap()
-                .get(0)
+                .get(&0)
                 .unwrap();
 
-            let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
             assert_eq!(original_bytes, removed_bytes);
 
@@ -1678,10 +1679,10 @@ mod tests {
             .fee_refunds
             .get(&owner_id)
             .unwrap()
-            .get(0)
+            .get(&0)
             .unwrap();
 
-        let removed_bytes = removed_credits / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
         let expected_added_bytes = if using_history { 607 } else { 605 };
