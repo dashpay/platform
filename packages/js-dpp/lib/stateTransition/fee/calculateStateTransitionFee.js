@@ -44,6 +44,7 @@ function calculateStateTransitionFee(stateTransition, options = {}) {
       throw new Error('State Transition removed bytes from different identity');
     }
 
+    // TODO: We should deal with leftovers
     feeRefundsSum = feeRefunds[0].creditsPerEpoch.entries()
       .reduce((sum, [, credits]) => sum + credits, 0);
   }
