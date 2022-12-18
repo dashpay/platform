@@ -64,6 +64,10 @@ pub struct BlockBeginRequest {
     pub proposer_pro_tx_hash: [u8; 32],
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
+    /// Last synced core height
+    pub last_synced_core_height: u64,
+    /// Core chain locked height
+    pub core_chain_locked_height: u64,
 }
 
 /// A struct for handling block begin responses

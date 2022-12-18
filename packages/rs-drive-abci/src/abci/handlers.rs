@@ -123,6 +123,15 @@ impl TenderdashAbci for Platform {
         self.block_execution_context
             .replace(Some(block_execution_context));
 
+        self.drive.update_withdrawal_statuses(
+            request.last_synced_core_height,
+            request.core_chain_locked_height,
+            request.block_time_ms,
+            request.block_height,
+            epoch_info.current_epoch_index,
+            transaction,
+        )?;
+
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 request.block_height as u32,
@@ -151,6 +160,13 @@ impl TenderdashAbci for Platform {
                 "block execution context must be set in block begin handler",
             ),
         ))?;
+
+        self.drive.pool_withdrawals_into_transactions(
+            block_execution_context.block_info.block_time_ms,
+            block_execution_context.block_info.block_height,
+            block_execution_context.epoch_info.current_epoch_index,
+            transaction,
+        )?;
 
         // Process fees
         let process_block_fees_result = self.process_block_fees(
@@ -283,6 +299,8 @@ mod tests {
                         proposer_pro_tx_hash: proposers
                             [block_height as usize % (proposers_count as usize)],
                         validator_set_quorum_hash: Default::default(),
+                        last_synced_core_height: 1,
+                        core_chain_locked_height: 1,
                     };
 
                     let block_begin_response = platform
@@ -471,6 +489,8 @@ mod tests {
                         proposer_pro_tx_hash: proposers
                             [block_height as usize % (proposers_count as usize)],
                         validator_set_quorum_hash: Default::default(),
+                        last_synced_core_height: 1,
+                        core_chain_locked_height: 1,
                     };
 
                     let block_begin_response = platform

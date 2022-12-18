@@ -12,7 +12,7 @@ pub use convertible::Convertible;
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 
-mod contracts;
+pub mod contracts;
 pub mod data_contract;
 
 mod convertible;

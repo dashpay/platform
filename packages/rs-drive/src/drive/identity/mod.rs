@@ -51,6 +51,8 @@ use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 
 pub mod withdrawal_queue;
+/// Everything related to withdrawals
+pub mod withdrawals;
 
 const IDENTITY_KEY: [u8; 1] = [0];
 
