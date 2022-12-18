@@ -13,7 +13,7 @@ bs58 = "0.4.0"
 byteorder = { version="1.4"}
 chrono = { version="0.4.20", default-features=false, features=["wasmbind", "clock"]}
 ciborium = { version="0.2"}
-dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, branch="master" }
+dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["std", "secp-recovery", "rand", "signer"], default-features = false, rev = "6092d584487918c5330fec93152e4df06a714067" }
 env_logger = { version="0.9"}
 futures = { version ="0.3"}
 getrandom= { version="0.2", features=["js"]}

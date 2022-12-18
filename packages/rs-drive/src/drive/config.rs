@@ -71,6 +71,15 @@ pub struct DriveConfig {
 
     /// Maximum number of contracts in block candidate cache
     pub data_contracts_block_cache_size: u64,
+
+    /// Core RPC client url
+    pub core_rpc_url: Option<String>,
+
+    /// Core RPC client username
+    pub core_rpc_username: Option<String>,
+
+    /// Core RPC client password
+    pub core_rpc_password: Option<String>,
 }
 
 impl Default for DriveConfig {
@@ -84,6 +93,9 @@ impl Default for DriveConfig {
             encoding: DriveCbor,
             data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
             data_contracts_block_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
+            core_rpc_url: None,
+            core_rpc_password: None,
+            core_rpc_username: None,
         }
     }
 }
