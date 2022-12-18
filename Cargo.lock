@@ -965,6 +965,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "dashcore",
+ "dpp",
  "drive",
  "hex",
  "rand 0.8.5",

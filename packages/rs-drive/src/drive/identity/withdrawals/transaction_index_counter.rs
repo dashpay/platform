@@ -1,11 +1,17 @@
-use grovedb::{Element, TransactionArg};
+use grovedb::{
+    query_result_type::{QueryResultElement, QueryResultType},
+    Element, PathQuery, Query, SizedQuery, TransactionArg,
+};
 
 use crate::{
     drive::{batch::GroveDbOpBatch, Drive, RootTree},
     error::{drive::DriveError, Error},
 };
 
-use super::paths::WITHDRAWAL_TRANSACTIONS_COUNTER_ID;
+use super::paths::{
+    get_withdrawal_transactions_expired_ids_path,
+    get_withdrawal_transactions_expired_ids_path_as_u8, WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
+};
 
 impl Drive {
     /// Get latest withdrawal index in a queue
@@ -13,6 +19,44 @@ impl Drive {
         &self,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
+        let mut inner_query = Query::new();
+
+        inner_query.insert_all();
+
+        let expired_index_query = PathQuery::new(
+            get_withdrawal_transactions_expired_ids_path(),
+            SizedQuery::new(inner_query, Some(1), None),
+        );
+
+        let (expired_index_elements, _) = self
+            .grove
+            .query_raw(
+                &expired_index_query,
+                QueryResultType::QueryKeyElementPairResultType,
+                transaction,
+            )
+            .unwrap()?;
+
+        if expired_index_elements.len() > 0 {
+            let expired_index_element_pair = expired_index_elements.into_iter().next().unwrap();
+
+            if let QueryResultElement::KeyElementPairResultItem((key, Element::Item(bytes, _))) =
+                expired_index_element_pair
+            {
+                let index = u64::from_be_bytes(bytes.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Transaction index has wrong length",
+                    ))
+                })?);
+
+                let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path_as_u8();
+
+                self.grove.delete(path, &key, None, transaction).unwrap()?;
+
+                return Ok(index);
+            }
+        }
+
         let result = self
             .grove
             .get(
