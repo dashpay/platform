@@ -37,8 +37,11 @@ use nohash_hasher::IntMap;
 
 pub mod distribution;
 
+/// Epoch index type
+pub type EpochIndex = u16;
+
 /// Genesis epoch index
-pub const GENESIS_EPOCH_INDEX: u16 = 0;
+pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;
 
 /// Epochs per year
 pub const EPOCHS_PER_YEAR: u16 = 20;
@@ -48,9 +51,6 @@ pub const PERPETUAL_STORAGE_YEARS: u16 = 50;
 
 /// Perpetual storage epochs
 pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR;
-
-/// Epoch index type
-pub type EpochIndex = u16;
 
 /// Credits per epoch map
 pub type CreditsPerEpoch = IntMap<EpochIndex, Credits>;

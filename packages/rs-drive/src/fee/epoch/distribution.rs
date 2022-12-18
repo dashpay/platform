@@ -34,7 +34,7 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits, SignedCredits};
+use crate::fee::credits::SignedCredits;
 use crate::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
@@ -119,27 +119,199 @@ pub fn distribute_storage_fee_to_epochs(
 
 #[cfg(test)]
 mod tests {
-    use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
+    use super::*;
 
-    #[test]
-    fn test_distribution_table_sum() {
-        assert_eq!(
-            super::FEE_DISTRIBUTION_TABLE.iter().sum::<Decimal>(),
-            dec!(1.0),
-        );
-    }
+    use crate::fee::credits::{Creditable, MAX};
+    use crate::fee::epoch::GENESIS_EPOCH_INDEX;
 
-    #[test]
-    fn test_distribution_of_value() {
-        let mut buffer = dec!(0.0);
-        let value = Decimal::new(i64::MAX, 0);
+    mod fee_distribution_table {
+        use super::*;
 
-        for i in 0..50 {
-            let share = value * super::FEE_DISTRIBUTION_TABLE[i];
-            buffer += share;
+        #[test]
+        fn should_have_sum_of_1() {
+            assert_eq!(FEE_DISTRIBUTION_TABLE.iter().sum::<Decimal>(), dec!(1.0),);
         }
 
-        assert_eq!(buffer, value);
+        #[test]
+        fn should_distribute_value() {
+            let mut buffer = dec!(0.0);
+            let value = Decimal::from(i64::MAX);
+
+            for i in FEE_DISTRIBUTION_TABLE {
+                let share = value
+                    * FEE_DISTRIBUTION_TABLE[i.to_usize().expect("should be convertable to usize")];
+
+                buffer += share;
+            }
+
+            assert_eq!(buffer, value);
+        }
+    }
+
+    mod distribute_storage_fee_to_epochs {
+        use super::*;
+
+        #[test]
+        fn should_distribute_nothing_if_storage_fee_are_zero() {
+            let mut credits_per_epochs = SignedCreditsPerEpoch::default();
+
+            let leftovers = distribute_storage_fee_to_epochs(
+                0,
+                GENESIS_EPOCH_INDEX,
+                GENESIS_EPOCH_INDEX,
+                &mut credits_per_epochs,
+            )
+            .expect("should distribute storage fee");
+
+            assert_eq!(credits_per_epochs.len(), 0);
+            assert_eq!(leftovers, 0);
+        }
+
+        #[test]
+        fn should_distribute_max_credits_value_without_overflow() {
+            let storage_fee = MAX.to_signed().expect("should convert signed credits");
+
+            let mut credits_per_epochs = SignedCreditsPerEpoch::default();
+
+            let leftovers = distribute_storage_fee_to_epochs(
+                storage_fee,
+                GENESIS_EPOCH_INDEX,
+                GENESIS_EPOCH_INDEX,
+                &mut credits_per_epochs,
+            )
+            .expect("should distribute storage fee");
+
+            // check leftover
+            assert_eq!(leftovers, 507);
+        }
+
+        #[test]
+        fn should_deterministically_distribute_fees() {
+            let storage_fee = 1000000;
+            let current_epoch_index = 42;
+
+            let mut credits_per_epochs = SignedCreditsPerEpoch::default();
+
+            let leftovers = distribute_storage_fee_to_epochs(
+                storage_fee,
+                current_epoch_index,
+                current_epoch_index,
+                &mut credits_per_epochs,
+            )
+            .expect("should distribute storage fee");
+
+            // check leftover
+            assert_eq!(leftovers, 180);
+
+            // compare them with reference table
+            #[rustfmt::skip]
+            let reference_fees: [SignedCredits; 1000] = [
+                2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
+                2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
+                2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
+                2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300,
+                2300, 2300, 2300, 2300, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200,
+                2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2100, 2100, 2100, 2100,
+                2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100,
+                2100, 2100, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000,
+                2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 1925, 1925, 1925, 1925, 1925, 1925,
+                1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925,
+                1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850,
+                1850, 1850, 1850, 1850, 1850, 1850, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775,
+                1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1700, 1700,
+                1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700,
+                1700, 1700, 1700, 1700, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625,
+                1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1550, 1550, 1550, 1550,
+                1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550,
+                1550, 1550, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475,
+                1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1425, 1425, 1425, 1425, 1425, 1425,
+                1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425,
+                1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375,
+                1375, 1375, 1375, 1375, 1375, 1375, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325,
+                1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1275, 1275,
+                1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275,
+                1275, 1275, 1275, 1275, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225,
+                1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1175, 1175, 1175, 1175,
+                1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175,
+                1175, 1175, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125,
+                1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1075, 1075, 1075, 1075, 1075, 1075,
+                1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075,
+                1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025,
+                1025, 1025, 1025, 1025, 1025, 1025, 975, 975, 975, 975, 975, 975, 975, 975, 975,
+                975, 975, 975, 975, 975, 975, 975, 975, 975, 975, 975, 937, 937, 937, 937, 937,
+                937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 900,
+                900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900,
+                900, 900, 900, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862,
+                862, 862, 862, 862, 862, 862, 862, 825, 825, 825, 825, 825, 825, 825, 825, 825,
+                825, 825, 825, 825, 825, 825, 825, 825, 825, 825, 825, 787, 787, 787, 787, 787,
+                787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 750,
+                750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750,
+                750, 750, 750, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712,
+                712, 712, 712, 712, 712, 712, 712, 675, 675, 675, 675, 675, 675, 675, 675, 675,
+                675, 675, 675, 675, 675, 675, 675, 675, 675, 675, 675, 637, 637, 637, 637, 637,
+                637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 600,
+                600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600,
+                600, 600, 600, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562,
+                562, 562, 562, 562, 562, 562, 562, 525, 525, 525, 525, 525, 525, 525, 525, 525,
+                525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 487, 487, 487, 487, 487,
+                487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 450,
+                450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450,
+                450, 450, 450, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412,
+                412, 412, 412, 412, 412, 412, 412, 375, 375, 375, 375, 375, 375, 375, 375, 375,
+                375, 375, 375, 375, 375, 375, 375, 375, 375, 375, 375, 337, 337, 337, 337, 337,
+                337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 300,
+                300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
+                300, 300, 300, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262,
+                262, 262, 262, 262, 262, 262, 262, 237, 237, 237, 237, 237, 237, 237, 237, 237,
+                237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 212, 212, 212, 212, 212,
+                212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 187,
+                187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187,
+                187, 187, 187, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162,
+                162, 162, 162, 162, 162, 162, 162, 137, 137, 137, 137, 137, 137, 137, 137, 137,
+                137, 137, 137, 137, 137, 137, 137, 137, 137, 137, 137, 112, 112, 112, 112, 112,
+                112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 87,
+                87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 62,
+                62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62
+            ];
+
+            assert_eq!(
+                credits_per_epochs
+                    .clone()
+                    .into_values()
+                    .collect::<Vec<SignedCredits>>(),
+                reference_fees
+            );
+
+            let total_distributed: SignedCredits = credits_per_epochs.values().sum();
+
+            assert_eq!(total_distributed + leftovers, storage_fee);
+
+            /*
+
+            Repeat distribution to ensure deterministic results
+
+             */
+
+            let leftovers = distribute_storage_fee_to_epochs(
+                storage_fee,
+                current_epoch_index,
+                current_epoch_index,
+                &mut credits_per_epochs,
+            )
+            .expect("should distribute storage fee");
+
+            // assert that all the values doubled meaning that distribution is reproducible
+            assert_eq!(
+                credits_per_epochs
+                    .into_values()
+                    .collect::<Vec<SignedCredits>>(),
+                reference_fees
+                    .into_iter()
+                    .map(|val| val * 2)
+                    .collect::<Vec<SignedCredits>>()
+            );
+
+            assert_eq!(leftovers, 180);
+        }
     }
 }

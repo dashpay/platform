@@ -44,6 +44,9 @@ pub type Credits = u64;
 /// balance verification
 pub type SignedCredits = i64;
 
+/// Maximum value of credits
+pub const MAX: Credits = SignedCredits::MAX as Credits;
+
 /// Trait for signed and unsigned credits
 pub trait Creditable: Into<Decimal> {
     /// Convert unsigned credit to singed

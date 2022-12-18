@@ -127,12 +127,16 @@ impl Drive {
             )));
         }
 
-        for (i, (epoch_index, credits)) in credits_per_epochs
-            .into_iter()
-            .sorted_by_key(|x| x.0)
-            .enumerate()
-        {
-            let existing_storage_fee = SignedCredits::from_vec_bytes(storage_fee_pools.remove(i))?;
+        // Sort epochs to reverse order to pop existing values
+        for (epoch_index, credits) in credits_per_epochs.into_iter().sorted_by_key(|x| !x.0) {
+            let encoded_existing_storage_fee =
+                storage_fee_pools
+                    .pop()
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "value must be present",
+                    )))?;
+
+            let existing_storage_fee = SignedCredits::from_vec_bytes(encoded_existing_storage_fee)?;
 
             let credits_to_update = existing_storage_fee.checked_add(credits).ok_or_else(|| {
                 get_overflow_error("can't add credits to existing epoch pool storage fee")

@@ -101,20 +101,22 @@ mod tests {
         use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::error::drive::DriveError;
+        use drive::fee::credits::Credits;
+        use drive::fee::epoch::GENESIS_EPOCH_INDEX;
         use drive::fee_pools::epochs::Epoch;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
-
+    
         #[test]
         fn test_nothing_to_distribute() {
             let platform = setup_platform_with_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
-
+    
             let epoch_index = 0;
-
+    
             // Storage fee distribution pool is 0 after fee pools initialization
-
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
@@ -122,7 +124,7 @@ mod tests {
                     &mut batch,
                 )
                 .expect("should distribute storage fee pool");
-
+    
             match platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
@@ -133,38 +135,38 @@ mod tests {
                     _ => assert!(false, "invalid error type"),
                 },
             }
-
+    
             let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
                 &platform.drive,
                 epoch_index..1000,
                 Some(&transaction),
             );
-
+    
             let reference_fees: Vec<u64> = (0..1000).map(|_| 0u64).collect();
-
+    
             assert_eq!(storage_fees, reference_fees);
         }
-
+    
         #[test]
         fn test_distribution_overflow() {
             let platform = setup_platform_with_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
-
-            let storage_pool = u64::MAX;
-            let epoch_index = 0;
-
+    
+            let storage_pool = i64::MAX as u64;
+            let epoch_index = GENESIS_EPOCH_INDEX;
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
-
+    
             // Apply storage fee distribution pool update
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             let leftovers = platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
@@ -172,42 +174,42 @@ mod tests {
                     &mut batch,
                 )
                 .expect("should distribute storage fee pool");
-
+    
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-
+    
             // check leftover
-            assert_eq!(leftovers, 515);
+            assert_eq!(leftovers, 507);
         }
-
+    
         #[test]
         fn test_deterministic_distribution() {
             let platform = setup_platform_with_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
-
+    
             let storage_pool = 1000000;
             let epoch_index = 42;
-
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             // init additional epochs pools as it will be done in epoch_change
             for i in 1000..=1000 + epoch_index {
                 let epoch = Epoch::new(i);
                 epoch.add_init_empty_operations(&mut batch);
             }
-
+    
             batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
-
+    
             // Apply storage fee distribution pool update
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             let leftovers = platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     epoch_index,
@@ -215,22 +217,22 @@ mod tests {
                     &mut batch,
                 )
                 .expect("should distribute storage fee pool");
-
+    
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-
+    
             // check leftover
             assert_eq!(leftovers, 180);
-
+    
             // collect all the storage fee values of the 1000 epochs pools
             let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
                 &platform.drive,
                 epoch_index..epoch_index + 1000,
                 Some(&transaction),
             );
-
+    
             // compare them with reference table
             #[rustfmt::skip]
             let reference_fees: [u64; 1000] = [
@@ -301,32 +303,32 @@ mod tests {
                 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 62,
                 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62
             ];
-
+    
             assert_eq!(storage_fees, reference_fees);
-
-            let total_distributed: u64 = storage_fees.iter().sum();
-
-            assert_eq!(total_distributed + leftovers as u64, storage_pool);
-
+    
+            let total_distributed: Credits = storage_fees.iter().sum();
+    
+            assert_eq!(total_distributed + leftovers, storage_pool);
+    
             /*
-
+    
             Repeat distribution to ensure deterministic results
-
+    
              */
-
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             // refill storage fee pool once more
             batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
-
+    
             // Apply storage fee distribution pool update
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-
+    
             let mut batch = GroveDbOpBatch::new();
-
+    
             // distribute fees once more
             platform
                 .add_distribute_storage_fee_to_epochs_operations(
@@ -335,19 +337,19 @@ mod tests {
                     &mut batch,
                 )
                 .expect("should distribute storage fee pool");
-
+    
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-
+    
             // collect all the storage fee values of the 1000 epochs pools again
             let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
                 &platform.drive,
                 epoch_index..epoch_index + 1000,
                 Some(&transaction),
             );
-
+    
             // assert that all the values doubled meaning that distribution is reproducible
             assert_eq!(
                 storage_fees,
