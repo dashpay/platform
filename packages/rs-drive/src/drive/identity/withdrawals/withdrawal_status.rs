@@ -108,29 +108,28 @@ fn fetch_core_block_transactions(
     last_synced_core_height: u64,
     core_chain_locked_height: u64,
 ) -> Result<Vec<String>, Error> {
-    // let core_rpc =
-    //     drive
-    //         .core_rpc
-    //         .as_ref()
-    //         .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-    //             "Core RPC client has not been set up",
-    //         )))?;
+    let core_rpc =
+        drive
+            .core_rpc
+            .as_ref()
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "Core RPC client has not been set up",
+            )))?;
 
     let mut tx_hashes: Vec<String> = vec![];
 
     for height in last_synced_core_height..=core_chain_locked_height {
-        // let block_hash = core_rpc.get_block_hash(height).map_err(|_| {
-        //     Error::Drive(DriveError::CorruptedCodeExecution(
-        //         "could not get block by height",
-        //     ))
-        // })?;
+        let block_hash = core_rpc.get_block_hash(height).map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution(
+                "could not get block by height",
+            ))
+        })?;
 
-        let block_json: JsonValue = JsonValue::Bool(true);
-        // core_rpc.get_block_json(&block_hash).map_err(|_| {
-        //     Error::Drive(DriveError::CorruptedCodeExecution(
-        //         "could not get block by hash",
-        //     ))
-        // })?;
+        let block_json: JsonValue = core_rpc.get_block_json(&block_hash).map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution(
+                "could not get block by hash",
+            ))
+        })?;
 
         if let Some(transactions) = block_json.get("tx") {
             if let Some(transactions) = transactions.as_array() {
