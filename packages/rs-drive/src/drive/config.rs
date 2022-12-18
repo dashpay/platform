@@ -35,7 +35,7 @@ use crate::drive::config::DriveEncoding::DriveCbor;
 /// Boolean if GroveDB batching is enabled by default
 pub const DEFAULT_GROVE_BATCHING_ENABLED: bool = true;
 /// Boolean if GroveDB batching consistency verification is enabled by default
-pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;
+pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = true;
 /// Boolean if GroveDB has_raw in enabled by default
 pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 /// Default maximum number of contracts in cache

@@ -12,6 +12,7 @@ pub enum Purpose {
     ENCRYPTION = 1,
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
+    /// this key cannot be used for signing documents
     WITHDRAW = 3,
 }
 
@@ -22,7 +23,8 @@ impl TryFrom<u8> for Purpose {
             0 => Ok(Self::AUTHENTICATION),
             1 => Ok(Self::ENCRYPTION),
             2 => Ok(Self::DECRYPTION),
-            value => bail!("unrecognized security level: {}", value),
+            3 => Ok(Self::WITHDRAW),
+            value => bail!("unrecognized purpose: {}", value),
         }
     }
 }

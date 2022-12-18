@@ -35,7 +35,7 @@
 use crate::error::Error;
 use byteorder::{BigEndian, WriteBytesExt};
 
-/// Encodes an unsigned integer.
+/// Encodes an unsigned integer on 64 bits.
 pub fn encode_u64(val: u64) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
@@ -61,7 +61,7 @@ pub fn encode_u64(val: u64) -> Result<Vec<u8>, Error> {
     Ok(wtr)
 }
 
-/// Encodes a signed integer.
+/// Encodes a signed integer on 64 bits.
 pub fn encode_i64(val: i64) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
@@ -127,6 +127,7 @@ pub fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
     Ok(wtr)
 }
 
+/// Encodes an unsigned integer on 16 bits.
 pub fn encode_u16(val: u16) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
@@ -152,6 +153,7 @@ pub fn encode_u16(val: u16) -> Result<Vec<u8>, Error> {
     Ok(wtr)
 }
 
+/// Encodes an unsigned integer on 32 bits.
 pub fn encode_u32(val: u32) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form

@@ -2,7 +2,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::identity::{balance_from_bytes, balance_path, balance_path_vec, IDENTITY_KEY};
+use crate::drive::identity::{balance_path, balance_path_vec, IDENTITY_KEY};
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
@@ -24,7 +24,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-    ) -> Result<u64, Error> {
+    ) -> Result<Option<u64>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         self.fetch_identity_balance_operations(
             identity_id,
@@ -42,7 +42,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-    ) -> Result<(u64, FeeResult), Error> {
+    ) -> Result<(Option<u64>, FeeResult), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let value = self.fetch_identity_balance_operations(
             identity_id,
@@ -62,7 +62,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<u64, Error> {
+    ) -> Result<Option<u64>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery
         } else {
@@ -80,19 +80,29 @@ impl Drive {
             transaction,
             drive_operations,
         )?;
-        if let Some(identity_balance_element) = identity_balance_element {
-            if let SumItem(identity_balance_element, element_flags) = identity_balance_element {
-                balance_from_bytes(identity_balance_element.as_slice())
+        if apply {
+            if let Some(identity_balance_element) = identity_balance_element {
+                if let SumItem(identity_balance_element, element_flags) = identity_balance_element {
+                    if identity_balance_element < 0 {
+                        Err(Error::Drive(DriveError::CorruptedElementType(
+                            "identity balance was present but was negative",
+                        )))
+                    } else {
+                        Ok(Some(identity_balance_element as u64))
+                    }
+                } else {
+                    Err(Error::Drive(DriveError::CorruptedElementType(
+                        "identity balance was present but was not identified as a sum item",
+                    )))
+                }
             } else {
-                Err(Error::Drive(DriveError::CorruptedElementType(
-                    "identity balance was present but was not identified as a sum item",
-                )))
+                Err(Error::Drive(DriveError::CorruptedBalanceNotFound(format!(
+                    "balance not found for identity {}",
+                    hex::encode(identity_id)
+                ))))
             }
         } else {
-            Err(Error::Drive(DriveError::CorruptedBalanceNotFound(format!(
-                "balance not found for identity {}",
-                hex::encode(identity_id)
-            ))))
+            Ok(None)
         }
     }
 

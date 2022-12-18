@@ -37,13 +37,17 @@ use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::batch::key_info::KeyInfo;
+use integer_encoding::VarIntReader;
 use serde_json::to_vec;
 
-pub mod fetch;
-pub mod insert;
-pub mod key;
-pub mod update;
-pub mod withdrawal_queue;
+mod estimation_costs;
+mod fetch;
+mod insert;
+mod key;
+mod update;
+mod withdrawal_queue;
+
+pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 
 pub(crate) const IDENTITY_KEY: [u8; 1] = [0];
 
@@ -59,7 +63,7 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
 }
 
 pub(crate) fn balance_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::Identities)]
+    [Into::<&[u8; 1]>::into(RootTree::Balances)]
 }
 
 pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
@@ -118,11 +122,14 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
     ]
 }
 
+/// The root structure of identities
 #[repr(u8)]
 pub enum IdentityRootStructure {
-    // Input data errors
+    /// The revision of identity data
     IdentityTreeRevision = 0,
+    /// The keys that an identity has
     IdentityTreeKeys = 1,
+    /// Owed processing fees
     IdentityTreeNegativeCredit = 2,
 }
 
@@ -152,13 +159,4 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
             IdentityRootStructure::IdentityTreeNegativeCredit => &[2],
         }
     }
-}
-
-pub fn balance_from_bytes(identity_balance_bytes: &[u8]) -> Result<u64, Error> {
-    let balance_bytes: [u8; 8] = identity_balance_bytes.try_into().map_err(|_| {
-        Error::Drive(DriveError::CorruptedElementType(
-            "identity balance was not represented in 8 bytes",
-        ))
-    })?;
-    Ok(i64::from_be_bytes(balance_bytes) as u64)
 }

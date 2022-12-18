@@ -66,7 +66,7 @@ impl TryFrom<u8> for KeyType {
             1 => Ok(Self::BLS12_381),
             2 => Ok(Self::ECDSA_HASH160),
             3 => Ok(Self::BIP13_SCRIPT_HASH),
-            value => bail!("unrecognized security level: {}", value),
+            value => bail!("unrecognized key type: {}", value),
         }
     }
 }

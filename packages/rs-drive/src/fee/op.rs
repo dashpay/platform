@@ -137,11 +137,16 @@ impl BaseOp {
     }
 }
 
+/// Supported Hash Functions
 #[derive(Debug, Enum)]
 pub enum HashFunction {
+    /// Used for crypto addresses
     Sha256RipeMD160,
+    /// Single Sha256
     Sha256,
+    /// Double Sha256
     Sha256_2,
+    /// Single Blake3
     Blake3,
 }
 
@@ -175,6 +180,7 @@ impl HashFunction {
     }
 }
 
+/// A Hash Function Operation
 #[derive(Debug)]
 pub struct FunctionOp {
     pub(crate) hash: HashFunction,
@@ -182,14 +188,19 @@ pub struct FunctionOp {
 }
 
 impl FunctionOp {
+    /// The cost of the function
     fn cost(&self, epoch: &Epoch) -> u64 {
         self.rounds as u64 * self.hash.base_cost(epoch)
     }
 
+    /// Create a new function operation with the following hash knowing the rounds it will take
+    /// in advance
     pub fn new_with_round_count(hash: HashFunction, rounds: u16) -> Self {
         FunctionOp { hash, rounds }
     }
 
+    /// Create a new function operation with the following hash knowing the number of bytes
+    /// it will hash
     pub fn new_with_byte_count(hash: HashFunction, byte_count: u16) -> Self {
         let blocks = byte_count / hash.block_size() + 1;
         let rounds = blocks + hash.rounds() - 1;
@@ -307,7 +318,7 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::for_known_path_key_element(path, key, tree)
+        DriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
@@ -323,21 +334,43 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::for_estimated_path_key_element(path, key, tree)
+        DriveOperation::insert_for_estimated_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an element at the given path and key
-    pub fn for_known_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
+    pub fn insert_for_known_path_key_element(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        element: Element,
+    ) -> Self {
         GroveOperation(GroveDbOp::insert_op(path, key, element))
     }
 
+    /// Sets `GroveOperation` for replacement of an element at the given path and key
+    pub fn replace_for_known_path_key_element(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        element: Element,
+    ) -> Self {
+        GroveOperation(GroveDbOp::replace_op(path, key, element))
+    }
+
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
-    pub fn for_estimated_path_key_element(
+    pub fn insert_for_estimated_path_key_element(
         path: KeyInfoPath,
         key: KeyInfo,
         element: Element,
     ) -> Self {
         GroveOperation(GroveDbOp::insert_estimated_op(path, key, element))
+    }
+
+    /// Sets `GroveOperation` for replacement of an element at an unknown estimated path and key
+    pub fn replace_for_estimated_path_key_element(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        element: Element,
+    ) -> Self {
+        GroveOperation(GroveDbOp::replace_estimated_op(path, key, element))
     }
 }
 

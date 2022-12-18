@@ -75,6 +75,9 @@ pub const CONTRACT_MAX_SERIALIZED_SIZE: u16 = 16384;
 /// Max element size
 pub const MAX_ELEMENT_SIZE: u32 = 5000;
 
+/// Default required bytes to hold a user balance
+pub const AVERAGE_BALANCE_SIZE: u32 = 6;
+
 /// How many updates would occur on average for an item
 pub const AVERAGE_NUMBER_OF_UPDATES: u8 = 10;
 

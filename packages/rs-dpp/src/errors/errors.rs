@@ -67,6 +67,9 @@ pub enum ProtocolError {
         public_key_purpose: Purpose,
         key_purpose_requirement: Purpose,
     },
+    #[error("Public key generation error {0}")]
+    PublicKeyGenerationError(String),
+
     #[error("Public key mismatched")]
     PublicKeyMismatchError { public_key: IdentityPublicKey },
 

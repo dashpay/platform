@@ -27,6 +27,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::reference_path::ReferencePathType::AbsolutePathReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -119,7 +120,7 @@ impl Drive {
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path(identity_id);
 
-        let key_id_bytes = encode_u32(id)?;
+        let key_id_bytes = id.encode_var_vec();
         self.batch_insert(
             PathFixedSizeKeyRefElement((
                 identity_key_tree,

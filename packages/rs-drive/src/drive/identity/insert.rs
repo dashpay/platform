@@ -13,6 +13,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Deserialize an identity from cbor encoded bytes and potentially apply it to the state
     pub fn add_new_identity_from_cbor_encoded_bytes(
         &self,
         identity_bytes: Vec<u8>,
@@ -126,21 +127,25 @@ impl Drive {
         }
 
         // We insert the balance
-        batch_operations.push(self.set_identity_balance_operation(id.to_buffer(), balance)?);
+        batch_operations.push(self.set_identity_balance_operation(
+            id.to_buffer(),
+            balance,
+            false,
+        )?);
 
         // We insert the revision
         // todo: we might not need the revision
         batch_operations.push(self.set_revision_operation(id.to_buffer(), revision));
 
-        let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
-            id.to_buffer(),
-            public_keys.into_values().collect(),
-            &storage_flags,
-            estimated_costs_only_with_layer_info,
-            transaction,
-        )?;
-        // We insert the key tree and keys
-        batch_operations.append(&mut create_tree_keys_operations);
+        // let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
+        //     id.to_buffer(),
+        //     public_keys.into_values().collect(),
+        //     &storage_flags,
+        //     estimated_costs_only_with_layer_info,
+        //     transaction,
+        // )?;
+        // // We insert the key tree and keys
+        // batch_operations.append(&mut create_tree_keys_operations);
 
         Ok(batch_operations)
     }

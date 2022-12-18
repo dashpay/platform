@@ -1371,7 +1371,7 @@ mod tests {
 
             let fees = result.0;
             assert!(fees.is_some());
-            assert_eq!(fees.unwrap().processing_fee, 6000)
+            assert_eq!(fees.unwrap().processing_fee, 4060)
         }
     }
 }

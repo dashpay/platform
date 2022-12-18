@@ -53,6 +53,7 @@ type BytesAddedInEpoch = u32;
 
 type OwnerId = [u8; 32];
 
+/// The size of single epoch flags
 pub const SINGLE_EPOCH_FLAGS_SIZE: u32 = 3;
 
 /// Storage flags

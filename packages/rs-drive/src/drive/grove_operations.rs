@@ -615,7 +615,7 @@ impl Drive {
     ) -> Result<(), Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
-                drive_operations.push(DriveOperation::for_known_path_key_element(
+                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                     path,
                     key.to_vec(),
                     element,
@@ -623,13 +623,13 @@ impl Drive {
                 Ok(())
             }
             PathKeyElement((path, key, element)) => {
-                drive_operations.push(DriveOperation::for_known_path_key_element(
+                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                     path, key, element,
                 ));
                 Ok(())
             }
             PathKeyElementSize((key_info_path, key_info, element)) => {
-                drive_operations.push(DriveOperation::for_estimated_path_key_element(
+                drive_operations.push(DriveOperation::insert_for_estimated_path_key_element(
                     key_info_path,
                     key_info,
                     element,
@@ -641,7 +641,7 @@ impl Drive {
             ))),
             PathFixedSizeKeyRefElement((path, key, element)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                drive_operations.push(DriveOperation::for_known_path_key_element(
+                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                     path_items,
                     key.to_vec(),
                     element,
@@ -671,7 +671,7 @@ impl Drive {
                     drive_operations,
                 )?;
                 if !has_raw {
-                    drive_operations.push(DriveOperation::for_known_path_key_element(
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                         path,
                         key.to_vec(),
                         element,
@@ -689,7 +689,7 @@ impl Drive {
                     drive_operations,
                 )?;
                 if !has_raw {
-                    drive_operations.push(DriveOperation::for_known_path_key_element(
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                         path, key, element,
                     ));
                 }
@@ -705,7 +705,7 @@ impl Drive {
                 )?;
                 if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                    drive_operations.push(DriveOperation::for_known_path_key_element(
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                         path_items,
                         key.to_vec(),
                         element,
@@ -727,11 +727,13 @@ impl Drive {
                                 in_tree_using_sums,
                             ),
                         ));
-                        drive_operations.push(DriveOperation::for_estimated_path_key_element(
-                            key_info_path,
-                            key_info,
-                            element,
-                        ));
+                        drive_operations.push(
+                            DriveOperation::insert_for_estimated_path_key_element(
+                                key_info_path,
+                                key_info,
+                                element,
+                            ),
+                        );
                         Ok(true)
                     }
                     BatchInsertApplyType::StatefulBatchInsert => {
@@ -898,7 +900,7 @@ impl Drive {
                 let consistency_results =
                     GroveDbOp::verify_consistency_of_operations(&ops.operations);
                 if !consistency_results.is_empty() {
-                    //println!("results {:#?}", consistency_results);
+                    println!("results {:#?}", consistency_results);
                     return Err(Error::Drive(DriveError::GroveDBInsertion(
                         "insertion order error",
                     )));

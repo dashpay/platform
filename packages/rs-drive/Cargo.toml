@@ -9,9 +9,9 @@ private = true
 [dependencies]
 serde = { version = "1.0.132", features = ["derive"] }
 ciborium = "0.2.0"
-integer-encoding = "3.0.3"
+integer-encoding = "3.0.4"
 bs58 = "0.4.0"
-base64 = "0.13.0"
+base64 = "0.20.0"
 rand = "0.8.4"
 byteorder = "1.4.3"
 indexmap = "1.8.0"
@@ -33,15 +33,15 @@ dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std",
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+branch = "refactor/sumItemsi64"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+branch = "refactor/sumItemsi64"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+branch = "refactor/sumItemsi64"
 
 [dev-dependencies]
 criterion = "0.3.5"
