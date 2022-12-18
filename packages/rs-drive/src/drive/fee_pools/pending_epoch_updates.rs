@@ -293,7 +293,7 @@ mod tests {
 
             assert_eq!(batch.len(), expected_pending_updates.len());
 
-            for operation in batch.operations {
+            for operation in batch.into_iter() {
                 assert!(matches!(operation.op, Op::Delete));
 
                 assert_eq!(operation.path.to_path(), pools_pending_updates_path());

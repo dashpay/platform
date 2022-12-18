@@ -123,7 +123,7 @@ impl Drive {
 
         if storage_fee_pools.len() != credits_per_epochs.len() {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "number of fetched epoch  storage fee pools must be equal to requested for update",
+                "number of fetched epoch storage fee pools must be equal to requested for update",
             )));
         }
 
@@ -157,46 +157,93 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::error;
-    use crate::fee_pools::epochs::Epoch;
+    use super::*;
 
-    mod create_fee_pool_trees {
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+
+    mod add_update_epoch_storage_fee_pools_operations {
+        use super::*;
+        use crate::fee::credits::Credits;
+        use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
+        use grovedb::batch::GroveDbOp;
+
         #[test]
-        fn test_values_are_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+        fn should_do_nothing_if_credits_per_epoch_are_empty() {
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let storage_fee_pool = drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
-                .expect("should get storage fee pool");
+            let credits_per_epoch = SignedCreditsPerEpoch::default();
 
-            assert_eq!(storage_fee_pool, 0u64);
+            let mut batch = GroveDbOpBatch::new();
+
+            drive
+                .add_update_epoch_storage_fee_pools_operations(
+                    &mut batch,
+                    credits_per_epoch,
+                    Some(&transaction),
+                )
+                .expect("should update epoch storage pools");
+
+            assert_eq!(batch.len(), 0);
         }
 
         #[test]
-        fn test_epoch_trees_are_created() {
-            let drive = super::setup_drive_with_initial_state_structure();
+        fn should_update_epoch_storage_fee_pools() {
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            for epoch_index in 0..1000 {
-                let epoch = super::Epoch::new(epoch_index);
+            const TO_EPOCH_INDEX: EpochIndex = 1;
 
-                let storage_fee = drive
-                    .get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction))
-                    .expect("should get storage fee");
+            // Store initial epoch storage pool values
+            let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
+                .map(|epoch_index| {
+                    let credits = 10 - epoch_index as Credits;
 
-                assert_eq!(storage_fee, 0);
-            }
+                    let element = Element::new_item(credits.to_unsigned().to_vec_bytes());
 
-            let epoch = super::Epoch::new(1000); // 1001th epochs pool
+                    GroveDbOp::insert_op(
+                        Epoch::new(epoch_index).get_vec_path(),
+                        KEY_POOL_STORAGE_FEES.to_vec(),
+                        element,
+                    )
+                })
+                .collect();
 
-            match drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "must be an error"),
-                Err(e) => match e {
-                    super::error::Error::GroveDB(_) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
+            let batch = GroveDbOpBatch::from_operations(operations);
+
+            drive
+                .grove_apply_batch(batch, false, Some(&transaction))
+                .expect("should apply batch");
+
+            let credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
+                .map(|epoch_index| (epoch_index, epoch_index as SignedCredits))
+                .collect();
+
+            let mut batch = GroveDbOpBatch::new();
+
+            drive
+                .add_update_epoch_storage_fee_pools_operations(
+                    &mut batch,
+                    credits_to_epochs,
+                    Some(&transaction),
+                )
+                .expect("should update epoch storage pools");
+
+            assert_eq!(batch.len(), TO_EPOCH_INDEX as usize);
+
+            for operation in batch.into_iter() {
+                assert!(matches!(operation.op, Op::Delete));
+
+                assert_eq!(operation.path.to_path(), pools_pending_updates_path());
+
+                let epoch_index_key = operation.key.get_key();
+                let epoch_index = u16::from_be_bytes(
+                    epoch_index_key
+                        .try_into()
+                        .expect("should convert to u16 bytes"),
+                );
+
+                assert!(expected_pending_updates.contains_key(&epoch_index));
             }
         }
     }

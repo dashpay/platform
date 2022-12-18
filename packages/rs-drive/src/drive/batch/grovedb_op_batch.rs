@@ -35,6 +35,8 @@
 use crate::drive::flags::StorageFlags;
 use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults};
 use grovedb::Element;
+// use std::slice::Iter;
+// use std::vec::IntoIter;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
@@ -112,5 +114,14 @@ impl GroveDbOpBatch {
     /// Verify consistency of operations
     pub fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
         GroveDbOp::verify_consistency_of_operations(&self.operations)
+    }
+}
+
+impl IntoIterator for GroveDbOpBatch {
+    type Item = GroveDbOp;
+    type IntoIter = std::vec::IntoIter<GroveDbOp>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.operations.into_iter()
     }
 }

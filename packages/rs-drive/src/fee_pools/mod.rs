@@ -85,3 +85,50 @@ pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp
 }
 
 // TODD: Find tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+
+    mod add_create_fee_pool_trees_operations {
+        use crate::error::Error;
+
+        #[test]
+        fn test_values_are_set() {
+            let drive = super::setup_drive_with_initial_state_structure();
+            let transaction = drive.grove.start_transaction();
+
+            let storage_fee_pool = drive
+                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .expect("should get storage fee pool");
+
+            assert_eq!(storage_fee_pool, 0u64);
+        }
+
+        #[test]
+        fn test_epoch_trees_are_created() {
+            let drive = super::setup_drive_with_initial_state_structure();
+            let transaction = drive.grove.start_transaction();
+
+            for epoch_index in 0..1000 {
+                let epoch = super::Epoch::new(epoch_index);
+
+                let storage_fee = drive
+                    .get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction))
+                    .expect("should get storage fee");
+
+                assert_eq!(storage_fee, 0);
+            }
+
+            let epoch = super::Epoch::new(1000); // 1001th epochs pool
+
+            match drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction)) {
+                Ok(_) => unreachable!("must be an error"),
+                Err(e) => {
+                    assert!(matches!(e, Error::GroveDB(..)));
+                }
+            }
+        }
+    }
+}
