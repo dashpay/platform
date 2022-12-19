@@ -109,7 +109,7 @@ describe('Fee Pools', () => {
           feeRefunds: {
             1: -15,
           },
-          feeRefundsSum: 15,
+          feeRefundsSum: -15,
         },
       };
 

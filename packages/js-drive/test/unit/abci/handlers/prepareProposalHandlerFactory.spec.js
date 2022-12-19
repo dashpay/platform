@@ -80,7 +80,7 @@ describe('prepareProposalHandlerFactory', () => {
         feeRefunds: {
           1: -15,
         },
-        feeRefundsSum: 15,
+        feeRefundsSum: -15,
       },
     });
 
