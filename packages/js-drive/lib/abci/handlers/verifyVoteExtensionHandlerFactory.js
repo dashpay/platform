@@ -47,8 +47,8 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
 
     const allVoteExtensionsPresent = voteExtensionsToCheck.reduce((result, nextExtension) => {
       const searchedVoteExtension = (voteExtensions || []).find((voteExtension) => (
-        voteExtension.type == nextExtension.type
-          && Buffer.compare(voteExtension.extension, nextExtension.extension)
+        voteExtension.type === nextExtension.type
+        && Buffer.compare(voteExtension.extension, nextExtension.extension)
       ));
 
       if (!searchedVoteExtension) {
@@ -65,10 +65,10 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
         }, `${nextExtension.type} vote extension ${extensionTruncatedString}... was not found in verify request`);
       }
 
-      return result && (searchedVoteExtension != undefined);
+      return result && (searchedVoteExtension !== undefined);
     }, true);
 
-    let status = allVoteExtensionsPresent ? verifyStatus.ACCEPT : verifyStatus.REJECT;
+    const status = allVoteExtensionsPresent ? verifyStatus.ACCEPT : verifyStatus.REJECT;
 
     return new ResponseVerifyVoteExtension({
       status,
