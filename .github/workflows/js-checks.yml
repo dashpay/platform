@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -38,7 +38,7 @@ jobs:
           node-version: '16'
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -82,7 +82,7 @@ jobs:
           firefox-version: 'latest'
 
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -90,7 +90,7 @@ jobs:
           node-version: '16'
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
