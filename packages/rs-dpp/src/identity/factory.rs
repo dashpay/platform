@@ -1,9 +1,10 @@
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::{Identity, IdentityPublicKey};
-use dashcore::network::constants::PROTOCOL_VERSION;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+
+pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
 impl Identity {
     pub fn random_identity_with_rng(key_count: KeyCount, rng: &mut StdRng) -> Self {
@@ -18,7 +19,7 @@ impl Identity {
             .collect();
 
         Identity {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: IDENTITY_PROTOCOL_VERSION,
             id,
             revision,
             asset_lock_proof: None,

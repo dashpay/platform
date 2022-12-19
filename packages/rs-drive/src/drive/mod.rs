@@ -95,8 +95,8 @@ pub enum RootTree {
     Identities = 0,
     /// Contract Documents
     ContractDocuments = 1,
-    /// Public Key Hashes to Identities
-    PublicKeyHashesToIdentities = 2,
+    /// Unique Public Key Hashes to Identities
+    UniquePublicKeyHashesToIdentities = 2,
     /// Spent Asset Lock Transactions
     SpentAssetLockTransactions = 3,
     /// Pools
@@ -107,8 +107,8 @@ pub enum RootTree {
     WithdrawalTransactions = 6,
     /// Balances
     Balances = 7,
-    /// Masternode Key Hashes
-    MasternodePublicKeyKeyHashesToIdentities = 8,
+    /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
+    NonUniquePublicKeyKeyHashesToIdentities = 8,
 }
 
 /// Storage cost
@@ -131,13 +131,13 @@ impl From<RootTree> for &'static [u8; 1] {
         match root_tree {
             RootTree::Identities => &[0],
             RootTree::ContractDocuments => &[1],
-            RootTree::PublicKeyHashesToIdentities => &[2],
+            RootTree::UniquePublicKeyHashesToIdentities => &[2],
             RootTree::SpentAssetLockTransactions => &[3],
             RootTree::Pools => &[4],
             RootTree::Misc => &[5],
             RootTree::WithdrawalTransactions => &[6],
             RootTree::Balances => &[7],
-            RootTree::MasternodePublicKeyKeyHashesToIdentities => &[8],
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
         }
     }
 }
@@ -150,19 +150,19 @@ pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
 /// Returns the path to the key hashes.
 pub(crate) fn key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
-        RootTree::PublicKeyHashesToIdentities,
+        RootTree::UniquePublicKeyHashesToIdentities,
     )]
 }
 
 /// Returns the path to the key hashes.
 pub(crate) fn key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
-    vec![vec![RootTree::PublicKeyHashesToIdentities as u8]]
+    vec![vec![RootTree::UniquePublicKeyHashesToIdentities as u8]]
 }
 
 /// Returns the path to the masternode key hashes.
 pub(crate) fn masternode_key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
-        RootTree::MasternodePublicKeyKeyHashesToIdentities,
+        RootTree::NonUniquePublicKeyKeyHashesToIdentities,
     )]
 }
 

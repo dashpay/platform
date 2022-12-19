@@ -36,8 +36,9 @@ use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::identity::KeyID;
 use grovedb::batch::key_info::KeyInfo;
-use integer_encoding::VarIntReader;
+use integer_encoding::{VarInt, VarIntReader};
 use serde_json::to_vec;
 
 mod estimation_costs;
@@ -47,6 +48,7 @@ mod key;
 mod update;
 mod withdrawal_queue;
 
+use crate::common::encode::encode_u32;
 pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 
 pub(crate) const IDENTITY_KEY: [u8; 1] = [0];
@@ -86,6 +88,15 @@ pub(crate) fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     ]
 }
 
+pub(crate) fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeys as u8],
+        key_id.encode_var_vec(),
+    ]
+}
+
 pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys).to_vec(),
@@ -93,12 +104,11 @@ pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -
     ]
 }
 
-pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 4] {
+pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
-        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys),
-        &[],
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
     ]
 }
 
@@ -106,20 +116,18 @@ pub(crate) fn identity_query_keys_tree_path_vec(identity_id: [u8; 32]) -> Vec<Ve
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),
-        vec![IdentityRootStructure::IdentityTreeKeys as u8],
-        vec![],
+        vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
     ]
 }
 
 pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
     identity_id: &'a [u8],
     purpose: &'a [u8],
-) -> [&'a [u8]; 5] {
+) -> [&'a [u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
-        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys),
-        &[],
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
         purpose,
     ]
 }
@@ -128,12 +136,11 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
     identity_id: &'a [u8],
     purpose: &'a [u8],
     security_level: &'a [u8],
-) -> [&'a [u8]; 6] {
+) -> [&'a [u8]; 5] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
-        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys),
-        &[],
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
         purpose,
         security_level,
     ]
@@ -141,18 +148,21 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
 
 /// The root structure of identities
 #[repr(u8)]
+#[derive(Copy, Clone)]
 pub enum IdentityRootStructure {
     /// The revision of identity data
     IdentityTreeRevision = 0,
     /// The keys that an identity has
     IdentityTreeKeys = 1,
+    /// A Way to search for specific keys
+    IdentityTreeKeyReferences = 2,
     /// Owed processing fees
-    IdentityTreeNegativeCredit = 2,
+    IdentityTreeNegativeCredit = 3,
 }
 
 impl IdentityRootStructure {
     fn to_drive_key_info(&self) -> DriveKeyInfo {
-        DriveKeyInfo::Key(Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys).to_vec())
+        DriveKeyInfo::Key(vec![*self as u8])
     }
 }
 
@@ -173,7 +183,8 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
         match identity_tree {
             IdentityRootStructure::IdentityTreeRevision => &[0],
             IdentityRootStructure::IdentityTreeKeys => &[1],
-            IdentityRootStructure::IdentityTreeNegativeCredit => &[2],
+            IdentityRootStructure::IdentityTreeKeyReferences => &[2],
+            IdentityRootStructure::IdentityTreeNegativeCredit => &[3],
         }
     }
 }

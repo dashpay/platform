@@ -33,15 +33,15 @@ dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std",
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-branch = "refactor/sumItemsi64"
+branch = "develop"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-branch = "refactor/sumItemsi64"
+branch = "develop"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-branch = "refactor/sumItemsi64"
+branch = "develop"
 
 [dev-dependencies]
 criterion = "0.3.5"

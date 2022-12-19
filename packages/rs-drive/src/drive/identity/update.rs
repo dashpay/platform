@@ -14,6 +14,7 @@ use crate::fee::{calculate_fee, FeeResult};
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
 use grovedb::{Element, ElementFlags, EstimatedLayerInformation, TransactionArg};
+use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
@@ -68,7 +69,7 @@ impl Drive {
         revision: u64,
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
-        let revision_bytes = revision.to_be_bytes().to_vec();
+        let revision_bytes = revision.encode_var_vec();
         DriveOperation::insert_for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),

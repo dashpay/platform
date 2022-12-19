@@ -48,7 +48,10 @@ impl Drive {
 
         add_init_contracts_structure_operations(&mut batch);
 
-        batch.add_insert_empty_tree(vec![], vec![RootTree::PublicKeyHashesToIdentities as u8]);
+        batch.add_insert_empty_tree(
+            vec![],
+            vec![RootTree::UniquePublicKeyHashesToIdentities as u8],
+        );
 
         batch.add_insert_empty_tree(vec![], vec![RootTree::SpentAssetLockTransactions as u8]);
 

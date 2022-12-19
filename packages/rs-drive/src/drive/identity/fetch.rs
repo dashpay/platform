@@ -1,8 +1,11 @@
 use crate::common::encode::{encode_u16, encode_u32};
 use crate::drive::block_info::BlockInfo;
+use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::identity::fetch::KeyRequestType::{AllKeysRequest, CurrentKeyRequest};
+use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{
     balance_path, balance_path_vec, identity_path, identity_query_keys_tree_path_vec, IDENTITY_KEY,
 };
@@ -16,13 +19,12 @@ use crate::fee::{calculate_fee, FeeResult};
 use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::prelude::IdentityPublicKey;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::{VarInt, VarIntReader};
 use std::collections::{BTreeMap, BTreeSet};
-use dpp::prelude::IdentityPublicKey;
-use crate::drive::identity::fetch::KeyRequestType::CurrentKeyRequest;
 
 /// The type of key request
 /// You can either get the current keys
@@ -94,12 +96,12 @@ impl IdentityKeysRequest {
             for (security_level, key_request_type) in key_requests {
                 let key = vec![security_level];
                 let subquery = match key_request_type {
-                    KeyRequestType::CurrentKeyRequest => {
+                    CurrentKeyRequest => {
                         let mut subquery = Query::new();
                         subquery.insert_key(vec![]);
                         subquery
                     }
-                    KeyRequestType::AllKeysRequest => {
+                    AllKeysRequest => {
                         let mut subquery = Query::new();
                         subquery.insert_range_after(vec![]..);
                         subquery
@@ -123,8 +125,6 @@ impl IdentityKeysRequest {
         }
         query
     }
-
-
 }
 
 impl Drive {
@@ -268,10 +268,10 @@ impl Drive {
                 query_target: QueryTargetValue(1),
             }
         };
-        let identity_path = identity_tree_path();
+        let identity_path = identity_path(identity_id.as_slice());
         let identity_revision_element = self.grove_get_direct(
             identity_path,
-            identity_id.as_slice(),
+            &[IdentityTreeRevision as u8],
             direct_query_type,
             transaction,
             drive_operations,
@@ -304,7 +304,12 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-       self.fetch_all_current_identity_keys_operations(identity_id, apply, transaction, &mut drive_operations)
+        self.fetch_all_current_identity_keys_operations(
+            identity_id,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )
     }
 
     pub(crate) fn fetch_all_current_identity_keys_operations(
@@ -317,11 +322,36 @@ impl Drive {
         let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
         let path_query = key_request.to_path_query();
 
-        let (serialized_keys,_) = self.grove_get_path_query(&path_query, transaction, drive_operations)?;
-        serialized_keys.into_iter().map(|serialized_key| {
-            let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
-            Ok((key.id, key))
-        }).collect()
+        let (serialized_keys, _) =
+            self.grove_get_path_query(&path_query, transaction, drive_operations)?;
+        serialized_keys
+            .into_iter()
+            .map(|serialized_key| {
+                let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
+                Ok((key.id, key))
+            })
+            .collect()
+    }
+
+    pub(crate) fn fetch_all_identity_keys_operations(
+        &self,
+        identity_id: [u8; 32],
+        _apply: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
+        let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
+        let path_query = key_request.to_path_query();
+
+        let (serialized_keys, _) =
+            self.grove_get_path_query(&path_query, transaction, drive_operations)?;
+        serialized_keys
+            .into_iter()
+            .map(|serialized_key| {
+                let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
+                Ok((key.id, key))
+            })
+            .collect()
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -342,10 +372,10 @@ impl Drive {
                 "revision not found on identity".to_string(),
             )))?;
 
-        let loaded_public_keys = self
-            .fetch_all_current_identity_keys(identity_id, true, transaction)?;
+        let loaded_public_keys =
+            self.fetch_all_current_identity_keys(identity_id, true, transaction)?;
         Ok(Some(Identity {
-            protocol_version: 0,
+            protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
             loaded_public_keys,
             balance,

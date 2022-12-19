@@ -201,7 +201,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .grove
         .insert(
             [],
-            Into::<&[u8; 1]>::into(RootTree::PublicKeyHashesToIdentities),
+            Into::<&[u8; 1]>::into(RootTree::UniquePublicKeyHashesToIdentities),
             Element::empty_tree(),
             None,
             Some(db_transaction),
@@ -372,7 +372,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [Into::<&[u8; 1]>::into(RootTree::PublicKeyHashesToIdentities).as_slice()],
+            [Into::<&[u8; 1]>::into(RootTree::UniquePublicKeyHashesToIdentities).as_slice()],
             hex::decode("6198bae2a577044d7975f4d1a06a8d13a9eab9b0")
                 .unwrap()
                 .as_slice(),

@@ -4,7 +4,9 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, Ord, PartialOrd)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, Ord, PartialOrd,
+)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,

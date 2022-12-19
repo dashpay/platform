@@ -137,15 +137,15 @@ impl Drive {
         // todo: we might not need the revision
         batch_operations.push(self.set_revision_operation(id.to_buffer(), revision));
 
-        // let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
-        //     id.to_buffer(),
-        //     public_keys.into_values().collect(),
-        //     &storage_flags,
-        //     estimated_costs_only_with_layer_info,
-        //     transaction,
-        // )?;
-        // // We insert the key tree and keys
-        // batch_operations.append(&mut create_tree_keys_operations);
+        let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
+            id.to_buffer(),
+            public_keys.into_values().collect(),
+            &storage_flags,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )?;
+        // We insert the key tree and keys
+        batch_operations.append(&mut create_tree_keys_operations);
 
         Ok(batch_operations)
     }
@@ -173,10 +173,7 @@ mod tests {
             .create_initial_state_structure(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity_bytes = hex::decode("01000000a462696458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac6762616c616e636500687265766973696f6e006a7075626c69634b65797381a6626964006464617461582102abb64674c5df796559eb3cf92a84525cc1a6068e7ad9d4ff48a1f0b179ae29e164747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00").expect("expected to decode identity hex");
-
-        let identity = Identity::from_buffer(identity_bytes.as_slice())
-            .expect("expected to deserialize an identity");
+        let identity = Identity::random_identity(5, Some(12345));
 
         drive
             .add_new_identity(
@@ -192,10 +189,7 @@ mod tests {
             .expect("should fetch an identity")
             .expect("should have an identity");
 
-        assert_eq!(
-            fetched_identity,
-            identity
-        );
+        assert_eq!(identity, fetched_identity,);
     }
 
     #[test]
