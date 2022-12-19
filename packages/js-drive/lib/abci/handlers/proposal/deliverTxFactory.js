@@ -250,12 +250,17 @@ function deliverTxFactory(
       `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.total} credits`,
     );
 
+    let feeRefunds = {};
+    if (actualStateTransitionFees.feeRefunds.length > 0) {
+      feeRefunds = actualStateTransitionFees.feeRefunds[0].creditsPerEpoch;
+    }
+
     return {
       code: 0,
       fees: {
         storageFee: actualStateTransitionFees.storageFee,
         processingFee: actualStateTransitionFees.processingFee,
-        feeRefunds: actualStateTransitionFees.feeRefunds[0].creditsPerEpoch,
+        feeRefunds,
         feeRefundsSum: actualStateTransitionFees.feeRefundsSum,
       },
     };
