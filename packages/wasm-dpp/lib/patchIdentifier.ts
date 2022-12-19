@@ -8,8 +8,6 @@ export default function (dppModule: typeof dpp_module) {
     // be implemented in Rust directly.
     const { Identifier } = dppModule;
 
-    let kek = dppModule.IdentityPublicKey.TYPES.BLS12_381;
-
     //@ts-ignore
     Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
 
