@@ -1,4 +1,4 @@
-import * as dpp_module from "../lib/dpp";
+import * as dpp_module from "./dpp";
 // import { inspect } from 'util';
 
 export default function (dppModule: typeof dpp_module) {
@@ -7,6 +7,8 @@ export default function (dppModule: typeof dpp_module) {
     // adds everything that's currently missing from Identifier that can't
     // be implemented in Rust directly.
     const { Identifier } = dppModule;
+
+    let kek = dppModule.IdentityPublicKey.TYPES.BLS12_381;
 
     //@ts-ignore
     Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);

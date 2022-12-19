@@ -27,7 +27,7 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
-use dpp::StateError;
+use dpp::{ProtocolError, StateError};
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
