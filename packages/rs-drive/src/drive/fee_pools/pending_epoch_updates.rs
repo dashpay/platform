@@ -87,6 +87,10 @@ impl Drive {
         mut credits_per_epoch: SignedCreditsPerEpoch,
         transaction: TransactionArg,
     ) -> Result<SignedCreditsPerEpoch, Error> {
+        if credits_per_epoch.is_empty() {
+            return Ok(credits_per_epoch);
+        }
+
         let mut query = Query::new();
 
         for epoch_index in credits_per_epoch.keys() {

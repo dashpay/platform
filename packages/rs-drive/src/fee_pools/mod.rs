@@ -90,9 +90,10 @@ pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp
 mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::error::Error;
 
     mod add_create_fee_pool_trees_operations {
-        use crate::error::Error;
+        use super::*;
 
         #[test]
         fn test_values_are_set() {
@@ -129,6 +130,32 @@ mod tests {
                     assert!(matches!(e, Error::GroveDB(..)));
                 }
             }
+        }
+    }
+
+    mod update_storage_fee_distribution_pool_operation {
+        use super::*;
+
+        #[test]
+        fn test_update_and_get_value() {
+            let drive = setup_drive_with_initial_state_structure();
+            let transaction = drive.grove.start_transaction();
+
+            let storage_fee = 42;
+
+            let mut batch = GroveDbOpBatch::new();
+
+            batch.push(update_storage_fee_distribution_pool_operation(storage_fee));
+
+            drive
+                .grove_apply_batch(batch, false, Some(&transaction))
+                .expect("should apply batch");
+
+            let stored_storage_fee = drive
+                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .expect("should get storage fee pool");
+
+            assert_eq!(storage_fee, stored_storage_fee);
         }
     }
 }

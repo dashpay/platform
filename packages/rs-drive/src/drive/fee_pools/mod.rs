@@ -81,7 +81,8 @@ pub fn aggregate_storage_fees_distribution_pool_vec_path() -> Vec<Vec<u8>> {
 
 impl Drive {
     /// Adds GroveDB operations to update epoch storage fee pools with specified map of credits to epochs
-    pub fn add_update_epoch_storage_fee_pools_operations(
+    /// This method optimized to update sequence of epoch pools without gaps
+    pub fn add_update_epoch_storage_fee_pools_sequence_operations(
         &self,
         batch: &mut GroveDbOpBatch,
         credits_per_epochs: SignedCreditsPerEpoch,
@@ -103,6 +104,12 @@ impl Drive {
         let max_epoch_index = max_epoch_index_key.to_owned() as u16;
         let max_encoded_epoch_index = paths::encode_epoch_index_key(max_epoch_index)?.to_vec();
 
+        if max_epoch_index - min_epoch_index + 1 != credits_per_epochs.len() as u16 {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "gaps in credits per epoch are not supported",
+            )));
+        }
+
         let mut storage_fee_pool_query = Query::new();
         storage_fee_pool_query.insert_key(KEY_POOL_STORAGE_FEES.to_vec());
 
@@ -121,20 +128,15 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if storage_fee_pools.len() != credits_per_epochs.len() {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "number of fetched epoch storage fee pools must be equal to requested for update",
-            )));
-        }
-
         // Sort epochs to reverse order to pop existing values
-        for (epoch_index, credits) in credits_per_epochs.into_iter().sorted_by_key(|x| !x.0) {
-            let encoded_existing_storage_fee =
-                storage_fee_pools
-                    .pop()
-                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "value must be present",
-                    )))?;
+        for (i, (epoch_index, credits)) in credits_per_epochs
+            .into_iter()
+            .sorted_by_key(|x| x.0)
+            .enumerate()
+        {
+            let encoded_existing_storage_fee = storage_fee_pools
+                .get(i)
+                .map_or(0u64.to_vec_bytes(), |c| c.to_owned());
 
             let existing_storage_fee = SignedCredits::from_vec_bytes(encoded_existing_storage_fee)?;
 
@@ -177,7 +179,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             drive
-                .add_update_epoch_storage_fee_pools_operations(
+                .add_update_epoch_storage_fee_pools_sequence_operations(
                     &mut batch,
                     credits_per_epoch,
                     Some(&transaction),
@@ -223,7 +225,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             drive
-                .add_update_epoch_storage_fee_pools_operations(
+                .add_update_epoch_storage_fee_pools_sequence_operations(
                     &mut batch,
                     credits_to_epochs,
                     Some(&transaction),
@@ -232,7 +234,7 @@ mod tests {
 
             assert_eq!(batch.len(), TO_EPOCH_INDEX as usize);
 
-            for (i, operation) in batch.into_iter().rev().enumerate() {
+            for (i, operation) in batch.into_iter().enumerate() {
                 assert_eq!(operation.key.get_key(), KEY_POOL_STORAGE_FEES);
 
                 assert_eq!(

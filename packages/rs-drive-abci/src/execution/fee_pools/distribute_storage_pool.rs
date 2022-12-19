@@ -38,7 +38,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::credits::{Creditable, Credits};
-use drive::fee::epoch::distribution::distribute_storage_fee_to_epochs;
+use drive::fee::epoch::distribution::distribute_storage_fee_to_epochs_collection;
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
 
@@ -60,34 +60,41 @@ impl Platform {
 
         let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
-        let mut leftovers = distribute_storage_fee_to_epochs(
+        // Distribute from storage distribution pool
+        let leftovers = distribute_storage_fee_to_epochs_collection(
+            &mut credits_per_epochs,
             storage_distribution_fees.to_signed()?,
             current_epoch_index,
-            current_epoch_index,
-            &mut credits_per_epochs,
+            None,
         )?;
+
+        // Deduct refunds since epoch where data was removed skipping already paid or pay-in-progress epochs.
+        // Leftovers are ignored since they already deducted from Identity's refund amount
+
+        let mut unpaid_epoch_index = self.drive.get_unpaid_epoch_index(transaction)?;
+
+        // In case if we paying for older than previous epoch
+        // we need to switch to next one which we are not paying yet
+        if unpaid_epoch_index < current_epoch_index {
+            unpaid_epoch_index += 1;
+        };
 
         // TODO Better to use iterator do not load everything into memory
         for (epoch_index, credits) in self.drive.fetch_pending_updates(transaction)? {
-            let credits_to_distribute = credits.checked_add(leftovers).ok_or_else(|| {
-                Error::Execution(ExecutionError::Overflow(
-                    "can't add leftovers to pending storage fees",
-                ))
-            })?;
-
-            leftovers = distribute_storage_fee_to_epochs(
-                credits_to_distribute,
-                epoch_index,
-                current_epoch_index,
+            distribute_storage_fee_to_epochs_collection(
                 &mut credits_per_epochs,
+                credits,
+                epoch_index,
+                Some(unpaid_epoch_index),
             )?;
         }
 
-        self.drive.add_update_epoch_storage_fee_pools_operations(
-            batch,
-            credits_per_epochs,
-            transaction,
-        )?;
+        self.drive
+            .add_update_epoch_storage_fee_pools_sequence_operations(
+                batch,
+                credits_per_epochs,
+                transaction,
+            )?;
 
         Ok(leftovers.to_unsigned())
     }
@@ -95,331 +102,166 @@ impl Platform {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
-    mod add_distribute_storage_fees_to_epochs_operations {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::error::drive::DriveError;
-        use drive::fee::credits::Credits;
-        use drive::fee::epoch::GENESIS_EPOCH_INDEX;
+    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
+
+    mod add_distribute_storage_fee_to_epochs_operations {
+        use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
+        use drive::fee::credits::SignedCredits;
+        use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
         use drive::fee_pools::epochs::Epoch;
-        use drive::fee_pools::update_storage_fee_distribution_pool_operation;
-    
+        use drive::fee_pools::{
+            update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
+        };
+
+        use super::*;
+
         #[test]
-        fn test_nothing_to_distribute() {
+        fn should_add_operations_to_distribute_distribution_storage_pool_and_refunds() {
             let platform = setup_platform_with_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
-    
-            let epoch_index = 0;
-    
-            // Storage fee distribution pool is 0 after fee pools initialization
-    
+
+            /*
+            Initial distribution
+            */
+
+            let storage_pool = 1000000;
+            let current_epoch_index = 0;
+
             let mut batch = GroveDbOpBatch::new();
-    
-            platform
-                .add_distribute_storage_fee_to_epochs_operations(
-                    epoch_index,
-                    Some(&transaction),
-                    &mut batch,
-                )
-                .expect("should distribute storage fee pool");
-    
-            match platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-            {
-                Ok(()) => assert!(false, "should return BatchIsEmpty error"),
-                Err(e) => match e {
-                    drive::error::Error::Drive(DriveError::BatchIsEmpty()) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
-    
-            let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
-                &platform.drive,
-                epoch_index..1000,
-                Some(&transaction),
-            );
-    
-            let reference_fees: Vec<u64> = (0..1000).map(|_| 0u64).collect();
-    
-            assert_eq!(storage_fees, reference_fees);
-        }
-    
-        #[test]
-        fn test_distribution_overflow() {
-            let platform = setup_platform_with_initial_state_structure();
-            let transaction = platform.drive.grove.start_transaction();
-    
-            let storage_pool = i64::MAX as u64;
-            let epoch_index = GENESIS_EPOCH_INDEX;
-    
-            let mut batch = GroveDbOpBatch::new();
-    
+
+            // Store distribution storage fees
             batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
-    
-            // Apply storage fee distribution pool update
+
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-    
+
             let mut batch = GroveDbOpBatch::new();
-    
+
             let leftovers = platform
                 .add_distribute_storage_fee_to_epochs_operations(
-                    epoch_index,
+                    current_epoch_index,
                     Some(&transaction),
                     &mut batch,
                 )
                 .expect("should distribute storage fee pool");
-    
+
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-    
-            // check leftover
-            assert_eq!(leftovers, 507);
-        }
-    
-        #[test]
-        fn test_deterministic_distribution() {
-            let platform = setup_platform_with_initial_state_structure();
-            let transaction = platform.drive.grove.start_transaction();
-    
+
+            /*
+            Distribute since epoch 2 with refunds
+            */
+
             let storage_pool = 1000000;
-            let epoch_index = 42;
-    
+            let current_epoch_index = 3;
+            let unpaid_epoch = 1;
+
             let mut batch = GroveDbOpBatch::new();
-    
+
             // init additional epochs pools as it will be done in epoch_change
-            for i in 1000..=1000 + epoch_index {
+            for i in PERPETUAL_STORAGE_EPOCHS..=PERPETUAL_STORAGE_EPOCHS + current_epoch_index {
                 let epoch = Epoch::new(i);
                 epoch.add_init_empty_operations(&mut batch);
             }
-    
+
+            // Store unpaid epoch index
+            batch.push(update_unpaid_epoch_index_operation(unpaid_epoch));
+
+            // Store distribution storage fees
             batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
-    
-            // Apply storage fee distribution pool update
+
+            // Add pending refunds
+
+            let refunds = SignedCreditsPerEpoch::from_iter([
+                (0, -10000),
+                (1, -15000),
+                (2, -20000),
+                (3, -25000),
+            ]);
+
+            add_update_pending_epoch_storage_pool_update_operations(&mut batch, refunds.clone())
+                .expect("should update pending updates");
+
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-    
+
             let mut batch = GroveDbOpBatch::new();
-    
+
             let leftovers = platform
                 .add_distribute_storage_fee_to_epochs_operations(
-                    epoch_index,
+                    current_epoch_index,
                     Some(&transaction),
                     &mut batch,
                 )
                 .expect("should distribute storage fee pool");
-    
+
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
-    
+
             // check leftover
             assert_eq!(leftovers, 180);
-    
+
             // collect all the storage fee values of the 1000 epochs pools
             let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
                 &platform.drive,
-                epoch_index..epoch_index + 1000,
+                GENESIS_EPOCH_INDEX..current_epoch_index + PERPETUAL_STORAGE_EPOCHS,
                 Some(&transaction),
             );
-    
-            // compare them with reference table
-            #[rustfmt::skip]
-            let reference_fees: [u64; 1000] = [
-                2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
-                2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
-                2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
-                2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300,
-                2300, 2300, 2300, 2300, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200,
-                2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2100, 2100, 2100, 2100,
-                2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100,
-                2100, 2100, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000,
-                2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 1925, 1925, 1925, 1925, 1925, 1925,
-                1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925,
-                1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850,
-                1850, 1850, 1850, 1850, 1850, 1850, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775,
-                1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1700, 1700,
-                1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700,
-                1700, 1700, 1700, 1700, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625,
-                1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1550, 1550, 1550, 1550,
-                1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550,
-                1550, 1550, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475,
-                1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1425, 1425, 1425, 1425, 1425, 1425,
-                1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425,
-                1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375,
-                1375, 1375, 1375, 1375, 1375, 1375, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325,
-                1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1275, 1275,
-                1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275,
-                1275, 1275, 1275, 1275, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225,
-                1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1175, 1175, 1175, 1175,
-                1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175,
-                1175, 1175, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125,
-                1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1075, 1075, 1075, 1075, 1075, 1075,
-                1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075,
-                1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025,
-                1025, 1025, 1025, 1025, 1025, 1025, 975, 975, 975, 975, 975, 975, 975, 975, 975,
-                975, 975, 975, 975, 975, 975, 975, 975, 975, 975, 975, 937, 937, 937, 937, 937,
-                937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 900,
-                900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900,
-                900, 900, 900, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862,
-                862, 862, 862, 862, 862, 862, 862, 825, 825, 825, 825, 825, 825, 825, 825, 825,
-                825, 825, 825, 825, 825, 825, 825, 825, 825, 825, 825, 787, 787, 787, 787, 787,
-                787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 750,
-                750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750,
-                750, 750, 750, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712,
-                712, 712, 712, 712, 712, 712, 712, 675, 675, 675, 675, 675, 675, 675, 675, 675,
-                675, 675, 675, 675, 675, 675, 675, 675, 675, 675, 675, 637, 637, 637, 637, 637,
-                637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 600,
-                600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600,
-                600, 600, 600, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562,
-                562, 562, 562, 562, 562, 562, 562, 525, 525, 525, 525, 525, 525, 525, 525, 525,
-                525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 487, 487, 487, 487, 487,
-                487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 450,
-                450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450,
-                450, 450, 450, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412,
-                412, 412, 412, 412, 412, 412, 412, 375, 375, 375, 375, 375, 375, 375, 375, 375,
-                375, 375, 375, 375, 375, 375, 375, 375, 375, 375, 375, 337, 337, 337, 337, 337,
-                337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 300,
-                300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
-                300, 300, 300, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262,
-                262, 262, 262, 262, 262, 262, 262, 237, 237, 237, 237, 237, 237, 237, 237, 237,
-                237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 212, 212, 212, 212, 212,
-                212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 187,
-                187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187,
-                187, 187, 187, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162,
-                162, 162, 162, 162, 162, 162, 162, 137, 137, 137, 137, 137, 137, 137, 137, 137,
-                137, 137, 137, 137, 137, 137, 137, 137, 137, 137, 137, 112, 112, 112, 112, 112,
-                112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 87,
-                87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 62,
-                62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62
-            ];
-    
-            assert_eq!(storage_fees, reference_fees);
-    
-            let total_distributed: Credits = storage_fees.iter().sum();
-    
-            assert_eq!(total_distributed + leftovers, storage_pool);
-    
-            /*
-    
-            Repeat distribution to ensure deterministic results
-    
-             */
-    
-            let mut batch = GroveDbOpBatch::new();
-    
-            // refill storage fee pool once more
-            batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
-    
-            // Apply storage fee distribution pool update
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-    
-            let mut batch = GroveDbOpBatch::new();
-    
-            // distribute fees once more
-            platform
-                .add_distribute_storage_fee_to_epochs_operations(
-                    epoch_index,
-                    Some(&transaction),
-                    &mut batch,
-                )
-                .expect("should distribute storage fee pool");
-    
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-    
-            // collect all the storage fee values of the 1000 epochs pools again
-            let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
-                &platform.drive,
-                epoch_index..epoch_index + 1000,
-                Some(&transaction),
-            );
-    
-            // assert that all the values doubled meaning that distribution is reproducible
+
+            // Assert total distributed fees
+
+            let total_storage_pool_distribution = ((storage_pool - leftovers) * 2) as SignedCredits;
+
+            let total_refunds: SignedCredits = refunds
+                .into_iter()
+                .map(|(epoch_index, credits)| {
+                    let mut credits_per_epochs = SignedCreditsPerEpoch::default();
+
+                    let leftovers = distribute_storage_fee_to_epochs_collection(
+                        &mut credits_per_epochs,
+                        credits,
+                        epoch_index,
+                        None,
+                    )
+                    .expect("should distribute refunds");
+
+                    let already_paid_epochs = unpaid_epoch as i64 + 1 - epoch_index as i64;
+
+                    let already_paid_credits = if already_paid_epochs > 0 {
+                        credits_per_epochs
+                            .into_iter()
+                            .take(already_paid_epochs as usize)
+                            .map(|(_, credits)| credits)
+                            .sum()
+                    } else {
+                        0
+                    };
+
+                    credits - leftovers - already_paid_credits
+                })
+                .sum();
+
+            let total_distributed = storage_fees
+                .into_iter()
+                .sum::<Credits>()
+                .to_signed()
+                .expect("shouldn't overflow");
+
             assert_eq!(
-                storage_fees,
-                reference_fees
-                    .iter()
-                    .map(|val| val * 2)
-                    .collect::<Vec<u64>>()
+                total_distributed,
+                total_storage_pool_distribution + total_refunds
             );
-        }
-    }
-
-    mod update_storage_fee_distribution_pool {
-        use crate::common::helpers::setup::{
-            setup_platform, setup_platform_with_initial_state_structure,
-        };
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::error::Error as DriveError;
-        use drive::fee_pools::update_storage_fee_distribution_pool_operation;
-        use drive::grovedb;
-
-        #[test]
-        fn test_error_if_pool_is_not_initiated() {
-            let platform = setup_platform();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let storage_fee = 42;
-
-            let mut batch = GroveDbOpBatch::new();
-
-            batch.push(update_storage_fee_distribution_pool_operation(storage_fee));
-
-            match platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-            {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to update genesis time on uninit fee pools"
-                ),
-                Err(e) => match e {
-                    DriveError::GroveDB(grovedb::Error::InvalidPath(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
-        }
-
-        #[test]
-        fn test_update_and_get_value() {
-            let platform = setup_platform_with_initial_state_structure();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let storage_fee = 42;
-
-            let mut batch = GroveDbOpBatch::new();
-
-            batch.push(update_storage_fee_distribution_pool_operation(storage_fee));
-
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-
-            let stored_storage_fee = platform
-                .drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
-                .expect("should get storage fee pool");
-
-            assert_eq!(storage_fee, stored_storage_fee);
         }
     }
 }

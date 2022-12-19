@@ -34,7 +34,9 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::credits::SignedCredits;
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+use crate::fee::epoch::distribution::calculate_distribution_storage_fee_to_epochs_leftovers;
 use crate::fee::epoch::SignedCreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use bincode::Options;
@@ -65,12 +67,13 @@ impl FeeRefunds {
 
                         // TODO We should use multipliers
 
-                        (bytes as i64)
+                        let credits: SignedCredits = (bytes as i64)
                             .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE as i64)
                             .ok_or_else(|| {
                                 get_overflow_error("storage written bytes cost overflow")
-                            })
-                            .map(|credits| (epoch_index, credits))
+                            })?;
+
+                        Ok((epoch_index, -credits))
                     })
                     .collect::<Result<SignedCreditsPerEpoch, Error>>()
                     .map(|credits_per_epochs| (identifier, credits_per_epochs))
