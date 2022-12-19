@@ -1,3 +1,15 @@
+### [0.23.1](https://github.com/dashpay/platform/compare/v0.23.0...v0.23.1) (2022-12-19)
+
+
+### Miscellaneous Chores
+
+* replace grpc-web with @improbable-eng/grpc-web ([#628](https://github.com/dashpay/platform/issues/628))
+
+
+### Continuous Integration
+
+* release dashmate packages ([#669](https://github.com/dashpay/platform/issues/669))
+
 ## [0.23.0](https://github.com/dashpay/platform/compare/v0.22.16...v0.23.0) (2022-12-05)
 
 ### ⚠ BREAKING CHANGES
