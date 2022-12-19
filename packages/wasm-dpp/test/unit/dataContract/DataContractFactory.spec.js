@@ -8,7 +8,7 @@ describe('DataContractFactory', () => {
   let DataContractFactory;
   let DataContractValidator;
   let DataContract;
-  let InvalidDataContractError;
+  let DataContractDecodeError;
   let SerializedObjectParsingError;
   let JsonSchemaError;
 
@@ -22,7 +22,7 @@ describe('DataContractFactory', () => {
       DataContractFactory,
       DataContractValidator,
       DataContract,
-      InvalidDataContractError,
+      DataContractDecodeError,
       SerializedObjectParsingError,
       JsonSchemaError,
     } = await loadWasmDpp());
@@ -77,7 +77,7 @@ describe('DataContractFactory', () => {
       try {
         await factory.createFromObject(alteredContract);
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDataContractError);
+        expect(e).to.be.an.instanceOf(DataContractDecodeError);
         expect(e.getRawDataContract()).to.deep.equal(alteredContract);
         expect(e.getErrors()).to.have.length(1);
 
@@ -100,12 +100,12 @@ describe('DataContractFactory', () => {
       expect(result.toObject()).to.deep.equal(jsDataContract.toObject());
     });
 
-    it('should throw InvalidDataContractError if the decoding fails with consensus error', async () => {
+    it('should throw DataContractDecodeError if the decoding fails with consensus error', async () => {
       try {
         // Casually break serialized data contract:
         serializedDataContract[5] += 1337;
         await factory.createFromBuffer(serializedDataContract);
-        expect.fail('should throw InvalidDataContractError');
+        expect.fail('should throw DataContractDecodeError');
       } catch (e) {
         expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
         expect(e.getParsingError()).to.match(/Decode protocol entity/);

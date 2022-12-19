@@ -11,7 +11,7 @@ use dpp::{
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    data_contract::errors::InvalidDataContractError,
+    data_contract::errors::DataContractDecodeError,
     errors::{
         consensus::basic::decode::SerializedObjectParsingErrorWasm,
         consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
@@ -127,7 +127,7 @@ impl DataContractFactoryWasm {
             Ok(data_contract) => Ok(data_contract.into()),
             Err(dpp::ProtocolError::InvalidDataContractError { errors, .. }) => {
                 let js_errors = errors.into_iter().map(from_consensus_error).collect();
-                Err(InvalidDataContractError::new(js_errors, object).into())
+                Err(DataContractDecodeError::new(js_errors, object).into())
             }
             Err(other) => Err(from_dpp_err(other)),
         }
