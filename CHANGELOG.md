@@ -1,3 +1,22 @@
+## [0.24.0-dev.10](https://github.com/dashpay/platform/compare/v0.24.0-dev.9...v0.24.0-dev.10) (2022-12-15)
+
+
+### Features
+
+* Consensus Errors and ValidationResult bindings ([#643](https://github.com/dashpay/platform/issues/643))
+
+
+### Bug Fixes
+
+* **dashmate**: outdated Drive and DAPI images ([#668](https://github.com/dashpay/platform/issues/668))
+
+
+### Continuous Integration
+
+* fix entrypoint path in release workflow ([#671](https://github.com/dashpay/platform/issues/671))
+
+
+
 ## [0.24.0-dev.9](https://github.com/dashpay/platform/compare/v0.23.0...v0.24.0-dev.9) (2022-12-14)
 
 
