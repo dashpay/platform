@@ -10,6 +10,7 @@ describe('DataContractFactory', () => {
   let DataContract;
   let InvalidDataContractError;
   let SerializedObjectParsingError;
+  let JsonSchemaError;
 
   let factory;
   let jsDataContract;
@@ -23,6 +24,7 @@ describe('DataContractFactory', () => {
       DataContract,
       InvalidDataContractError,
       SerializedObjectParsingError,
+      JsonSchemaError,
     } = await loadWasmDpp());
   });
 
@@ -78,8 +80,9 @@ describe('DataContractFactory', () => {
         expect(e).to.be.an.instanceOf(InvalidDataContractError);
         expect(e.getRawDataContract()).to.deep.equal(alteredContract);
         expect(e.getErrors()).to.have.length(1);
-        // TODO JsonSchemaError binding type required
-        // const [consensusError] = error.getErrors();
+
+        const [consensusError] = e.getErrors();
+        expect(consensusError).to.be.an.instanceOf(JsonSchemaError);
       }
     });
   });

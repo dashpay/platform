@@ -13,6 +13,7 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
   let StateTransitionExecutionContext;
   let factory;
   let dataContractFetched;
+  let DataContractFactory;
 
   before(async () => {
     ({
@@ -20,6 +21,8 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
       StateTransitionExecutionContext,
       validateDataContractCreateTransitionState,
       ValidationResult,
+      DataContractFactory,
+      DataContractValidator,
     } = await loadWasmDpp());
   });
 
@@ -46,25 +49,27 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     factory = (t) => validateDataContractCreateTransitionState(stateRepositoryLike, t);
   });
 
-  // TODO wait for error types
-  // it('should return invalid result if Data Contract is already exist', async () => {
-  //   stateRepositoryMock.fetchDataContract.resolves(dataContract);
+  it('should return invalid result if Data Contract is already exist', async () => {
+    // This time our state repository should return a data contract on fetch
+    const validator = new DataContractValidator();
+    const dataContractFactory = new DataContractFactory(1, validator);
+    const wasmDataContract  = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
 
-  //   const result = await validateDataContractCreateTransitionState(stateTransition);
+    const stateRepositoryLikeWithContract = {
+      fetchDataContract: () => {
+        return wasmDataContract;
+      }
+    };
 
-  //   expectValidationError(result, DataContractAlreadyPresentError);
+    const result = await validateDataContractCreateTransitionState(
+      stateRepositoryLikeWithContract,
+      stateTransition,
+    );
+    const [error] = result.getErrors();
 
-  //   const [error] = result.getErrors();
-
-  //   expect(error.getCode()).to.equal(4000);
-  //   expect(Buffer.isBuffer(error.getDataContractId())).to.be.true();
-  //   expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
-
-  //   expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
-  //     dataContract.getId(),
-  //     executionContext,
-  //   );
-  // });
+    expect(error.getCode()).to.equal(4000);
+    expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
+  });
 
   it('should return valid result', async () => {
     const result = await factory(stateTransition);
