@@ -5,7 +5,6 @@ use crate::validation::ValidationResultWasm;
 use crate::{
     errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    validation_result::ValidationResultWasm,
     DataContractCreateTransitionWasm,
 };
 
