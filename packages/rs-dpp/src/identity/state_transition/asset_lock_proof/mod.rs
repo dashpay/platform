@@ -24,7 +24,7 @@ mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssetLockProof {
     Instant(InstantAssetLockProof),
     Chain(ChainAssetLockProof),

@@ -12,7 +12,7 @@ use crate::util::hash::hash;
 use crate::util::vec::vec_to_array;
 use crate::{NonConsensusError, ProtocolError};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
     asset_lock_type: u8,
     instant_lock: InstantLock,

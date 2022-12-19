@@ -157,6 +157,7 @@ mod tests {
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
     use grovedb::Element;
+    use serde::Serialize;
     use tempfile::TempDir;
 
     use crate::drive::flags::StorageFlags;
@@ -186,13 +187,14 @@ mod tests {
             )
             .expect("expected to insert identity");
 
-        let (fetched_identity, _) = drive
-            .fetch_full_identity(&identity.id.buffer, Some(&transaction))
-            .expect("should fetch an identity");
+        let fetched_identity = drive
+            .fetch_full_identity(identity.id.buffer, Some(&transaction))
+            .expect("should fetch an identity")
+            .expect("should have an identity");
 
         assert_eq!(
-            fetched_identity.to_buffer().expect("should serialize"),
-            identity.to_buffer().expect("should serialize")
+            fetched_identity,
+            identity
         );
     }
 

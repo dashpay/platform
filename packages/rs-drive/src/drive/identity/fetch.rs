@@ -15,103 +15,116 @@ use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::{VarInt, VarIntReader};
 use std::collections::{BTreeMap, BTreeSet};
+use dpp::prelude::IdentityPublicKey;
+use crate::drive::identity::fetch::KeyRequestType::CurrentKeyRequest;
 
 /// The type of key request
 /// You can either get the current keys
 /// or you can get all keys
+#[derive(Clone, Copy)]
 pub enum KeyRequestType {
     CurrentKeyRequest,
     AllKeysRequest,
 }
 
+type PurposeU8 = u8;
+type SecurityLevelU8 = u8;
+
 /// A request to get Keys from an Identity
 pub struct IdentityKeysRequest {
     identity_id: [u8; 32],
-    key_requests: BTreeMap<KeyType, BTreeMap<Purpose, BTreeMap<SecurityLevel, KeyRequestType>>>,
+    key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyRequestType>>,
+    limit: Option<u16>,
+    offset: Option<u16>,
 }
 
 impl IdentityKeysRequest {
-    fn to_path_query(self) -> PathQuery {
+    /// Make a request for all current keys for the identity
+    pub fn new_all_current_keys_query(identity_id: [u8; 32]) -> Self {
+        let mut sec_btree_map = BTreeMap::new();
+        for security_level in 0..=SecurityLevel::last() as u8 {
+            sec_btree_map.insert(security_level, CurrentKeyRequest);
+        }
+        let mut purpose_btree_map = BTreeMap::new();
+        for purpose in 0..=Purpose::last() as u8 {
+            purpose_btree_map.insert(purpose, sec_btree_map.clone());
+        }
+        IdentityKeysRequest {
+            identity_id,
+            key_requests: purpose_btree_map,
+            limit: None,
+            offset: None,
+        }
+    }
+
+    /// Create the path query for the request
+    pub fn to_path_query(self) -> PathQuery {
         let IdentityKeysRequest {
             identity_id,
             key_requests,
+            limit,
+            offset,
         } = self;
         let query_keys_path = identity_query_keys_tree_path_vec(identity_id);
         PathQuery {
             path: query_keys_path,
             query: SizedQuery {
                 query: Self::construct_query(key_requests),
-                limit: None,
-                offset: None,
+                limit,
+                offset,
             },
         }
     }
 
+    /// Contruct the query for the request
     fn construct_query(
-        key_requests: BTreeMap<KeyType, BTreeMap<Purpose, BTreeMap<SecurityLevel, KeyRequestType>>>,
+        key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyRequestType>>,
     ) -> Query {
-        let mut query = Query::new();
+        fn construct_security_level_query(
+            key_requests: BTreeMap<SecurityLevelU8, KeyRequestType>,
+        ) -> Query {
+            let mut query = Query::new();
 
-        for (key_type, leftover_query) in key_requests {
-            let key = vec![key_type as u8];
-            if !leftover_query.is_empty() {
-                query.add_conditional_subquery(
-                    QueryItem::Key(key),
-                    None,
-                    Some(Self::construct_purpose_query(leftover_query)),
-                );
+            for (security_level, key_request_type) in key_requests {
+                let key = vec![security_level];
+                let subquery = match key_request_type {
+                    KeyRequestType::CurrentKeyRequest => {
+                        let mut subquery = Query::new();
+                        subquery.insert_key(vec![]);
+                        subquery
+                    }
+                    KeyRequestType::AllKeysRequest => {
+                        let mut subquery = Query::new();
+                        subquery.insert_range_after(vec![]..);
+                        subquery
+                    }
+                };
+                query.add_conditional_subquery(QueryItem::Key(key), None, Some(subquery));
             }
+            query
         }
-        query
-    }
-
-    fn construct_purpose_query(
-        key_requests: BTreeMap<Purpose, BTreeMap<SecurityLevel, KeyRequestType>>,
-    ) -> Query {
         let mut query = Query::new();
 
         for (purpose, leftover_query) in key_requests {
-            let key = vec![purpose as u8];
+            let key = vec![purpose];
             if !leftover_query.is_empty() {
                 query.add_conditional_subquery(
                     QueryItem::Key(key),
                     None,
-                    Some(Self::construct_security_level_query(leftover_query)),
+                    Some(construct_security_level_query(leftover_query)),
                 );
             }
         }
         query
     }
 
-    fn construct_security_level_query(
-        key_requests: BTreeMap<SecurityLevel, KeyRequestType>,
-    ) -> Query {
-        let mut query = Query::new();
 
-        for (security_level, key_request_type) in key_requests {
-            let key = vec![security_level as u8];
-            let subquery = match key_request_type {
-                KeyRequestType::CurrentKeyRequest => {
-                    let mut subquery = Query::new();
-                    subquery.insert_key(vec![]);
-                    subquery
-                }
-                KeyRequestType::AllKeysRequest => {
-                    let mut subquery = Query::new();
-                    subquery.insert_range_after(vec![]..);
-                    subquery
-                }
-            };
-            query.add_conditional_subquery(QueryItem::Key(key), None, Some(subquery));
-        }
-        query
-    }
 }
 
 impl Drive {
@@ -267,9 +280,9 @@ impl Drive {
             if let Some(identity_revision_element) = identity_revision_element {
                 if let Item(identity_revision_element, _) = identity_revision_element {
                     let (revision, _) = u64::decode_var(identity_revision_element.as_slice())
-                        .ok_or(Err(Error::Drive(DriveError::CorruptedElementType(
+                        .ok_or(Error::Drive(DriveError::CorruptedElementType(
                             "identity revision could not be decoded",
-                        ))))?;
+                        )))?;
                     Ok(Some(revision))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedElementType(
@@ -284,12 +297,39 @@ impl Drive {
         }
     }
 
+    pub fn fetch_all_current_identity_keys(
+        &self,
+        identity_id: [u8; 32],
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+       self.fetch_all_current_identity_keys_operations(identity_id, apply, transaction, &mut drive_operations)
+    }
+
+    pub(crate) fn fetch_all_current_identity_keys_operations(
+        &self,
+        identity_id: [u8; 32],
+        _apply: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
+        let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
+        let path_query = key_request.to_path_query();
+
+        let (serialized_keys,_) = self.grove_get_path_query(&path_query, transaction, drive_operations)?;
+        serialized_keys.into_iter().map(|serialized_key| {
+            let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
+            Ok((key.id, key))
+        }).collect()
+    }
+
     /// Given an identity, fetches the identity with its flags from storage.
     pub fn fetch_full_identity(
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-    ) -> Result<(Option<Identity>), Error> {
+    ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
         let balance = self.fetch_identity_balance(identity_id, true, transaction)?;
         if balance.is_none() {
@@ -303,10 +343,7 @@ impl Drive {
             )))?;
 
         let loaded_public_keys = self
-            .fetch_all_identity_keys(identity_id, true, transaction)?
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "revision not found on identity".to_string(),
-            )))?;
+            .fetch_all_current_identity_keys(identity_id, true, transaction)?;
         Ok(Some(Identity {
             protocol_version: 0,
             id: Identifier::new(identity_id),

@@ -4,7 +4,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, Ord, PartialOrd)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
@@ -37,5 +37,11 @@ impl Into<CborValue> for Purpose {
 impl std::fmt::Display for Purpose {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl Purpose {
+    pub fn last() -> Purpose {
+        Self::WITHDRAW
     }
 }

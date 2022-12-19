@@ -19,7 +19,7 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,

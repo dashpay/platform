@@ -37,6 +37,9 @@ impl TryFrom<u8> for SecurityLevel {
 }
 
 impl SecurityLevel {
+    pub fn last() -> SecurityLevel {
+        Self::MEDIUM
+    }
     pub fn lowest_level() -> SecurityLevel {
         Self::MEDIUM
     }
