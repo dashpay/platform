@@ -7,6 +7,7 @@ use crate::{
     validation_result::ValidationResultWasm,
     DataContractCreateTransitionWasm,
 };
+use crate::validation::ValidationResultWasm;
 
 #[wasm_bindgen(js_name=validateDataContractCreateTransitionState)]
 pub async fn validate_data_contract_create_transition_state(
@@ -19,6 +20,6 @@ pub async fn validate_data_contract_create_transition_state(
         &state_transition.into(),
     )
     .await
-    .map(Into::into)
+    .map(Into::<ValidationResultWasm>::into)
     .map_err(from_dpp_err)
 }
