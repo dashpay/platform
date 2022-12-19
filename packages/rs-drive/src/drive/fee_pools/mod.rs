@@ -165,7 +165,7 @@ mod tests {
         use super::*;
         use crate::fee::credits::Credits;
         use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
-        use grovedb::batch::GroveDbOp;
+        use grovedb::batch::{GroveDbOp, Op};
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {
@@ -192,10 +192,11 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            const TO_EPOCH_INDEX: EpochIndex = 1;
+            const TO_EPOCH_INDEX: EpochIndex = 10;
 
             // Store initial epoch storage pool values
             let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
+                .into_iter()
                 .map(|epoch_index| {
                     let credits = 10 - epoch_index as Credits;
 
@@ -231,19 +232,22 @@ mod tests {
 
             assert_eq!(batch.len(), TO_EPOCH_INDEX as usize);
 
-            for operation in batch.into_iter() {
-                assert!(matches!(operation.op, Op::Delete));
+            for (i, operation) in batch.into_iter().rev().enumerate() {
+                assert_eq!(operation.key.get_key(), KEY_POOL_STORAGE_FEES);
 
-                assert_eq!(operation.path.to_path(), pools_pending_updates_path());
-
-                let epoch_index_key = operation.key.get_key();
-                let epoch_index = u16::from_be_bytes(
-                    epoch_index_key
-                        .try_into()
-                        .expect("should convert to u16 bytes"),
+                assert_eq!(
+                    operation.path.to_path(),
+                    Epoch::new(i as u16).get_vec_path()
                 );
 
-                assert!(expected_pending_updates.contains_key(&epoch_index));
+                let Op::Insert{ element: Element::Item (encoded_credits, _)} = operation.op else {
+                    panic!("invalid operation");
+                };
+
+                let credits =
+                    Credits::from_vec_bytes(encoded_credits).expect("should decide credits");
+
+                assert_eq!(credits, 10);
             }
         }
     }
