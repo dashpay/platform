@@ -295,12 +295,10 @@ class AbstractStateTransition {
   /**
    * Calculate ST fee in credits
    *
-   * @param {Object} options
-   * @param {boolean} [options.useCache=false]
    * @return {number}
    */
-  calculateFee(options = {}) {
-    return calculateStateTransitionFee(this, options);
+  calculateFee() {
+    return calculateStateTransitionFee(this);
   }
 
   /**

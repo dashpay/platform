@@ -570,8 +570,8 @@ describe('Drive', () => {
             storageFee: 100,
             processingFee: 100,
             feeRefunds: {
-              1: 15,
-              2: 16,
+              1: -15,
+              2: -16,
             },
           },
         };

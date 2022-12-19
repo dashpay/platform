@@ -17,6 +17,7 @@ const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDataContractDocuments = require('../../../lib/test/fixtures/createDataContractDocuments');
 const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
+const calculateStateTransitionFee = require("@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFee");
 
 /**
  * @param {DashPlatformProtocol} dpp

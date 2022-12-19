@@ -35,8 +35,6 @@
 use crate::drive::flags::StorageFlags;
 use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults};
 use grovedb::Element;
-// use std::slice::Iter;
-// use std::vec::IntoIter;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB

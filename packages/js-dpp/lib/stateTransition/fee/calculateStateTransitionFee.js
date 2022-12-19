@@ -7,22 +7,10 @@ const calculateOperationFees = require('./calculateOperationFees');
 /**
  * @typedef {calculateStateTransitionFee}
  * @param {AbstractStateTransition} stateTransition
- * @param {Object} options
- * @param {boolean} [options.useCache=false]
  * @return {number}
  */
-function calculateStateTransitionFee(stateTransition, options = {}) {
+function calculateStateTransitionFee(stateTransition) {
   const executionContext = stateTransition.getExecutionContext();
-
-  if (options.useCache) {
-    const calculatedFeeDetails = executionContext.getLastCalculatedFeeDetails();
-
-    if (!calculatedFeeDetails) {
-      throw new Error('State Transition Execution context doesn\'t contain cached fee calculation');
-    }
-
-    return calculatedFeeDetails.total;
-  }
 
   const calculatedFees = calculateOperationFees(executionContext.getOperations());
 

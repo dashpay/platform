@@ -173,8 +173,6 @@ impl TenderdashAbci for Platform {
 
         drive_cache.cached_contracts.clear_block_cache();
 
-        // Super slow operation of preparing chunks
-
         Ok(AfterFinalizeBlockResponse {})
     }
 }

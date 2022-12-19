@@ -503,7 +503,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -573,7 +573,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -656,7 +656,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -736,7 +736,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -810,7 +810,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -886,7 +886,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]

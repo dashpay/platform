@@ -92,17 +92,17 @@ impl Drive {
             return Ok(());
         }
 
-        let min_epoch_index_key = credits_per_epochs.keys().min().ok_or(Error::Drive(
+        let min_epoch_index = credits_per_epochs.keys().min().ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("can't find min epoch index"),
         ))?;
-        let min_epoch_index = min_epoch_index_key.to_owned() as u16;
-        let min_encoded_epoch_index = paths::encode_epoch_index_key(min_epoch_index)?.to_vec();
+        let min_encoded_epoch_index =
+            paths::encode_epoch_index_key(min_epoch_index.to_owned())?.to_vec();
 
-        let max_epoch_index_key = credits_per_epochs.keys().max().ok_or(Error::Drive(
+        let max_epoch_index = credits_per_epochs.keys().max().ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("can't find max epoch index"),
         ))?;
-        let max_epoch_index = max_epoch_index_key.to_owned() as u16;
-        let max_encoded_epoch_index = paths::encode_epoch_index_key(max_epoch_index)?.to_vec();
+        let max_encoded_epoch_index =
+            paths::encode_epoch_index_key(max_epoch_index.to_owned())?.to_vec();
 
         if max_epoch_index - min_epoch_index + 1 != credits_per_epochs.len() as u16 {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -119,7 +119,7 @@ impl Drive {
 
         epochs_query.set_subquery(storage_fee_pool_query);
 
-        let (mut storage_fee_pools, _) = self
+        let (storage_fee_pools, _) = self
             .grove
             .query(
                 &PathQuery::new_unsized(pools_vec_path(), epochs_query),
@@ -128,7 +128,6 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        // Sort epochs to reverse order to pop existing values
         for (i, (epoch_index, credits)) in credits_per_epochs
             .into_iter()
             .sorted_by_key(|x| x.0)

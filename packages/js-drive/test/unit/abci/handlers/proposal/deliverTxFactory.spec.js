@@ -124,9 +124,9 @@ describe('deliverTxFactory', () => {
         processingFee: 10,
         storageFee: 100,
         feeRefunds: {
-          1: 15,
+          1: -15,
         },
-        feeRefundsSum: 15,
+        feeRefundsSum: -15,
       },
     });
 
@@ -165,9 +165,9 @@ describe('deliverTxFactory', () => {
         processingFee: 10,
         storageFee: 100,
         feeRefunds: {
-          1: 15,
+          1: -15,
         },
-        feeRefundsSum: 15,
+        feeRefundsSum: -15,
       },
     });
 

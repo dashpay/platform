@@ -61,12 +61,12 @@ pub trait Creditable: Into<Decimal> {
 
 impl Creditable for Credits {
     fn to_signed(&self) -> Result<SignedCredits, Error> {
-        SignedCredits::try_from(self.clone())
+        SignedCredits::try_from(*self)
             .map_err(|_| get_overflow_error("credits are too big to convert to signed value"))
     }
 
     fn to_unsigned(&self) -> Credits {
-        self.clone()
+        *self
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
@@ -85,7 +85,7 @@ impl Creditable for Credits {
 }
 impl Creditable for SignedCredits {
     fn to_signed(&self) -> Result<SignedCredits, Error> {
-        Ok(self.clone())
+        Ok(*self)
     }
 
     fn to_unsigned(&self) -> Credits {

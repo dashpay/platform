@@ -28,7 +28,6 @@
 //
 
 use enum_map::EnumMap;
-use rust_decimal::Decimal;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
