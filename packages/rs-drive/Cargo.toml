@@ -31,7 +31,7 @@ dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"]}
 itertools = { version = "0.10.5" }
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["std", "secp-recovery", "rand", "signer"], default-features = false, rev = "6092d584487918c5330fec93152e4df06a714067" }
 dashcore-rpc = { git="https://github.com/jawid-h/rust-dashcore-rpc", branch="fix/attempt-to-fix" }
-mockall= { version ="0.11", optional = true}
+mockall= { version ="0.11", optional = true }
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"

@@ -161,7 +161,7 @@ impl Drive {
         current_epoch_index: u16,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let maybe_data_contract = self.get_cached_contract_with_fetch_info(
+        let (_, maybe_data_contract) = self.get_contract_with_fetch_info(
             Identifier::from_string(
                 &withdrawals_contract::system_ids().contract_id,
                 Encoding::Base58,
@@ -172,8 +172,9 @@ impl Drive {
                 ))
             })?
             .to_buffer(),
+            Some(&Epoch::new(current_epoch_index)),
             transaction,
-        );
+        )?;
 
         let contract_fetch_info = maybe_data_contract.ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
@@ -207,7 +208,7 @@ impl Drive {
 
             let transaction_id = hex::encode(transaction_id_bytes);
 
-            let transaction_index = document.data.get_u64("transactionIdex").map_err(|_| {
+            let transaction_index = document.data.get_u64("transactionIndex").map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "Can't get transactionIdex from withdrawal document",
                 ))
@@ -280,6 +281,12 @@ mod tests {
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::common::helpers::setup::{setup_document, setup_system_data_contract};
 
+    use dashcore::hashes::hex::ToHex;
+
+    use crate::rpc::core::MockCoreRPCLike;
+
+    use dashcore::{hashes::hex::FromHex, BlockHash};
+
     mod fetch_withdrawal_documents_by_status {
 
         use super::*;
@@ -348,6 +355,190 @@ mod tests {
             .expect("to fetch documents by status");
 
             assert_eq!(documents.len(), 1);
+        }
+    }
+
+    mod fetch_core_block_transactions {
+        use crate::drive::identity::withdrawals::withdrawal_status::fetch_core_block_transactions;
+
+        use super::*;
+
+        #[test]
+        fn test_fetches_core_transactions() {
+            let mut drive = setup_drive_with_initial_state_structure();
+
+            let mut mock_rpc_client = MockCoreRPCLike::new();
+
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 1)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 2)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "1111111111111111111111111111111111111111111111111111111111111111",
+                    )
+                    .unwrap())
+                });
+
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "0000000000000000000000000000000000000000000000000000000000000000"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["1"]
+                    }))
+                });
+
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "1111111111111111111111111111111111111111111111111111111111111111"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["2"]
+                    }))
+                });
+
+            drive.core_rpc = Some(Box::new(mock_rpc_client));
+
+            let transactions =
+                fetch_core_block_transactions(&drive, 1, 2).expect("to fetch core transactions");
+
+            assert_eq!(transactions.len(), 2);
+            assert_eq!(transactions, ["1", "2"]);
+        }
+    }
+
+    mod update_withdrawal_statuses {
+        use super::*;
+
+        #[test]
+        fn test_statuses_are_updated() {
+            let mut drive = setup_drive_with_initial_state_structure();
+
+            let mut mock_rpc_client = MockCoreRPCLike::new();
+
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 95)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 96)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "1111111111111111111111111111111111111111111111111111111111111111",
+                    )
+                    .unwrap())
+                });
+
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "0000000000000000000000000000000000000000000000000000000000000000"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["0101010101010101010101010101010101010101010101010101010101010101"]
+                    }))
+                });
+
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "1111111111111111111111111111111111111111111111111111111111111111"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["0202020202020202020202020202020202020202020202020202020202020202"]
+                    }))
+                });
+
+            drive.core_rpc = Some(Box::new(mock_rpc_client));
+
+            let transaction = drive.grove.start_transaction();
+
+            let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            setup_system_data_contract(&drive, &data_contract, Some(&transaction));
+
+            let document_1 = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": 0,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::BROADCASTED,
+                    "transactionIndex": 1,
+                    "transactionSignHeight": 93,
+                    "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                }),
+            );
+
+            setup_document(&drive, &document_1, &data_contract, Some(&transaction));
+
+            let document_2 = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": 0,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::BROADCASTED,
+                    "transactionIndex": 2,
+                    "transactionSignHeight": 10,
+                    "transactionId": vec![3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                }),
+            );
+
+            setup_document(&drive, &document_2, &data_contract, Some(&transaction));
+
+            drive
+                .update_withdrawal_statuses(95, 96, 1, 1, 1, Some(&transaction))
+                .expect("to update withdrawal statuses");
+
+            let documents = fetch_withdrawal_documents_by_status(
+                &drive,
+                withdrawals_contract::statuses::EXPIRED,
+                Some(&transaction),
+            )
+            .expect("to fetch documents by status");
+
+            assert_eq!(documents.len(), 1);
+            assert_eq!(documents.get(0).unwrap().id, document_2.id);
+
+            let documents = fetch_withdrawal_documents_by_status(
+                &drive,
+                withdrawals_contract::statuses::COMPLETE,
+                Some(&transaction),
+            )
+            .expect("to fetch documents by status");
+
+            assert_eq!(documents.len(), 1);
+            assert_eq!(documents.get(0).unwrap().id, document_1.id);
         }
     }
 }

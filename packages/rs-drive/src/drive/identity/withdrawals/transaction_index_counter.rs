@@ -103,3 +103,84 @@ impl Drive {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use grovedb::Element;
+
+    use crate::{
+        common::helpers::setup::setup_drive_with_initial_state_structure,
+        drive::{
+            batch::GroveDbOpBatch,
+            identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path_as_u8,
+        },
+    };
+
+    #[test]
+    fn test_withdrawal_transaction_counter() {
+        let drive = setup_drive_with_initial_state_structure();
+
+        let transaction = drive.grove.start_transaction();
+
+        let mut batch = GroveDbOpBatch::new();
+
+        let counter: u64 = 42;
+
+        drive.add_update_withdrawal_index_counter_operation(
+            &mut batch,
+            counter.to_be_bytes().to_vec(),
+        );
+
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction))
+            .expect("to apply ops");
+
+        let stored_counter = drive
+            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .expect("to withdraw counter");
+
+        assert_eq!(stored_counter, counter);
+    }
+
+    #[test]
+    fn test_returns_0_if_empty() {
+        let drive = setup_drive_with_initial_state_structure();
+
+        let transaction = drive.grove.start_transaction();
+
+        let stored_counter = drive
+            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .expect("to withdraw counter");
+
+        assert_eq!(stored_counter, 0);
+    }
+
+    #[test]
+    fn test_should_return_expired_index_if_any() {
+        let drive = setup_drive_with_initial_state_structure();
+
+        let transaction = drive.grove.start_transaction();
+
+        let bytes = 42u64.to_be_bytes();
+
+        let path = get_withdrawal_transactions_expired_ids_path_as_u8();
+
+        drive
+            .grove
+            .insert(
+                path,
+                &bytes,
+                Element::Item(bytes.to_vec(), None),
+                None,
+                Some(&transaction),
+            )
+            .unwrap()
+            .expect("to update index counter");
+
+        let stored_counter = drive
+            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .expect("to withdraw counter");
+
+        assert_eq!(stored_counter, 42);
+    }
+}

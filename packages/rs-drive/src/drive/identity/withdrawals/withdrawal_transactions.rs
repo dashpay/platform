@@ -103,3 +103,48 @@ impl Drive {
         Ok(withdrawals)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        common::helpers::setup::setup_drive_with_initial_state_structure,
+        drive::batch::GroveDbOpBatch,
+    };
+
+    #[test]
+    fn test_enqueue_and_dequeue() {
+        let drive = setup_drive_with_initial_state_structure();
+
+        let transaction = drive.grove.start_transaction();
+
+        let withdrawals: Vec<(Vec<u8>, Vec<u8>)> = (0..17)
+            .map(|i: u8| (i.to_be_bytes().to_vec(), vec![i; 32]))
+            .collect();
+
+        let mut batch = GroveDbOpBatch::new();
+
+        drive.add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
+
+        drive
+            .grove_apply_batch(batch, true, Some(&transaction))
+            .expect("to apply ops");
+
+        let withdrawals = drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .expect("to dequeue withdrawals");
+
+        assert_eq!(withdrawals.len(), 16);
+
+        let withdrawals = drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .expect("to dequeue withdrawals");
+
+        assert_eq!(withdrawals.len(), 1);
+
+        let withdrawals = drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .expect("to dequeue withdrawals");
+
+        assert_eq!(withdrawals.len(), 0);
+    }
+}
