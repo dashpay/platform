@@ -41,6 +41,18 @@
           }
         ],
         "unique": false
+      },
+      {
+        "name": "status",
+        "properties": [
+          {
+            "status": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "unique": false
       }
     ],
     "properties": {

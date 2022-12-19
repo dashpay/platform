@@ -1,7 +1,7 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
@@ -10,7 +10,7 @@ use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 
-#[cfg_attr(test, automock)]
+#[cfg_attr(feature = "fixtures-and-mocks", automock)]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     /// Fetch the Data Contract by ID

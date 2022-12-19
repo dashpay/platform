@@ -38,8 +38,8 @@ pub mod block_time_window;
 pub mod mocks;
 
 mod bls;
-#[cfg(test)]
-mod tests;
+#[cfg(feature = "fixtures-and-mocks")]
+pub mod tests;
 pub use bls::*;
 
 pub mod prelude {

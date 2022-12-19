@@ -268,3 +268,86 @@ impl Drive {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::drive::identity::withdrawals::withdrawal_status::fetch_withdrawal_documents_by_status;
+    use dpp::contracts::withdrawals_contract;
+    use dpp::tests::fixtures::get_withdrawal_document_fixture;
+    use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
+    use serde_json::json;
+
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::common::helpers::setup::{setup_document, setup_system_data_contract};
+
+    mod fetch_withdrawal_documents_by_status {
+
+        use super::*;
+
+        #[test]
+        fn test_return_list_of_documents() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let transaction = drive.grove.start_transaction();
+
+            let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            setup_system_data_contract(&drive, &data_contract, Some(&transaction));
+
+            let documents = fetch_withdrawal_documents_by_status(
+                &drive,
+                withdrawals_contract::statuses::QUEUED,
+                Some(&transaction),
+            )
+            .expect("to fetch documents by status");
+
+            assert_eq!(documents.len(), 0);
+
+            let document = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": 0,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::QUEUED,
+                    "transactionIndex": 1,
+                }),
+            );
+
+            setup_document(&drive, &document, &data_contract, Some(&transaction));
+
+            let document = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": 0,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::POOLED,
+                    "transactionIndex": 2,
+                }),
+            );
+
+            setup_document(&drive, &document, &data_contract, Some(&transaction));
+
+            let documents = fetch_withdrawal_documents_by_status(
+                &drive,
+                withdrawals_contract::statuses::QUEUED,
+                Some(&transaction),
+            )
+            .expect("to fetch documents by status");
+
+            assert_eq!(documents.len(), 1);
+
+            let documents = fetch_withdrawal_documents_by_status(
+                &drive,
+                withdrawals_contract::statuses::POOLED,
+                Some(&transaction),
+            )
+            .expect("to fetch documents by status");
+
+            assert_eq!(documents.len(), 1);
+        }
+    }
+}
