@@ -236,6 +236,7 @@ mod tests {
 
         mod helpers {
             use super::*;
+            use drive::fee::epoch::SignedCreditsPerEpoch;
 
             /// Process and validate an epoch change
             pub fn process_and_validate_epoch_change(
@@ -289,7 +290,11 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
-                let block_fees = BlockFees::default();
+                let block_fees = BlockFees {
+                    storage_fee: 1000000000,
+                    processing_fee: 10000,
+                    fee_refunds: SignedCreditsPerEpoch::from_iter([(0, -10000)]),
+                };
 
                 let mut batch = GroveDbOpBatch::new();
 
@@ -422,6 +427,7 @@ mod tests {
 
         mod helpers {
             use super::*;
+            use drive::fee::epoch::SignedCreditsPerEpoch;
 
             /// Process and validate block fees
             pub fn process_and_validate_block_fees(
@@ -449,7 +455,11 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
-                let block_fees = BlockFees::from_fees(1000, 10000);
+                let block_fees = BlockFees {
+                    storage_fee: 1000,
+                    processing_fee: 10000,
+                    fee_refunds: SignedCreditsPerEpoch::from_iter([(epoch_index, -100)]),
+                };
 
                 let distribute_storage_pool_result = platform
                     .process_block_fees(&block_info, &epoch_info, block_fees.clone(), transaction)

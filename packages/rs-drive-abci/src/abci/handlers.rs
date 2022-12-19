@@ -187,6 +187,7 @@ mod tests {
         use chrono::{Duration, Utc};
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee::epoch::SignedCreditsPerEpoch;
         use rust_decimal::prelude::ToPrimitive;
         use std::ops::Div;
 
@@ -359,7 +360,11 @@ mod tests {
                     }
 
                     let block_end_request = BlockEndRequest {
-                        fees: BlockFees::from_fees(storage_fees_per_block, 1600),
+                        fees: BlockFees {
+                            storage_fee: storage_fees_per_block,
+                            processing_fee: 1600,
+                            fee_refunds: SignedCreditsPerEpoch::from_iter([(0, -100)]),
+                        },
                     };
 
                     let block_end_response = platform
@@ -511,7 +516,11 @@ mod tests {
                     );
 
                     let block_end_request = BlockEndRequest {
-                        fees: BlockFees::from_fees(storage_fees_per_block, 1600),
+                        fees: BlockFees {
+                            storage_fee: storage_fees_per_block,
+                            processing_fee: 1600,
+                            fee_refunds: SignedCreditsPerEpoch::from_iter([(0, -100)]),
+                        },
                     };
 
                     let block_end_response = platform
