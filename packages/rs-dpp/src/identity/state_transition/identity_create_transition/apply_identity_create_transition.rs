@@ -38,7 +38,7 @@ where
         let identity = Identity {
             protocol_version: state_transition.get_protocol_version(),
             id: state_transition.get_identity_id().clone(),
-            public_keys: state_transition
+            loaded_public_keys: state_transition
                 .get_public_keys()
                 .iter()
                 .cloned()

@@ -136,7 +136,7 @@ where
         }
 
         let raw_public_keys: Vec<Value> = identity
-            .public_keys
+            .loaded_public_keys
             .values()
             .map(|pk| pk.to_raw_json_object(false))
             .collect::<Result<_, SerdeParsingError>>()?;

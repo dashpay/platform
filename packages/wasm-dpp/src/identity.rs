@@ -159,7 +159,7 @@ impl IdentityWasm {
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let pks = self
             .0
-            .public_keys
+            .loaded_public_keys
             .iter()
             .map(|pk| pk.to_json())
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
@@ -184,7 +184,7 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, _some_option: Option<bool>) -> Result<JsValue, JsValue> {
         let js_public_keys = js_sys::Array::new();
-        for pk in self.0.public_keys.iter() {
+        for pk in self.0.loaded_public_keys.iter() {
             let pk_wasm = IdentityPublicKeyWasm::from(pk.to_owned());
             js_public_keys.push(&pk_wasm.to_object(None)?);
         }
@@ -223,7 +223,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=addPublicKey)]
     pub fn add_public_key(&mut self, public_key: IdentityPublicKeyWasm) {
-        self.0.public_keys.push(public_key.into());
+        self.0.loaded_public_keys.push(public_key.into());
     }
 
     // The method `addPublicKeys()` takes an variadic array of `IdentityPublicKeyWasm` as an input. But elements of the array

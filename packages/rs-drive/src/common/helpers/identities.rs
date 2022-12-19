@@ -63,7 +63,7 @@ pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: Transactio
         revision: 1,
         balance: 0,
         protocol_version: 0,
-        public_keys,
+        loaded_public_keys: public_keys,
         asset_lock_proof: None,
         metadata: None,
     };

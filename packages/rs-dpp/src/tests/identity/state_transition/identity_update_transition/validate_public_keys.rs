@@ -16,7 +16,7 @@ struct TestData {
 fn setup_test() -> TestData {
     let identity = identity_fixture();
     let raw_public_keys: Vec<JsonValue> = identity
-        .public_keys
+        .loaded_public_keys
         .iter()
         .map(|pk| pk.to_raw_json_object(false))
         .collect::<Result<_, _>>()

@@ -29,7 +29,7 @@ chrono = "0.4.20"
 bincode = "1.3.3"
 dpp = { path = "../rs-dpp" }
 itertools = { version = "0.10.5" }
-dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, rev="980cc34faf3cfca8009b7bbead4a0f37b7695dcf" }
+dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"

@@ -92,10 +92,10 @@ mod from_buffer {
         assert_eq!(identity.get_balance(), 0);
         assert_eq!(identity.get_revision(), 0);
 
-        assert_eq!(identity.public_keys.len(), 2);
+        assert_eq!(identity.loaded_public_keys.len(), 2);
 
-        let pk_1 = identity.public_keys.first().unwrap();
-        let pk_2 = identity.public_keys.get(1).unwrap();
+        let pk_1 = identity.loaded_public_keys.first().unwrap();
+        let pk_2 = identity.loaded_public_keys.get(1).unwrap();
 
         assert_eq!(pk_1.id, 0);
         assert_eq!(pk_1.key_type, KeyType::try_from(0u8).unwrap());

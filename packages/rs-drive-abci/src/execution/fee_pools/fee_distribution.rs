@@ -39,6 +39,7 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
 use drive::error::fee::FeeError;
+use drive::fee::op::DriveOperation;
 use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
@@ -231,6 +232,7 @@ impl Platform {
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<u16, Error> {
+        let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index);
 
         let total_fees = self
@@ -263,7 +265,7 @@ impl Platform {
                 self.get_reward_shares_list_for_masternode(proposer_tx_hash, transaction)?;
 
             for document in documents {
-                let pay_to_id = document
+                let pay_to_id: [u8; 32] = document
                     .properties
                     .get("payToId")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
@@ -272,7 +274,13 @@ impl Platform {
                     .as_bytes()
                     .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
                         "payToId property type is not bytes",
-                    )))?;
+                    )))?
+                    .try_into()
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::DriveIncoherence(
+                            "payToId property type is not 32 bytes long",
+                        ))
+                    })?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage_integer: i64 = document
@@ -307,11 +315,13 @@ impl Platform {
                     ))
                 })?;
 
-                self.add_pay_reward_to_identity_operations(
+                // we need to pay out the reward
+                self.drive.add_to_identity_balance_operations(
                     pay_to_id,
                     reward_floored,
+                    &mut None,
                     transaction,
-                    batch,
+                    &mut drive_operations,
                 )?;
             }
 
@@ -335,45 +345,29 @@ impl Platform {
                     ))
                 })?;
 
-            self.add_pay_reward_to_identity_operations(
-                proposer_tx_hash,
+            self.drive.add_to_identity_balance_operations(
+                proposer_tx_hash.try_into().map_err(|_| {
+                    Error::Execution(ExecutionError::DriveIncoherence(
+                        "proposer_tx_hash is not 32 bytes long",
+                    ))
+                })?,
                 masternode_reward_given,
+                &mut None,
                 transaction,
-                batch,
+                &mut drive_operations,
             )?;
         }
 
+        let mut operations = DriveOperation::grovedb_operations_batch(&drive_operations);
+        batch.append(&mut operations);
+
         // remove proposers we've paid out
         let proposer_pro_tx_hashes: Vec<Vec<u8>> =
-            proposers.iter().map(|(hash, _)| hash.clone()).collect();
+            proposers.into_iter().map(|(hash, _)| hash).collect();
 
         unpaid_epoch_tree.add_delete_proposers_operations(proposer_pro_tx_hashes, batch);
 
         Ok(proposers_len)
-    }
-
-    /// Adds operations to an op batch which pay a reward to an identity's balance
-    fn add_pay_reward_to_identity_operations(
-        &self,
-        id: &[u8],
-        reward: u64,
-        transaction: TransactionArg,
-        batch: &mut GroveDbOpBatch,
-    ) -> Result<(), Error> {
-        // We don't need additional verification, since we ensure an identity
-        // existence in the data contract triggers in DPP
-        let (mut identity, storage_flags) = self.drive.fetch_identity(id, transaction)?;
-
-        identity.balance = identity
-            .balance
-            .checked_add(reward)
-            .ok_or(Error::Execution(ExecutionError::Overflow(
-                "pay reward overflow",
-            )))?;
-
-        self.drive
-            .add_insert_identity_operations(identity, storage_flags.as_ref(), batch)
-            .map_err(Error::Drive)
     }
 
     /// Adds operations to an op batch which update total storage fees

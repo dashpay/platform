@@ -24,7 +24,7 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
 pub struct Identity {
     pub protocol_version: u32,
     pub id: Identifier,
-    pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+    pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
     #[serde(skip)]
@@ -46,33 +46,33 @@ impl Identity {
 
     /// Set Identity public key
     pub fn set_public_keys(mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) -> Self {
-        self.public_keys = pub_key;
+        self.loaded_public_keys = pub_key;
         self
     }
 
     /// Get Identity public keys revision
     pub fn get_public_keys(&self) -> &BTreeMap<KeyID, IdentityPublicKey> {
-        &self.public_keys
+        &self.loaded_public_keys
     }
 
     /// Get Identity public keys revision
     pub fn get_public_keys_mut(&mut self) -> &mut BTreeMap<KeyID, IdentityPublicKey> {
-        &mut self.public_keys
+        &mut self.loaded_public_keys
     }
 
     /// Returns a public key for a given id
     pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey> {
-        self.public_keys.get(&key_id)
+        self.loaded_public_keys.get(&key_id)
     }
 
     /// Returns a public key for a given id
     pub fn get_public_key_by_id_mut(&mut self, key_id: KeyID) -> Option<&mut IdentityPublicKey> {
-        self.public_keys.get_mut(&key_id)
+        self.loaded_public_keys.get_mut(&key_id)
     }
 
     /// Add identity public keys
     pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = (KeyID, IdentityPublicKey)>) {
-        self.public_keys.extend(keys);
+        self.loaded_public_keys.extend(keys);
     }
 
     /// Returns balance
@@ -129,7 +129,7 @@ impl Identity {
 
     /// Get the biggest public KeyID
     pub fn get_public_key_max_id(&self) -> KeyID {
-        self.public_keys
+        self.loaded_public_keys
             .keys()
             .map(|pk| *pk)
             .max()
@@ -205,7 +205,7 @@ impl Identity {
         Ok(Self {
             protocol_version,
             id: identity_id.into(),
-            public_keys,
+            loaded_public_keys: public_keys,
             balance,
             revision,
             asset_lock_proof: None,

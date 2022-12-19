@@ -95,7 +95,7 @@ impl Drive {
 
         let Identity {
             id,
-            public_keys,
+            loaded_public_keys: public_keys,
             revision,
             balance,
             ..
@@ -187,7 +187,7 @@ mod tests {
             .expect("expected to insert identity");
 
         let (fetched_identity, _) = drive
-            .fetch_identity(&identity.id.buffer, Some(&transaction))
+            .fetch_full_identity(&identity.id.buffer, Some(&transaction))
             .expect("should fetch an identity");
 
         assert_eq!(

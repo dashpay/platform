@@ -89,8 +89,8 @@ pub enum DriveError {
     CorruptedElementType(&'static str),
 
     /// Error
-    #[error("corrupted balance not found error: {0}")]
-    CorruptedBalanceNotFound(String),
+    #[error("corrupted drive state error: {0}")]
+    CorruptedDriveState(String),
 
     /// Error
     #[error("corrupted element flags error: {0}")]

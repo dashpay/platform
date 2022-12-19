@@ -50,7 +50,7 @@ pub fn get_biggest_possible_identity() -> Identity {
     Identity {
         id: generate_random_identifier_struct(),
         protocol_version: 1,
-        public_keys,
+        loaded_public_keys: public_keys,
         balance: u64::MAX,
         revision: u64::MAX,
 
