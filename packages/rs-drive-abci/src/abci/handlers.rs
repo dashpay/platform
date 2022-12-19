@@ -199,20 +199,28 @@ mod tests {
         use crate::abci::handlers::TenderdashAbci;
         use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use chrono::{Duration, Utc};
+        use dashcore::hashes::hex::FromHex;
+        use dashcore::BlockHash;
+        use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee::FeeResult;
+        use drive::rpc::core::MockCoreRPCLike;
         use rust_decimal::prelude::ToPrimitive;
+        use serde_json::json;
         use std::ops::Div;
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, InitChainRequest,
         };
-        use crate::common::helpers::setup::setup_platform;
+        use crate::common::helpers::setup::{setup_platform, setup_system_data_contract};
 
         #[test]
         fn test_abci_flow() {
-            let platform = setup_platform();
+            let mut platform = setup_platform();
+
+            let mut core_rpc_mock = MockCoreRPCLike::new();
+
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
@@ -221,6 +229,12 @@ mod tests {
             platform
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
+
+            setup_system_data_contract(
+                &platform.drive,
+                get_withdrawals_data_contract_fixture(None),
+                Some(&transaction),
+            );
 
             // Init withdrawal requests
             let withdrawals = (0..16)
@@ -272,6 +286,23 @@ mod tests {
             let block_interval = 86400i64.div(blocks_per_day);
 
             let mut previous_block_time_ms: Option<u64> = None;
+
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(total_days)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(total_days)
+                .returning(|_| Ok(json!({})));
+
+            platform.drive.core_rpc = Some(Box::new(core_rpc_mock));
 
             // process blocks
             for day in 0..total_days {
@@ -422,7 +453,27 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let platform = setup_platform();
+            let mut platform = setup_platform();
+
+            let mut core_rpc_mock = MockCoreRPCLike::new();
+
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(1) // TODO: investigate why it always n + 1
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(1) // TODO: investigate why it always n + 1
+                .returning(|_| Ok(json!({})));
+
+            platform.drive.core_rpc = Some(Box::new(core_rpc_mock));
+
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
@@ -431,6 +482,12 @@ mod tests {
             platform
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
+
+            setup_system_data_contract(
+                &platform.drive,
+                get_withdrawals_data_contract_fixture(None),
+                Some(&transaction),
+            );
 
             // setup the contract
             let contract = platform.create_mn_shares_contract(Some(&transaction));
