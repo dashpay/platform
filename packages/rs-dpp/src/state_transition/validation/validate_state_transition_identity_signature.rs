@@ -1,11 +1,10 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, convert::TryInto};
 
 use lazy_static::lazy_static;
 
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
@@ -40,8 +39,11 @@ pub async fn validate_state_transition_identity_signature(
 
     // Owner must exist
     let maybe_identity = state_repository
-        .fetch_identity::<Identity>(state_transition.get_owner_id(), &tmp_execution_context)
-        .await?;
+        .fetch_identity(state_transition.get_owner_id(), &tmp_execution_context)
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     // Collect operations back from temporary context
     state_transition

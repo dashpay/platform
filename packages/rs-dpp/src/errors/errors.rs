@@ -135,6 +135,9 @@ pub enum ProtocolError {
     DocumentNotProvided {
         document_transition: DocumentTransition,
     },
+
+    #[error("Identity is not present")]
+    IdentityNotPresentError { id: Identifier },
 }
 
 impl From<NonConsensusError> for ProtocolError {

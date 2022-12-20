@@ -13,7 +13,10 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
-use crate::{identifier::IdentifierWrapper, DataContractWasm, StateTransitionExecutionContextWasm};
+use crate::{
+    identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
+    StateTransitionExecutionContextWasm,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -32,6 +35,13 @@ extern "C" {
         data_contract: DataContractWasm,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
+
+    #[wasm_bindgen(structural, method, js_name=fetchIdentity)]
+    pub fn fetch_identity(
+        this: &ExternalStateRepositoryLike,
+        id: IdentifierWrapper,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> Option<IdentityWasm>;
 
     // TODO add missing declarations
 }
@@ -53,6 +63,7 @@ impl ExternalStateRepositoryLikeWrapper {
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
+    type FetchIdentity = IdentityWasm;
 
     async fn fetch_data_contract(
         &self,
@@ -132,15 +143,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 
-    async fn fetch_identity<T>(
+    async fn fetch_identity(
         &self,
-        _id: &Identifier,
-        _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
-        todo!()
+        id: &Identifier,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> anyhow::Result<Option<Self::FetchIdentity>> {
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_identity(id.clone().into(), execution_context.clone().into())
+            .map(Into::into))
     }
 
     async fn store_identity_public_key_hashes(

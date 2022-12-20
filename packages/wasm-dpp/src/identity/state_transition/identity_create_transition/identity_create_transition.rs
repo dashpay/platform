@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
-use crate::state_transition::AssetLockProofWasm;
+use crate::identity::state_transition::AssetLockProofWasm;
+
 use crate::{
     buffer::Buffer,
     errors::RustConversionError,
@@ -12,6 +13,7 @@ use crate::{
         state_transition::asset_lock_proof::{ChainAssetLockProofWasm, InstantAssetLockProofWasm},
         IdentityPublicKeyWasm,
     },
+    state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 
@@ -75,6 +77,12 @@ struct IdentityCreateTransitionParams {
 impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {
     fn from(v: IdentityCreateTransition) -> Self {
         IdentityCreateTransitionWasm(v)
+    }
+}
+
+impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
+    fn from(v: IdentityCreateTransitionWasm) -> Self {
+        v.0
     }
 }
 
@@ -366,5 +374,10 @@ impl IdentityCreateTransitionWasm {
                 <IdentifierWrapper as std::convert::From<Identifier>>::from(id.clone()).into()
             })
             .collect()
+    }
+
+    #[wasm_bindgen(js_name=setExecutionContext)]
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
     }
 }

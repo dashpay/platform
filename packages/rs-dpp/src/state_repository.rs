@@ -19,11 +19,12 @@ impl From<Infallible> for ProtocolError {
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(test, automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
+#[cfg_attr(test, automock(type ConversionError=Infallible; type FetchDataContract=DataContract; type FetchIdentity=Identity;))]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
+    type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;
 
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
@@ -87,13 +88,11 @@ pub trait StateRepositoryLike: Send + Sync {
 
     /// Fetch Identity by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
-    async fn fetch_identity<T>(
+    async fn fetch_identity(
         &self,
         id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Option<Self::FetchIdentity>>;
 
     /// Store Public Key hashes and Identity id pair
     async fn store_identity_public_key_hashes(
