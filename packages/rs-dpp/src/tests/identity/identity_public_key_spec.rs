@@ -66,7 +66,7 @@ mod from_raw_object {
 
         let public_key = IdentityPublicKey::from_json_object(public_key_json)
             .expect("the public key should be created");
-        assert_eq!(public_key.get_type(), KeyType::BIP13_SCRIPT_HASH);
+        assert_eq!(public_key.key_type, KeyType::BIP13_SCRIPT_HASH);
         assert_eq!(
             public_key.hash().unwrap(),
             [
@@ -160,7 +160,7 @@ mod from_raw_object {
 
         let public_key = IdentityPublicKey::from_raw_object(public_key_json)
             .expect("the public key should be created");
-        assert_eq!(public_key.get_type(), KeyType::ECDSA_SECP256K1);
+        assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
         assert_eq!(
             vec![
                 92, 158, 158, 5, 73, 213, 211, 15, 121, 255, 72, 55, 220, 47, 233, 182, 143, 218,
@@ -188,7 +188,7 @@ mod from_raw_object {
 
         let public_key = IdentityPublicKey::from_raw_object(public_key_json)
             .expect("the public key should be created");
-        assert_eq!(public_key.get_type(), KeyType::BLS12_381);
+        assert_eq!(public_key.key_type, KeyType::BLS12_381);
         assert_eq!(
             vec![
                 111, 89, 76, 223, 228, 50, 201, 143, 165, 74, 149, 193, 215, 143, 217, 170, 49,

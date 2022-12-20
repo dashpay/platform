@@ -135,9 +135,13 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
     js_object.set(cx, "type", js_type_string)?;
 
     let maybe_js_value: Option<Handle<JsValue>> = match element {
-        Element::Item(item, _) | Element::SumItem(item, ..) => {
+        Element::Item(item, _) => {
             let js_buffer = JsBuffer::external(cx, item);
             Some(js_buffer.upcast())
+        }
+        Element::SumItem(item, ..) => {
+            let js_number = JsNumber::new(cx, item as f64);
+            Some(js_number.upcast())
         }
         Element::Reference(reference, _, _) => {
             let reference = reference_to_dictionary(cx, reference)?;
@@ -217,6 +221,13 @@ pub fn reference_to_dictionary<'a, C: Context<'a>>(
 
             js_object.set(cx, "type", js_type_name)?;
             js_object.set(cx, "key", js_key)?;
+        }
+        ReferencePathType::RemovedCousinReference(path) => {
+            let js_type_name = cx.string("removedCousinReference");
+            let js_path = nested_vecs_to_js(cx, path)?;
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "path", js_path)?;
         }
     }
 

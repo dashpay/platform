@@ -275,6 +275,7 @@ impl Platform {
                     .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
                         "payToId property type is not bytes",
                     )))?
+                    .clone()
                     .try_into()
                     .map_err(|_| {
                         Error::Execution(ExecutionError::DriveIncoherence(
@@ -346,7 +347,7 @@ impl Platform {
                 })?;
 
             self.drive.add_to_identity_balance_operations(
-                proposer_tx_hash.try_into().map_err(|_| {
+                proposer_tx_hash.as_slice().try_into().map_err(|_| {
                     Error::Execution(ExecutionError::DriveIncoherence(
                         "proposer_tx_hash is not 32 bytes long",
                     ))

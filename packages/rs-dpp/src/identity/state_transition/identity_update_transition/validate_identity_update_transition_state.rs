@@ -102,10 +102,13 @@ where
             for key_id in state_transition.get_public_key_ids_to_disable().iter() {
                 // the `unwrap()` can be used as the presence if of `key_id` is guaranteed by previous
                 // validation
-                identity
-                    .get_public_key_by_id_mut(*key_id)
-                    .unwrap()
-                    .disabled_at = state_transition.get_public_keys_disabled_at();
+                if let Some(disabled_at) = state_transition.get_public_keys_disabled_at() {
+                    //todo: no unwrap, error instead
+                    identity
+                        .get_public_key_by_id_mut(*key_id)
+                        .unwrap()
+                        .set_disabled_at(disabled_at);
+                }
             }
 
             let block_header: BlockHeader = self

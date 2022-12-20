@@ -844,9 +844,6 @@ impl PlatformWrapper {
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
-        let identity =
-            Identity::from_buffer(identity_cbor).or_else(|e| cx.throw_error(e.to_string()))?;
-
         drive
             .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
                 let transaction_result = if using_transaction {
@@ -859,19 +856,13 @@ impl PlatformWrapper {
                     Ok(None)
                 };
 
-                let storage_flags = StorageFlags::new_single_epoch(
-                    block_info.epoch.index,
-                    Some(identity.id.to_buffer()),
-                );
-
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .insert_identity(
-                            identity,
-                            block_info,
+                        .add_new_identity_from_cbor_encoded_bytes(
+                            identity_cbor,
+                            &block_info,
                             apply,
-                            Some(storage_flags).as_ref(),
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())

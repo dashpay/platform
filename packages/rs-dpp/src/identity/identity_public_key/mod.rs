@@ -34,14 +34,15 @@ pub type TimestampMillis = u64;
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKey {
     pub id: KeyID,
     pub purpose: Purpose,
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
-    pub data: Vec<u8>,
     pub read_only: bool,
+    pub data: Vec<u8>,
     pub disabled_at: Option<TimestampMillis>,
 }
 
@@ -84,75 +85,14 @@ impl std::convert::Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
 }
 
 impl IdentityPublicKey {
-    /// Get key ID
-    pub fn get_id(&self) -> KeyID {
-        self.id
-    }
-
-    /// Set key ID
-    pub fn set_id(mut self, id: KeyID) -> Self {
-        self.id = id;
-        self
-    }
-
-    /// Get key type
-    pub fn get_type(&self) -> KeyType {
-        self.key_type
-    }
-
-    /// Set key type
-    pub fn set_type(mut self, key_type: KeyType) -> Self {
-        self.key_type = key_type;
-        self
-    }
-
     /// Get raw public key
     pub fn get_data(&self) -> &[u8] {
         &self.data
     }
 
     /// Set raw public key
-    pub fn set_data(mut self, data: Vec<u8>) -> Self {
+    pub fn set_data(&mut self, data: Vec<u8>) {
         self.data = data;
-        self
-    }
-
-    /// Get the purpose value
-    pub fn get_purpose(&self) -> Purpose {
-        self.purpose
-    }
-
-    /// Set the purpose value
-    pub fn set_purpose(mut self, purpose: Purpose) -> Self {
-        self.purpose = purpose;
-        self
-    }
-
-    /// Get the raw security level value. A uint8 number
-    pub fn get_security_level(&self) -> SecurityLevel {
-        self.security_level
-    }
-
-    /// Set the raw security level
-    //? maybe we should replace the enum with impl TryInto<SecurityLevel> or Into<SecurityLevel>
-    pub fn set_security_level(&mut self, security_level: SecurityLevel) {
-        self.security_level = security_level;
-    }
-
-    /// Get readOnly flag
-    pub fn get_readonly(&self) -> bool {
-        self.read_only
-    }
-
-    /// Set readOnly flag
-    pub fn set_readonly(mut self, ro: bool) -> Self {
-        self.read_only = ro;
-        self
-    }
-
-    /// Get disabledAt
-    pub fn get_disabled_at(&self) -> Option<TimestampMillis> {
-        self.disabled_at
     }
 
     /// Set disabledAt
@@ -270,13 +210,13 @@ impl IdentityPublicKey {
     pub fn to_cbor_value(&self) -> CborValue {
         let mut pk_map = CborCanonicalMap::new();
 
-        pk_map.insert("id", self.get_id());
-        pk_map.insert("data", self.get_data());
-        pk_map.insert("type", self.get_type());
-        pk_map.insert("purpose", self.get_purpose());
-        pk_map.insert("readOnly", self.get_readonly());
-        pk_map.insert("securityLevel", self.get_security_level());
-        if let Some(ts) = self.get_disabled_at() {
+        pk_map.insert("id", self.id);
+        pk_map.insert("data", self.data.as_slice());
+        pk_map.insert("type", self.key_type);
+        pk_map.insert("purpose", self.purpose);
+        pk_map.insert("readOnly", self.read_only);
+        pk_map.insert("securityLevel", self.security_level);
+        if let Some(ts) = self.disabled_at {
             pk_map.insert("disabledAt", ts)
         }
 

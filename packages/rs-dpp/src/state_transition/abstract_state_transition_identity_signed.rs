@@ -27,7 +27,7 @@ where
         self.verify_public_key_level_and_purpose(identity_public_key)?;
         self.verify_public_key_is_enabled(identity_public_key)?;
 
-        match identity_public_key.get_type() {
+        match identity_public_key.key_type {
             KeyType::ECDSA_SECP256K1 => {
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
 
@@ -41,7 +41,7 @@ where
                     });
                 }
 
-                self.sign_by_private_key(private_key, identity_public_key.get_type(), bls)
+                self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
             KeyType::ECDSA_HASH160 => {
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
@@ -52,7 +52,7 @@ where
                         public_key: identity_public_key.get_data().to_owned(),
                     });
                 }
-                self.sign_by_private_key(private_key, identity_public_key.get_type(), bls)
+                self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
             KeyType::BLS12_381 => {
                 let public_key = bls.private_key_to_public_key(private_key)?;
@@ -62,14 +62,14 @@ where
                         public_key: identity_public_key.get_data().to_owned(),
                     });
                 }
-                self.sign_by_private_key(private_key, identity_public_key.get_type(), bls)
+                self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
 
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
-                public_key_type: identity_public_key.get_type(),
+                public_key_type: identity_public_key.key_type,
             }),
         }
     }
@@ -88,14 +88,14 @@ where
             });
         }
 
-        if self.get_signature_public_key_id() != public_key.get_id() {
+        if self.get_signature_public_key_id() != public_key.id {
             return Err(ProtocolError::PublicKeyMismatchError {
                 public_key: public_key.clone(),
             });
         }
 
         let public_key_bytes = public_key.get_data();
-        match public_key.get_type() {
+        match public_key.key_type {
             KeyType::ECDSA_HASH160 => {
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
             }
@@ -120,22 +120,22 @@ where
         if public_key.is_master() && self.get_security_level_requirement() != SecurityLevel::MASTER
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
-                public_key_security_level: public_key.get_security_level(),
+                public_key_security_level: public_key.security_level,
                 required_security_level: self.get_security_level_requirement(),
             });
         }
 
         // Otherwise, key security level should be less than MASTER but more or equal than required
-        if self.get_security_level_requirement() < public_key.get_security_level() {
+        if self.get_security_level_requirement() < public_key.security_level {
             return Err(ProtocolError::PublicKeySecurityLevelNotMetError {
-                public_key_security_level: public_key.get_security_level(),
+                public_key_security_level: public_key.security_level,
                 required_security_level: self.get_security_level_requirement(),
             });
         }
 
-        if public_key.get_purpose() != Purpose::AUTHENTICATION {
+        if public_key.purpose != Purpose::AUTHENTICATION {
             return Err(ProtocolError::WrongPublicKeyPurposeError {
-                public_key_purpose: public_key.get_purpose(),
+                public_key_purpose: public_key.purpose,
                 key_purpose_requirement: Purpose::AUTHENTICATION,
             });
         }
@@ -146,7 +146,7 @@ where
         &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        if public_key.get_disabled_at().is_some() {
+        if public_key.disabled_at.is_some() {
             return Err(ProtocolError::PublicKeyIsDisabledError {
                 public_key: public_key.to_owned(),
             });
@@ -587,8 +587,7 @@ mod test {
         let mut keys = get_test_keys();
 
         st.transition_type = StateTransitionType::DataContractCreate;
-        keys.identity_public_key
-            .set_security_level(SecurityLevel::MASTER);
+        keys.identity_public_key.security_level = SecurityLevel::MASTER;
 
         let result = st
             .sign(&keys.identity_public_key, &keys.bls_private, &bls)

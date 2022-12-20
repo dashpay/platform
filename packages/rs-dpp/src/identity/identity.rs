@@ -46,9 +46,8 @@ impl Identity {
     }
 
     /// Set Identity public key
-    pub fn set_public_keys(mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) -> Self {
+    pub fn set_public_keys(&mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) {
         self.loaded_public_keys = pub_key;
-        self
     }
 
     /// Get Identity public keys revision

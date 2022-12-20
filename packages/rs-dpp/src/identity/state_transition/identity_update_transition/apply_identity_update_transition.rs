@@ -59,7 +59,9 @@ pub async fn apply_identity_update_transition(
     if !state_transition.get_public_key_ids_to_disable().is_empty() {
         for id in state_transition.get_public_key_ids_to_disable() {
             if let Some(ref mut public_key) = identity.get_public_key_by_id_mut(*id) {
-                public_key.disabled_at = state_transition.get_public_keys_disabled_at();
+                if let Some(disabled_at) = state_transition.get_public_keys_disabled_at() {
+                    public_key.set_disabled_at(disabled_at);
+                }
             }
         }
     }

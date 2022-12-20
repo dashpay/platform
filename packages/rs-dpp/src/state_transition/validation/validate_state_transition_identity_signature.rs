@@ -71,9 +71,9 @@ pub async fn validate_state_transition_identity_signature(
         Some(pk) => pk,
     };
 
-    if !SUPPORTED_KEY_TYPES.contains(&public_key.get_type()) {
+    if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type) {
         validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError {
-            public_key_type: public_key.get_type(),
+            public_key_type: public_key.key_type,
         });
         return Ok(validation_result);
     }
@@ -122,7 +122,7 @@ fn convert_to_consensus_signature_error(
         )),
         ProtocolError::PublicKeyIsDisabledError { public_key } => Ok(
             ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError {
-                public_key_id: public_key.get_id(),
+                public_key_id: public_key.id,
             }),
         ),
         ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type } => {
