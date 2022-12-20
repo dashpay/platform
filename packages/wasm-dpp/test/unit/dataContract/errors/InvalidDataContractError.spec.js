@@ -1,9 +1,17 @@
-const InvalidDataContractError = require('@dashevo/dpp/lib/dataContract/errors/InvalidDataContractError');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+
+const { default: loadWasmDpp } = require('../../../../dist');
 
 describe('InvalidDataContractError', () => {
   let rawDataContract;
   let error;
+  let InvalidDataContractError;
+
+  before(async () => {
+    ({
+      InvalidDataContractError,
+    } = await loadWasmDpp());
+  });
 
   beforeEach(() => {
     error = new Error('Some error');
@@ -33,7 +41,7 @@ describe('InvalidDataContractError', () => {
 
     const invalidDataContractError = new InvalidDataContractError(errors, rawDataContract);
 
-    expect(invalidDataContractError.message).to.equal(`Invalid Data Contract: "${error.message}"`);
+    expect(invalidDataContractError.getMessage()).to.equal(`Data contract decode error: "${error.message}"`);
   });
 
   it('should contain message for multiple errors', async () => {
@@ -41,6 +49,6 @@ describe('InvalidDataContractError', () => {
 
     const invalidDataContractError = new InvalidDataContractError(errors, rawDataContract);
 
-    expect(invalidDataContractError.message).to.equal(`Invalid Data Contract: "${error.message}" and 1 more`);
+    expect(invalidDataContractError.getMessage()).to.equal(`Data contract decode error: "${error.message}" and 1 more`);
   });
 });
