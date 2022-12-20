@@ -27,9 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fee pool constants.
+//! Epochs
 //!
-//! This module defines constants related to fee distribution pools.
+//! Fee distribution is based on epochs. One epoch is about 18 days
 //!
 
 use crate::fee::credits::{Credits, SignedCredits};

@@ -27,10 +27,17 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fee pool constants.
+//! Credits
 //!
-//! This module defines constants related to fee distribution pools.
+//! Credits are Platform native token and used for micro payments
+//! between identities, state transitions fees and masternode rewards
 //!
+//! Credits are minted on Platform by locking Dash on payment chain and
+//! can be withdrawn back to the payment chain by burning them on Platform
+//! and unlocking dash on the payment chain.
+//!
+
+// TODO: Should be moved to DPP when integration is done
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -53,6 +60,9 @@ pub trait Creditable: Into<Decimal> {
     fn to_signed(&self) -> Result<SignedCredits, Error>;
     /// Convert singed credit to unsigned
     fn to_unsigned(&self) -> Credits;
+
+    // TODO: Should we implement serialize / unserialize traits instead?
+
     /// Decode bytes to credits
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error>;
     /// Encode credits to bytes

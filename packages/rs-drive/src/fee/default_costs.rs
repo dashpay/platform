@@ -27,9 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fee pool constants.
+//! Fee costs
 //!
-//! This module defines constants related to fee distribution pools.
+//! Fee costs for Drive (GroveDB) operations
 //!
 
 /// Storage disk usage credit per byte

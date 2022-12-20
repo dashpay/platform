@@ -32,7 +32,7 @@ function calculateStateTransitionFee(stateTransition) {
       throw new Error('State Transition removed bytes from different identity');
     }
 
-    // TODO: We should deduct leftovers
+    // TODO: We should deduct leftovers and already paid epochs
 
     feeRefundsSum = feeRefunds[0].creditsPerEpoch.entries()
       .reduce((sum, [, credits]) => sum + credits, 0);

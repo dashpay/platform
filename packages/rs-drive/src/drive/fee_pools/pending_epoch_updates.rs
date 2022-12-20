@@ -28,6 +28,14 @@
 
 //! Pending epoch pool updates
 //!
+//! Credit refunds are calculated when data is removed for the state.
+//! Identity is refunded immediately when we update Identity balance
+//! after state transition execution, but epoch pools must be updated
+//! as well to deduct refunded amount. To do not update every block all
+//! storage epoch pools, we introduce additional structure which aggregate
+//! all pending updates for epoch storage pools and apply them during
+//! storage fee distribution on epoch change.
+//!
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::fee_pools::pools_pending_updates_path;

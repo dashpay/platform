@@ -27,9 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fee pool constants.
+//! Fee Refunds
 //!
-//! This module defines constants related to fee distribution pools.
+//! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
 use crate::error::fee::FeeError;

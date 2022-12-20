@@ -27,9 +27,12 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fee pool constants.
+//! Fee Result
 //!
-//! This module defines constants related to fee distribution pools.
+//! Each drive operation returns FeeResult after execution.
+//! This result contains fees which are required to pay for
+//! computation and storage. It also contains fees to refund
+//! for removed data from the state.
 //!
 
 use crate::error::fee::FeeError;

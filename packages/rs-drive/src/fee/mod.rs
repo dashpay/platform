@@ -27,6 +27,8 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+// TODO: Should be moved to DPP when integration is done
+
 use enum_map::EnumMap;
 
 use crate::error::fee::FeeError;

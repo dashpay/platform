@@ -27,9 +27,13 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Fee pool constants.
+//! Storage fee distribution into epochs
 //!
-//! This module defines constants related to fee distribution pools.
+//! Data is stored in Platform "forever" currently, which is 50 years.
+//! To incentivise masternodes to continue store and serve this data,
+//! payments are distributed for entire period split into epochs.
+//! Every epoch, new aggregated storage fees are distributed among epochs
+//! and masternodes receive payouts for previous epoch.
 //!
 
 use crate::error::fee::FeeError;
