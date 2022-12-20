@@ -21,7 +21,7 @@ function handleUpdatedScriptPayoutFactory(
    * @param {Script} newPayoutScript
    * @param {BlockInfo} blockInfo
    * @param {Script} [previousPayoutScript]
-   * @returns {Promise<void>}
+   * @returns {Promise<Identity|void>}
    */
   async function handleUpdatedScriptPayout(
     identityId,
@@ -88,6 +88,8 @@ function handleUpdatedScriptPayoutFactory(
       identity.getId(),
       { useTransaction: true },
     );
+
+    return identity;
   }
 
   return handleUpdatedScriptPayout;

@@ -513,6 +513,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.fromHeight).to.be.equal(0);
     expect(result.toHeight).to.be.equal(3);
     expect(result.createdEntities).to.have.lengthOf(6);
+    expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash(firstSyncAppHash);
@@ -689,6 +690,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(45);
     expect(result.createdEntities).to.have.lengthOf(2);
+    expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
     // Nothing happened
@@ -745,6 +747,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
     expect(result.createdEntities).to.have.lengthOf(4);
+    expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash('c5bfc7b21f420b4dac0201c6a941aa0801ff0aa55d0f0ff70ca5d369ec31bd65');
@@ -828,6 +831,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
     expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('25bd044189691f61a872ab485c70554fa86136d8aa34b3d0b30cf5e75f15670a');
@@ -895,6 +899,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
     expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('25bd044189691f61a872ab485c70554fa86136d8aa34b3d0b30cf5e75f15670a');
@@ -944,6 +949,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
     expect(result.createdEntities).to.have.lengthOf(2);
+    expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('955896708aa0372060544d21311e2fc8f21205fe3c52e53e6777787f443f08bc');

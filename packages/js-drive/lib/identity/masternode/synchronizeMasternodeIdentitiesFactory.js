@@ -39,6 +39,7 @@ function synchronizeMasternodeIdentitiesFactory(
    * @param {BlockInfo} blockInfo
    * @return {Promise<{
    *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
    *  removedEntities: Array<Document>,
    *  fromHeight: number,
    *  toHeight: number,
@@ -55,6 +56,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     let newMasternodes;
     let createdEntities = [];
+    let updatedEntities = [];
     let removedEntities = [];
     let previousMNList = [];
 
@@ -100,15 +102,15 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousMnEntry) {
-          const updatedEntities = await handleUpdatedPubKeyOperator(
+          const affectedEntities = await handleUpdatedPubKeyOperator(
             mnEntry,
             previousMnEntry,
             dataContract,
             blockInfo,
           );
 
-          createdEntities = createdEntities.concat(updatedEntities.createdEntities);
-          removedEntities = removedEntities.concat(updatedEntities.removedEntities);
+          createdEntities = createdEntities.concat(affectedEntities.createdEntities);
+          removedEntities = removedEntities.concat(affectedEntities.removedEntities);
         }
 
         const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
@@ -136,12 +138,16 @@ function synchronizeMasternodeIdentitiesFactory(
               ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
               : undefined;
 
-            await handleUpdatedScriptPayout(
+            const updatedEntity = await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
               blockInfo,
               previousPayoutScript,
             );
+
+            if (updatedEntity) {
+              updatedEntities.push(updatedEntity);
+            }
           }
         }
 
@@ -161,12 +167,16 @@ function synchronizeMasternodeIdentitiesFactory(
               ? new Script(Address.fromString(operatorPayoutAddress))
               : undefined;
 
-            await handleUpdatedScriptPayout(
+            const updatedEntity = await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
               blockInfo,
               previousOperatorPayoutScript,
             );
+
+            if (updatedEntity) {
+              updatedEntities.push(updatedEntity);
+            }
           }
         }
       }
@@ -214,6 +224,7 @@ function synchronizeMasternodeIdentitiesFactory(
       fromHeight,
       toHeight: coreHeight,
       createdEntities,
+      updatedEntities,
       removedEntities,
     };
   }

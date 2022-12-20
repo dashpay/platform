@@ -68,7 +68,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     const newPubKeyData = Buffer.alloc(20, '0');
     const identityPublicKeys = identity.getPublicKeys();
 
-    await handleUpdatedScriptPayout(
+    const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
       identity.publicKeys[0].getData(),
@@ -98,13 +98,16 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.getId(),
       { useTransaction: true },
     );
+
+    expect(result).to.be.instanceOf(Identity);
+    expect(result.toJSON()).to.deep.equal(identityToStore.toJSON());
   });
 
   it('should store add public keys to the stored identity', async () => {
     const newPubKeyData = Buffer.alloc(20, '0');
     const identityPublicKeys = identity.getPublicKeys();
 
-    await handleUpdatedScriptPayout(
+    const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
       new Script(),
@@ -131,5 +134,8 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.getId(),
       { useTransaction: true },
     );
+
+    expect(result).to.be.instanceOf(Identity);
+    expect(result.toJSON()).to.deep.equal(identityToStore.toJSON());
   });
 });

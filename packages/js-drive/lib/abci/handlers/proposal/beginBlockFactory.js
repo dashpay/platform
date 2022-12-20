@@ -184,6 +184,7 @@ function beginBlockFactory(
         consensusLogger.trace(
           {
             createdEntities: createdEntities.map((item) => item.toJSON()),
+            updatedEntities: updatedEntities.map((item) => item.toJSON()),
             removedEntities: removedEntities.map((item) => item.toJSON()),
           },
           'Synchronized masternode identities',
