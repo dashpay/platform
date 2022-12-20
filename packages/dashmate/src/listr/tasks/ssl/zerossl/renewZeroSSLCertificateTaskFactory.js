@@ -76,7 +76,7 @@ function renewZeroSSLCertificateTaskFactory(
         task: async (ctx) => {
           config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.response.id);
 
-          await saveCertificateTask(config);
+          return saveCertificateTask(config);
         },
       },
       {
