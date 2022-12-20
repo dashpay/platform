@@ -95,7 +95,7 @@ impl Drive {
 
         let Identity {
             id,
-            loaded_public_keys: public_keys,
+            public_keys: public_keys,
             revision,
             balance,
             ..

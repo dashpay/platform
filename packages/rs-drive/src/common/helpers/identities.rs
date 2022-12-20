@@ -39,19 +39,18 @@ use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType};
 use grovedb::TransactionArg;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::collections::BTreeMap;
 
 /// Creates a test identity from an id and inserts it into Drive.
-pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: TransactionArg) -> Identity {
-    let identity_key = IdentityPublicKey {
-        id: 1,
-        key_type: KeyType::ECDSA_SECP256K1,
-        data: vec![0, 1, 2, 3],
-        purpose: dpp::identity::Purpose::AUTHENTICATION,
-        security_level: dpp::identity::SecurityLevel::MASTER,
-        read_only: false,
-        disabled_at: None,
-    };
+pub fn create_test_identity(
+    drive: &Drive,
+    id: [u8; 32],
+    rng: &mut StdRng,
+    transaction: TransactionArg,
+) -> Identity {
+    let identity_key = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(1, rng);
 
     let mut public_keys = BTreeMap::new();
 
@@ -62,7 +61,7 @@ pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: Transactio
         revision: 1,
         balance: 0,
         protocol_version: 0,
-        loaded_public_keys: public_keys,
+        public_keys,
         asset_lock_proof: None,
         metadata: None,
     };
@@ -105,9 +104,10 @@ pub fn create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
     drive: &Drive,
     epoch: &Epoch,
     count: u16,
+    seed: Option<u64>,
     transaction: TransactionArg,
 ) -> Vec<[u8; 32]> {
-    let proposers = create_test_masternode_identities(drive, count, transaction);
+    let proposers = create_test_masternode_identities(drive, count, seed, transaction);
 
     increment_in_epoch_each_proposers_block_count(drive, epoch, &proposers, transaction);
 
@@ -118,14 +118,19 @@ pub fn create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
 pub fn create_test_masternode_identities(
     drive: &Drive,
     count: u16,
+    seed: Option<u64>,
     transaction: TransactionArg,
 ) -> Vec<[u8; 32]> {
+    let mut rng = match seed {
+        None => StdRng::from_entropy(),
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
+    };
     let mut identity_ids: Vec<[u8; 32]> = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
-        let proposer_pro_tx_hash: [u8; 32] = rand::random();
+        let proposer_pro_tx_hash = rng.gen::<[u8; 32]>();
 
-        create_test_identity(drive, proposer_pro_tx_hash, transaction);
+        create_test_identity(drive, proposer_pro_tx_hash, &mut rng, transaction);
 
         identity_ids.push(proposer_pro_tx_hash);
     }

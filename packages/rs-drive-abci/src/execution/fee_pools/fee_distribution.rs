@@ -495,6 +495,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_0,
                 proposers_count,
+                Some(59), //random number
                 Some(&transaction),
             );
 
@@ -573,6 +574,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_0,
                 proposers_count,
+                Some(57), //random number
                 Some(&transaction),
             );
 
@@ -580,6 +582,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_1,
                 proposers_count,
+                Some(58), //random number
                 Some(&transaction),
             );
 
@@ -666,6 +669,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_0,
                 proposers_count,
+                Some(62), //random number
                 Some(&transaction),
             );
 
@@ -673,6 +677,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_1,
                 proposers_count,
+                Some(61), //random number
                 Some(&transaction),
             );
 
@@ -680,6 +685,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_2,
                 proposers_count,
+                Some(60), //random number
                 Some(&transaction),
             );
 
@@ -745,6 +751,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch,
                 proposers_count,
+                Some(65), //random number
                 Some(&transaction),
             );
 
@@ -831,6 +838,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch,
                 proposers_count,
+                Some(66), //random number
                 Some(&transaction),
             );
 
@@ -1160,9 +1168,7 @@ mod tests {
     }
 
     mod add_epoch_pool_to_proposers_payout_operations {
-        use crate::common::helpers::fee_pools::{
-            create_test_masternode_share_identities_and_documents, refetch_identities,
-        };
+        use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use crate::execution::fee_pools::fee_distribution::UnpaidEpoch;
         use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
@@ -1216,6 +1222,7 @@ mod tests {
                     &platform.drive,
                     &unpaid_epoch_tree,
                     proposers_count,
+                    Some(68), //random number
                     Some(&transaction),
                 );
 
@@ -1224,6 +1231,7 @@ mod tests {
                     &platform.drive,
                     &contract,
                     &pro_tx_hashes,
+                    Some(55),
                     Some(&transaction),
                 );
 
@@ -1253,9 +1261,9 @@ mod tests {
             assert_eq!(proposers_paid_count, 10);
 
             // check we paid 500 to every mn identity
-            let paid_mn_identities = platform
+            let paid_mn_identities_balances = platform
                 .drive
-                .fetch_identities(&pro_tx_hashes, Some(&transaction))
+                .fetch_identities_balances(&pro_tx_hashes, Some(&transaction))
                 .expect("expected to get identities");
 
             let total_fees = Decimal::from(storage_fees + processing_fees);
@@ -1278,21 +1286,22 @@ mod tests {
 
             let payout_credits: u64 = payout_credits.try_into().expect("should convert to u64");
 
-            for paid_mn_identity in paid_mn_identities {
-                assert_eq!(paid_mn_identity.balance, payout_credits);
+            for (_, paid_mn_identity_balance) in paid_mn_identities_balances {
+                assert_eq!(paid_mn_identity_balance, payout_credits);
             }
 
             let share_identities = share_identities_and_documents
                 .iter()
-                .map(|(identity, _)| identity)
+                .map(|(identity, _)| identity.id.buffer)
                 .collect();
 
-            let refetched_share_identities =
-                refetch_identities(&platform.drive, share_identities, Some(&transaction))
-                    .expect("expected to refresh identities");
+            let refetched_share_identities_balances = platform
+                .drive
+                .fetch_identities_balances(&share_identities, Some(&transaction))
+                .expect("expected to get identities");
 
-            for identity in refetched_share_identities {
-                assert_eq!(identity.balance, payout_credits);
+            for (_, balance) in refetched_share_identities_balances {
+                assert_eq!(balance, payout_credits);
             }
         }
     }

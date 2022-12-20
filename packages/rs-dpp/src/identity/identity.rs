@@ -25,13 +25,46 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
 pub struct Identity {
     pub protocol_version: u32,
     pub id: Identifier,
-    pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+    #[serde(with = "public_key_serialization")]
+    pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
+}
+
+mod public_key_serialization {
+    use crate::identity::{IdentityPublicKey, KeyID};
+    use serde::ser::SerializeSeq;
+    use serde::{Deserialize, Serializer};
+    use std::collections::BTreeMap;
+
+    /// deserialize_public_keys deserializes public keys from a vector
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let public_key_vec: Vec<IdentityPublicKey> = Deserialize::deserialize(deserializer)?;
+        Ok(public_key_vec.into_iter().map(|k| (k.id, k)).collect())
+    }
+
+    pub fn serialize<S>(
+        public_keys: &BTreeMap<KeyID, IdentityPublicKey>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(public_keys.len()))?;
+        for element in public_keys.values() {
+            seq.serialize_element(element)?;
+        }
+        seq.end()
+    }
 }
 
 impl Identity {
@@ -47,33 +80,32 @@ impl Identity {
 
     /// Set Identity public key
     pub fn set_public_keys(&mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) {
-        self.loaded_public_keys = pub_key;
+        self.public_keys = pub_key;
     }
 
     /// Get Identity public keys revision
     pub fn get_public_keys(&self) -> &BTreeMap<KeyID, IdentityPublicKey> {
-        &self.loaded_public_keys
+        &self.public_keys
     }
 
     /// Get Identity public keys revision
     pub fn get_public_keys_mut(&mut self) -> &mut BTreeMap<KeyID, IdentityPublicKey> {
-        &mut self.loaded_public_keys
+        &mut self.public_keys
     }
 
     /// Returns a public key for a given id
     pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey> {
-        self.loaded_public_keys.get(&key_id)
+        self.public_keys.get(&key_id)
     }
 
     /// Returns a public key for a given id
     pub fn get_public_key_by_id_mut(&mut self, key_id: KeyID) -> Option<&mut IdentityPublicKey> {
-        self.loaded_public_keys.get_mut(&key_id)
+        self.public_keys.get_mut(&key_id)
     }
 
     /// Add identity public keys
     pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
-        self.loaded_public_keys
-            .extend(keys.into_iter().map(|a| (a.id, a)));
+        self.public_keys.extend(keys.into_iter().map(|a| (a.id, a)));
     }
 
     /// Returns balance
@@ -130,7 +162,7 @@ impl Identity {
 
     /// Get the biggest public KeyID
     pub fn get_public_key_max_id(&self) -> KeyID {
-        self.loaded_public_keys
+        self.public_keys
             .keys()
             .map(|pk| *pk)
             .max()
@@ -206,7 +238,7 @@ impl Identity {
         Ok(Self {
             protocol_version,
             id: identity_id.into(),
-            loaded_public_keys: public_keys,
+            public_keys,
             balance,
             revision,
             asset_lock_proof: None,

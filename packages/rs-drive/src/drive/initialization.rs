@@ -53,6 +53,11 @@ impl Drive {
             vec![RootTree::UniquePublicKeyHashesToIdentities as u8],
         );
 
+        batch.add_insert_empty_tree(
+            vec![],
+            vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],
+        );
+
         batch.add_insert_empty_tree(vec![], vec![RootTree::SpentAssetLockTransactions as u8]);
 
         batch.add_insert_empty_sum_tree(vec![], vec![RootTree::Pools as u8]);
@@ -106,6 +111,6 @@ mod tests {
                 &mut drive_operations,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 8);
+        assert_eq!(elements.len(), 9);
     }
 }

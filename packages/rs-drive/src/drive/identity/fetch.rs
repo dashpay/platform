@@ -26,11 +26,13 @@ use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::IdentityPublicKey;
-use grovedb::query_result_type::QueryResultType::QueryElementResultType;
+use grovedb::query_result_type::QueryResultType::{
+    QueryElementResultType, QueryKeyElementPairResultType,
+};
 use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::{VarInt, VarIntReader};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -456,17 +458,87 @@ impl Drive {
                 "revision not found on identity".to_string(),
             )))?;
 
-        let loaded_public_keys = self.fetch_all_identity_keys(identity_id, true, transaction)?;
+        let public_keys = self.fetch_all_identity_keys(identity_id, true, transaction)?;
         Ok(Some(Identity {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
-            loaded_public_keys,
+            public_keys,
             balance,
             revision,
             asset_lock_proof: None,
             metadata: None,
         }))
     }
+
+    /// Given a vector of identities, fetches the identities from storage.
+    pub fn verify_all_identities_exist(
+        &self,
+        ids: &Vec<[u8; 32]>,
+        transaction: TransactionArg,
+    ) -> Result<bool, Error> {
+        let mut query = Query::new();
+        for id in ids {
+            query.insert_item(QueryItem::Key(id.to_vec()));
+        }
+        let path_query = PathQuery {
+            path: vec![vec![RootTree::Identities as u8]],
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        };
+        let (result_items, _) = self
+            .grove
+            .query_raw(&path_query, QueryElementResultType, transaction)
+            .unwrap()
+            .map_err(Error::GroveDB)?;
+
+        Ok(result_items.len() == ids.len())
+    }
+
+    /// Given a vector of identities, fetches the identities from storage.
+    pub fn fetch_identities_balances(
+        &self,
+        ids: &Vec<[u8; 32]>,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<[u8; 32], u64>, Error> {
+        let mut query = Query::new();
+        for id in ids {
+            query.insert_item(QueryItem::Key(id.to_vec()));
+        }
+        let path_query = PathQuery {
+            path: vec![vec![RootTree::Balances as u8]],
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        };
+        let (result_items, _) = self
+            .grove
+            .query_raw(&path_query, QueryKeyElementPairResultType, transaction)
+            .unwrap()
+            .map_err(Error::GroveDB)?;
+
+        result_items
+            .to_key_elements()
+            .into_iter()
+            .map(|key_element| {
+                if let SumItem(balance, _) = &key_element.1 {
+                    let identifier: [u8; 32] = key_element.0.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization("expected 32 bytes"))
+                    })?;
+                    Ok((identifier, *balance as u64))
+                } else {
+                    Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
+                        "identity balance must be a sum item",
+                    )))
+                }
+            })
+            .collect()
+    }
+
     /// Given a vector of identities, fetches the identities from storage.
     pub fn fetch_identities(
         &self,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
+use serde_json::Value::Null;
 
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
@@ -26,10 +27,13 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
-        for raw_public_key in raw_public_keys
-            .iter()
-            .filter(|pk| pk.get("disabledAt").is_none())
-        {
+        for raw_public_key in raw_public_keys.iter().filter(|pk| {
+            if let Some(disabled_at) = pk.get("disabledAt") {
+                disabled_at == &Null
+            } else {
+                true
+            }
+        }) {
             let public_key: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,

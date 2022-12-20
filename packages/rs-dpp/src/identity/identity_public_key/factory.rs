@@ -1,3 +1,6 @@
+use crate::identity::KeyType::ECDSA_SECP256K1;
+use crate::identity::Purpose::AUTHENTICATION;
+use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::ProtocolError;
 use rand::rngs::StdRng;
@@ -68,6 +71,23 @@ impl IdentityPublicKey {
             disabled_at: None,
             data,
         })
+    }
+
+    pub fn random_ecdsa_master_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> Self {
+        let key_type = ECDSA_SECP256K1;
+        let purpose = AUTHENTICATION;
+        let security_level = MASTER;
+        let read_only = false;
+        let data = key_type.random_public_key_data(rng);
+        IdentityPublicKey {
+            id,
+            key_type,
+            purpose,
+            security_level,
+            read_only,
+            disabled_at: None,
+            data,
+        }
     }
 
     pub fn random_keys_with_rng(key_count: KeyCount, rng: &mut StdRng) -> Vec<Self> {

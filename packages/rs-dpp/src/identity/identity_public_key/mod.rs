@@ -43,31 +43,8 @@ pub struct IdentityPublicKey {
     pub key_type: KeyType,
     pub read_only: bool,
     pub data: Vec<u8>,
+    #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,
-}
-
-//? do we really need that???
-#[derive(Serialize, Deserialize, Debug)]
-pub struct JsonIdentityPublicKey {
-    pub id: KeyID,
-    pub purpose: Purpose,
-    pub security_level: SecurityLevel,
-    pub key_type: KeyType,
-    pub data: String,
-    pub read_only: bool,
-}
-
-impl std::convert::Into<JsonIdentityPublicKey> for &IdentityPublicKey {
-    fn into(self) -> JsonIdentityPublicKey {
-        JsonIdentityPublicKey {
-            id: self.id,
-            purpose: self.purpose,
-            security_level: self.security_level,
-            key_type: self.key_type,
-            read_only: self.read_only,
-            data: base64::encode(&self.data),
-        }
-    }
 }
 
 impl std::convert::Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {

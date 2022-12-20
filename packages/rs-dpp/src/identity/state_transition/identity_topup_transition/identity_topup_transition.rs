@@ -40,7 +40,11 @@ impl Default for IdentityTopUpTransition {
     fn default() -> Self {
         Self {
             transition_type: StateTransitionType::IdentityTopUp,
-            ..Default::default()
+            asset_lock_proof: Default::default(),
+            identity_id: Default::default(),
+            protocol_version: Default::default(),
+            signature: Default::default(),
+            execution_context: Default::default(),
         }
     }
 }

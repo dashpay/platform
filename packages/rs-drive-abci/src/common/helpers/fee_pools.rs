@@ -36,6 +36,8 @@ use std::collections::BTreeMap;
 
 use ciborium::value::Value;
 use drive::dpp::identity::Identity;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 use drive::common::helpers::identities::create_test_identity;
 use drive::contract::document::Document;
@@ -55,7 +57,7 @@ use crate::error::Error;
 fn create_test_mn_share_document(
     drive: &Drive,
     contract: &Contract,
-    identity: &Identity,
+    identity_id: [u8; 32],
     pay_to_identity: &Identity,
     percentage: u16,
     transaction: TransactionArg,
@@ -73,7 +75,7 @@ fn create_test_mn_share_document(
     let document = Document {
         id,
         properties,
-        owner_id: identity.id.buffer,
+        owner_id: identity_id,
     };
 
     let document_type = contract
@@ -112,43 +114,34 @@ pub fn create_test_masternode_share_identities_and_documents(
     drive: &Drive,
     contract: &Contract,
     pro_tx_hashes: &Vec<[u8; 32]>,
+    seed: Option<u64>,
     transaction: TransactionArg,
 ) -> Vec<(Identity, Document)> {
-    drive
-        .fetch_identities(pro_tx_hashes, transaction)
-        .expect("expected to fetch identities")
-        .iter()
-        .map(|mn_identity| {
-            let id: [u8; 32] = rand::random();
-            let identity = create_test_identity(drive, id, transaction);
-            let document = create_test_mn_share_document(
-                drive,
-                contract,
-                mn_identity,
-                &identity,
-                5000,
-                transaction,
-            );
-
-            (identity, document)
-        })
-        .collect()
-}
-
-/// A function for refetching identities.
-///
-/// Takes a list of identities, queries the database for them, and returns the query result as a list of identities.
-pub fn refetch_identities(
-    drive: &Drive,
-    identities: Vec<&Identity>,
-    transaction: TransactionArg,
-) -> Result<Vec<Identity>, Error> {
-    let ids = identities
-        .into_iter()
-        .map(|identity| identity.id.buffer)
-        .collect();
-
-    drive
-        .fetch_identities(&ids, transaction)
-        .map_err(Error::Drive)
+    let mut rng = match seed {
+        None => StdRng::from_entropy(),
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
+    };
+    let all_exist = drive
+        .verify_all_identities_exist(pro_tx_hashes, transaction)
+        .expect("expected that all identities existed");
+    if all_exist {
+        pro_tx_hashes
+            .iter()
+            .map(|mn_identity| {
+                let id = rng.gen::<[u8; 32]>();
+                let identity = create_test_identity(drive, id, &mut rng, transaction);
+                let document = create_test_mn_share_document(
+                    drive,
+                    contract,
+                    *mn_identity,
+                    &identity,
+                    5000,
+                    transaction,
+                );
+                (identity, document)
+            })
+            .collect()
+    } else {
+        panic!("all identities didn't exist")
+    }
 }

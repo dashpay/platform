@@ -69,7 +69,14 @@ impl Default for IdentityUpdateTransition {
         Self {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityUpdate,
-            ..Default::default()
+            signature: Default::default(),
+            signature_public_key_id: Default::default(),
+            identity_id: Default::default(),
+            revision: Default::default(),
+            add_public_keys: Default::default(),
+            disable_public_keys: Default::default(),
+            public_keys_disabled_at: Default::default(),
+            execution_context: Default::default(),
         }
     }
 }

@@ -243,6 +243,7 @@ mod tests {
             let proposers = create_test_masternode_identities(
                 &platform.drive,
                 proposers_count,
+                Some(51),
                 Some(&transaction),
             );
 
@@ -250,6 +251,7 @@ mod tests {
                 &platform.drive,
                 &contract,
                 &proposers,
+                Some(53),
                 Some(&transaction),
             );
 
@@ -431,6 +433,7 @@ mod tests {
             let proposers = create_test_masternode_identities(
                 &platform.drive,
                 proposers_count,
+                Some(52),
                 Some(&transaction),
             );
 
@@ -438,6 +441,7 @@ mod tests {
                 &platform.drive,
                 &contract,
                 &proposers,
+                Some(54),
                 Some(&transaction),
             );
 

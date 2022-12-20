@@ -499,7 +499,7 @@ mod tests {
             platform.create_mn_shares_contract(Some(&transaction));
 
             let proposers =
-                create_test_masternode_identities(&platform.drive, 6, Some(&transaction));
+                create_test_masternode_identities(&platform.drive, 6, Some(56), Some(&transaction));
 
             let genesis_time_ms = Utc::now()
                 .timestamp_millis()

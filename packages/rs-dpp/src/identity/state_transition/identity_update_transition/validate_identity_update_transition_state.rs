@@ -138,30 +138,26 @@ where
             }
         }
 
+        identity.add_public_keys(
+            state_transition
+                .get_public_keys_to_add()
+                .into_iter()
+                .cloned()
+                .map(|k| k.to_identity_public_key()),
+        );
+
         let raw_public_keys: Vec<Value> = identity
-            .loaded_public_keys
+            .public_keys
             .values()
             .map(|pk| pk.to_raw_json_object())
             .collect::<Result<_, SerdeParsingError>>()?;
 
-        if !state_transition.get_public_keys_to_add().is_empty() {
-            identity.add_public_keys(
-                state_transition
-                    .get_public_keys_to_add()
-                    .into_iter()
-                    .cloned()
-                    .map(|k| k.to_identity_public_key()),
-            );
-
-            let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
-            if !result.is_valid() {
-                return Ok(result);
-            }
+        let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
-        let result = validator.validate_keys(&raw_public_keys)?;
-
-        Ok(result)
+        validator.validate_keys(&raw_public_keys)
     }
 }
