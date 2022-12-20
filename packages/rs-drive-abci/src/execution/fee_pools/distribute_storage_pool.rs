@@ -68,16 +68,8 @@ impl Platform {
             None,
         )?;
 
-        // Deduct refunds since epoch where data was removed skipping already paid or pay-in-progress epochs.
+        // Deduct refunds since epoch where data was removed skipping previous (already paid or pay-in-progress) epochs.
         // Leftovers are ignored since they already deducted from Identity's refund amount
-
-        let mut unpaid_epoch_index = self.drive.get_unpaid_epoch_index(transaction)?;
-
-        // In case if we paying for older than previous epoch
-        // we need to switch to next one which we are not paying yet
-        if unpaid_epoch_index < current_epoch_index {
-            unpaid_epoch_index += 1;
-        };
 
         // TODO Better to use iterator do not load everything into memory
         for (epoch_index, credits) in self.drive.fetch_pending_updates(transaction)? {
@@ -85,7 +77,7 @@ impl Platform {
                 &mut credits_per_epochs,
                 credits,
                 epoch_index,
-                Some(unpaid_epoch_index),
+                Some(current_epoch_index),
             )?;
         }
 
@@ -161,7 +153,6 @@ mod tests {
 
             let storage_pool = 1000000;
             let current_epoch_index = 3;
-            let unpaid_epoch = 1;
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -170,9 +161,6 @@ mod tests {
                 let epoch = Epoch::new(i);
                 epoch.add_init_empty_operations(&mut batch);
             }
-
-            // Store unpaid epoch index
-            batch.push(update_unpaid_epoch_index_operation(unpaid_epoch));
 
             // Store distribution storage fees
             batch.push(update_storage_fee_distribution_pool_operation(storage_pool));
@@ -236,7 +224,7 @@ mod tests {
                     )
                     .expect("should distribute refunds");
 
-                    let already_paid_epochs = unpaid_epoch as i64 + 1 - epoch_index as i64;
+                    let already_paid_epochs = current_epoch_index as i64 - epoch_index as i64;
 
                     let already_paid_credits = if already_paid_epochs > 0 {
                         credits_per_epochs
