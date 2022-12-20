@@ -38,9 +38,8 @@ function synchronizeMasternodeIdentitiesFactory(
    * @param {number} coreHeight
    * @param {BlockInfo} blockInfo
    * @return {Promise<{
-   *  created: Array<Identity|Document>,
-   *  updated: Array<Identity|Document>,
-   *  removed: Array<Document>,
+   *  createdEntities: Array<Identity|Document>,
+   *  removedEntities: Array<Document>,
    *  fromHeight: number,
    *  toHeight: number,
    * }>}
@@ -55,10 +54,9 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     let newMasternodes;
-
+    let createdEntities = [];
+    let removedEntities = [];
     let previousMNList = [];
-
-    let updatedEntities = [];
 
     const currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
@@ -102,14 +100,15 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousMnEntry) {
-          updatedEntities = updatedEntities.concat(
-            await handleUpdatedPubKeyOperator(
-              mnEntry,
-              previousMnEntry,
-              dataContract,
-              blockInfo,
-            ),
+          const updatedEntities = await handleUpdatedPubKeyOperator(
+            mnEntry,
+            previousMnEntry,
+            dataContract,
+            blockInfo,
           );
+
+          createdEntities = createdEntities.concat(updatedEntities.createdEntities);
+          removedEntities = removedEntities.concat(updatedEntities.removedEntities);
         }
 
         const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
@@ -118,7 +117,7 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousVotingMnEntry) {
-          updatedEntities = updatedEntities.concat(
+          createdEntities = createdEntities.concat(
             await handleUpdatedVotingAddress(
               mnEntry,
             ),
@@ -174,7 +173,6 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     // Create identities and shares for new masternodes
-    let createdEntities = [];
 
     for (const newMasternodeEntry of newMasternodes) {
       createdEntities = createdEntities.concat(
@@ -183,8 +181,6 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     // Remove masternode reward shares for invalid/removed masternodes
-
-    let removedEntities = [];
 
     const disappearedOrInvalidMasterNodes = previousMNList
       .filter((previousMnListEntry) =>
@@ -218,7 +214,6 @@ function synchronizeMasternodeIdentitiesFactory(
       fromHeight,
       toHeight: coreHeight,
       createdEntities,
-      updatedEntities,
       removedEntities,
     };
   }
