@@ -142,7 +142,23 @@ impl DocumentsBatchTransitionWASM {
         let value = self.0.to_json().with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
-        with_js_error!(value.serialize(&serializer))
+        let is_null_signature = value.get("signature").is_none();
+        let is_null_identity_public_key = value.get("signaturePublicKeyId").is_none();
+
+        let js_value = value.serialize(&serializer)?;
+
+        if is_null_signature {
+            js_sys::Reflect::set(&js_value, &"signature".into(), &JsValue::undefined())?;
+        }
+        if is_null_identity_public_key {
+            js_sys::Reflect::set(
+                &js_value,
+                &"signaturePublicKeyId".into(),
+                &JsValue::undefined(),
+            )?;
+        }
+
+        Ok(js_value)
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -196,8 +212,8 @@ impl DocumentsBatchTransitionWASM {
 
     // next we implement AbstractSTateTransitionIdentitySigned methods
     #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
-    pub fn get_signature_public_key_id(&self) -> u64 {
-        self.0.get_signature_public_key_id()
+    pub fn get_signature_public_key_id(&self) -> Option<f64> {
+        self.0.get_signature_public_key_id().map(|v| v as f64)
     }
 
     #[wasm_bindgen(js_name=sign)]

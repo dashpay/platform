@@ -5,6 +5,7 @@ use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
+use wasm_bindgen::__rt::IntoJsResult;
 use wasm_bindgen::prelude::*;
 
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};

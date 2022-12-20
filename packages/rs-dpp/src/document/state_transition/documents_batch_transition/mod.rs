@@ -44,7 +44,9 @@ pub struct DocumentsBatchTransition {
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip_serializing)]
     pub transitions: Vec<DocumentTransition>,
-    pub signature_public_key_id: KeyID,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub signature_public_key_id: Option<KeyID>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub signature: Vec<u8>,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
@@ -57,7 +59,7 @@ impl std::default::Default for DocumentsBatchTransition {
             transition_type: StateTransitionType::DocumentsBatch,
             owner_id: Identifier::default(),
             transitions: vec![],
-            signature_public_key_id: 0,
+            signature_public_key_id: None,
             signature: vec![],
             execution_context: Default::default(),
         }
@@ -70,20 +72,18 @@ impl DocumentsBatchTransition {
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
         let mut json_value = json_value;
+
+        let maybe_signature = json_value.get_string(PROPERTY_SIGNATURE).ok();
+
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: json_value
                 .get_u64(PROPERTY_PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: base64::decode(
-                json_value
-                    .get_string(PROPERTY_SIGNATURE)
-                    .unwrap_or_default(),
-            )
-            .context("base64 decoding failed")?,
-            signature_public_key_id: json_value
-                .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
+            signature: base64::decode(json_value.get_string(PROPERTY_SIGNATURE)?)
+                .context("decoding signature from base64 failed")
                 .unwrap_or_default(),
+            signature_public_key_id: json_value.get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID).ok(),
             owner_id: Identifier::from_string(
                 json_value.get_string(PROPERTY_OWNER_ID)?,
                 Encoding::Base58,
@@ -134,9 +134,7 @@ impl DocumentsBatchTransition {
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
             signature: raw_object.get_bytes(PROPERTY_SIGNATURE).unwrap_or_default(),
-            signature_public_key_id: raw_object
-                .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
-                .unwrap_or_default(),
+            signature_public_key_id: raw_object.get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID).ok(),
             owner_id: Identifier::from_bytes(&raw_object.get_bytes(PROPERTY_OWNER_ID)?)?,
             ..Default::default()
         };
@@ -208,12 +206,12 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         highest_security_level
     }
 
-    fn get_signature_public_key_id(&self) -> KeyID {
+    fn get_signature_public_key_id(&self) -> Option<KeyID> {
         self.signature_public_key_id
     }
 
     fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-        self.signature_public_key_id = key_id;
+        self.signature_public_key_id = Some(key_id);
     }
 }
 

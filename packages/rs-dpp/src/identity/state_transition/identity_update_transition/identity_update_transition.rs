@@ -310,8 +310,8 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
         SecurityLevel::MASTER
     }
 
-    fn get_signature_public_key_id(&self) -> KeyID {
-        self.signature_public_key_id
+    fn get_signature_public_key_id(&self) -> Option<KeyID> {
+        Some(self.signature_public_key_id)
     }
 
     fn set_signature_public_key_id(&mut self, key_id: KeyID) {

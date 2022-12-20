@@ -137,10 +137,9 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#getTransitions - Rust', () => {
     it('should return document transitions', () => {
-      const result = stateTransitionJs.getTransitions();
-      const transitions = stateTransition.getTransitions();
-
-      // TODO -> compare?
+      const transitionsJs = stateTransitionJs.getTransitions().map((t) => { return t.toJSON() });
+      const transitions = stateTransition.getTransitions().map((t) => { return t.toJSON() });
+      expect(transitionsJs).to.deep.equal(transitions)
     });
   });
 
@@ -161,7 +160,7 @@ describe('DocumentsBatchTransition', () => {
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documentsJs[0].getOwnerId().toString(),
-        transitions: stateTransitionJs.getTransitions().map((d) => d.toJSON()),
+        transitions: stateTransitionJs.getTransitions().map((d) => { return d.toJSON() }),
         signaturePublicKeyId: undefined,
         signature: undefined,
       });
