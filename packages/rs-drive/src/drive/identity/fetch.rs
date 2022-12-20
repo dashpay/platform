@@ -362,6 +362,7 @@ impl Drive {
         }
     }
 
+    /// Fetch all the current keys of every kind for a specific Identity
     pub fn fetch_all_current_identity_keys(
         &self,
         identity_id: [u8; 32],
@@ -377,6 +378,7 @@ impl Drive {
         )
     }
 
+    /// Operations for fetching all the current keys of every kind for a specific Identity
     pub(crate) fn fetch_all_current_identity_keys_operations(
         &self,
         identity_id: [u8; 32],
@@ -398,6 +400,7 @@ impl Drive {
             .collect()
     }
 
+    /// Fetch all the keys of every kind for a specific Identity
     pub fn fetch_all_identity_keys(
         &self,
         identity_id: [u8; 32],
@@ -413,6 +416,7 @@ impl Drive {
         )
     }
 
+    /// Operations for fetching all the keys of every kind for a specific Identity
     pub(crate) fn fetch_all_identity_keys_operations(
         &self,
         identity_id: [u8; 32],
