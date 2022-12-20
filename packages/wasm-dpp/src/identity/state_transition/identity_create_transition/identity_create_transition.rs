@@ -1,6 +1,7 @@
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -35,10 +36,12 @@ pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SerializationOptionsJS {
+    // TODO: remove JS
     pub skip_signature: Option<bool>,
     pub skip_identifiers_conversion: Option<bool>,
 }
 
+// TODO: remove?
 impl From<SerializationOptionsJS> for SerializationOptions {
     fn from(options: SerializationOptionsJS) -> Self {
         Self {
@@ -48,12 +51,39 @@ impl From<SerializationOptionsJS> for SerializationOptions {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawInstantAssetLockProof {
+    #[serde(rename = "type")]
+    lock_type: u8,
+    instant_lock: Vec<u8>,
+    transaction: Vec<u8>,
+    output_index: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawChainAssetLockProof {
+    #[serde(rename = "type")]
+    lock_type: u8,
+    core_chain_locked_height: u32,
+    out_point: Vec<u8>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum RawAssetLockProof {
+    Instant(RawInstantAssetLockProof),
+    Chain(RawChainAssetLockProof),
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreateTransitionParams {
-    asset_lock_proof: InstantAssetLockProofWasm,
+    // Omitting asset lock proof because it gets parsed separately depending on it's type
     public_keys: Vec<IdentityPublicKey>,
     signature: Option<Vec<u8>>,
+    // Add protocol version
 }
 
 impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {
@@ -65,13 +95,21 @@ impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {
 #[wasm_bindgen(js_class = IdentityCreateTransition)]
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
+    pub fn new(mut raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
+        let raw_asset_lock_proof =
+            js_sys::Reflect::get(&raw_parameters, &"assetLockProof".to_owned().into())?;
+
         let parameters: IdentityCreateTransitionParams =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
         let raw_state_transition = with_js_error!(serde_json::to_value(&parameters))?;
 
         let mut identity_create_transition = IdentityCreateTransition::new(raw_state_transition)
+            .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
+
+        let asset_lock_proof = AssetLockProofWasm::new(raw_asset_lock_proof)?;
+        identity_create_transition
+            .set_asset_lock_proof(asset_lock_proof.into())
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         if let Some(signature) = parameters.signature {

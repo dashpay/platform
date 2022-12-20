@@ -1,5 +1,6 @@
 const IdentityPublicKeyJS = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
@@ -42,13 +43,20 @@ describe('IdentityCreateTransition', () => {
   });
 
   describe('#constructor', () => {
-    it('should create an instance with specified data', () => {
-      // console.log(stateTransition.getAssetLockProof().toObject());
+    it('should create instance with instant asset lock proof', () => {
       expect(stateTransition.getAssetLockProof().toObject())
-        .to.deep.equal(stateTransition.getAssetLockProof().toObject());
+        .to.deep.equal(stateTransitionJS.getAssetLockProof().toObject());
 
       expect(stateTransition.publicKeys.map((key) => key.toJSON()))
         .to.deep.equal(stateTransitionJS.publicKeys.map((key) => key.toJSON()));
+    });
+
+    it('should create instance with chain asset lock proof', () => {
+      const stObject = stateTransitionJS.toObject();
+      stObject.assetLockProof = getChainAssetLockProofFixture().toObject();
+      stateTransition = new IdentityCreateTransition(stObject);
+      expect(stateTransition.getAssetLockProof().toObject())
+        .to.deep.equal(stObject.assetLockProof);
     });
   });
 
