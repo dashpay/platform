@@ -19,7 +19,7 @@ impl PublicKeyIsDisabledErrorWasm {
 #[wasm_bindgen(js_class=PublicKeyIsDisabledError)]
 impl PublicKeyIsDisabledErrorWasm {
     #[wasm_bindgen(js_name=getPublicKeyId)]
-    pub fn get_public_key_id(&self) -> u64 {
+    pub fn get_public_key_id(&self) -> u32 {
         self.public_key_id
     }
 

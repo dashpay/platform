@@ -2,12 +2,12 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MissingPublicKeyError)]
 pub struct MissingPublicKeyErrorWasm {
-    public_key_id: u64,
+    public_key_id: u32,
     code: u32,
 }
 
 impl MissingPublicKeyErrorWasm {
-    pub fn new(public_key_id: u64, code: u32) -> Self {
+    pub fn new(public_key_id: u32, code: u32) -> Self {
         MissingPublicKeyErrorWasm {
             public_key_id,
             code,
@@ -18,7 +18,7 @@ impl MissingPublicKeyErrorWasm {
 #[wasm_bindgen(js_class=MissingPublicKeyError)]
 impl MissingPublicKeyErrorWasm {
     #[wasm_bindgen(js_name=getPublicKeyId)]
-    pub fn get_public_key_id(&self) -> u64 {
+    pub fn get_public_key_id(&self) -> u32 {
         self.public_key_id
     }
 
