@@ -1,7 +1,6 @@
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -20,8 +19,7 @@ use dpp::{
     identifier::Identifier,
     identity::{
         state_transition::{
-            asset_lock_proof::AssetLockProof,
-            identity_create_transition::{IdentityCreateTransition, SerializationOptions},
+            asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
         },
         IdentityPublicKey,
     },
@@ -35,20 +33,9 @@ pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct SerializationOptionsJS {
-    // TODO: remove JS
+pub struct SerializationOptions {
     pub skip_signature: Option<bool>,
     pub skip_identifiers_conversion: Option<bool>,
-}
-
-// TODO: remove?
-impl From<SerializationOptionsJS> for SerializationOptions {
-    fn from(options: SerializationOptionsJS) -> Self {
-        Self {
-            skip_signature: options.skip_signature.unwrap_or(false),
-            skip_identifiers_conversion: options.skip_identifiers_conversion.unwrap_or(false),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,10 +67,9 @@ pub enum RawAssetLockProof {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreateTransitionParams {
-    // Omitting asset lock proof because it gets parsed separately depending on it's type
     public_keys: Vec<IdentityPublicKey>,
     signature: Option<Vec<u8>>,
-    // Add protocol version
+    protocol_version: u32,
 }
 
 impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {
@@ -95,7 +81,7 @@ impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {
 #[wasm_bindgen(js_class = IdentityCreateTransition)]
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(mut raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
+    pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
         let raw_asset_lock_proof =
             js_sys::Reflect::get(&raw_parameters, &"assetLockProof".to_owned().into())?;
 
@@ -218,7 +204,7 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        let opts: SerializationOptionsJS = if options.is_object() {
+        let opts: SerializationOptions = if options.is_object() {
             with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
@@ -282,6 +268,13 @@ impl IdentityCreateTransitionWasm {
             &js_object,
             &"type".to_owned().into(),
             &JsValue::from(transition_type),
+        )?;
+
+        let protocol_version = self.0.get_protocol_version();
+        js_sys::Reflect::set(
+            &js_object,
+            &"protocolVersion".to_owned().into(),
+            &protocol_version.into(),
         )?;
 
         Ok(js_object.into())
@@ -352,6 +345,13 @@ impl IdentityCreateTransitionWasm {
             &js_object,
             &"type".to_owned().into(),
             &JsValue::from(transition_type),
+        )?;
+
+        let protocol_version = self.0.get_protocol_version();
+        js_sys::Reflect::set(
+            &js_object,
+            &"protocolVersion".to_owned().into(),
+            &protocol_version.into(),
         )?;
 
         Ok(js_object.into())
