@@ -1,5 +1,6 @@
 const { each, findIndex } = require('lodash');
-const TransactionSyncStreamWorker = require('../../plugins/Workers/TransactionSyncStreamWorker/TransactionSyncStreamWorker');
+const TransactionsSyncWorker = require('../../plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
+const BlockHeadersSyncWorker = require('../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
 const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
 const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
 const { WALLET_TYPES } = require('../../CONSTANTS');
@@ -81,15 +82,15 @@ const sortUserPlugins = (defaultSortedPlugins, userUnsafePlugins, allowSensitive
 
       if (
         injectionBeforeIndex !== -1
-          && injectionAfterIndex !== -1
-          && injectionAfterIndex > injectionBeforeIndex
+        && injectionAfterIndex !== -1
+        && injectionAfterIndex > injectionBeforeIndex
       ) {
         throw new Error(`Conflicting dependency order for ${plugin.name}`);
       }
 
       if (
         injectionBeforeIndex !== -1
-          || injectionAfterIndex !== -1
+        || injectionAfterIndex !== -1
       ) {
         injectionIndex = (injectionBeforeIndex !== -1)
           ? injectionBeforeIndex
@@ -128,7 +129,8 @@ const sortPlugins = (account, userUnsafePlugins) => {
   if (account.injectDefaultPlugins) {
     if (!account.offlineMode) {
       plugins.push([ChainPlugin, true, true]);
-      plugins.push([TransactionSyncStreamWorker, true, true]);
+      plugins.push([BlockHeadersSyncWorker, true, true]);
+      plugins.push([TransactionsSyncWorker, true, true]);
 
       if (account.walletType === WALLET_TYPES.HDWALLET) {
         plugins.push([IdentitySyncWorker, true, true]);

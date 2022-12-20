@@ -60,7 +60,7 @@ function configureTenderdashTaskFactory(
                 config.set('platform.drive.tenderdash.p2p.persistentPeers', p2pPeers);
 
                 config.set(
-                  'platform.drive.tenderdash.genesis.quorum_type',
+                  'platform.drive.tenderdash.genesis.validator_quorum_type',
                   config.get('platform.drive.abci.validatorSet.llmqType'),
                 );
 

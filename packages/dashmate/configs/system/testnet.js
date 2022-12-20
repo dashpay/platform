@@ -52,9 +52,9 @@ module.exports = lodashMerge({}, baseConfig, {
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-14',
+          chain_id: 'dash-testnet-15',
           initial_height: '0',
-          initial_core_chain_locked_height: 813581,
+          initial_core_chain_locked_height: 841668,
           initial_proposal_core_chain_lock: null,
           consensus_params: {
             block: {
@@ -103,8 +103,8 @@ module.exports = lodashMerge({}, baseConfig, {
             type: 'tendermint/PubKeyBLS12381',
             value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
           },
-          quorum_type: 4,
-          quorum_hash: '0000000000000000000000000000000000000000000000000000000000000000',
+          validator_quorum_type: 4,
+          validator_quorum_hash: '0000000000000000000000000000000000000000000000000000000000000000',
           app_hash: '',
         },
       },

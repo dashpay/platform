@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
@@ -90,10 +90,14 @@ async fn fetch_data_contracts_for_document_transition(
         })?;
 
         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
-        let data_contract = state_repository
-            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
-            .await
-            .map_err(|_| ProtocolError::DataContractNotPresentError { data_contract_id })?;
+        let data_contract: DataContract = state_repository
+            .fetch_data_contract(&data_contract_id, execution_context)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?
+            .ok_or_else(|| ProtocolError::DataContractNotPresentError { data_contract_id })?;
+
         data_contracts.push(data_contract);
     }
 
@@ -143,7 +147,7 @@ mod test {
         let data_contract_to_return = data_contract.clone();
         state_repostiory_mock
             .expect_fetch_data_contract()
-            .returning(move |_, _| Ok(data_contract_to_return.clone()));
+            .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
         let state_transition_data = json!( {
                     "protocolVersion" :  PROTOCOL_VERSION,
@@ -187,7 +191,7 @@ mod test {
         let data_contract_to_return = data_contract.clone();
         state_repostiory_mock
             .expect_fetch_data_contract()
-            .returning(move |_, _| Ok(data_contract_to_return.clone()));
+            .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
         let state_transition_data = json!( {
                     "protocolVersion" :  PROTOCOL_VERSION,

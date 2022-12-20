@@ -176,7 +176,7 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
 
     assert!(matches!(
         state_error,
-        StateError::IdentityPublicKeyDisabledError {
+        StateError::IdentityPublicKeyIsDisabledError {
             public_key_index
         } if   public_key_index == &0
     ));

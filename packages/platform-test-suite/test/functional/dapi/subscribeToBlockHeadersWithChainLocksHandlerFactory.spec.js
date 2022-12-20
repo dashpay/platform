@@ -17,7 +17,7 @@ const {
 const wait = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
-
+// TODO: rework with ReconnectableStream
 const createRetryableStream = (dapiClient) => {
   const streamMediator = new EventEmitter();
 

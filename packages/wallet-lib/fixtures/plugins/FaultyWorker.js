@@ -6,6 +6,7 @@ class FaultyWorker extends Worker {
       name: 'FaultyWorker',
       firstExecutionRequired: true,
       executeOnStart: true,
+      executeAfterStart: true,
       dependencies: [
         'storage', 'walletId',
       ],

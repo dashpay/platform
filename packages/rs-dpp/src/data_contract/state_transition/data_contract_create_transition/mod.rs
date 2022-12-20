@@ -80,6 +80,10 @@ impl DataContractCreateTransition {
         &self.data_contract
     }
 
+    pub fn get_protocol_version(&self) -> u32 {
+        self.protocol_version
+    }
+
     pub fn set_data_contract(&mut self, data_contract: DataContract) {
         self.data_contract = data_contract;
     }
@@ -152,8 +156,17 @@ impl StateTransitionConvert for DataContractCreateTransition {
         vec![SIGNATURE, ENTROPY]
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
         json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
         json_value
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
@@ -248,7 +261,7 @@ mod test {
         let data = get_test_data();
         let mut json_object = data
             .state_transition
-            .to_json()
+            .to_json(false)
             .expect("conversion to JSON shouldn't fail");
 
         assert_eq!(

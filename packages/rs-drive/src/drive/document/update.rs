@@ -637,7 +637,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::common::{json_document_to_cbor, setup_contract, value_to_cbor};
     use crate::contract::{document::Document, Contract};
     use crate::drive::config::{DriveConfig, DriveEncoding};
     use crate::drive::flags::StorageFlags;
@@ -646,6 +645,10 @@ mod tests {
     use crate::drive::{defaults, Drive};
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::query::DriveQuery;
+    use crate::{
+        common::{json_document_to_cbor, setup_contract, value_to_cbor},
+        drive::test_utils::TestEntropyGenerator,
+    };
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -2263,10 +2266,15 @@ mod tests {
 
         let data_contract_validator =
             DataContractValidator::new(Arc::new(protocol_version_validator));
-        let factory = DataContractFactory::new(1, data_contract_validator);
+
+        let factory = DataContractFactory::new_with_entropy_generator(
+            1,
+            data_contract_validator,
+            Box::new(TestEntropyGenerator::new()),
+        );
 
         let contract = factory
-            .create(owner_id.clone(), documents, Some(15))
+            .create(owner_id.clone(), documents)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

@@ -1,196 +1,153 @@
-const stream = require('stream');
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
-const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
-const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
+const { expect } = require('chai');
 
-const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
-const sleepOneTick = () => new Promise((resolve) => {
-  if (typeof setImmediate === 'undefined') {
-    setTimeout(resolve, 10);
-  } else {
-    setImmediate(resolve);
-  }
-});
+const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
+const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
+const mockHeadersChain = require('../../../lib/test/mocks/mockHeadersChain');
 
 describe('BlockHeadersProvider - integration', () => {
-  let coreApiMock;
   let blockHeadersProvider;
-  let blockHeadersStream;
-  const mockedHeaders = getHeadersFixture();
+  let historicalStreams = [];
+  let continuousStream;
 
-  beforeEach(function () {
-    coreApiMock = {
-      subscribeToBlockHeadersWithChainLocks: () => {},
-      getStatus: this.sinon.stub().resolves({
-        chain: {
-          blocksCount: Math.ceil(mockedHeaders.length / 2),
-        },
-      }),
-    };
+  const createBlockHeadersProvider = (sinon, opts = {}) => {
+    historicalStreams = [];
+    continuousStream = null;
 
-    this.sinon.stub(coreApiMock, 'subscribeToBlockHeadersWithChainLocks').callsFake(async (args) => {
-      const { fromBlockHeight, count } = args;
-      let start = fromBlockHeight - 1;
+    const subscribeToBlockHeadersWithChainLocks = sinon.stub();
 
-      const lastItemIndex = count
-        ? start + count : mockedHeaders.length;
+    subscribeToBlockHeadersWithChainLocks
+      .callsFake(({ count }) => {
+        const stream = new BlockHeadersWithChainLocksStreamMock(sinon);
+        if (count > 0) {
+          historicalStreams.push(stream);
+        } else {
+          continuousStream = stream;
+        }
 
-      blockHeadersStream = new stream.Readable({
-        async read() {
-          if (start >= lastItemIndex) {
-            if (count) {
-              this.push(null);
-            }
-
-            // Stop emission here
-            return;
-          }
-
-          const headersToReturn = mockedHeaders.slice(start, lastItemIndex);
-
-          // Simulate async emission
-          await sleepOneTick();
-
-          this.push({
-            getBlockHeaders: () => ({
-              getHeadersList: () => headersToReturn.map((header) => header.toBuffer()),
-            }),
-          });
-
-          start = lastItemIndex;
-        },
-        objectMode: true,
+        return stream;
       });
 
-      return blockHeadersStream;
-    });
-
-    blockHeadersProvider = new BlockHeadersProvider();
-    blockHeadersProvider.setCoreMethods(coreApiMock);
-  });
-
-  afterEach(() => {
-    if (blockHeadersStream) {
-      blockHeadersStream.destroy();
-    }
-  });
-
-  it('should obtain all block headers and validate them against the SPV chain', async () => {
-    await blockHeadersProvider.start();
-
-    let longestChain = blockHeadersProvider.spvChain.getLongestChain();
-
-    while (longestChain.length !== mockedHeaders.length + 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(100);
-      longestChain = blockHeadersProvider.spvChain.getLongestChain();
-    }
-
-    // slice(1): ignore genesis block
-    expect(longestChain.slice(1).map((header) => header.hash))
-      .to.deep.equal(mockedHeaders.map((header) => header.hash));
-  });
-
-  it('should retry to obtain historical headers in case of SPV failure', async () => {
-    blockHeadersProvider.start();
-
-    await sleepOneTick();
-
-    // Perform MITM attack :)
-    const badHeader = mockedHeaders[0].toObject();
-    delete badHeader.hash;
-    badHeader.prevHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc22', 'hex');
-
-    blockHeadersStream.push({
-      getBlockHeaders: () => ({
-        getHeadersList: () => [new BlockHeader(badHeader).toBuffer()],
+    blockHeadersProvider = new BlockHeadersProvider(
+      opts,
+      (fromBlockHeight, count) => subscribeToBlockHeadersWithChainLocks({
+        fromBlockHeight,
+        count,
       }),
+      () => subscribeToBlockHeadersWithChainLocks({
+        count: 0,
+      }),
+    );
+  };
+
+  // Start from height bigger than the first block
+  // because we need to make sure that spv chain could bootstrap itself
+  // from any header
+  const fromBlockHeight = 10;
+  const numHeaders = 500;
+  const newHeadersAmount = 2;
+  const numStreams = 5;
+  const historicalHeadersAmount = numHeaders - newHeadersAmount;
+
+  // -1 because fromBlockHeight is inclusive
+  const chainHeight = fromBlockHeight + historicalHeadersAmount - 1;
+  const historicalBatchSize = Math.round(historicalHeadersAmount / numStreams);
+
+  let headers;
+
+  before(async function () {
+    headers = await mockHeadersChain('testnet', numHeaders);
+
+    createBlockHeadersProvider(this.sinon, {
+      targetBatchSize: historicalBatchSize,
+    });
+  });
+
+  beforeEach(function () {
+    this.sinon.spy(blockHeadersProvider, 'emit');
+  });
+
+  it('should read first historical batches from the tail', async () => {
+    await blockHeadersProvider.readHistorical(fromBlockHeight, chainHeight);
+
+    historicalStreams.forEach((stream, i) => {
+      if (i !== 0) {
+        const from = i * historicalBatchSize;
+        let to = (i + 1) * historicalBatchSize;
+        to = to > historicalHeadersAmount ? historicalHeadersAmount : to;
+
+        stream.sendHeaders(headers.slice(from, to));
+        stream.cancel();
+      }
     });
 
-    // Continue waiting for the recovery
-    let longestChain = blockHeadersProvider.spvChain.getLongestChain();
+    const numBatches = headers.length / historicalBatchSize;
 
-    while (longestChain.length !== mockedHeaders.length + 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(100);
-      longestChain = blockHeadersProvider.spvChain.getLongestChain();
+    const { spvChain } = blockHeadersProvider;
+
+    // Headers added from the tail should be orphaned
+    expect(spvChain.getOrphanChunks()).to.have.length(4);
+    expect(spvChain.getLongestChain()).to.have.length(0);
+    expect(blockHeadersProvider.emit.callCount).to.equal(5);
+    expect(blockHeadersProvider.emit)
+      .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+
+    for (let i = 1; i < numBatches; i += 1) {
+      const { args } = blockHeadersProvider.emit.getCall(i);
+      const emittedHeaders = args[1].map((header) => header.toString());
+
+      const from = i * historicalBatchSize;
+      let to = historicalBatchSize * (i + 1);
+      to = to > historicalHeadersAmount ? historicalHeadersAmount : to;
+
+      const expectedHeaders = headers
+        .slice(from, to)
+        .map((header) => header.toString());
+      const batchHeadHeight = fromBlockHeight + i * historicalBatchSize;
+
+      expect(emittedHeaders).to.deep.equal(expectedHeaders);
+      expect(args[2]).to.equal(batchHeadHeight);
     }
-
-    // slice(1): ignore genesis block
-    expect(longestChain.slice(1).map((header) => header.hash))
-      .to.deep.equal(mockedHeaders.map((header) => header.hash));
   });
 
-  it('should throw error in case core methods are missing', async () => {
-    blockHeadersProvider.setCoreMethods(null);
-    try {
-      await blockHeadersProvider.start();
-    } catch (e) {
-      expect(e).to.be.instanceOf(Error);
-    }
+  it('should read batch from the head and form longest chain', async () => {
+    const headersToSend = headers.slice(0, historicalBatchSize);
+    historicalStreams[0].sendHeaders(headersToSend);
+    historicalStreams[0].end();
+
+    const { spvChain } = blockHeadersProvider;
+    expect(spvChain.getLongestChain({ withPruned: true }))
+      .to.have.length(historicalHeadersAmount);
+    expect(blockHeadersProvider.emit).to
+      .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+    const { args } = blockHeadersProvider.emit.getCall(0);
+    const expectedHeaders = headersToSend.map((header) => header.toString());
+    const emittedHeaders = args[1].map((header) => header.toString());
+    const headHeight = args[2];
+
+    expect(emittedHeaders).to.deep.equal(expectedHeaders);
+    expect(headHeight).to.equal(fromBlockHeight);
   });
 
-  it('should throw error in case BlockHeadersProvider has already been started', async () => {
-    await blockHeadersProvider.start();
+  it('should start continuous sync and add to existing chain', async () => {
+    await blockHeadersProvider.startContinuousSync(chainHeight);
 
-    try {
-      await blockHeadersProvider.start();
-    } catch (e) {
-      expect(e).to.be.instanceOf(Error);
-    }
-  });
+    // +1 because fromBlockHeight is inclusive
+    const headersToSend = headers.slice(-(newHeadersAmount + 1));
+    continuousStream.sendHeaders(headersToSend);
 
-  it('should emit ERROR event in case BlockHeadersReader emits ERROR', async () => {
-    await blockHeadersProvider.start();
+    const { spvChain } = blockHeadersProvider;
 
-    let emittedError;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      emittedError = e;
-    });
+    expect(spvChain.getLongestChain({ withPruned: true }))
+      .to.have.length(headers.length);
+    const { args } = blockHeadersProvider.emit.lastCall;
 
-    const errorToThrow = new Error('test');
-    blockHeadersProvider.blockHeadersReader
-      .emit(BlockHeadersProvider.EVENTS.ERROR, errorToThrow);
+    const expectedHeaders = headersToSend.slice(1).map((header) => header.toString());
+    const emittedHeaders = args[1].map((header) => header.toString());
+    const headHeight = args[2];
 
-    expect(emittedError).to.be.equal(errorToThrow);
-  });
-
-  it('should emit ERROR event in case SpvChain fails to addHeaders', async function () {
-    const errorToThrow = new Error('test');
-    blockHeadersProvider.spvChain.addHeaders = this.sinon.stub();
-    blockHeadersProvider.spvChain.addHeaders.onFirstCall().throws(errorToThrow);
-
-    await blockHeadersProvider.start();
-
-    let emittedError;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      emittedError = e;
-    });
-
-    blockHeadersProvider.blockHeadersReader
-      .emit(BlockHeadersReader.EVENTS.BLOCK_HEADERS, []);
-
-    expect(emittedError).to.be.equal(errorToThrow);
-  });
-
-  it('should emit ERROR event in case of a failure subscribing to the new block headers', async function () {
-    await blockHeadersProvider.start();
-
-    const errorToThrow = new Error('test');
-    blockHeadersProvider.blockHeadersReader.subscribeToNew = this.sinon.stub()
-      .rejects(errorToThrow);
-
-    let emittedError;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      emittedError = e;
-    });
-
-    blockHeadersProvider.blockHeadersReader
-      .emit(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
-
-    await sleepOneTick();
-
-    expect(emittedError).to.be.equal(errorToThrow);
+    expect(emittedHeaders).to.deep.equal(expectedHeaders);
+    expect(headHeight).to.equal(chainHeight + 1);
+    await blockHeadersProvider.stop();
   });
 });
