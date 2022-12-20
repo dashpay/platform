@@ -2487,6 +2487,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         "driveRemoveFromIdentityBalance",
         PlatformWrapper::js_remove_from_identity_balance,
     )?;
+    cx.export_function(
+        "driveAddKeysToIdentity",
+        PlatformWrapper::js_add_keys_to_identity,
+    )?;
     cx.export_function("driveQueryDocuments", PlatformWrapper::js_query_documents)?;
 
     cx.export_function(

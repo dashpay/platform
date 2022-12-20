@@ -85,7 +85,7 @@ class IdentityStoreRepository {
           identity_id: identityId.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'createContract');
+        }, 'updateAddToIdentityBalance');
       }
     }
   }
@@ -132,46 +132,7 @@ class IdentityStoreRepository {
           identity_id: identityId.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'createContract');
-      }
-    }
-  }
-
-  /**
-   * Remove balance from identity in database
-   *
-   * @param {Identifier} identityId
-   * @param {number} amount
-   * @param {RawBlockInfo} blockInfo
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<void>>}
-   */
-  async updateAddBalance(identityId, amount, blockInfo, options = {}) {
-    try {
-      const feeResult = await this.storage.getDrive().addToIdentityBalance(
-          identityId,
-          amount,
-          blockInfo,
-          Boolean(options.useTransaction),
-          Boolean(options.dryRun),
-      );
-
-      return new StorageResult(
-          undefined,
-          [
-            new PreCalculatedOperation(feeResult),
-          ],
-      );
-    } finally {
-      if (this.logger) {
-        this.logger.trace({
-          identity_id: identityId.toString(),
-          useTransaction: Boolean(options.useTransaction),
-          appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'createContract');
+        }, 'updateRemoveFromIdentityBalance');
       }
     }
   }
@@ -180,7 +141,7 @@ class IdentityStoreRepository {
    * Add keys to an already existing Identity
    *
    * @param {Identifier} identityId
-   * @param {} keys
+   * @param {Array} keys
    * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
@@ -188,27 +149,26 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async addKeysToIdentity(
-      identityId,
-      keys,
-      blockInfo,
-      options = {},
+  async updateAddKeys(
+    identityId,
+    keys,
+    blockInfo,
+    options = {},
   ) {
     try {
-      const feeResult = await this.storage.getDrive().removeFromIdentityBalance(
-          identityId,
-          requiredAmount,
-          desiredAmount,
-          blockInfo,
-          Boolean(options.useTransaction),
-          Boolean(options.dryRun),
+      const feeResult = await this.storage.getDrive().addKeysToIdentity(
+        identityId,
+        keys,
+        blockInfo,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun),
       );
 
       return new StorageResult(
-          undefined,
-          [
-            new PreCalculatedOperation(feeResult),
-          ],
+        undefined,
+        [
+          new PreCalculatedOperation(feeResult),
+        ],
       );
     } finally {
       if (this.logger) {
@@ -216,7 +176,7 @@ class IdentityStoreRepository {
           identity_id: identityId.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'createContract');
+        }, 'updateAddKeysToIdentity');
       }
     }
   }

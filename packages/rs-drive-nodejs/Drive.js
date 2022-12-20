@@ -20,6 +20,7 @@ const {
   driveProveDocumentsQuery,
   driveInsertIdentity,
   driveAddToIdentityBalance,
+  driveAddKeysToIdentity,
   driveRemoveFromIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
   driveEnqueueWithdrawalTransaction,
@@ -59,6 +60,7 @@ const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
+const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
 const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
   promisify(driveRemoveFromIdentityBalance),
 );
@@ -388,6 +390,32 @@ class Drive {
       identityId.toBuffer(),
       requiredAmount,
       desiredAmount,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {Array} keysToAdd
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async addKeysToIdentity(
+    identityId,
+    keysToAdd,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveAddKeysToIdentityAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      keysToAdd,
       blockInfo,
       !dryRun,
       useTransaction,
