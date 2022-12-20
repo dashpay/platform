@@ -19,6 +19,8 @@ const {
   driveQueryDocuments,
   driveProveDocumentsQuery,
   driveInsertIdentity,
+  driveAddToIdentityBalance,
+  driveRemoveFromIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
   driveEnqueueWithdrawalTransaction,
   abciInitChain,
@@ -56,6 +58,10 @@ const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
   promisify(driveEnqueueWithdrawalTransaction),
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
+const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
+const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
+  promisify(driveRemoveFromIdentityBalance),
+);
 const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
 const abciBlockBeginAsync = appendStackAsync(promisify(abciBlockBegin));
 const abciBlockEndAsync = appendStackAsync(promisify(abciBlockEnd));
@@ -327,6 +333,61 @@ class Drive {
     return driveInsertIdentityAsync.call(
       this.drive,
       identity.toBuffer(),
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async addToIdentityBalance(
+    identityId,
+    amount,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveAddToIdentityBalanceAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      amount,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number} requiredAmount
+   * @param {number} desiredAmount
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async removeFromIdentityBalance(
+    identityId,
+    requiredAmount,
+    desiredAmount,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveRemoveFromIdentityBalanceAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      requiredAmount,
+      desiredAmount,
       blockInfo,
       !dryRun,
       useTransaction,

@@ -1,3 +1,4 @@
+use drive::dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::fee::FeeResult;
@@ -417,4 +418,58 @@ pub fn js_object_to_block_info<'a, C: Context<'a>>(
     };
 
     Ok(block_info)
+}
+
+pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
+    js_object: Handle<JsObject>,
+    cx: &mut C,
+) -> NeonResult<IdentityPublicKey> {
+    let js_id: Handle<JsNumber> = js_object.get(cx, "id")?;
+    let js_purpose: Handle<JsNumber> = js_object.get(cx, "purpose")?;
+    let js_security_level: Handle<JsNumber> = js_object.get(cx, "securityLevel")?;
+    let js_key_type: Handle<JsNumber> = js_object.get(cx, "type")?;
+    let js_read_only: Handle<JsBoolean> = js_object.get(cx, "readOnly")?;
+    let js_data: Handle<JsBuffer> = js_object.get(cx, "data")?;
+    let js_disabled_at: Handle<JsValue> = js_object.get(cx, "disabledAt")?;
+
+    let id = js_id.value(cx) as KeyID;
+    let purpose = Purpose::try_from(js_purpose.value(cx) as u8)?;
+    let security_level = SecurityLevel::try_from(js_security_level.value(cx) as u8)?;
+    let key_type = KeyType::try_from(js_key_type.value(cx) as u8)?;
+    let read_only = js_read_only.value(cx);
+    let data = js_buffer_to_vec_u8(js_data, cx);
+
+    let disabled_at: Option<u64> = js_value_to_option::<JsNumber, _>(js_disabled_at, cx)?
+        .map(|x| {
+            u64::try_from(x.value(cx) as i64)
+                .or_else(|_| cx.throw_range_error("`offset` must fit in u16"))
+        })
+        .transpose()?;
+
+    Ok(IdentityPublicKey {
+        id,
+        purpose,
+        security_level,
+        key_type,
+        read_only,
+        data,
+        disabled_at,
+    })
+}
+
+pub fn js_array_to_keys<'a, C: Context<'a>>(
+    js_array: Handle<JsArray>,
+    cx: &mut C,
+) -> NeonResult<Vec<IdentityPublicKey>> {
+    let keys = js_array
+        .to_vec(cx)?
+        .into_iter()
+        .map(|js_value| {
+            let js_key = js_value.downcast_or_throw::<JsObject, _>(cx)?;
+            let key = js_object_to_identity_public_key(js_key, cx)?;
+            key
+        })
+        .collect();
+
+    Ok(keys)
 }

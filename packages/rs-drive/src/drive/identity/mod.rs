@@ -35,11 +35,9 @@
 use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::RootTree;
 
-
 use dpp::identity::KeyID;
 
-use integer_encoding::{VarInt};
-
+use integer_encoding::VarInt;
 
 mod estimation_costs;
 mod fetch;
@@ -47,7 +45,6 @@ mod insert;
 mod key;
 mod update;
 mod withdrawal_queue;
-
 
 pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 

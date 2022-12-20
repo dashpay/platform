@@ -1,5 +1,6 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const StorageResult = require('../storage/StorageResult');
 
 class IdentityStoreRepository {
@@ -14,68 +15,210 @@ class IdentityStoreRepository {
   }
 
   /**
-   * Store identity into database
+   * Create Identity in database
    *
    * @param {Identity} identity
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<void>>}
    */
-  async create(identity, options = {}) {
-    if (options.dryRun) {
-      return new StorageResult(undefined, []);
+  async create(identity, blockInfo, options = {}) {
+    try {
+      const feeResult = await this.storage.getDrive().insertIdentity(
+        identity,
+        blockInfo,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun),
+      );
+
+      return new StorageResult(
+        undefined,
+        [
+          new PreCalculatedOperation(feeResult),
+        ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identity.id.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'createContract');
+      }
     }
-
-    const key = identity.getId().toBuffer();
-    const value = identity.toBuffer();
-
-    const treeResult = await this.storage.createTree(
-      IdentityStoreRepository.TREE_PATH,
-      key,
-      options,
-    );
-
-    const identityResult = await this.storage.put(
-      IdentityStoreRepository.TREE_PATH.concat([key]),
-      IdentityStoreRepository.IDENTITY_KEY,
-      value,
-      options,
-    );
-
-    return new StorageResult(
-      undefined,
-      treeResult.getOperations().concat(identityResult.getOperations()),
-    );
   }
 
   /**
-   * Store identity into database
+   * Remove balance from identity in database
    *
-   * @param {Identity} identity
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<void>>}
    */
-  async update(identity, options = {}) {
-    if (options.dryRun) {
-      return new StorageResult(undefined, []);
+  async updateAddToIdentityBalance(identityId, amount, blockInfo, options = {}) {
+    try {
+      const feeResult = await this.storage.getDrive().addToIdentityBalance(
+        identityId,
+        amount,
+        blockInfo,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun),
+      );
+
+      return new StorageResult(
+        undefined,
+        [
+          new PreCalculatedOperation(feeResult),
+        ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'createContract');
+      }
     }
+  }
 
-    const key = identity.getId().toBuffer();
-    const value = identity.toBuffer();
+  /**
+   * Remove balance from identity in database
+   *
+   * @param {Identifier} identityId
+   * @param {number} requiredAmount
+   * @param {number} desiredAmount
+   * @param {RawBlockInfo} blockInfo
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async updateRemoveFromIdentityBalance(
+    identityId,
+    requiredAmount,
+    desiredAmount,
+    blockInfo,
+    options = {},
+  ) {
+    try {
+      const feeResult = await this.storage.getDrive().removeFromIdentityBalance(
+        identityId,
+        requiredAmount,
+        desiredAmount,
+        blockInfo,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun),
+      );
 
-    const result = await this.storage.put(
-      IdentityStoreRepository.TREE_PATH.concat([key]),
-      IdentityStoreRepository.IDENTITY_KEY,
-      value,
-      options,
-    );
+      return new StorageResult(
+        undefined,
+        [
+          new PreCalculatedOperation(feeResult),
+        ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'createContract');
+      }
+    }
+  }
 
-    result.setValue(undefined);
+  /**
+   * Remove balance from identity in database
+   *
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {RawBlockInfo} blockInfo
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async updateAddBalance(identityId, amount, blockInfo, options = {}) {
+    try {
+      const feeResult = await this.storage.getDrive().addToIdentityBalance(
+          identityId,
+          amount,
+          blockInfo,
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
+      );
 
-    return result;
+      return new StorageResult(
+          undefined,
+          [
+            new PreCalculatedOperation(feeResult),
+          ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'createContract');
+      }
+    }
+  }
+
+  /**
+   * Add keys to an already existing Identity
+   *
+   * @param {Identifier} identityId
+   * @param {} keys
+   * @param {RawBlockInfo} blockInfo
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async addKeysToIdentity(
+      identityId,
+      keys,
+      blockInfo,
+      options = {},
+  ) {
+    try {
+      const feeResult = await this.storage.getDrive().removeFromIdentityBalance(
+          identityId,
+          requiredAmount,
+          desiredAmount,
+          blockInfo,
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
+      );
+
+      return new StorageResult(
+          undefined,
+          [
+            new PreCalculatedOperation(feeResult),
+          ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'createContract');
+      }
+    }
   }
 
   /**

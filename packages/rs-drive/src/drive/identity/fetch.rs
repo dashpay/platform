@@ -1,4 +1,3 @@
-
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::flags::StorageFlags;
@@ -12,8 +11,8 @@ use crate::drive::identity::fetch::KeyRequestType::{
 };
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{
-    balance_path, identity_key_tree_path_vec, identity_path,
-    identity_query_keys_tree_path_vec, IDENTITY_KEY,
+    balance_path, identity_key_tree_path_vec, identity_path, identity_query_keys_tree_path_vec,
+    IDENTITY_KEY,
 };
 
 use crate::drive::{Drive, RootTree};
@@ -31,8 +30,8 @@ use grovedb::query_result_type::QueryResultType::{
 };
 use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
-use integer_encoding::{VarInt};
-use std::collections::{BTreeMap};
+use integer_encoding::VarInt;
+use std::collections::BTreeMap;
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -260,7 +259,8 @@ impl Drive {
         )?;
         if apply {
             if let Some(identity_balance_element) = identity_balance_element {
-                if let SumItem(identity_balance_element, _element_flags) = identity_balance_element {
+                if let SumItem(identity_balance_element, _element_flags) = identity_balance_element
+                {
                     if identity_balance_element < 0 {
                         Err(Error::Drive(DriveError::CorruptedElementType(
                             "identity balance was present but was negative",

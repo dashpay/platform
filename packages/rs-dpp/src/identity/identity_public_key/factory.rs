@@ -21,6 +21,18 @@ impl IdentityPublicKey {
         Self::random_key_with_rng(id, &mut rng, None).unwrap()
     }
 
+    pub fn random_keys(first_id: KeyID, count: KeyCount, seed: Option<u64>) -> Vec<Self> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        let end_id = first_id + count;
+        (first_id..end_id)
+            .into_iter()
+            .map(|key_id| Self::random_key_with_rng(key_id, &mut rng, None).unwrap())
+            .collect()
+    }
+
     pub fn random_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,

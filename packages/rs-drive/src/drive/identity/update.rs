@@ -1,10 +1,7 @@
 use crate::drive::block_info::BlockInfo;
 
-
-use crate::drive::identity::{
-    balance_path_vec, identity_path_vec, IdentityRootStructure,
-};
-
+use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
+use crate::drive::identity::{balance_path_vec, identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -13,6 +10,8 @@ use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use grovedb::batch::KeyInfoPath;
 
+use crate::fee_pools::epochs::Epoch;
+use dpp::identity::IdentityPublicKey;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
@@ -155,7 +154,7 @@ impl Drive {
     }
 
     /// Balances are stored in the balance tree under the identity's id
-    pub(crate) fn remove_from_identity_balance(
+    pub fn remove_from_identity_balance(
         &self,
         identity_id: [u8; 32],
         required_removed_balance: u64,
@@ -179,7 +178,7 @@ impl Drive {
 
     /// Balances are stored in the identity under key 0
     /// This gets operations based on apply flag (stateful vs stateless)
-    pub(crate) fn remove_from_identity_balance_operations(
+    pub fn remove_from_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
         required_removed_balance: u64,
@@ -231,16 +230,81 @@ impl Drive {
         }
         Ok(())
     }
+
+    /// Add new keys to an identity
+    pub fn add_new_keys_to_identity(
+        &self,
+        identity_id: [u8; 32],
+        keys_to_add: Vec<IdentityPublicKey>,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+        self.add_new_keys_to_identity_operations(
+            identity_id,
+            keys_to_add,
+            &block_info.epoch,
+            &mut estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+        )?;
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
+    /// The operations for adding new keys to an identity
+    pub fn add_new_keys_to_identity_operations(
+        &self,
+        identity_id: [u8; 32],
+        keys_to_add: Vec<IdentityPublicKey>,
+        epoch: &Epoch,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_keys_for_identity_id(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
+        }
+
+        for key in keys_to_add {
+            self.insert_new_key_operations(
+                identity_id.as_slice(),
+                key,
+                &StorageFlags::SingleEpoch(epoch.index),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::drive::block_info::BlockInfo;
-    use dpp::identity::Identity;
-    
+    use dpp::identity::{Identity, IdentityPublicKey};
+
     use tempfile::TempDir;
 
-    
     use crate::drive::Drive;
     use crate::fee::FeeResult;
     use crate::fee_pools::epochs::Epoch;
@@ -327,5 +391,93 @@ mod tests {
             .expect("expected to get balance");
 
         assert_eq!(balance.unwrap(), old_balance); //shouldn't have changed
+    }
+
+    #[test]
+    fn test_add_one_new_key_to_identity() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+        drive
+            .add_new_identity(identity.clone(), &block, true, None)
+            .expect("expected to insert identity");
+
+        let new_keys_to_add = IdentityPublicKey::random_keys(5, 1, Some(15));
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .add_new_keys_to_identity(
+                identity.id.to_buffer(),
+                new_keys_to_add,
+                &block,
+                true,
+                Some(&db_transaction),
+            )
+            .expect("expected to update identity with new keys");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("expected to be able to commit a transaction");
+
+        let identity_keys = drive
+            .fetch_all_identity_keys(identity.id.to_buffer(), true, None)
+            .expect("expected to get balance");
+
+        assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 30
+    }
+
+    #[test]
+    fn test_add_two_dozen_new_keys_to_identity() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+        drive
+            .add_new_identity(identity.clone(), &block, true, None)
+            .expect("expected to insert identity");
+
+        let new_keys_to_add = IdentityPublicKey::random_keys(5, 24, Some(15));
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .add_new_keys_to_identity(
+                identity.id.to_buffer(),
+                new_keys_to_add,
+                &block,
+                true,
+                Some(&db_transaction),
+            )
+            .expect("expected to update identity with new keys");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("expected to be able to commit a transaction");
+
+        let identity_keys = drive
+            .fetch_all_identity_keys(identity.id.to_buffer(), true, None)
+            .expect("expected to get balance");
+
+        assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 30
     }
 }
