@@ -19,13 +19,19 @@ use crate::utils::to_vec_of_serde_values;
 use crate::MetadataWasm;
 pub use identity_public_key::*;
 
-use state_transition::*;
+pub use state_transition::*;
 
 pub mod state_transition;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]
 pub struct IdentityWasm(Identity);
+
+impl From<IdentityWasm> for Identity {
+    fn from(identity: IdentityWasm) -> Self {
+        identity.0
+    }
+}
 
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {

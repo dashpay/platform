@@ -10,7 +10,6 @@ use crate::{
         state_transition::asset_lock_proof::{AssetLockProof, AssetLockPublicKeyHashFetcher},
         KeyType,
     },
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
@@ -76,7 +75,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
         // Target identity must exist
         let identity = state_repository
-            .fetch_identity::<Identity>(target_identity_id, &tmp_execution_context)
+            .fetch_identity(target_identity_id, &tmp_execution_context)
             .await?;
 
         // Collect operations back from temporary context
