@@ -51,7 +51,6 @@ pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: Transactio
         security_level: dpp::identity::SecurityLevel::MASTER,
         read_only: false,
         disabled_at: None,
-        signature: Default::default(),
     };
 
     let mut public_keys = BTreeMap::new();

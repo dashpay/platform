@@ -291,7 +291,7 @@ mod test {
         pub bls_private: Vec<u8>,
         pub bls_public: Vec<u8>,
         pub identity_public_key: IdentityPublicKey,
-        pub public_key_id: u64,
+        pub public_key_id: KeyID,
     }
 
     fn get_test_keys() -> Keys {
@@ -319,7 +319,6 @@ mod test {
             data: ec_public_compressed_bytes.try_into().unwrap(),
             read_only: false,
             disabled_at: None,
-            signature: Default::default(),
         };
 
         Keys {

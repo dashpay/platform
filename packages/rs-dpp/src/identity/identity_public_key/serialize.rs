@@ -31,8 +31,22 @@ impl IdentityPublicKey {
             .reject_trailing_bytes()
             .with_big_endian()
             .deserialize(bytes)
-            .map_err(|_| {
-                ProtocolError::EncodingError(String::from("unable to deserialize element"))
+            .map_err(|e| {
+                ProtocolError::EncodingError(format!("unable to deserialize key {}", e.to_string()))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::identity::IdentityPublicKey;
+
+    #[test]
+    fn test_identity_key_serialization_deserialization() {
+        let key = IdentityPublicKey::random_key(1, Some(500));
+        let serialized = key.serialize().expect("expected to serialize key");
+        let unserialized = IdentityPublicKey::deserialize(serialized.as_slice())
+            .expect("expected to deserialize key");
+        assert_eq!(key, unserialized)
     }
 }

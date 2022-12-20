@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::IdentityPublicKeyInCreation;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, IdentityPublicKey, Revision, TimestampMillis},
@@ -49,7 +50,7 @@ pub struct IdentityUpdateTransition {
     /// Public Keys to add to the Identity
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip, default)]
-    pub add_public_keys: Vec<IdentityPublicKey>,
+    pub add_public_keys: Vec<IdentityPublicKeyInCreation>,
 
     /// Identity Public Keys ID's to disable for the Identity
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -132,15 +133,15 @@ impl IdentityUpdateTransition {
         self.revision
     }
 
-    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKey>) {
+    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyInCreation>) {
         self.add_public_keys = add_public_keys;
     }
 
-    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKey] {
+    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyInCreation] {
         &self.add_public_keys
     }
 
-    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKey] {
+    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation] {
         &mut self.add_public_keys
     }
 
@@ -169,12 +170,14 @@ impl IdentityUpdateTransition {
 fn get_list_of_public_keys(
     value: &mut JsonValue,
     property_name: &str,
-) -> Result<Vec<IdentityPublicKey>, ProtocolError> {
+) -> Result<Vec<IdentityPublicKeyInCreation>, ProtocolError> {
     let mut identity_public_keys = vec![];
     if let Ok(maybe_list) = value.remove(property_names::ADD_PUBLIC_KEYS) {
         if let JsonValue::Array(list) = maybe_list {
             for maybe_public_key in list {
-                identity_public_keys.push(IdentityPublicKey::from_raw_object(maybe_public_key)?);
+                identity_public_keys.push(IdentityPublicKeyInCreation::from_raw_object(
+                    maybe_public_key,
+                )?);
             }
         } else {
             return Err(anyhow!("The property '{}' isn't a list", property_name).into());
@@ -324,10 +327,10 @@ mod test {
 
     #[test]
     fn conversion_to_json_object() {
-        let public_key = identity_fixture().get_public_keys()[0].to_owned();
+        let public_key = identity_fixture().get_public_keys()[&0].to_owned();
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
-            add_public_keys: vec![public_key],
+            add_public_keys: vec![(&public_key).into()],
             signature: generate_random_identifier().to_vec(),
             ..Default::default()
         };
@@ -352,10 +355,10 @@ mod test {
 
     #[test]
     fn conversion_to_raw_object() {
-        let public_key = identity_fixture().get_public_keys()[0].to_owned();
+        let public_key = identity_fixture().get_public_keys()[&0].to_owned();
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
-            add_public_keys: vec![public_key],
+            add_public_keys: vec![(&public_key).into()],
             signature: generate_random_identifier().to_vec(),
 
             ..Default::default()

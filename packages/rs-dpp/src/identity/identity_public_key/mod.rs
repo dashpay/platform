@@ -1,6 +1,7 @@
 #![allow(clippy::from_over_into)]
 
 pub mod factory;
+mod in_creation;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
@@ -25,13 +26,14 @@ use crate::util::vec;
 use crate::SerdeParsingError;
 use bincode::{deserialize, serialize};
 
+pub use in_creation::IdentityPublicKeyInCreation;
+
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKey {
     pub id: KeyID,
     pub purpose: Purpose,
@@ -40,11 +42,7 @@ pub struct IdentityPublicKey {
     pub key_type: KeyType,
     pub data: Vec<u8>,
     pub read_only: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<TimestampMillis>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub signature: Vec<u8>,
 }
 
 //? do we really need that???
@@ -67,6 +65,20 @@ impl std::convert::Into<JsonIdentityPublicKey> for &IdentityPublicKey {
             key_type: self.key_type,
             read_only: self.read_only,
             data: base64::encode(&self.data),
+        }
+    }
+}
+
+impl std::convert::Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreation {
+            id: self.id,
+            purpose: self.purpose,
+            security_level: self.security_level,
+            key_type: self.key_type,
+            read_only: self.read_only,
+            data: self.data.clone(),
+            signature: vec![],
         }
     }
 }
@@ -123,9 +135,8 @@ impl IdentityPublicKey {
 
     /// Set the raw security level
     //? maybe we should replace the enum with impl TryInto<SecurityLevel> or Into<SecurityLevel>
-    pub fn set_security_level(mut self, security_level: SecurityLevel) -> Self {
+    pub fn set_security_level(&mut self, security_level: SecurityLevel) {
         self.security_level = security_level;
-        self
     }
 
     /// Get readOnly flag
@@ -145,9 +156,8 @@ impl IdentityPublicKey {
     }
 
     /// Set disabledAt
-    pub fn set_disabled_at(mut self, timestamp_millis: u64) -> Self {
+    pub fn set_disabled_at(&mut self, timestamp_millis: u64) {
         self.disabled_at = Some(timestamp_millis);
-        self
     }
 
     /// Is public key disabled
@@ -158,16 +168,6 @@ impl IdentityPublicKey {
     /// Checks if public key security level is MASTER
     pub fn is_master(&self) -> bool {
         self.security_level == SecurityLevel::MASTER
-    }
-
-    /// Returns the signature
-    pub fn get_signature(&self) -> &[u8] {
-        &self.signature
-    }
-
-    /// Set the signature
-    pub fn set_signature(&mut self, signature: Vec<u8>) {
-        self.signature = signature;
     }
 
     /// Get the original public key hash
@@ -221,21 +221,15 @@ impl IdentityPublicKey {
     }
 
     /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_json_object(
-        &self,
-        skip_signatures: bool,
-    ) -> Result<JsonValue, SerdeParsingError> {
+    pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
         let mut value = serde_json::to_value(&self)?;
-        if skip_signatures {
-            let _ = value.remove("signature");
-        }
 
         Ok(value)
     }
 
     /// Return json with all binary data converted to base64
     pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object(false)?;
+        let mut value = self.to_raw_json_object()?;
 
         value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
 
@@ -260,7 +254,6 @@ impl IdentityPublicKey {
             key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
         let public_key_bytes =
             key_value_map.as_bytes("data", "Identity public key must have a data")?;
-        let signature_bytes = key_value_map.as_bytes("signature", "").unwrap_or_default();
         let disabled_at = key_value_map.as_u64("disabledAt", "").ok();
 
         Ok(IdentityPublicKey {
@@ -271,7 +264,6 @@ impl IdentityPublicKey {
             data: public_key_bytes,
             read_only: readonly,
             disabled_at,
-            signature: signature_bytes,
         })
     }
 
@@ -286,10 +278,6 @@ impl IdentityPublicKey {
         pk_map.insert("securityLevel", self.get_security_level());
         if let Some(ts) = self.get_disabled_at() {
             pk_map.insert("disabledAt", ts)
-        }
-
-        if !self.get_signature().is_empty() {
-            pk_map.insert("signature", self.get_signature().to_owned())
         }
 
         pk_map.to_value_sorted()

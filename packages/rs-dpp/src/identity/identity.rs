@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sha2::digest::generic_array::functional::FunctionalSequence;
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -71,8 +72,9 @@ impl Identity {
     }
 
     /// Add identity public keys
-    pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = (KeyID, IdentityPublicKey)>) {
-        self.loaded_public_keys.extend(keys);
+    pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
+        self.loaded_public_keys
+            .extend(keys.into_iter().map(|a| (a.id, a)));
     }
 
     /// Returns balance

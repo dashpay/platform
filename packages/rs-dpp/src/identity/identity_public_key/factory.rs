@@ -1,7 +1,7 @@
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::ProtocolError;
 use rand::rngs::StdRng;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 use std::convert::TryFrom;
 use std::ops::{Div, Range, Rem};
 
@@ -10,6 +10,14 @@ pub type KeyCount = KeyID;
 pub type UsedKeyMatrix = Vec<bool>;
 
 impl IdentityPublicKey {
+    pub fn random_key(id: KeyID, seed: Option<u64>) -> Self {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_key_with_rng(id, &mut rng, None).unwrap()
+    }
+
     pub fn random_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,
@@ -59,7 +67,6 @@ impl IdentityPublicKey {
             read_only,
             disabled_at: None,
             data,
-            signature: vec![],
         })
     }
 

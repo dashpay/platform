@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::identity::IdentityPublicKey;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     identity::get_biggest_possible_identity,
@@ -64,21 +65,19 @@ pub async fn apply_identity_update_transition(
     }
 
     if !state_transition.get_public_keys_to_add().is_empty() {
-        identity.add_public_keys(
-            state_transition
-                .get_public_keys_to_add()
-                .iter()
-                .cloned()
-                .map(|mut pk| {
-                    pk.set_signature(vec![]);
-                    (pk.id, pk)
-                }),
-        );
-        let public_key_hashes: Vec<Vec<u8>> = state_transition
+        let keys_to_add = state_transition
             .get_public_keys_to_add()
+            .iter()
+            .cloned()
+            .map(|pkc| pkc.to_identity_public_key())
+            .collect::<Vec<IdentityPublicKey>>();
+
+        let public_key_hashes: Vec<Vec<u8>> = keys_to_add
             .iter()
             .map(|pk| pk.hash())
             .collect::<Result<_, _>>()?;
+
+        identity.add_public_keys(keys_to_add.into_iter());
 
         state_repository
             .store_identity_public_key_hashes(

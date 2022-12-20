@@ -1,6 +1,7 @@
 use chrono::Utc;
 use serde_json::{json, Value as JsonValue};
 
+use crate::identity::IdentityPublicKeyInCreation;
 use crate::{
     identity::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -75,14 +76,13 @@ fn get_public_keys_to_add() {
 #[test]
 fn set_public_keys_to_add() {
     let TestData { mut transition, .. } = setup_test();
-    let id_public_key = IdentityPublicKey {
+    let id_public_key = IdentityPublicKeyInCreation {
 						id : 0,
             key_type: KeyType::BLS12_381,
             purpose: Purpose::AUTHENTICATION,
             security_level : SecurityLevel::CRITICAL,
             read_only: true,
             data: hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
-            disabled_at : None,
             signature : Default::default(),
         };
     transition.set_public_keys_to_add(vec![id_public_key.clone()]);

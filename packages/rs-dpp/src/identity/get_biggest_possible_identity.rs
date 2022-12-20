@@ -41,7 +41,6 @@ pub fn get_biggest_possible_identity() -> Identity {
 
                     //? is that correct?
                     disabled_at: None,
-                    signature: vec![],
                 },
             )
         })

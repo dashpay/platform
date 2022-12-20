@@ -119,7 +119,7 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
         mut state_transition,
         ..
     } = setup_test();
-    identity.loaded_public_keys.get_mut(0).unwrap().read_only = true;
+    identity.loaded_public_keys.get_mut(&0).unwrap().read_only = true;
     state_transition.set_public_key_ids_to_disable(vec![0]);
 
     let identity_to_return = identity.clone();
@@ -154,7 +154,7 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
         mut state_transition,
         ..
     } = setup_test();
-    identity.loaded_public_keys.get_mut(0).unwrap().disabled_at =
+    identity.loaded_public_keys.get_mut(&0).unwrap().disabled_at =
         Some(Utc::now().timestamp_millis() as u64);
     state_transition.set_public_key_ids_to_disable(vec![0]);
 
@@ -319,10 +319,13 @@ async fn should_validate_purpose_and_security_level() {
 
     // the identity after transition must contain at least one
     // key with: purpose: AUTHENTICATION AND security level: MASTER
-    identity.get_public_keys_mut().iter_mut().for_each(|k| {
-        k.purpose = Purpose::ENCRYPTION;
-        k.security_level = SecurityLevel::CRITICAL;
-    });
+    identity
+        .get_public_keys_mut()
+        .iter_mut()
+        .for_each(|(_, k)| {
+            k.purpose = Purpose::ENCRYPTION;
+            k.security_level = SecurityLevel::CRITICAL;
+        });
     state_transition
         .get_public_keys_to_add_mut()
         .iter_mut()

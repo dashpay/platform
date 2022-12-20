@@ -42,10 +42,7 @@ where
                 .get_public_keys()
                 .iter()
                 .cloned()
-                .map(|mut pk| {
-                    pk.set_signature(vec![]);
-                    (pk.id, pk)
-                })
+                .map(|mut pk| (pk.id, pk.to_identity_public_key()))
                 .collect(),
             balance: credits_amount,
             revision: 0,

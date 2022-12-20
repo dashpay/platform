@@ -18,7 +18,7 @@ fn setup_test() -> TestData {
     let raw_public_keys: Vec<JsonValue> = identity
         .loaded_public_keys
         .iter()
-        .map(|pk| pk.to_raw_json_object(false))
+        .map(|(_, pk)| pk.to_raw_json_object())
         .collect::<Result<_, _>>()
         .unwrap();
 

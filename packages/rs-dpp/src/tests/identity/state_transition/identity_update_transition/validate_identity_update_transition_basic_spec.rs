@@ -75,7 +75,6 @@ fn setup_test() -> TestData {
         data: ec_public_key.try_into().unwrap(),
         read_only: false,
         disabled_at: None,
-        signature: vec![0; 65],
     };
 
     state_transition

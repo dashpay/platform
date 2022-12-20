@@ -4,10 +4,16 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::identity::fetch::KeyRequestType::{AllKeysRequest, CurrentKeyRequest};
+use crate::drive::identity::fetch::KeyKindRequestType::{
+    AllKeysOfKindRequest, CurrentKeyOfKindRequest,
+};
+use crate::drive::identity::fetch::KeyRequestType::{
+    AllKeysRequest, SearchKeyRequest, SpecificKeyRequest,
+};
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{
-    balance_path, balance_path_vec, identity_path, identity_query_keys_tree_path_vec, IDENTITY_KEY,
+    balance_path, balance_path_vec, identity_key_tree_path_vec, identity_path,
+    identity_query_keys_tree_path_vec, IDENTITY_KEY,
 };
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::{identity_tree_path, Drive, RootTree};
@@ -26,13 +32,22 @@ use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::{VarInt, VarIntReader};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The type of key request
-/// You can either get the current keys
-/// or you can get all keys
+/// The kind of keys you are requesting
+/// A kind is a purpose/security level pair
+/// Do you want to get all keys in that pair
+/// Or just the current one?
 #[derive(Clone, Copy)]
+pub enum KeyKindRequestType {
+    CurrentKeyOfKindRequest,
+    AllKeysOfKindRequest,
+}
+
+/// The type of key request
+#[derive(Clone)]
 pub enum KeyRequestType {
-    CurrentKeyRequest,
     AllKeysRequest,
+    SpecificKeyRequest(KeyID),
+    SearchKeyRequest(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
 }
 
 type PurposeU8 = u8;
@@ -41,7 +56,7 @@ type SecurityLevelU8 = u8;
 /// A request to get Keys from an Identity
 pub struct IdentityKeysRequest {
     identity_id: [u8; 32],
-    key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyRequestType>>,
+    key_request: KeyRequestType,
     limit: Option<u16>,
     offset: Option<u16>,
 }
@@ -51,7 +66,7 @@ impl IdentityKeysRequest {
     pub fn new_all_current_keys_query(identity_id: [u8; 32]) -> Self {
         let mut sec_btree_map = BTreeMap::new();
         for security_level in 0..=SecurityLevel::last() as u8 {
-            sec_btree_map.insert(security_level, CurrentKeyRequest);
+            sec_btree_map.insert(security_level, CurrentKeyOfKindRequest);
         }
         let mut purpose_btree_map = BTreeMap::new();
         for purpose in 0..=Purpose::last() as u8 {
@@ -59,7 +74,17 @@ impl IdentityKeysRequest {
         }
         IdentityKeysRequest {
             identity_id,
-            key_requests: purpose_btree_map,
+            key_request: SearchKeyRequest(purpose_btree_map),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    /// Make a request for all current keys for the identity
+    pub fn new_all_keys_query(identity_id: [u8; 32]) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            key_request: AllKeysRequest,
             limit: None,
             offset: None,
         }
@@ -69,39 +94,79 @@ impl IdentityKeysRequest {
     pub fn to_path_query(self) -> PathQuery {
         let IdentityKeysRequest {
             identity_id,
-            key_requests,
+            key_request,
             limit,
             offset,
         } = self;
-        let query_keys_path = identity_query_keys_tree_path_vec(identity_id);
-        PathQuery {
-            path: query_keys_path,
-            query: SizedQuery {
-                query: Self::construct_query(key_requests),
-                limit,
-                offset,
-            },
+        match key_request {
+            AllKeysRequest => {
+                let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query: Self::all_keys_query(),
+                        limit,
+                        offset,
+                    },
+                }
+            }
+            SpecificKeyRequest(key_id) => {
+                let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query: Self::specific_key_query(key_id),
+                        limit: Some(1),
+                        offset: None,
+                    },
+                }
+            }
+            SearchKeyRequest(map) => {
+                let query_keys_path = identity_query_keys_tree_path_vec(identity_id);
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query: Self::construct_search_query(map),
+                        limit,
+                        offset,
+                    },
+                }
+            }
         }
     }
 
+    /// All keys
+    fn all_keys_query() -> Query {
+        let mut query = Query::new();
+        query.insert_all();
+        query
+    }
+
+    /// Fetch a specific key knowing the id
+    fn specific_key_query(key_id: KeyID) -> Query {
+        let mut query = Query::new();
+        query.insert_key(key_id.encode_var_vec());
+        query
+    }
+
     /// Contruct the query for the request
-    fn construct_query(
-        key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyRequestType>>,
+    fn construct_search_query(
+        key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,
     ) -> Query {
         fn construct_security_level_query(
-            key_requests: BTreeMap<SecurityLevelU8, KeyRequestType>,
+            key_requests: BTreeMap<SecurityLevelU8, KeyKindRequestType>,
         ) -> Query {
             let mut query = Query::new();
 
             for (security_level, key_request_type) in key_requests {
                 let key = vec![security_level];
                 let subquery = match key_request_type {
-                    CurrentKeyRequest => {
+                    CurrentKeyOfKindRequest => {
                         let mut subquery = Query::new();
                         subquery.insert_key(vec![]);
                         subquery
                     }
-                    AllKeysRequest => {
+                    AllKeysOfKindRequest => {
                         let mut subquery = Query::new();
                         subquery.insert_range_after(vec![]..);
                         subquery
@@ -333,6 +398,21 @@ impl Drive {
             .collect()
     }
 
+    pub fn fetch_all_identity_keys(
+        &self,
+        identity_id: [u8; 32],
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.fetch_all_identity_keys_operations(
+            identity_id,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
     pub(crate) fn fetch_all_identity_keys_operations(
         &self,
         identity_id: [u8; 32],
@@ -340,7 +420,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
+        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
         let path_query = key_request.to_path_query();
 
         let (serialized_keys, _) =
@@ -372,8 +452,7 @@ impl Drive {
                 "revision not found on identity".to_string(),
             )))?;
 
-        let loaded_public_keys =
-            self.fetch_all_current_identity_keys(identity_id, true, transaction)?;
+        let loaded_public_keys = self.fetch_all_identity_keys(identity_id, true, transaction)?;
         Ok(Some(Identity {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
