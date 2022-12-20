@@ -194,7 +194,7 @@ fn to_object_with_signature_skipped() {
 fn to_json() {
     let TestData { transition, .. } = setup_test();
     let result = transition
-        .to_json()
+        .to_json(false)
         .expect("conversion to json shouldn't fail");
 
     let expected_raw_state_transition = json!({

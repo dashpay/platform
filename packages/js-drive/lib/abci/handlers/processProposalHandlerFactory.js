@@ -6,6 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const lodashCloneDeep = require('lodash/cloneDeep');
 const statuses = require('./proposal/statuses');
 
 /**
@@ -39,8 +40,11 @@ function processProposalHandlerFactory(
       abciMethod: 'processProposal',
     });
 
+    const requestToLog = lodashCloneDeep(request);
+    delete requestToLog.txs;
+
     consensusLogger.debug('ProcessProposal ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
+    consensusLogger.trace({ abciRequest: requestToLog });
 
     // Skip process proposal if it was already prepared for this height and round
     const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
