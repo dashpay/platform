@@ -1,4 +1,4 @@
-use crate::common::encode::{encode_u16, encode_u32};
+
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::flags::StorageFlags;
@@ -12,11 +12,11 @@ use crate::drive::identity::fetch::KeyRequestType::{
 };
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{
-    balance_path, balance_path_vec, identity_key_tree_path_vec, identity_path,
+    balance_path, identity_key_tree_path_vec, identity_path,
     identity_query_keys_tree_path_vec, IDENTITY_KEY,
 };
-use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
-use crate::drive::{identity_tree_path, Drive, RootTree};
+
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
@@ -24,15 +24,15 @@ use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::IdentityPublicKey;
 use grovedb::query_result_type::QueryResultType::{
     QueryElementResultType, QueryKeyElementPairResultType,
 };
 use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
-use integer_encoding::{VarInt, VarIntReader};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use integer_encoding::{VarInt};
+use std::collections::{BTreeMap};
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -260,7 +260,7 @@ impl Drive {
         )?;
         if apply {
             if let Some(identity_balance_element) = identity_balance_element {
-                if let SumItem(identity_balance_element, element_flags) = identity_balance_element {
+                if let SumItem(identity_balance_element, _element_flags) = identity_balance_element {
                     if identity_balance_element < 0 {
                         Err(Error::Drive(DriveError::CorruptedElementType(
                             "identity balance was present but was negative",

@@ -95,7 +95,7 @@ impl Drive {
 
         let Identity {
             id,
-            public_keys: public_keys,
+            public_keys,
             revision,
             balance,
             ..
@@ -156,11 +156,11 @@ mod tests {
     use crate::common::helpers::setup::setup_drive;
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
-    use grovedb::Element;
-    use serde::Serialize;
+    
+    
     use tempfile::TempDir;
 
-    use crate::drive::flags::StorageFlags;
+    
     use crate::drive::Drive;
 
     #[test]

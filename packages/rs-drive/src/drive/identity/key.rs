@@ -1,23 +1,22 @@
-use crate::common::encode::{encode_u16, encode_u32};
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, MAX_ELEMENT_SIZE};
+
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
-use crate::drive::grove_operations::QueryTarget::{QueryTargetTree, QueryTargetValue};
+use crate::drive::grove_operations::QueryTarget::{QueryTargetValue};
 use crate::drive::grove_operations::{
-    BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
+    BatchInsertApplyType, BatchInsertTreeApplyType,
 };
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
 use crate::drive::identity::{
-    identity_key_location_within_identity_vec, identity_key_path_vec, identity_key_tree_path,
-    identity_key_tree_path_vec, identity_path, identity_path_vec,
+    identity_key_location_within_identity_vec, identity_key_path_vec, identity_key_tree_path, identity_path,
     identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
     identity_query_keys_tree_path,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
+    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize,
 };
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef};
+use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKey};
 use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
-use crate::drive::{key_hashes_tree_path, key_hashes_tree_path_vec, Drive};
+use crate::drive::{key_hashes_tree_path_vec, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation::FunctionOperation;
@@ -27,7 +26,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::reference_path::ReferencePathType::{
-    AbsolutePathReference, CousinReference, RemovedCousinReference,
+    AbsolutePathReference,
 };
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -116,7 +115,7 @@ impl Drive {
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
         storage_flags: &StorageFlags,
-        estimated_costs_only_with_layer_info: &mut Option<
+        _estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<DriveOperation>,

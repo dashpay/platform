@@ -34,12 +34,12 @@
 
 use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::RootTree;
-use crate::error::drive::DriveError;
-use crate::error::Error;
+
+
 use dpp::identity::KeyID;
-use grovedb::batch::key_info::KeyInfo;
-use integer_encoding::{VarInt, VarIntReader};
-use serde_json::to_vec;
+
+use integer_encoding::{VarInt};
+
 
 mod estimation_costs;
 mod fetch;
@@ -48,7 +48,7 @@ mod key;
 mod update;
 mod withdrawal_queue;
 
-use crate::common::encode::encode_u32;
+
 pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 
 pub(crate) const IDENTITY_KEY: [u8; 1] = [0];

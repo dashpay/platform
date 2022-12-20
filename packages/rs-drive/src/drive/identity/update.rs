@@ -1,10 +1,10 @@
 use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
-use crate::drive::flags::StorageFlags;
+
+
 use crate::drive::identity::{
-    balance_path_vec, identity_path, identity_path_vec, IdentityRootStructure,
+    balance_path_vec, identity_path_vec, IdentityRootStructure,
 };
-use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -12,8 +12,8 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::{calculate_fee, FeeResult};
 use grovedb::batch::KeyInfoPath;
-use grovedb::Element::Item;
-use grovedb::{Element, ElementFlags, EstimatedLayerInformation, TransactionArg};
+
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 
@@ -237,10 +237,10 @@ impl Drive {
 mod tests {
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
-    use grovedb::Element;
+    
     use tempfile::TempDir;
 
-    use crate::drive::flags::StorageFlags;
+    
     use crate::drive::Drive;
     use crate::fee::FeeResult;
     use crate::fee_pools::epochs::Epoch;
@@ -282,7 +282,7 @@ mod tests {
             .unwrap()
             .expect("expected to be able to commit a transaction");
 
-        let (balance, fee_cost) = drive
+        let (balance, _fee_cost) = drive
             .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
             .expect("expected to get balance");
 
@@ -322,7 +322,7 @@ mod tests {
             }
         );
 
-        let (balance, fee_cost) = drive
+        let (balance, _fee_cost) = drive
             .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
             .expect("expected to get balance");
 

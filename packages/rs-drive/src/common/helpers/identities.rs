@@ -37,7 +37,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType};
+use dpp::identity::{Identity, IdentityPublicKey};
 use grovedb::TransactionArg;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
