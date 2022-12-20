@@ -51,7 +51,10 @@ where
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
             .fetch_data_contract(&data_contract_id, state_transition.get_execution_context())
-            .await?;
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
 
         let withdrawals_data_contract = maybe_withdrawals_data_contract
             .ok_or_else(|| anyhow!("Withdrawals data contract not found"))?;

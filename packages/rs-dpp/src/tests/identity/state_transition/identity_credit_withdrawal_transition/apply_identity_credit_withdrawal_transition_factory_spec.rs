@@ -24,7 +24,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_data_contract::<Option<DataContract>>()
+            .expect_fetch_data_contract()
             .times(1)
             .returning(|_, _| anyhow::Ok(None));
 
@@ -54,7 +54,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_data_contract::<Option<DataContract>>()
+            .expect_fetch_data_contract()
             .times(1)
             .returning(|_, _| anyhow::Ok(Some(get_data_contract_fixture(None))));
 
