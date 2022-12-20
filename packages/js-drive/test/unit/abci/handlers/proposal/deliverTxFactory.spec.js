@@ -141,17 +141,13 @@ describe('deliverTxFactory', () => {
     );
     expect(proposalBlockExecutionContextMock.addDataContract).to.not.be.called();
 
-    const stateTransitionFee = documentsBatchTransitionFixture.calculateFee();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
+      documentsBatchTransitionFixture.getOwnerId(),
+    );
 
-    // TODO: enable once fee calculation is done
-    // expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
-    //   documentsBatchTransitionFixture.getOwnerId(),
-    // );
+    identity.reduceBalance(stateTransitionExecutionContextMock.getLastCalculatedFeeDetails().total);
 
-    identity.reduceBalance(stateTransitionFee);
-
-    // TODO: enable once fee calculation is done
-    // expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
   });
 
   it('should apply a DataContractCreateTransition, add it to block execution state and return ResponseDeliverTx', async () => {

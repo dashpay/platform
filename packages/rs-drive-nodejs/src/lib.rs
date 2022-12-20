@@ -1,10 +1,10 @@
 mod converter;
-mod fee_result;
+mod fee;
 
 use std::num::ParseIntError;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
-use crate::fee_result::FeeResultWrapper;
+use crate::fee::result::FeeResultWrapper;
 use drive::dpp::identity::Identity;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -21,6 +21,7 @@ use drive_abci::abci::messages::{
     Serializable,
 };
 use drive_abci::platform::Platform;
+use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;
 
 type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
@@ -2378,6 +2379,11 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("feeResultAddFees", FeeResultWrapper::add_fees)?;
     cx.export_function("feeResultCreate", FeeResultWrapper::create)?;
     cx.export_function("feeResultGetRefunds", FeeResultWrapper::get_fee_refunds)?;
+
+    cx.export_function(
+        "calculateStorageFeeDistributionAmountAndLeftovers",
+        js_calculate_storage_fee_distribution_amount_and_leftovers,
+    )?;
 
     Ok(())
 }

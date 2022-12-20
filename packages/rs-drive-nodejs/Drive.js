@@ -25,6 +25,7 @@ const {
   abciBlockBegin,
   abciBlockEnd,
   abciAfterFinalizeBlock,
+  calculateStorageFeeDistributionAmountAndLeftovers,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -32,7 +33,7 @@ const {
 const GroveDB = require('./GroveDB');
 const FeeResult = require('./FeeResult');
 
-const { appendStackAsync } = require('./appendStack');
+const { appendStackAsync, appendStack } = require('./appendStack');
 
 const decodeProtocolEntity = decodeProtocolEntityFactory();
 
@@ -60,6 +61,10 @@ const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
 const abciBlockBeginAsync = appendStackAsync(promisify(abciBlockBegin));
 const abciBlockEndAsync = appendStackAsync(promisify(abciBlockEnd));
 const abciAfterFinalizeBlockAsync = appendStackAsync(promisify(abciAfterFinalizeBlock));
+
+const calculateStorageFeeDistributionAmountAndLeftoversWithStack = appendStack(
+  calculateStorageFeeDistributionAmountAndLeftovers,
+);
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -464,6 +469,9 @@ class Drive {
     };
   }
 }
+
+// eslint-disable-next-line max-len
+Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDistributionAmountAndLeftoversWithStack;
 
 /**
  * @typedef RawBlockInfo

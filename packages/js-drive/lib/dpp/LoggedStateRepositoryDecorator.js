@@ -498,13 +498,13 @@ class LoggedStateRepositoryDecorator {
   /**
    * Returns block time
    *
-   * @returns {number}
+   * @returns {Promise<number>}
    */
-  fetchLatestPlatformBlockTime() {
+  async fetchLatestPlatformBlockTime() {
     let response;
 
     try {
-      response = this.stateRepository.fetchLatestPlatformBlockTime();
+      response = await this.stateRepository.fetchLatestPlatformBlockTime();
     } finally {
       this.log('fetchLatestPlatformBlockTime', { }, response);
     }
@@ -547,6 +547,26 @@ class LoggedStateRepositoryDecorator {
       );
     } finally {
       this.log('enqueueWithdrawalTransaction', { index, transactionBytes }, response);
+    }
+  }
+
+  /**
+   * Calculates storage fee to epochs distribution amount and leftovers
+   *
+   * @param {number} storageFee
+   * @param {number} startEpochIndex
+   * @returns {Promise<[number, number]>}
+   */
+  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
+    let response;
+
+    try {
+      response = await this.stateRepository.calculateStorageFeeDistributionAmountAndLeftovers(
+        storageFee,
+        startEpochIndex,
+      );
+    } finally {
+      this.log('calculateStorageFeeDistributionAmountAndLeftovers', { storageFee, startEpochIndex }, response);
     }
   }
 }

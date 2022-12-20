@@ -5,6 +5,8 @@ const {
 /**
  * Calculate processing and storage fees based on operations
  *
+ *
+ * @typedef {calculateOperationFees}
  * @param {AbstractOperation[]} operations
  *
  * @returns {{

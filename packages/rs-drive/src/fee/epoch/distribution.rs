@@ -71,7 +71,7 @@ pub fn distribute_storage_fee_to_epochs_collection(
     storage_fee: SignedCredits,
     start_epoch_index: EpochIndex,
     skip_up_to_epoch_index: Option<EpochIndex>,
-) -> Result<SignedCredits, Error> {
+) -> Result<DistributionLeftovers, Error> {
     distribution_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
@@ -97,14 +97,30 @@ pub fn distribute_storage_fee_to_epochs_collection(
     )
 }
 
-/// Calculates leftovers from distribution storage fees to epochs
-pub fn calculate_distribution_storage_fee_to_epochs_leftovers(
+type DistributionAmount = SignedCredits;
+type DistributionLeftovers = SignedCredits;
+
+/// Calculates leftovers and amount of credits by distributing storage fees to epochs
+pub fn calculate_storage_fee_distribution_amount_and_leftovers(
     storage_fee: SignedCredits,
     start_epoch_index: EpochIndex,
-) -> Result<SignedCredits, Error> {
-    // To do not mess `distribution_storage_fee_to_epochs_map` arguments better to pass dummy
-    // function. Rust optimizer reduce it and won't call anything.
-    distribution_storage_fee_to_epochs_map(storage_fee, start_epoch_index, |_, _| Ok(()))
+    skip_up_to_epoch_index: EpochIndex,
+) -> Result<(DistributionAmount, DistributionLeftovers), Error> {
+    let mut skipped_amount = 0;
+
+    let leftovers = distribution_storage_fee_to_epochs_map(
+        storage_fee,
+        start_epoch_index,
+        |epoch_index, epoch_fee_share| {
+            if epoch_index < skip_up_to_epoch_index {
+                skipped_amount += epoch_fee_share;
+            }
+
+            Ok(())
+        },
+    )?;
+
+    Ok((storage_fee - skipped_amount - leftovers, leftovers))
 }
 
 /// Distributes storage fees to epochs and call function for each epoch.
@@ -113,7 +129,7 @@ fn distribution_storage_fee_to_epochs_map<F>(
     storage_fee: SignedCredits,
     start_epoch_index: EpochIndex,
     mut f: F,
-) -> Result<SignedCredits, Error>
+) -> Result<DistributionLeftovers, Error>
 where
     F: FnMut(EpochIndex, SignedCredits) -> Result<(), Error>,
 {
@@ -463,21 +479,24 @@ mod tests {
         }
     }
 
-    mod calculate_distribution_storage_fee_to_epochs_leftovers {
+    mod calculate_storage_fee_to_epochs_distribution_amount_and_leftovers {
         use super::*;
 
         #[test]
-        fn should_calculate_leftovers() {
+        fn should_calculate_amount_and_leftovers() {
             let storage_fee = 10000;
 
-            let leftovers = calculate_distribution_storage_fee_to_epochs_leftovers(
+            let (amount, leftovers) = calculate_storage_fee_distribution_amount_and_leftovers(
                 storage_fee,
                 GENESIS_EPOCH_INDEX,
+                2,
             )
             .expect("should distribute storage fee");
 
-            // check leftover
+            let first_two_epochs_amount = 50;
+
             assert_eq!(leftovers, 400);
+            assert_eq!(amount, storage_fee - leftovers - first_two_epochs_amount);
         }
     }
 }

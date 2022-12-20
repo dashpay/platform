@@ -13,7 +13,6 @@ const stateTransitionTypes = require('./stateTransitionTypes');
 const hashModule = require('../util/hash');
 const serializer = require('../util/serializer');
 
-const calculateStateTransitionFee = require('./fee/calculateStateTransitionFee');
 const IdentityPublicKey = require('../identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPublicKeyTypeError');
 const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
@@ -290,15 +289,6 @@ class AbstractStateTransition {
     const blsSignature = BlsSignature.fromBytesAndAggregationInfo(signature, aggregationInfo);
 
     return blsSignature.verify();
-  }
-
-  /**
-   * Calculate ST fee in credits
-   *
-   * @return {number}
-   */
-  calculateFee() {
-    return calculateStateTransitionFee(this);
   }
 
   /**
