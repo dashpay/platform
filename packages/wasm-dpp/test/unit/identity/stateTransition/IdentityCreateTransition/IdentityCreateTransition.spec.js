@@ -32,7 +32,7 @@ describe('IdentityCreateTransition', () => {
 
   beforeEach(() => {
     stateTransitionJS = getIdentityCreateTransitionFixture();
-    // TODO: revisit
+    // TODO: revisit?
     // Provide publicKeys that have mocked signature, because in case of absence,
     // JS returns signature as undefined and wasm binding returns empty buffer
     // and we can not do deep.equal directly
@@ -78,8 +78,9 @@ describe('IdentityCreateTransition', () => {
 
     it('should set `identityId`', () => {
       stateTransition.setAssetLockProof(
-        // TODO: test with instance of binding assetLockProof
-        stateTransitionJS.assetLockProof.toObject(),
+        // TODO: method accepts JS value and errors if we pass instances of wasm's AssetLockProof
+        // Should it be fixed?
+        stateTransition.assetLockProof.toObject(),
       );
 
       expect(stateTransition.identityId.toBuffer()).to.deep.equal(
@@ -103,7 +104,8 @@ describe('IdentityCreateTransition', () => {
         new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
       ];
 
-      // TODO: fix issue with passing public keys directly instead of toObject()
+      // TODO: method accepts JS value and errors if we pass instances of IdentityPublicKey
+      // Should it be fixed?
       stateTransition.setPublicKeys(publicKeys.map((key) => key.toObject()));
       stateTransitionJS.setPublicKeys(publicKeys);
 
@@ -132,7 +134,8 @@ describe('IdentityCreateTransition', () => {
       stateTransitionJS.addPublicKeys(publicKeys);
 
       stateTransition.setPublicKeys([]);
-      // TODO: fix issue with passing public keys directly instead of toObject()
+      // TODO: method accepts JS value and errors if we pass instances of wasm IdentityPublicKey
+      // Should it be fixed?
       stateTransition.addPublicKeys(publicKeys.map((key) => key.toObject()));
 
       expect(stateTransition.getPublicKeys().map((key) => key.toObject()))
@@ -169,7 +172,7 @@ describe('IdentityCreateTransition', () => {
 
       expect(stObject.signature).to.deep.equal(stObjectJS.signature);
 
-      // TODO: identityId is missing in JS object.
+      // TODO: identityId is missing in JS object. Fix?
       // compare to `signature` option because it's returned as identityId
       // in case skipIdentifiersConversion is true
       expect(stObject.identityId).to.deep.equal(stObjectJS.signature);
@@ -178,9 +181,7 @@ describe('IdentityCreateTransition', () => {
       expect(stObject.publicKeys.map((key) => key.toObject()))
         .to.deep.equal(stObjectJS.publicKeys);
       expect(stObject.type).to.equal(stObjectJS.type);
-
-      // TODO: wasm-dpp version is 0 while JS version is 1
-      // expect(stObject.protocolVersion).to.equal(stObjectJS.protocolVersion);
+      expect(stObject.protocolVersion).to.equal(stObjectJS.protocolVersion);
     });
 
     it('should return raw state transition without signature', () => {
@@ -197,17 +198,14 @@ describe('IdentityCreateTransition', () => {
 
       expect(stJson.signature).to.deep.equal(stJsonJS.signature);
 
-      // TODO: identityId is missing in JS object.
-      // compare to `signature` option because it's returned as identityId
+      // TODO: identityId is missing in JS object. Fix?
+      // Instead compare to `signature` option because it's returned as identityId
       // in case skipIdentifiersConversion is true
       expect(stJson.identityId).to.deep.equal(stJsonJS.signature);
       expect(stJson.assetLockProof).to.deep.equal(stJsonJS.assetLockProof);
       expect(stJson.publicKeys).to.deep.equal(stJsonJS.publicKeys);
       expect(stJson.type).to.equal(stJsonJS.type);
-
-      // TODO: wasm-dpp version is 0 while JS version is 1
-      // expect(stJson.protocolVersion).to.equal(stJsonJS.protocolVersion);
-      // console.log(stJsonJS);
+      expect(stJson.protocolVersion).to.equal(stJsonJS.protocolVersion);
     });
   });
 

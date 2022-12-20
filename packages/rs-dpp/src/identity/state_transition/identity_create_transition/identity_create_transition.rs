@@ -111,6 +111,10 @@ impl IdentityCreateTransition {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
+        if let Some(protocol_version) = transition_map.get(property_names::PROTOCOL_VERSION) {
+            state_transition.protocol_version = protocol_version.as_u64().unwrap() as u32;
+        }
+
         Ok(state_transition)
     }
 
