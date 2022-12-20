@@ -493,14 +493,4 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       expect(stateTransition.signaturePublicKeyId).to.equal(signaturePublicKeyId);
     });
   });
-
-  describe('#calculateFee', () => {
-    it('should calculate fee', () => {
-      const result = stateTransition.calculateFee();
-
-      const fee = calculateStateTransitionFee(stateTransition);
-
-      expect(result).to.equal(fee);
-    });
-  });
 });
