@@ -10,6 +10,7 @@ pub struct InvalidDataContractError {
 
 #[wasm_bindgen(js_class=InvalidDataContractError)]
 impl InvalidDataContractError {
+    #[wasm_bindgen(constructor)]
     pub fn new(errors: Vec<JsValue>, raw_data_contract: JsValue) -> Self {
         InvalidDataContractError {
             errors,
@@ -25,5 +26,25 @@ impl InvalidDataContractError {
     #[wasm_bindgen(js_name=getRawDataContract)]
     pub fn get_raw_data_contract(&self) -> JsValue {
         self.raw_data_contract.clone()
+    }
+
+    #[wasm_bindgen(js_name=getMessage)]
+    pub fn get_message(&self) -> String {
+        let extended_message = if let Some(error_message) = self
+            .errors
+            .first()
+            .map(|e| Into::<js_sys::Error>::into(e.clone()).message())
+        {
+            let narrowed_message = if self.errors.len() > 1 {
+                format!(" and {} more", self.errors.len() - 1)
+            } else {
+                "".to_owned()
+            };
+            format!(": \"{error_message}\"{narrowed_message}")
+        } else {
+            "".to_owned()
+        };
+
+        format!("Data contract decode error{extended_message}")
     }
 }

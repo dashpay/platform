@@ -194,13 +194,12 @@ describe('DataContract', () => {
 
   describe('#getDocumentSchema', () => {
     it('should throw error if Document is not defined', () => {
-      let error;
       try {
         dataContract.getDocumentSchema('undefinedObject');
+        expect.fail('Error was not thrown');
       } catch (e) {
-        error = e;
+        expect(e.getDocType()).to.equal('undefinedObject');
       }
-      expect(error.getDocType()).to.equal('undefinedObject');
     });
 
     it('should return Document Schema', () => {
@@ -212,13 +211,12 @@ describe('DataContract', () => {
 
   describe('#getDocumentSchemaRef', () => {
     it('should throw error if Document is not defined', () => {
-      let error;
       try {
         dataContract.getDocumentSchemaRef('undefinedObject');
+        expect.fail('Error was not thrown');
       } catch (e) {
-        error = e;
+        expect(e.getDocType()).to.equal('undefinedObject');
       }
-      expect(error.getDocType()).to.equal('undefinedObject');
     });
 
     it('should return schema ref', () => {
@@ -324,14 +322,12 @@ describe('DataContract', () => {
     });
 
     it('should throw an error if document type is not found', () => {
-      let error;
       try {
         dataContract.getBinaryProperties('unknown');
         expect.fail('Error was not thrown');
       } catch (e) {
-        error = e;
+        expect(e.getDocType()).to.equal('unknown');
       }
-      expect(error.getDocType()).to.equal('unknown');
     });
   });
 
