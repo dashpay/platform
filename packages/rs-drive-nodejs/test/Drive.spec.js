@@ -3,11 +3,18 @@ const fs = require('fs');
 const { expect, use } = require('chai');
 use(require('dirty-chai'));
 
+const DashPlatformProtocol = require('@dashevo/dpp');
+
 const Document = require('@dashevo/dpp/lib/document/Document');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
+const withdrawalContractDocumentsSchema = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+const withdrawalContractIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 
 const {
   expectFeeResult,
@@ -26,12 +33,28 @@ describe('Drive', () => {
   let blockInfo;
   let documents;
   let initialRootHash;
+  let withdrawalsDataContract;
 
   beforeEach(async () => {
     drive = new Drive(TEST_DATA_PATH, {
       dataContractsGlobalCacheSize: 500,
       dataContractsBlockCacheSize: 500,
     });
+
+    const dpp = new DashPlatformProtocol({
+      stateRepository: {
+        fetchDataContract: () => {},
+      },
+    });
+
+    await dpp.initialize();
+
+    withdrawalsDataContract = dpp.dataContract.create(
+      generateRandomIdentifier(),
+      withdrawalContractDocumentsSchema,
+    );
+
+    withdrawalsDataContract.id = Identifier.from(withdrawalContractIds.contractId);
 
     dataContract = getDataContractFixture();
     identity = getIdentityFixture();
@@ -504,6 +527,9 @@ describe('Drive', () => {
 
     describe('BlockBegin', () => {
       beforeEach(async () => {
+        await drive.createInitialStateStructure();
+        await drive.createContract(withdrawalsDataContract, blockInfo);
+
         await drive.getAbci().initChain({});
       });
 
@@ -513,6 +539,8 @@ describe('Drive', () => {
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
         };
 
         const response = await drive.getAbci().blockBegin(request);
@@ -533,6 +561,8 @@ describe('Drive', () => {
           blockTimeMs,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
         });
 
         const response = await drive.getAbci().blockBegin({
@@ -541,6 +571,8 @@ describe('Drive', () => {
           proposerProTxHash: Buffer.alloc(32, 1),
           previousBlockTimeMs: blockTimeMs,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
         });
 
         expect(response.unsignedWithdrawalTransactions).to.be.empty();
@@ -554,12 +586,17 @@ describe('Drive', () => {
 
     describe('BlockEnd', () => {
       beforeEach(async () => {
+        await drive.createInitialStateStructure();
+        await drive.createContract(withdrawalsDataContract, blockInfo);
+
         await drive.getAbci().initChain({});
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
         });
       });
 
@@ -581,6 +618,7 @@ describe('Drive', () => {
 
         await drive.createInitialStateStructure();
         await drive.createContract(dataContract, blockInfo);
+        await drive.createContract(withdrawalsDataContract, blockInfo);
 
         await drive.getAbci().initChain({});
         await drive.getAbci().blockBegin({
@@ -588,6 +626,8 @@ describe('Drive', () => {
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
         });
         await drive.getAbci().blockEnd({
           fees: FeeResult.create(100, 10),

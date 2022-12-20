@@ -1838,6 +1838,7 @@ __metadata:
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
     "@dashevo/dpp": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
     chai: ^4.3.4
@@ -1968,7 +1969,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
+"@dashevo/withdrawals-contract@workspace:*, @dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
   dependencies:

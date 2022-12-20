@@ -985,6 +985,7 @@ dependencies = [
  "drive-abci",
  "neon",
  "num 0.4.0",
+ "serde_json",
 ]
 
 [[package]]

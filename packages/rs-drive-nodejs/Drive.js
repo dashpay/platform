@@ -495,6 +495,8 @@ class Drive {
  * @property {number} [previousBlockTimeMs] - timestamp in milliseconds
  * @property {Buffer} proposerProTxHash
  * @property {Buffer} validatorSetQuorumHash
+ * @property {number} lastSyncedCoreHeight
+ * @property {number} coreChainLockedHeight,
  */
 
 /**

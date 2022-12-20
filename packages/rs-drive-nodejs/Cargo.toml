@@ -10,11 +10,15 @@ private = true
 crate-type = ["cdylib"]
 
 [dependencies]
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", features = ["core-rpc-mock"]}
 drive-abci = { path = "../rs-drive-abci" }
 num = "0.4.0"
+serde_json = { version="1.0", features=["preserve_order"] }
 
 [dependencies.neon]
 version = "0.10.1"
 default-features = false
 features = ["napi-6", "event-queue-api", "try-catch-api"]
+
+[features]
+enable-core-rpc-mocking = []

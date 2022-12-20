@@ -1,7 +1,9 @@
 mod converter;
 mod fee_result;
 
-use neon::object::PropertyKey;
+use drive::dpp::dashcore::hashes::hex::FromHex;
+use drive::dpp::dashcore::BlockHash;
+use drive::rpc::core::MockCoreRPCLike;
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
@@ -20,6 +22,7 @@ use drive_abci::abci::messages::{
 };
 use drive_abci::platform::Platform;
 use neon::prelude::*;
+use serde_json::json;
 
 type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
 type UnitCallback = Box<dyn FnOnce(&Channel) + Send>;
@@ -98,7 +101,26 @@ impl PlatformWrapper {
             };
 
             // TODO: think how to pass this error to JS
-            let platform: Platform = Platform::open(path, Some(drive_config)).unwrap();
+            let mut platform: Platform = Platform::open(path, Some(drive_config)).unwrap();
+
+            if cfg!(feature = "enable-core-rpc-mocking") {
+                let mut core_rpc_mock = MockCoreRPCLike::new();
+
+                core_rpc_mock.expect_get_block_hash().returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+                core_rpc_mock.expect_get_block_json().returning(|_| {
+                    Ok(json!({
+                        "tx": [],
+                    }))
+                });
+
+                platform.drive.core_rpc = Some(Box::new(core_rpc_mock));
+            }
 
             let mut maybe_transaction: Option<Transaction> = None;
 

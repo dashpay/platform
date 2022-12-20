@@ -17,6 +17,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@dashevo/withdrawals-contract": "workspace:*",
     "chai": "^4.3.4",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",
