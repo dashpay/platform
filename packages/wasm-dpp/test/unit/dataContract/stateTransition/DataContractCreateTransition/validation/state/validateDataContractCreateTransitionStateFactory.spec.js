@@ -14,6 +14,7 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
   let factory;
   let dataContractFetched;
   let DataContractFactory;
+  let DataContractValidator;
 
   before(async () => {
     ({
@@ -53,12 +54,10 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     // This time our state repository should return a data contract on fetch
     const validator = new DataContractValidator();
     const dataContractFactory = new DataContractFactory(1, validator);
-    const wasmDataContract  = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
+    const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLikeWithContract = {
-      fetchDataContract: () => {
-        return wasmDataContract;
-      }
+      fetchDataContract: () => wasmDataContract,
     };
 
     const result = await validateDataContractCreateTransitionState(
