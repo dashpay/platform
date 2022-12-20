@@ -1,18 +1,18 @@
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name=DataContractDecodeError)]
+#[wasm_bindgen(js_name=InvalidDataContractError)]
 #[derive(Debug)]
-pub struct DataContractDecodeError {
+pub struct InvalidDataContractError {
     // we have to store it as JsValue as the errors of 'class' Consensus are of different types
     errors: Vec<JsValue>,
     raw_data_contract: JsValue,
 }
 
-#[wasm_bindgen(js_class=DataContractDecodeError)]
-impl DataContractDecodeError {
+#[wasm_bindgen(js_class=InvalidDataContractError)]
+impl InvalidDataContractError {
     #[wasm_bindgen(constructor)]
     pub fn new(errors: Vec<JsValue>, raw_data_contract: JsValue) -> Self {
-        DataContractDecodeError {
+        InvalidDataContractError {
             errors,
             raw_data_contract,
         }

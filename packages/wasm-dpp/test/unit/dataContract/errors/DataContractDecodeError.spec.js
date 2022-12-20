@@ -2,14 +2,14 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('DataContractDecodeError', () => {
+describe('InvalidDataContractError', () => {
   let rawDataContract;
   let error;
-  let DataContractDecodeError;
+  let InvalidDataContractError;
 
   before(async () => {
     ({
-      DataContractDecodeError,
+      InvalidDataContractError,
     } = await loadWasmDpp());
   });
 
@@ -23,32 +23,32 @@ describe('DataContractDecodeError', () => {
   it('should return errors', () => {
     const errors = [error];
 
-    const dataContractDecodeError = new DataContractDecodeError(errors, rawDataContract);
+    const invalidDataContractError = new InvalidDataContractError(errors, rawDataContract);
 
-    expect(dataContractDecodeError.getErrors()).to.deep.equal(errors);
+    expect(invalidDataContractError.getErrors()).to.deep.equal(errors);
   });
 
   it('should return Data Contract', async () => {
     const errors = [error];
 
-    const dataContractDecodeError = new DataContractDecodeError(errors, rawDataContract);
+    const invalidDataContractError = new InvalidDataContractError(errors, rawDataContract);
 
-    expect(dataContractDecodeError.getRawDataContract()).to.deep.equal(rawDataContract);
+    expect(invalidDataContractError.getRawDataContract()).to.deep.equal(rawDataContract);
   });
 
   it('should contain message for 1 error', async () => {
     const errors = [error];
 
-    const dataContractDecodeError = new DataContractDecodeError(errors, rawDataContract);
+    const invalidDataContractError = new InvalidDataContractError(errors, rawDataContract);
 
-    expect(dataContractDecodeError.getMessage()).to.equal(`Data contract decode error: "${error.message}"`);
+    expect(invalidDataContractError.getMessage()).to.equal(`Data contract decode error: "${error.message}"`);
   });
 
   it('should contain message for multiple errors', async () => {
     const errors = [error, error];
 
-    const dataContractDecodeError = new DataContractDecodeError(errors, rawDataContract);
+    const invalidDataContractError = new InvalidDataContractError(errors, rawDataContract);
 
-    expect(dataContractDecodeError.getMessage()).to.equal(`Data contract decode error: "${error.message}" and 1 more`);
+    expect(invalidDataContractError.getMessage()).to.equal(`Data contract decode error: "${error.message}" and 1 more`);
   });
 });
