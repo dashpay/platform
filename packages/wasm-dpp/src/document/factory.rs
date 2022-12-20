@@ -21,10 +21,41 @@ use crate::{
     errors::RustConversionError,
     identifier::IdentifierWrapper,
     utils::{ToSerdeJSONExt, WithJsError},
-    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM,
+    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM, DocumentsContainer,
 };
 
 use super::validator::DocumentValidatorWasm;
+
+#[wasm_bindgen(js_name=DocumentTransitions)]
+#[derive(Debug, Default)]
+pub struct DocumentTransitions {
+    create: Vec<DocumentWasm>,
+    replace: Vec<DocumentWasm>,
+    delete: Vec<DocumentWasm>,
+}
+
+#[wasm_bindgen(js_class=DocumentTransitions)]
+impl DocumentTransitions {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    #[wasm_bindgen(js_name = "addTransitionCreate")]
+    pub fn add_transition_create(&mut self, transition: DocumentWasm) {
+        self.create.push(transition)
+    }
+
+    #[wasm_bindgen(js_name = "addTransitionReplace")]
+    pub fn add_transition_replace(&mut self, transition: DocumentWasm) {
+        self.replace.push(transition)
+    }
+
+    #[wasm_bindgen(js_name = "addTransitionDelete")]
+    pub fn add_transition_delete(&mut self, transition: DocumentWasm) {
+        self.delete.push(transition)
+    }
+}
 
 #[wasm_bindgen(js_name = DocumentFactory)]
 pub struct DocumentFactoryWASM(DocumentFactory);
@@ -73,56 +104,20 @@ impl DocumentFactoryWASM {
     #[wasm_bindgen(js_name=createStateTransition)]
     pub fn create_state_transition(
         &self,
-        js_documents: JsValue,
-        data_contract: &DataContractWasm,
+        documents_container: DocumentsContainer,
     ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
-        let mut documents_iter: HashMap<Action, Vec<Document>> = Default::default();
-
-        let js_documents_object = js_sys::Object::try_from(&js_documents)
-            .context("expected object")
-            .with_js_error()?;
-
-        for entry in js_sys::Object::entries(js_documents_object).iter() {
-            let e = Array::from(&entry);
-            let mut entry_iter = e.iter();
-
-            let action = entry_iter
-                .next()
-                .context("key isn't present")
-                .with_js_error()?
-                .as_string()
-                .context("the key must be a string")
-                .with_js_error()?;
-
-            let js_documents_object = entry_iter
-                .next()
-                .context("value isn't present")
-                .with_js_error()?;
-
-            let js_documents: Vec<JsValue> = js_sys::try_iter(&js_documents_object)?
-                .context("documents cannot be  none")
-                .with_js_error()?
-                .try_collect()?;
-
-            let action = Action::try_from(action).with_js_error()?;
-            let documents: Vec<DocumentWasm> = js_documents
-                .into_iter()
-                .map(|v| DocumentWasm::new(v, data_contract))
-                .try_collect()?;
-
-            match documents_iter.entry(action) {
-                Entry::Occupied(ref mut o) => {
-                    o.get_mut().extend(documents.into_iter().map(|v| v.0))
-                }
-                Entry::Vacant(v) => {
-                    v.insert(documents.into_iter().map(|v| v.0).collect_vec());
-                }
-            };
-        }
+        let mut documents_container = documents_container;
 
         let batch_transition = self
             .0
-            .create_state_transition(documents_iter)
+            .create_state_transition([
+                (Action::Create, documents_container.take_documents_create()),
+                (
+                    Action::Replace,
+                    documents_container.take_documents_replace(),
+                ),
+                (Action::Delete, documents_container.take_documents_delete()),
+            ])
             .with_js_error()?;
 
         Ok(batch_transition.into())
@@ -133,11 +128,4 @@ impl DocumentFactoryWASM {
     pub fn inner(self) -> DocumentFactory {
         self.0
     }
-}
-
-#[wasm_bindgen(js_name=FactoryInput)]
-pub struct CreateTransitionInput {
-    create: Vec<DocumentWasm>,
-    replace: Vec<DocumentWasm>,
-    delete: Vec<DocumentWasm>,
 }

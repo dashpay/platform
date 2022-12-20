@@ -34,10 +34,11 @@ type PropertyPath = String;
 pub const SCHEMA_URI: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
 pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OWNER_ID];
+pub const BINARY_FIELDS: [&str; 1] = [property_names::ENTROPY];
 
 impl Convertible for DataContract {
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
         }
@@ -83,9 +84,10 @@ pub struct DataContract {
     pub defs: BTreeMap<DefinitionName, JsonSchema>,
 
     #[serde(skip)]
-    pub metadata: Option<Metadata>,
-    #[serde(skip)]
     pub entropy: [u8; 32],
+
+    #[serde(skip)]
+    pub metadata: Option<Metadata>,
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 
@@ -106,6 +108,16 @@ impl DataContract {
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
         raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
         let mut data_contract: DataContract = serde_json::from_value(raw_object)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
+    }
+
+    pub fn from_json_object(json_value: JsonValue) -> Result<DataContract, ProtocolError> {
+        let mut json_value = json_value;
+        json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
+
+        let mut data_contract: DataContract = serde_json::from_value(json_value)?;
         data_contract.generate_binary_properties();
 
         Ok(data_contract)

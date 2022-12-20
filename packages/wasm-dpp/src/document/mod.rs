@@ -24,7 +24,7 @@ mod factory;
 mod state_transition;
 mod validator;
 
-pub use document_batch_transition::DocumentsBatchTransitionWASM;
+pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 
@@ -71,11 +71,6 @@ impl DocumentWasm {
             Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
                 .with_js_error()?;
 
-        console_log!(
-            "the created document is {}: {}",
-            document.document_type,
-            document.data
-        );
         Ok(document.into())
     }
 
@@ -148,8 +143,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        // when setting data, make sure things are being converted
-
+        // TODO
         self.0.data = with_js_error!(serde_wasm_bindgen::from_value(d))?;
         Ok(())
     }
@@ -305,6 +299,11 @@ impl DocumentWasm {
     pub fn hash(&self) -> Result<Buffer, JsValue> {
         let bytes = self.0.hash().with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=clone)]
+    pub fn deep_clone(&self) -> Self {
+        self.clone()
     }
 }
 

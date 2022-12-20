@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { replace } = require('lodash');
 const { default: loadWasmDpp } = require('../../../dist');
 
 /**
@@ -11,4 +12,10 @@ async function generateRandomIdentifierAsync() {
   return new Identifier(crypto.randomBytes(32));
 }
 
-module.exports = generateRandomIdentifierAsync;
+
+
+
+
+
+
+

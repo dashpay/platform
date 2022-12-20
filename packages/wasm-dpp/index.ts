@@ -24,6 +24,8 @@ export default async function loadDpp() {
       isInitialized = true;
     }
 
+
+
     patchIdentifier(dpp_module);
 
     return dpp_module;

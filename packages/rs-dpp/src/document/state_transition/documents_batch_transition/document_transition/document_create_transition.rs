@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -5,12 +6,14 @@ use crate::{
     data_contract::DataContract,
     document::document_transition::Action,
     errors::ProtocolError,
-    util::deserializer,
     util::json_value::JsonValueExt,
     util::json_value::{self, ReplaceWith},
 };
 
-use super::{DocumentBaseTransition, DocumentTransitionObjectLike};
+use super::{
+    document_base_transition, merge_serde_json_values, DocumentBaseTransition,
+    DocumentTransitionObjectLike,
+};
 
 pub const INITIAL_REVISION: u32 = 1;
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
@@ -21,8 +24,8 @@ pub struct DocumentCreateTransition {
     #[serde(flatten)]
     /// Document Base Transition
     pub base: DocumentBaseTransition,
-    #[serde(rename = "$entropy", with = "deserializer::serde_entropy")]
-    /// Entropy ised in creating the Document ID.
+    #[serde(rename = "$entropy")]
+    /// Entropy used in creating the Document ID.
     pub entropy: [u8; 32],
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
@@ -47,64 +50,53 @@ impl DocumentCreateTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
-    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
-        let mut document: DocumentCreateTransition = serde_json::from_str(json_str)?;
+    fn from_json_object(
+        json_value: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError> {
+        let mut json_value = json_value;
+        let document_type = json_value.get_string("$type")?;
+
+        let (identifiers_paths, binary_paths) =
+            data_contract.get_identifiers_and_binary_paths(document_type);
+
+        json_value.replace_binary_paths(
+            binary_paths.into_iter().chain(BINARY_FIELDS),
+            ReplaceWith::Bytes,
+        )?;
+        // only dynamic identifiers are being replaced with bytes.
+        json_value.replace_identifier_paths(identifiers_paths, ReplaceWith::Bytes)?;
+        let mut document: DocumentCreateTransition = serde_json::from_value(json_value)?;
+
         document.base.action = Action::Create;
-        document.base.data_contract_id = data_contract.id.clone();
         document.base.data_contract = data_contract;
+
         Ok(document)
     }
 
-    fn from_raw_document(
+    fn from_raw_object(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentCreateTransition, ProtocolError> {
-        DocumentBaseTransition::identifiers_to_strings(&mut raw_transition)?;
-        Self::bytes_to_strings(&mut raw_transition)?;
+        // only static identifiers are replaced, as the dynamic ones are stored as Arrays
+        raw_transition.replace_identifier_paths(
+            document_base_transition::IDENTIFIER_FIELDS,
+            ReplaceWith::Base58,
+        )?;
 
         let mut document: DocumentCreateTransition = serde_json::from_value(raw_transition)?;
         document.base.action = Action::Create;
-        document.base.data_contract_id = data_contract.id.clone();
         document.base.data_contract = data_contract;
-
-        if let Some(ref mut dynamic_data) = document.data {
-            json_value::identifiers_to(
-                document
-                    .base
-                    .data_contract
-                    .get_binary_properties(&document.base.document_type)?,
-                dynamic_data,
-                ReplaceWith::Base58,
-            )?;
-        }
 
         Ok(document)
     }
 
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let object_base = self.base.to_object()?;
-        let mut object = serde_json::to_value(&self)?;
+        let transition_base_value = self.base.to_object()?;
+        let mut transition_create_value = serde_json::to_value(self)?;
 
-        let object_base_map = object_base.as_object().unwrap().to_owned();
-        let entropy: Vec<JsonValue> = self.entropy.iter().map(|v| JsonValue::from(*v)).collect();
-
-        json_value::identifiers_to(
-            self.base
-                .data_contract
-                .get_binary_properties(&self.base.document_type)?,
-            &mut object,
-            ReplaceWith::Bytes,
-        )?;
-
-        match object {
-            JsonValue::Object(ref mut o) => {
-                o.insert(String::from("$entropy"), JsonValue::Array(entropy));
-                o.extend(object_base_map)
-            }
-            _ => return Err("The Document Base Transaction isn't an Object".into()),
-        }
-
-        Ok(object)
+        merge_serde_json_values(&mut transition_create_value, transition_base_value)?;
+        Ok(transition_create_value)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
@@ -114,10 +106,11 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
             .data_contract
             .get_identifiers_and_binary_paths(&self.base.document_type);
 
-        // here is the thing -> we should exclude the identifiers from document_create transition
-
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+        value.replace_binary_paths(
+            binary_paths.into_iter().chain(BINARY_FIELDS).unique(),
+            ReplaceWith::Base64,
+        )?;
 
         Ok(value)
     }
@@ -125,7 +118,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
+    use serde_json::json;
 
     use super::*;
 
@@ -135,35 +128,114 @@ mod test {
             .try_init();
     }
 
+    fn data_contract_with_dynamic_properties() -> DataContract {
+        let data_contract = json!({
+            "protocolVersion" :0,
+            "$id" : vec![0_u8;32],
+            "$schema" : "schema",
+            "version" : 0,
+            "ownerId" : vec![0_u8;32],
+            "documents" : {
+                "test" : {
+                    "properties" : {
+                        "alphaIdentifier" :  {
+                            "type": "array",
+                            "byteArray": true,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                        },
+                        "alphaBinary" :  {
+                            "type": "array",
+                            "byteArray": true,
+                        }
+                    }
+                }
+            }
+        });
+        DataContract::from_raw_object(data_contract).unwrap()
+    }
+
     #[test]
-    fn test_deserialize_serialize_to_json() {
-        init();
-        let transition_json = r#"{
-					"$id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
-					"$type": "note",
-					"$action": 0,
-					"$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
-					"$entropy": "WdkGW1qg2eM8FhldN6OmAyGzhfTsZR8grEUENlgBfH0=",
-					"message": "example_message"
-				}"#;
+    fn convert_to_json_with_dynamic_binary_paths() {
+        let data_contract = data_contract_with_dynamic_properties();
+        let alpha_value = vec![10_u8; 32];
+        let id = vec![11_u8; 32];
+        let data_contract_id = vec![13_u8; 32];
+        let entropy = vec![14_u8; 32];
 
-        let expect_entropy: [u8; 32] =
-            base64::decode("WdkGW1qg2eM8FhldN6OmAyGzhfTsZR8grEUENlgBfH0=")
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let raw_document = json!({
+            "$protocolVersion"  : 0,
+            "$id" : id,
+            "$type" : "test",
+            "$dataContractId" : data_contract_id,
+            "revision" : 1,
+            "alphaBinary" : alpha_value,
+            "alphaIdentifier" : alpha_value,
+            "$entropy" : entropy,
+            "$action": 0 ,
+        });
 
-        let cdt: DocumentCreateTransition =
-            serde_json::from_str(transition_json).expect("no error");
+        let transition: DocumentCreateTransition =
+            DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
 
-        assert_eq!(cdt.base.action, Action::Create);
-        assert_eq!(cdt.base.document_type, "note");
-        assert_eq!(cdt.entropy, expect_entropy);
-        assert_eq!(cdt.data.as_ref().unwrap()["message"], "example_message");
+        let json_transition = transition.to_json().expect("no errors");
+        assert_eq!(
+            json_transition["$id"],
+            JsonValue::String(bs58::encode(&id).into_string())
+        );
+        assert_eq!(
+            json_transition["$dataContractId"],
+            JsonValue::String(bs58::encode(&data_contract_id).into_string())
+        );
+        assert_eq!(
+            json_transition["alphaBinary"],
+            JsonValue::String(base64::encode(&alpha_value))
+        );
+        assert_eq!(
+            json_transition["alphaIdentifier"],
+            JsonValue::String(bs58::encode(&alpha_value).into_string())
+        );
+        assert_eq!(
+            json_transition["$entropy"],
+            JsonValue::String(base64::encode(&entropy))
+        );
+    }
 
-        let mut json_no_whitespace = transition_json.to_string();
-        json_no_whitespace.retain(|v| !v.is_whitespace());
+    #[test]
+    fn covert_to_object_with_dynamic_binary_paths() {
+        let data_contract = data_contract_with_dynamic_properties();
+        let alpha_value = vec![10_u8; 32];
+        let id = vec![11_u8; 32];
+        let data_contract_id = vec![13_u8; 32];
+        let entropy = vec![11_u8; 32];
 
-        assert_eq!(cdt.to_json().unwrap().to_string(), json_no_whitespace);
+        let raw_document = json!({
+            "$protocolVersion"  : 0,
+            "$id" : id,
+            "$type" : "test",
+            "$dataContractId" : data_contract_id,
+            "revision" : 1,
+            "alphaBinary" : alpha_value,
+            "alphaIdentifier" : alpha_value,
+            "$entropy" : entropy,
+            "$action": 0 ,
+        });
+
+        let document: DocumentCreateTransition =
+            DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
+
+        let object_transition = document.to_object().expect("no errors");
+        assert_eq!(object_transition.get_bytes("$id").unwrap(), id);
+        assert_eq!(
+            object_transition.get_bytes("$dataContractId").unwrap(),
+            data_contract_id
+        );
+        assert_eq!(
+            object_transition.get_bytes("alphaBinary").unwrap(),
+            alpha_value
+        );
+        assert_eq!(
+            object_transition.get_bytes("alphaIdentifier").unwrap(),
+            alpha_value
+        );
     }
 }

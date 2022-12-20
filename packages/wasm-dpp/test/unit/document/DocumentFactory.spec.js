@@ -27,6 +27,7 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
+
 const { default: loadWasmDpp } = require('../../../dist');
 
 let Identifier;
@@ -35,6 +36,34 @@ let DataContract;
 let Document;
 let DocumentValidator;
 let ProtocolVersionValidator;
+let DocumentsContainer;
+
+function newDocumentsContainer(documents) {
+  const {
+    // use constants
+    ["create"]: createDocuments,
+    ["replace"]: replaceDocuments,
+    ["delete"]: deleteDocuments,
+  } = documents;
+  const documentsContainer = new DocumentsContainer;
+  if (createDocuments != null) {
+    for (d of createDocuments) {
+      documentsContainer.pushDocumentCreate(d);
+    }
+  }
+  if (replaceDocuments != null) {
+    for (d of replaceDocuments) {
+      documentsContainer.pushDocumentReplace(d);
+    }
+  }
+  if (deleteDocuments != null) {
+    for (d of deleteDocuments) {
+      documentsContainer.pushDeleteDocument(d);
+    }
+  }
+
+  return documentsContainer;
+}
 
 
 describe('DocumentFactory', () => {
@@ -49,6 +78,7 @@ describe('DocumentFactory', () => {
   let documentJs;
   let documentsJs;
   let documents;
+  let documentsContainer;
   let rawDocument;
   let factoryJs;
   let factory;
@@ -62,7 +92,7 @@ describe('DocumentFactory', () => {
 
   beforeEach(async () => {
     ({
-      Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract, Document
+      Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract, Document, DocumentTransitions, DocumentsContainer
 
     } = await loadWasmDpp());
   });
@@ -80,12 +110,13 @@ describe('DocumentFactory', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      return new Document(d.toObject(), dataContract)
+      let doc = new Document(d.toObject(), dataContract)
+      doc.setEntropy(d.entropy);
+      return doc;
     });
 
     ([, , , documentJs] = documentsJs);
     rawDocument = documentJs.toObject();
-
 
 
     decodeProtocolEntityMock = this.sinonSandbox.stub();
@@ -121,6 +152,8 @@ describe('DocumentFactory', () => {
     fakeTime.reset();
     generateEntropyMock.restore();
   });
+
+
 
   describe('create', () => {
     it('should return new Document with specified type and data', () => {
@@ -409,7 +442,6 @@ describe('DocumentFactory', () => {
     });
   });
 
-  // TODO <----
   describe('createStateTransition', () => {
     it('should throw and error if documents have unknown action', () => {
       try {
@@ -425,15 +457,15 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if documents have unknown action - Rust', () => {
       try {
-        factory.createStateTransition({
-          unknown: documentsJs,
-        }, dataContract);
-        expect.fail('Error was not thrown');
+        factory.createStateTransition(newDocumentsContainer({
+          unknown: documentsJs
+        }));
 
+        expect.fail('Error was not thrown');
       } catch (e) {
 
-        // TODO - change when errors merged
-        expect(e).to.contain("unknown action type: 'unknown")
+        // newDocumentsContainer filter out unknown type, so the no documents is expected
+        expect(e).to.contain("ProtocolError: No documents were supplied to state transition")
       }
     });
 
@@ -449,7 +481,7 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if no documents were supplied - Rust', () => {
       try {
-        factory.createStateTransition({}, dataContract);
+        factory.createStateTransition(newDocumentsContainer({}));
         expect.fail('Error was not thrown');
       } catch (e) {
 
@@ -476,9 +508,9 @@ describe('DocumentFactory', () => {
       documents[0].setOwnerId(new Identifier(newId));
 
       try {
-        factory.createStateTransition({
+        factory.createStateTransition(newDocumentsContainer({
           create: documents,
-        }, dataContract);
+        }));
         expect.fail('Error was not thrown');
       } catch (e) {
 
@@ -506,9 +538,9 @@ describe('DocumentFactory', () => {
     it('should throw and error if create documents have invalid initial version - Rust', () => {
       documents[0].setRevision(3);
       try {
-        factory.createStateTransition({
+        factory.createStateTransition(newDocumentsContainer({
           create: documents,
-        }, dataContract);
+        }));
         expect.fail('Error was not thrown');
       } catch (e) {
 
@@ -541,26 +573,24 @@ describe('DocumentFactory', () => {
     });
 
     it('should create DocumentsBatchTransition with passed documents - Rust', () => {
-      const [newDocument] = documents;
+      const [newDocumentJs] = getDocumentsFixture(dataContractJs);
+      let newDocument = new Document(newDocumentJs.toObject());
+      newDocument.setEntropy(newDocumentJs.entropy);
 
+      const stateTransitionJs = factoryJs.createStateTransition({
+        create: documentsJs,
+        replace: [newDocumentJs],
+      });
 
-      const stateTransition = factory.createStateTransition({
+      const stateTransition = factory.createStateTransition(newDocumentsContainer({
         create: documents,
-        // replace: [newDocument],
-      }, dataContract);
+        replace: [newDocument.clone()],
+      }));
 
-      console.log(stateTransition.toJSON());
+      const transitions = stateTransition.getTransitions().map((t) => t.toJSON());
+      const transitionsJs = stateTransitionJs.getTransitions().map((t) => t.toJSON());
 
-      // const expectedTransitions = getDocumentTransitionsFixture({
-      //   create: documentsJs,
-      //   replace: [newDocument],
-      // });
-
-      // expectedTransitions.slice(-1).updatedAt = new Date();
-
-      // expect(stateTransition.getTransitions()).to.deep.equal(
-      //   expectedTransitions,
-      // );
+      expect(transitionsJs).to.deep.equal(transitions);
     });
   });
 });

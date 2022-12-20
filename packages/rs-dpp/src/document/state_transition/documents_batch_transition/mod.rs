@@ -1,12 +1,18 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
+use crate::document::document_transition::DocumentTransitionObjectLike;
+use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::string_encoding::Encoding;
+use crate::version::LATEST_VERSION;
+use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -14,12 +20,6 @@ use crate::{
         StateTransitionType,
     },
 };
-// TODO simplify imports
-use crate::document::document_transition::DocumentTransitionObjectLike;
-use crate::prelude::{DocumentTransition, Identifier};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::version::LATEST_VERSION;
-use crate::ProtocolError;
 
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
@@ -65,7 +65,63 @@ impl std::default::Default for DocumentsBatchTransition {
 }
 
 impl DocumentsBatchTransition {
-    // TODO (rs-dpp-feature): do not use [`JsonValue`] with constructors
+    pub fn from_json_object(
+        json_value: JsonValue,
+        data_contracts: Vec<DataContract>,
+    ) -> Result<Self, ProtocolError> {
+        let mut json_value = json_value;
+        let mut batch_transitions = DocumentsBatchTransition {
+            protocol_version: json_value
+                .get_u64(PROPERTY_PROTOCOL_VERSION)
+                // js-dpp allows `protocolVersion` to be undefined
+                .unwrap_or(LATEST_VERSION as u64) as u32,
+            signature: base64::decode(
+                json_value
+                    .get_string(PROPERTY_SIGNATURE)
+                    .unwrap_or_default(),
+            )
+            .context("base64 decoding failed")?,
+            signature_public_key_id: json_value
+                .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
+                .unwrap_or_default(),
+            owner_id: Identifier::from_string(
+                json_value.get_string(PROPERTY_OWNER_ID)?,
+                Encoding::Base58,
+            )?,
+            ..Default::default()
+        };
+
+        let mut document_transitions: Vec<DocumentTransition> = vec![];
+        let maybe_transitions = json_value.remove(PROPERTY_TRANSITIONS);
+        if let Ok(JsonValue::Array(json_transitions)) = maybe_transitions {
+            let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
+                .into_iter()
+                .map(|dc| (dc.id.as_bytes().to_vec(), dc))
+                .collect();
+
+            for json_transition in json_transitions {
+                let id = Identifier::from_string(
+                    json_transition.get_string(PROPERTY_DATA_CONTRACT_ID)?,
+                    Encoding::Base58,
+                )?;
+                let data_contract =
+                    data_contracts_map
+                        .get(&id.as_bytes().to_vec())
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Data Contract doesn't exists for Transition: {:?}",
+                                json_transition
+                            )
+                        })?;
+                let document_transition =
+                    DocumentTransition::from_json_object(json_transition, data_contract.clone())?;
+                document_transitions.push(document_transition);
+            }
+        }
+
+        batch_transitions.transitions = document_transitions;
+        Ok(batch_transitions)
+    }
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
     pub fn from_raw_object(
@@ -88,7 +144,6 @@ impl DocumentsBatchTransition {
         let mut document_transitions: Vec<DocumentTransition> = vec![];
         let maybe_transitions = raw_object.remove(PROPERTY_TRANSITIONS);
         if let Ok(JsonValue::Array(raw_transitions)) = maybe_transitions {
-            //? what if we have to data contracts with the same id?
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
                 .map(|dc| (dc.id.to_buffer().to_vec(), dc))
@@ -103,7 +158,7 @@ impl DocumentsBatchTransition {
                     )
                 })?;
                 let document_transition =
-                    DocumentTransition::from_raw_document(raw_transition, data_contract.clone())?;
+                    DocumentTransition::from_raw_object(raw_transition, data_contract.clone())?;
                 document_transitions.push(document_transition);
             }
         }
