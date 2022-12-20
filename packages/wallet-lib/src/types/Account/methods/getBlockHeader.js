@@ -15,9 +15,6 @@ async function getBlockHeader(identifier) {
     ? await this.transport.getBlockByHeight(blockHeight)
     : await this.transport.getBlockHeaderByHash(identifier);
 
-  if (this.cacheBlockHeaders) {
-    await this.storage.importBlockHeader(blockHeader, blockHeight);
-  }
   return blockHeader;
 }
 module.exports = getBlockHeader;

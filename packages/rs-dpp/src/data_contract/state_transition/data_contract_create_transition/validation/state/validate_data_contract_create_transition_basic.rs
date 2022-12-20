@@ -101,7 +101,7 @@ pub fn validate_data_contract_create_transition_basic(
 
     let mut validation_result = SimpleValidationResult::default();
     if generated_id != raw_data_contract_id {
-        validation_result.add_error(BasicError::InvalidDataContractId {
+        validation_result.add_error(BasicError::InvalidDataContractIdError {
             expected_id: generated_id,
             invalid_id: raw_data_contract_id,
         })

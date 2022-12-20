@@ -38,7 +38,7 @@ use grovedb::Element;
 /// Returns a groveDB operation which updates the chain's genesis time with the time given.
 pub(super) fn update_genesis_time_operation(genesis_time_ms: u64) -> GroveDbOp {
     // TODO make this into a Op::Replace
-    GroveDbOp::insert_run_op(
+    GroveDbOp::insert_op(
         vec![vec![RootTree::Pools as u8]],
         KEY_GENESIS_TIME.to_vec(),
         Element::Item(genesis_time_ms.to_be_bytes().to_vec(), None),

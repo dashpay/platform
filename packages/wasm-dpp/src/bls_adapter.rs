@@ -38,7 +38,7 @@ impl BlsModule for BlsAdapter {
         let is_valid = self.0.validatePublicKey(pk);
 
         if !is_valid {
-            return Err(PublicKeyValidationError::new("Failed"));
+            return Err(PublicKeyValidationError::new("Invalid public key"));
         }
 
         Ok(())

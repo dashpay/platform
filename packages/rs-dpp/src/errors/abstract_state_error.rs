@@ -14,14 +14,14 @@ pub enum StateError {
     DocumentNotFoundError { document_id: Identifier },
 
     #[error("Provided document {document_id} owner ID {document_owner_id} mismatch with existing {existing_document_owner_id}")]
-    DocumentOwnerMismatchError {
+    DocumentOwnerIdMismatchError {
         document_id: Identifier,
         document_owner_id: Identifier,
         existing_document_owner_id: Identifier,
     },
 
     #[error("Document {document_id} createdAt and updatedAt timestamps are not equal")]
-    DocumentTimestampMismatchError { document_id: Identifier },
+    DocumentTimestampsMismatchError { document_id: Identifier },
 
     #[error("Document {document_id} {timestamp_name} timestamp {timestamp} are out of block time window from {time_window_start} and {time_window_end}")]
     DocumentTimestampWindowViolationError {
@@ -82,10 +82,10 @@ pub enum StateError {
     InvalidIdentityPublicKeyIdError { id: KeyID },
 
     #[error("Identity cannot contain more than {max_items} public keys")]
-    MaxIdentityPublicKeyLimitReached { max_items: usize },
+    MaxIdentityPublicKeyLimitReachedError { max_items: usize },
 
     #[error("Identity Public Key #{public_key_index} is disabled")]
-    IdentityPublicKeyDisabledError { public_key_index: KeyID },
+    IdentityPublicKeyIsDisabledError { public_key_index: KeyID },
 }
 
 impl From<DataTriggerError> for StateError {

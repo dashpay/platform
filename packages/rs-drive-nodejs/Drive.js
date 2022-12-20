@@ -1,6 +1,7 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -29,35 +30,36 @@ const {
 });
 
 const GroveDB = require('./GroveDB');
+const FeeResult = require('./FeeResult');
 
-const appendStack = require('./appendStack');
+const { appendStackAsync } = require('./appendStack');
 
 const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // Convert the Drive methods from using callbacks to returning promises
-const driveCloseAsync = appendStack(promisify(driveClose));
-const driveCreateInitialStateStructureAsync = appendStack(
+const driveCloseAsync = appendStackAsync(promisify(driveClose));
+const driveCreateInitialStateStructureAsync = appendStackAsync(
   promisify(driveCreateInitialStateStructure),
 );
-const driveFetchContractAsync = appendStack(promisify(driveFetchContract));
-const driveCreateContractAsync = appendStack(promisify(driveCreateContract));
-const driveUpdateContractAsync = appendStack(promisify(driveUpdateContract));
-const driveCreateDocumentAsync = appendStack(promisify(driveCreateDocument));
-const driveUpdateDocumentAsync = appendStack(promisify(driveUpdateDocument));
-const driveDeleteDocumentAsync = appendStack(promisify(driveDeleteDocument));
-const driveQueryDocumentsAsync = appendStack(promisify(driveQueryDocuments));
-const driveProveDocumentsQueryAsync = appendStack(promisify(driveProveDocumentsQuery));
-const driveFetchLatestWithdrawalTransactionIndexAsync = appendStack(
+const driveFetchContractAsync = appendStackAsync(promisify(driveFetchContract));
+const driveCreateContractAsync = appendStackAsync(promisify(driveCreateContract));
+const driveUpdateContractAsync = appendStackAsync(promisify(driveUpdateContract));
+const driveCreateDocumentAsync = appendStackAsync(promisify(driveCreateDocument));
+const driveUpdateDocumentAsync = appendStackAsync(promisify(driveUpdateDocument));
+const driveDeleteDocumentAsync = appendStackAsync(promisify(driveDeleteDocument));
+const driveQueryDocumentsAsync = appendStackAsync(promisify(driveQueryDocuments));
+const driveProveDocumentsQueryAsync = appendStackAsync(promisify(driveProveDocumentsQuery));
+const driveFetchLatestWithdrawalTransactionIndexAsync = appendStackAsync(
   promisify(driveFetchLatestWithdrawalTransactionIndex),
 );
-const driveEnqueueWithdrawalTransactionAsync = appendStack(
+const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
   promisify(driveEnqueueWithdrawalTransaction),
 );
-const driveInsertIdentityAsync = appendStack(promisify(driveInsertIdentity));
-const abciInitChainAsync = appendStack(promisify(abciInitChain));
-const abciBlockBeginAsync = appendStack(promisify(abciBlockBegin));
-const abciBlockEndAsync = appendStack(promisify(abciBlockEnd));
-const abciAfterFinalizeBlockAsync = appendStack(promisify(abciAfterFinalizeBlock));
+const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
+const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
+const abciBlockBeginAsync = appendStackAsync(promisify(abciBlockBegin));
+const abciBlockEndAsync = appendStackAsync(promisify(abciBlockEnd));
+const abciAfterFinalizeBlockAsync = appendStackAsync(promisify(abciAfterFinalizeBlock));
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -97,10 +99,10 @@ class Drive {
 
   /**
    * @param {Buffer|Identifier} id
-   * @param {number} epochIndex
+   * @param {number} [epochIndex]
    * @param {boolean} [useTransaction=false]
    *
-   * @returns {Promise<[DataContract, FeeResult]>}
+   * @returns {Promise<[DataContract|null, FeeResult]>}
    */
   async fetchContract(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchContractAsync.call(
@@ -108,12 +110,32 @@ class Drive {
       Buffer.from(id),
       epochIndex,
       useTransaction,
-    );
+    ).then(([encodedDataContract, innerFeeResult]) => {
+      let dataContract = encodedDataContract;
+
+      if (encodedDataContract !== null) {
+        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+          encodedDataContract,
+        );
+
+        rawDataContract.protocolVersion = protocolVersion;
+
+        dataContract = new DataContract(rawDataContract);
+      }
+
+      const result = [dataContract];
+
+      if (innerFeeResult) {
+        result.push(new FeeResult(innerFeeResult));
+      }
+
+      return result;
+    });
   }
 
   /**
    * @param {DataContract} dataContract
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
@@ -126,12 +148,12 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
   }
 
   /**
    * @param {DataContract} dataContract
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
@@ -144,12 +166,12 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
   }
 
   /**
    * @param {Document} document
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
@@ -166,12 +188,12 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
   }
 
   /**
    * @param {Document} document
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
@@ -187,14 +209,14 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
   }
 
   /**
    * @param {Identifier} dataContractId
    * @param {string} documentType
    * @param {Identifier} documentId
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
@@ -216,7 +238,7 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
   }
 
   /**
@@ -295,7 +317,7 @@ class Drive {
 
   /**
    * @param {Identity} identity
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
    *
@@ -308,7 +330,7 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
   }
 
   /**
@@ -408,10 +430,16 @@ class Drive {
        * @returns {Promise<BlockEndResponse>}
        */
       async blockEnd(request, useTransaction = false) {
+        // Pass instance of FeeResult separately to avoid of unnecessary serialization
+        const feeResultInner = request.fees.inner;
+
+        delete request.fees;
+
         const requestBytes = cbor.encode(request);
 
         const responseBytes = await abciBlockEndAsync.call(
           drive,
+          feeResultInner,
           requestBytes,
           useTransaction,
         );
@@ -446,7 +474,7 @@ class Drive {
 }
 
 /**
- * @typedef BlockInfo
+ * @typedef RawBlockInfo
  * @property {number} height
  * @property {number} epoch
  * @property {number} timeMs
@@ -484,13 +512,7 @@ class Drive {
 
 /**
  * @typedef BlockEndRequest
- * @property {Fees} fees
- */
-
-/**
- * @typedef Fees
- * @property {number} processingFees
- * @property {number} storageFees
+ * @property {FeeResult} fees
  */
 
 /**

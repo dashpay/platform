@@ -29,13 +29,44 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
+    #[serde(skip)]
+    pub index_structure: IndexLevel,
     pub properties: BTreeMap<String, DocumentField>,
     pub required_fields: BTreeSet<String>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
 }
 
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct IndexLevel {
+    /// the lower index levels from this level
+    pub sub_index_levels: BTreeMap<String, IndexLevel>,
+    /// did an index terminate at this level
+    pub has_index_with_uniqueness: Option<bool>,
+    /// unique level identifier
+    pub level_identifier: u64,
+}
+
 impl DocumentType {
+    pub fn new(
+        name: String,
+        indices: Vec<Index>,
+        properties: BTreeMap<String, DocumentField>,
+        required_fields: BTreeSet<String>,
+        documents_keep_history: bool,
+        documents_mutable: bool,
+    ) -> Self {
+        let index_structure = Self::build_index_structure(indices.as_slice());
+        DocumentType {
+            name,
+            indices,
+            index_structure,
+            properties,
+            required_fields,
+            documents_keep_history,
+            documents_mutable,
+        }
+    }
     // index_names can be in any order
     // in field name must be in the last two indexes.
     pub fn index_for_types(
@@ -58,6 +89,47 @@ impl DocumentType {
             }
         }
         best_index
+    }
+
+    pub fn build_index_structure(indices: &[Index]) -> IndexLevel {
+        let mut index_level = IndexLevel::default();
+        let mut counter: u64 = 0;
+        for index in indices {
+            let mut current_level = &mut index_level;
+            let mut properties_iter = index.properties.iter().peekable();
+            while let Some(index_part) = properties_iter.next() {
+                current_level = current_level
+                    .sub_index_levels
+                    .entry(index_part.name.clone())
+                    .or_insert_with(|| {
+                        counter += 1;
+                        IndexLevel {
+                            level_identifier: counter,
+                            ..Default::default()
+                        }
+                    });
+                if properties_iter.peek().is_none() {
+                    current_level.has_index_with_uniqueness = Some(index.unique);
+                }
+            }
+        }
+
+        index_level
+    }
+
+    pub fn unique_id_for_storage(&self) -> [u8; 32] {
+        rand::random::<[u8; 32]>()
+    }
+
+    /// Unique id that combines the index_level and the base event id
+    pub fn unique_id_for_document_field(
+        &self,
+        index_level: &IndexLevel,
+        base_event: [u8; 32],
+    ) -> Vec<u8> {
+        let mut bytes = index_level.level_identifier.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&base_event);
+        bytes
     }
 
     pub fn serialize_value_for_key<'a>(
@@ -271,7 +343,7 @@ impl DocumentType {
                 }
                 _ => {
                     field_type = string_to_field_type(type_value)
-                        .ok_or_else(|| ContractError::ValueWrongType("invalid type"))?;
+                        .ok_or(ContractError::ValueWrongType("invalid type"))?;
                     document_properties.insert(
                         prefixed_property_key,
                         DocumentField {
@@ -317,9 +389,12 @@ impl DocumentType {
             );
         }
 
+        let index_structure = Self::build_index_structure(indices.as_slice());
+
         Ok(DocumentType {
             name: String::from(name),
             indices,
+            index_structure,
             properties: document_properties,
             required_fields,
             documents_keep_history,
@@ -340,14 +415,28 @@ impl DocumentType {
             .unwrap_or(u16::MAX)
     }
 
-    pub fn top_level_indices(&self) -> Result<Vec<&IndexProperty>, ContractError> {
+    /// The estimated size uses the middle ceil size of all attributes
+    pub fn estimated_size(&self) -> u16 {
+        let mut iter = self
+            .properties
+            .iter()
+            .filter_map(|(_, document_field_type)| {
+                document_field_type.document_type.middle_byte_size_ceil()
+            });
+        let first = Some(iter.next().unwrap_or_default());
+
+        iter.fold(first, |acc, item| acc.and_then(|acc| acc.checked_add(item)))
+            .unwrap_or(u16::MAX)
+    }
+
+    pub fn top_level_indices(&self) -> Vec<&IndexProperty> {
         let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
         for index in &self.indices {
             if let Some(property) = index.properties.get(0) {
                 index_properties.push(property);
             }
         }
-        Ok(index_properties)
+        index_properties
     }
 
     pub fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
@@ -370,6 +459,10 @@ impl DocumentType {
                 .document_field_for_property(property)
                 .map(|document_field| document_field.document_type),
         }
+    }
+
+    pub fn field_can_be_null(&self, name: &str) -> bool {
+        !self.required_fields.contains(name)
     }
 }
 

@@ -33,7 +33,6 @@
 //! epoch changes.
 //!
 
-use crate::abci::messages::FeesAggregate;
 use crate::block::BlockInfo;
 use crate::error::Error;
 use crate::execution::fee_pools::constants::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
@@ -43,6 +42,7 @@ use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayout
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use std::option::Option::None;
@@ -125,7 +125,7 @@ impl Platform {
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
-        block_fees: &FeesAggregate,
+        block_fees: &FeeResult,
         transaction: TransactionArg,
     ) -> Result<ProcessedBlockFeesResult, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index);
@@ -203,12 +203,12 @@ mod tests {
         use rust_decimal::prelude::ToPrimitive;
 
         mod helpers {
-            use crate::abci::messages::FeesAggregate;
             use crate::block::BlockInfo;
             use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
             use crate::platform::Platform;
             use drive::drive::batch::GroveDbOpBatch;
             use drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_EPOCHS;
+            use drive::fee::FeeResult;
             use drive::fee_pools::epochs::Epoch;
             use drive::grovedb::TransactionArg;
 
@@ -226,10 +226,7 @@ mod tests {
 
                 // Add some storage fees to distribute next time
                 if should_distribute {
-                    let block_fees = FeesAggregate {
-                        processing_fees: 1000,
-                        storage_fees: 1000000000,
-                    };
+                    let block_fees = FeeResult::from_fees(1000000000, 1000);
 
                     let mut batch = GroveDbOpBatch::new();
 
@@ -398,11 +395,11 @@ mod tests {
         use rust_decimal::prelude::ToPrimitive;
 
         mod helpers {
-            use crate::abci::messages::FeesAggregate;
             use crate::block::BlockInfo;
             use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
             use crate::platform::Platform;
             use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
+            use drive::fee::FeeResult;
             use drive::fee_pools::epochs::Epoch;
             use drive::grovedb::TransactionArg;
 
@@ -432,10 +429,7 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
-                let block_fees = FeesAggregate {
-                    processing_fees: 1000,
-                    storage_fees: 10000,
-                };
+                let block_fees = FeeResult::from_fees(1000, 10000);
 
                 let distribute_storage_pool_result = platform
                     .process_block_fees(&block_info, &epoch_info, &block_fees, transaction)
@@ -451,16 +445,16 @@ mod tests {
 
                 if epoch_info.is_epoch_change {
                     if epoch_info.current_epoch_index == GENESIS_EPOCH_INDEX {
-                        assert_eq!(aggregated_storage_fees, block_fees.storage_fees);
+                        assert_eq!(aggregated_storage_fees, block_fees.storage_fee);
                     } else {
                         // Assuming leftovers
                         assert!(
-                            block_fees.storage_fees <= aggregated_storage_fees
-                                && aggregated_storage_fees < block_fees.storage_fees + 1000
+                            block_fees.storage_fee <= aggregated_storage_fees
+                                && aggregated_storage_fees < block_fees.storage_fee + 1000
                         );
                     };
                 } else {
-                    assert!(aggregated_storage_fees > block_fees.storage_fees);
+                    assert!(aggregated_storage_fees > block_fees.storage_fee);
                 }
 
                 // Should increment proposer block count

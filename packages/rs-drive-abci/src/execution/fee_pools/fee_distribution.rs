@@ -32,7 +32,6 @@
 //! This module defines structs and functions related to distributing fees to proposers.
 //!
 
-use crate::abci::messages::FeesAggregate;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
@@ -40,6 +39,7 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
 use drive::error::fee::FeeError;
+use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
@@ -383,7 +383,7 @@ impl Platform {
     pub fn add_distribute_block_fees_into_pools_operations(
         &self,
         current_epoch: &Epoch,
-        block_fees: &FeesAggregate,
+        block_fees: &FeeResult,
         cached_aggregated_storage_fees: Option<u64>,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
@@ -398,7 +398,7 @@ impl Platform {
                 _ => Err(e),
             })?;
 
-        let total_processing_fees = epoch_processing_fees + block_fees.processing_fees;
+        let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
 
         batch.push(
             current_epoch
@@ -413,10 +413,10 @@ impl Platform {
             Some(storage_fees) => storage_fees,
         };
 
-        let total_storage_fees = storage_distribution_credits_in_fee_pool + block_fees.storage_fees;
+        let total_storage_fees = storage_distribution_credits_in_fee_pool + block_fees.storage_fee;
 
         batch.push(update_storage_fee_distribution_pool_operation(
-            storage_distribution_credits_in_fee_pool + block_fees.storage_fees,
+            storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
         ));
 
         Ok(FeesInPools {
@@ -1303,9 +1303,9 @@ mod tests {
     }
 
     mod add_distribute_block_fees_into_pools_operations {
-        use crate::abci::messages::FeesAggregate;
         use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
         use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee::FeeResult;
         use drive::fee_pools::epochs::Epoch;
 
         #[test]
@@ -1325,10 +1325,7 @@ mod tests {
             platform
                 .add_distribute_block_fees_into_pools_operations(
                     &current_epoch_tree,
-                    &FeesAggregate {
-                        processing_fees,
-                        storage_fees,
-                    },
+                    &FeeResult::from_fees(storage_fees, processing_fees),
                     None,
                     Some(&transaction),
                     &mut batch,
@@ -1382,10 +1379,7 @@ mod tests {
             platform
                 .add_distribute_block_fees_into_pools_operations(
                     &current_epoch_tree,
-                    &FeesAggregate {
-                        processing_fees,
-                        storage_fees,
-                    },
+                    &FeeResult::from_fees(storage_fees, processing_fees),
                     None,
                     Some(&transaction),
                     &mut batch,

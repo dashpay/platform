@@ -2,6 +2,7 @@ const {
   tendermint: {
     abci: {
       ResponseFinalizeBlock,
+      RequestProcessProposal,
     },
   },
 } = require('@dashevo/abci/types');
@@ -11,21 +12,22 @@ const {
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {ProposalBlockExecutionContextCollection} proposalBlockExecutionContextCollection
- * @param {LRUCache} dataContractCache
  * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
+ * @param {processProposal} processProposal
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  proposalBlockExecutionContextCollection,
   coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
+  proposalBlockExecutionContext,
+  processProposal,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -42,16 +44,55 @@ function finalizeBlockHandlerFactory(
 
     const consensusLogger = logger.child({
       height: height.toString(),
+      round,
       abciMethod: 'finalizeBlock',
     });
 
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    const proposalBlockExecutionContext = proposalBlockExecutionContextCollection.get(round);
+    const lastProcessedRound = proposalBlockExecutionContext.getRound();
+
+    if (lastProcessedRound !== round) {
+      consensusLogger.warn({
+        lastProcessedRound,
+        round,
+      }, `Finalizing previously executed round ${round} instead of the last known ${lastProcessedRound}`);
+
+      const {
+        block: {
+          header: {
+            time,
+            version,
+            proposerProTxHash,
+            coreChainLockedHeight,
+          },
+          data: {
+            txs,
+          },
+        },
+      } = request;
+
+      const processProposalRequest = new RequestProcessProposal({
+        height,
+        txs,
+        coreChainLockedHeight,
+        version,
+        proposedLastCommit: commitInfo,
+        time,
+        proposerProTxHash,
+        round,
+      });
+
+      await processProposal(processProposalRequest, consensusLogger);
+
+      // Revert consensus logger
+      proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    }
+
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
-    // Store block execution context
+    // Store proposal block execution context
     await blockExecutionContextRepository.store(
       proposalBlockExecutionContext,
       {
@@ -59,9 +100,10 @@ function finalizeBlockHandlerFactory(
       },
     );
 
-    // Commit the current block db transactions
+    // Commit the current block db transactions into storage
     await groveDBStore.commitTransaction();
 
+    // Update last block execution context with proposal data
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
 
     // Send withdrawal transactions to Core
@@ -88,15 +130,15 @@ function finalizeBlockHandlerFactory(
       }
     }
 
-    proposalBlockExecutionContextCollection.clear();
+    proposalBlockExecutionContext.reset();
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 
-    consensusLogger.trace(
+    consensusLogger.info(
       {
         timings: blockExecutionTimings,
       },
-      `Block #${height} execution took ${blockExecutionTimings} seconds`,
+      `Block #${height} finalized in ${round + 1} round(s) and ${blockExecutionTimings} seconds`,
     );
 
     return new ResponseFinalizeBlock();

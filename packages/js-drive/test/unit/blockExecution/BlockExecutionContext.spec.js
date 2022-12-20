@@ -26,6 +26,7 @@ describe('BlockExecutionContext', () => {
   let version;
   let epochInfo;
   let timeMs;
+  let prepareProposalResult;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -42,6 +43,7 @@ describe('BlockExecutionContext', () => {
     version = Consensus.fromObject(plainObject.version);
     epochInfo = plainObject.epochInfo;
     timeMs = plainObject.timeMs;
+    prepareProposalResult = plainObject.prepareProposalResult;
   });
 
   describe('#addDataContract', () => {
@@ -224,6 +226,30 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setPrepareProposalResult', () => {
+    it('should set PrepareProposal result', async () => {
+      const result = blockExecutionContext.setPrepareProposalResult(
+        plainObject.prepareProposalResult,
+      );
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.prepareProposalResult).to.deep.equal(
+        plainObject.prepareProposalResult,
+      );
+    });
+  });
+
+  describe('#getPrepareProposalResult', () => {
+    it('should get PrepareProposal result', async () => {
+      blockExecutionContext.prepareProposalResult = plainObject.prepareProposalResult;
+
+      expect(blockExecutionContext.getPrepareProposalResult()).to.deep.equal(
+        plainObject.prepareProposalResult,
+      );
+    });
+  });
+
   describe('#setTimeMs', () => {
     it('should set time', async () => {
       blockExecutionContext.setTimeMs(timeMs);
@@ -307,6 +333,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
+      blockExecutionContext.prepareProposalResult = plainObject.prepareProposalResult;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -322,10 +349,30 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
+      blockExecutionContext.prepareProposalResult = prepareProposalResult;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 
       delete plainObject.consensusLogger;
+
+      expect(result).to.deep.equal(plainObject);
+    });
+
+    it('should skipPrepareProposalResult if the option passed', () => {
+      blockExecutionContext.dataContracts = [dataContract];
+      blockExecutionContext.lastCommitInfo = lastCommitInfo;
+      blockExecutionContext.height = height;
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      blockExecutionContext.version = version;
+      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.round = plainObject.round;
+      blockExecutionContext.epochInfo = epochInfo;
+      blockExecutionContext.timeMs = timeMs;
+
+      const result = blockExecutionContext.toObject({ skipPrepareProposalResult: true });
+
+      delete plainObject.prepareProposalResult;
 
       expect(result).to.deep.equal(plainObject);
     });
