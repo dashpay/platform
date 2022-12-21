@@ -4,6 +4,7 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
@@ -20,6 +21,7 @@ describe('handleNewMasternodeFactory', () => {
   let masternodeEntry;
   let dataContract;
   let blockInfo;
+  let identityFixture;
 
   beforeEach(function beforeEach() {
     const smlFixture = getSmlFixture();
@@ -30,7 +32,9 @@ describe('handleNewMasternodeFactory', () => {
 
     dppMock = createDPPMock(this.sinon);
 
-    createMasternodeIdentityMock = this.sinon.stub();
+    identityFixture = getIdentityFixture();
+
+    createMasternodeIdentityMock = this.sinon.stub().resolves(identityFixture);
     createRewardShareDocumentMock = this.sinon.stub();
 
     blockInfo = new BlockInfo(1, 0, Date.now());
@@ -59,7 +63,14 @@ describe('handleNewMasternodeFactory', () => {
     const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
     const payoutScript = new Script(payoutAddress);
 
-    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
+    const result = await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
+
+    expect(result.createdEntities).to.have.lengthOf(2);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
+    expect(result.createdEntities[0].toJSON()).to.deep.equal(identityFixture.toJSON());
+    expect(result.createdEntities[1].toJSON()).to.deep.equal(identityFixture.toJSON());
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
@@ -88,7 +99,13 @@ describe('handleNewMasternodeFactory', () => {
 
     fetchTransactionMock.resolves(transactionFixture);
 
-    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
+    const result = await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
+
+    expect(result.createdEntities).to.have.lengthOf(1);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
+    expect(result.createdEntities[0].toJSON()).to.deep.equal(identityFixture.toJSON());
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
@@ -104,7 +121,15 @@ describe('handleNewMasternodeFactory', () => {
   it('should create masternode identity and a document in rewards data contract with percentage', async () => {
     transactionFixture.extraPayload.operatorReward = 10;
 
-    await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
+    const result = await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
+
+    expect(result.createdEntities).to.have.lengthOf(3);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
+    expect(result.createdEntities[0].toJSON()).to.deep.equal(identityFixture.toJSON());
+    expect(result.createdEntities[1].toJSON()).to.deep.equal(identityFixture.toJSON());
+    expect(result.createdEntities[2].toJSON()).to.deep.equal(identityFixture.toJSON());
 
     const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
     const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);

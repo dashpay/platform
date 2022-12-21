@@ -24,10 +24,14 @@ function handleNewMasternodeFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
-   * @return Promise<Array<Identity|Document>>
+   * @return {Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
+   * }>}
    */
   async function handleNewMasternode(masternodeEntry, dataContract, blockInfo) {
-    const result = [];
+    const createdEntities = [];
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
@@ -47,7 +51,7 @@ function handleNewMasternodeFactory(
 
     const ownerPublicKeyHash = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
-    result.push(
+    createdEntities.push(
       await createMasternodeIdentity(
         masternodeIdentifier,
         ownerPublicKeyHash,
@@ -69,7 +73,7 @@ function handleNewMasternodeFactory(
 
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
-      result.push(
+      createdEntities.push(
         await createMasternodeIdentity(
           operatorIdentifier,
           operatorPubKey,
@@ -88,7 +92,7 @@ function handleNewMasternodeFactory(
       );
 
       if (rewardShareDocument) {
-        result.push(rewardShareDocument);
+        createdEntities.push(rewardShareDocument);
       }
     }
 
@@ -99,7 +103,7 @@ function handleNewMasternodeFactory(
     if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
       const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
-      result.push(
+      createdEntities.push(
         await createMasternodeIdentity(
           votingIdentifier,
           votingPubKeyHash,
@@ -108,7 +112,11 @@ function handleNewMasternodeFactory(
       );
     }
 
-    return result;
+    return {
+      createdEntities,
+      updatedEntities: [],
+      removedEntities: [],
+    };
   }
 
   return handleNewMasternode;

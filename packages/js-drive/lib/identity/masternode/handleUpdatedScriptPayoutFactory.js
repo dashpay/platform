@@ -21,7 +21,11 @@ function handleUpdatedScriptPayoutFactory(
    * @param {Script} newPayoutScript
    * @param {BlockInfo} blockInfo
    * @param {Script} [previousPayoutScript]
-   * @returns {Promise<Identity|void>}
+   * @return {Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
+   * }>}
    */
   async function handleUpdatedScriptPayout(
     identityId,
@@ -29,6 +33,12 @@ function handleUpdatedScriptPayoutFactory(
     blockInfo,
     previousPayoutScript,
   ) {
+    const result = {
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+    };
+
     const identityResult = await identityRepository.fetch(identityId, { useTransaction: true });
 
     const identity = identityResult.getValue();
@@ -40,7 +50,7 @@ function handleUpdatedScriptPayoutFactory(
 
     if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
       // do not add new public key
-      return;
+      return result;
     }
 
     // disable previous
@@ -89,7 +99,9 @@ function handleUpdatedScriptPayoutFactory(
       { useTransaction: true },
     );
 
-    return identity;
+    result.updatedEntities.push(identity);
+
+    return result;
   }
 
   return handleUpdatedScriptPayout;

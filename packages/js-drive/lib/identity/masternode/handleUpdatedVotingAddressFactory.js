@@ -17,12 +17,20 @@ function handleUpdatedVotingAddressFactory(
   /**
    * @typedef handleUpdatedVotingAddress
    * @param {SimplifiedMNListEntry} masternodeEntry
-   * @return Promise<Array<Identity|Document>>
+   * @return {Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
+   * }>}
    */
   async function handleUpdatedVotingAddress(
     masternodeEntry,
   ) {
-    const result = [];
+    const result = {
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+    };
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
@@ -48,7 +56,7 @@ function handleUpdatedVotingAddressFactory(
       const votingAddress = Address.fromString(masternodeEntry.votingAddress);
       const votingPublicKeyHash = votingAddress.hashBuffer;
 
-      result.push(
+      result.createdEntities.push(
         await createMasternodeIdentity(
           votingIdentifier,
           votingPublicKeyHash,

@@ -5,6 +5,33 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
  *
+ * @param result {{
+ *  createdEntities: Array<Identity|Document>,
+ *  updatedEntities: Array<Identity>,
+ *  removedEntities: Array<Document>,
+ *  }}
+ * @param newData {{
+ *  createdEntities: Array<Identity|Document>,
+ *  updatedEntities: Array<Identity>,
+ *  removedEntities: Array<Document>,
+ *  }}
+ * @return {{
+ *  createdEntities: Array<Identity|Document>,
+ *  updatedEntities: Array<Identity>,
+ *  removedEntities: Array<Document>,
+ *  }}
+ */
+function mergeEntities(result, newData) {
+  return {
+    ...result,
+    createdEntities: result.createdEntities.concat(newData.createdEntities),
+    updatedEntities: result.updatedEntities.concat(newData.updatedEntities),
+    removedEntities: result.removedEntities.concat(newData.removedEntities),
+  };
+}
+
+/**
+ *
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {Identifier} masternodeRewardSharesContractId
@@ -46,6 +73,12 @@ function synchronizeMasternodeIdentitiesFactory(
    * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
+    let result = {
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+    };
+
     if (!lastSyncedCoreHeight) {
       const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
         useTransaction: true,
@@ -55,9 +88,6 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     let newMasternodes;
-    let createdEntities = [];
-    let updatedEntities = [];
-    let removedEntities = [];
     let previousMNList = [];
 
     const currentMNList = simplifiedMasternodeList.getStore()
@@ -109,8 +139,7 @@ function synchronizeMasternodeIdentitiesFactory(
             blockInfo,
           );
 
-          createdEntities = createdEntities.concat(affectedEntities.createdEntities);
-          removedEntities = removedEntities.concat(affectedEntities.removedEntities);
+          result = mergeEntities(result, affectedEntities);
         }
 
         const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
@@ -119,11 +148,11 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousVotingMnEntry) {
-          createdEntities = createdEntities.concat(
-            await handleUpdatedVotingAddress(
-              mnEntry,
-            ),
+          const affectedEntities = await handleUpdatedVotingAddress(
+            mnEntry,
           );
+
+          result = mergeEntities(result, affectedEntities);
         }
 
         if (mnEntry.payoutAddress) {
@@ -138,16 +167,14 @@ function synchronizeMasternodeIdentitiesFactory(
               ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
               : undefined;
 
-            const updatedEntity = await handleUpdatedScriptPayout(
+            const affectedEntities = await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
               blockInfo,
               previousPayoutScript,
             );
 
-            if (updatedEntity) {
-              updatedEntities.push(updatedEntity);
-            }
+            result = mergeEntities(result, affectedEntities);
           }
         }
 
@@ -167,16 +194,14 @@ function synchronizeMasternodeIdentitiesFactory(
               ? new Script(Address.fromString(operatorPayoutAddress))
               : undefined;
 
-            const updatedEntity = await handleUpdatedScriptPayout(
+            const affectedEntities = await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
               blockInfo,
               previousOperatorPayoutScript,
             );
 
-            if (updatedEntity) {
-              updatedEntities.push(updatedEntity);
-            }
+            result = mergeEntities(result, affectedEntities);
           }
         }
       }
@@ -185,9 +210,13 @@ function synchronizeMasternodeIdentitiesFactory(
     // Create identities and shares for new masternodes
 
     for (const newMasternodeEntry of newMasternodes) {
-      createdEntities = createdEntities.concat(
-        await handleNewMasternode(newMasternodeEntry, dataContract, blockInfo),
+      const affectedEntities = await handleNewMasternode(
+        newMasternodeEntry,
+        dataContract,
+        blockInfo,
       );
+
+      result = mergeEntities(result, affectedEntities);
     }
 
     // Remove masternode reward shares for invalid/removed masternodes
@@ -203,30 +232,23 @@ function synchronizeMasternodeIdentitiesFactory(
         Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
       );
 
-      removedEntities = removedEntities.concat(
-        await handleRemovedMasternode(
-          masternodeIdentifier,
-          dataContract,
-          blockInfo,
-        ),
+      const affectedEntities = await handleRemovedMasternode(
+        masternodeIdentifier,
+        dataContract,
+        blockInfo,
       );
+
+      result = mergeEntities(result, affectedEntities);
     }
 
-    const fromHeight = lastSyncedCoreHeight;
+    result.fromHeight = lastSyncedCoreHeight;
+    result.toHeight = coreHeight;
 
-    lastSyncedCoreHeight = coreHeight;
-
-    await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight, {
+    await lastSyncedCoreHeightRepository.store(coreHeight, {
       useTransaction: true,
     });
 
-    return {
-      fromHeight,
-      toHeight: coreHeight,
-      createdEntities,
-      updatedEntities,
-      removedEntities,
-    };
+    return result;
   }
 
   return synchronizeMasternodeIdentities;
