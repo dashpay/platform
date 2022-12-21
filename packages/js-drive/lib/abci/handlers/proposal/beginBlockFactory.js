@@ -124,8 +124,7 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: proposalBlockExecutionContext.getTimeMs(),
       proposerProTxHash,
-      // TODO replace with real value
-      validatorSetQuorumHash: Buffer.alloc(32),
+      validatorSetQuorumHash: lastCommitInfo.quorumHash,
       coreChainLockedHeight,
       lastSyncedCoreHeight,
     };

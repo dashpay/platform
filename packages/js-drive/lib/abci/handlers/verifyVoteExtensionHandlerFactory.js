@@ -59,7 +59,7 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
           Math.min(30, extensionString.length),
         );
 
-        consensusLogger.debug({
+        consensusLogger.warn({
           type: nextExtension.type,
           extension: extensionString,
         }, `${nextExtension.type} vote extension ${extensionTruncatedString}... was not found in verify request`);
