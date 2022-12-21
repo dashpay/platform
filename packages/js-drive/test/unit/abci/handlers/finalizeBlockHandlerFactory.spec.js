@@ -87,7 +87,7 @@ describe('finalizeBlockHandlerFactory', () => {
     proposalBlockExecutionContextMock.getDataContracts.returns([dataContract]);
     proposalBlockExecutionContextMock.getEpochInfo.returns({
       currentEpochIndex: 1,
-    })
+    });
     proposalBlockExecutionContextMock.getTimeMs.returns((new Date()).getTime());
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
