@@ -34,7 +34,7 @@ pub fn js_calculate_storage_fee_distribution_amount_and_leftovers(
     let js_leftovers = cx.number(leftovers as f64);
 
     js_array.set(&mut cx, 0, js_amount)?;
-    js_array.set(&mut cx, 0, js_leftovers)?;
+    js_array.set(&mut cx, 1, js_leftovers)?;
 
     Ok(js_array)
 }

@@ -622,4 +622,18 @@ describe('Drive', () => {
       });
     });
   });
+
+  describe('.calculateStorageFeeDistributionAmountAndLeftovers', () => {
+    it('should calculate amount and leftovers', () => {
+      const result = Drive.calculateStorageFeeDistributionAmountAndLeftovers(1000, 1, 2);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.be.lengthOf(2);
+
+      const [amount, leftovers] = result;
+
+      expect(amount).to.equals(558);
+      expect(leftovers).to.equals(440);
+    });
+  })
 });
