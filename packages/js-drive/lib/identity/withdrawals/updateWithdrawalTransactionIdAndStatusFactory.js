@@ -1,7 +1,7 @@
 const WITHDRAWALS_DOCUMENT_TYPE = 'withdrawals';
 
 const WITHDRAWALS_STATUS_POOLED = 1;
-const WITHDRAWALS_STATUS_BROADCASTED = 1;
+const WITHDRAWALS_STATUS_BROADCASTED = 2;
 
 /**
  * @param {DocumentRepository} documentRepository
