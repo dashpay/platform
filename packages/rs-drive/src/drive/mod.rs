@@ -76,7 +76,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
 use crate::fee::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC, MockCoreRPCLike};
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use dpp::data_contract::extra::DriveContractExt;
 
 type TransactionPointerAddress = usize;
