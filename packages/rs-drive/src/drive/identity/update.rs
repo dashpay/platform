@@ -431,7 +431,7 @@ mod tests {
             .expect("expected to be able to commit a transaction");
 
         let identity_keys = drive
-            .fetch_all_identity_keys(identity.id.to_buffer(), true, None)
+            .fetch_all_identity_keys(identity.id.to_buffer(), None)
             .expect("expected to get balance");
 
         assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 30
@@ -475,7 +475,7 @@ mod tests {
             .expect("expected to be able to commit a transaction");
 
         let identity_keys = drive
-            .fetch_all_identity_keys(identity.id.to_buffer(), true, None)
+            .fetch_all_identity_keys(identity.id.to_buffer(), None)
             .expect("expected to get balance");
 
         assert_eq!(identity_keys.len(), 29); // we had 5 keys and we added 24

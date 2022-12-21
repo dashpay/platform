@@ -187,7 +187,7 @@ mod tests {
             .expect("should fetch an identity")
             .expect("should have an identity");
 
-        assert_eq!(identity, fetched_identity,);
+        assert_eq!(identity, fetched_identity);
     }
 
     #[test]

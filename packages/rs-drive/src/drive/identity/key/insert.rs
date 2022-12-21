@@ -1,3 +1,4 @@
+
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -245,7 +246,7 @@ impl Drive {
         )
     }
 
-    pub(super) fn create_key_tree_with_keys_operations(
+    pub(crate) fn create_key_tree_with_keys_operations(
         &self,
         identity_id: [u8; 32],
         keys: Vec<IdentityPublicKey>,

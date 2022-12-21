@@ -3,12 +3,6 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::identity::fetch::KeyKindRequestType::{
-    AllKeysOfKindRequest, CurrentKeyOfKindRequest,
-};
-use crate::drive::identity::fetch::KeyRequestType::{
-    AllKeysRequest, SearchKeyRequest, SpecificKeyRequest,
-};
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{
     balance_path, identity_key_tree_path_vec, identity_path, identity_query_keys_tree_path_vec,
@@ -32,166 +26,7 @@ use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
-
-/// The kind of keys you are requesting
-/// A kind is a purpose/security level pair
-/// Do you want to get all keys in that pair
-/// Or just the current one?
-#[derive(Clone, Copy)]
-pub enum KeyKindRequestType {
-    CurrentKeyOfKindRequest,
-    AllKeysOfKindRequest,
-}
-
-/// The type of key request
-#[derive(Clone)]
-pub enum KeyRequestType {
-    AllKeysRequest,
-    SpecificKeyRequest(KeyID),
-    SearchKeyRequest(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
-}
-
-type PurposeU8 = u8;
-type SecurityLevelU8 = u8;
-
-/// A request to get Keys from an Identity
-pub struct IdentityKeysRequest {
-    identity_id: [u8; 32],
-    key_request: KeyRequestType,
-    limit: Option<u16>,
-    offset: Option<u16>,
-}
-
-impl IdentityKeysRequest {
-    /// Make a request for all current keys for the identity
-    pub fn new_all_current_keys_query(identity_id: [u8; 32]) -> Self {
-        let mut sec_btree_map = BTreeMap::new();
-        for security_level in 0..=SecurityLevel::last() as u8 {
-            sec_btree_map.insert(security_level, CurrentKeyOfKindRequest);
-        }
-        let mut purpose_btree_map = BTreeMap::new();
-        for purpose in 0..=Purpose::last() as u8 {
-            purpose_btree_map.insert(purpose, sec_btree_map.clone());
-        }
-        IdentityKeysRequest {
-            identity_id,
-            key_request: SearchKeyRequest(purpose_btree_map),
-            limit: None,
-            offset: None,
-        }
-    }
-
-    /// Make a request for all current keys for the identity
-    pub fn new_all_keys_query(identity_id: [u8; 32]) -> Self {
-        IdentityKeysRequest {
-            identity_id,
-            key_request: AllKeysRequest,
-            limit: None,
-            offset: None,
-        }
-    }
-
-    /// Create the path query for the request
-    pub fn to_path_query(self) -> PathQuery {
-        let IdentityKeysRequest {
-            identity_id,
-            key_request,
-            limit,
-            offset,
-        } = self;
-        match key_request {
-            AllKeysRequest => {
-                let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
-                PathQuery {
-                    path: query_keys_path,
-                    query: SizedQuery {
-                        query: Self::all_keys_query(),
-                        limit,
-                        offset,
-                    },
-                }
-            }
-            SpecificKeyRequest(key_id) => {
-                let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
-                PathQuery {
-                    path: query_keys_path,
-                    query: SizedQuery {
-                        query: Self::specific_key_query(key_id),
-                        limit: Some(1),
-                        offset: None,
-                    },
-                }
-            }
-            SearchKeyRequest(map) => {
-                let query_keys_path = identity_query_keys_tree_path_vec(identity_id);
-                PathQuery {
-                    path: query_keys_path,
-                    query: SizedQuery {
-                        query: Self::construct_search_query(map),
-                        limit,
-                        offset,
-                    },
-                }
-            }
-        }
-    }
-
-    /// All keys
-    fn all_keys_query() -> Query {
-        let mut query = Query::new();
-        query.insert_all();
-        query
-    }
-
-    /// Fetch a specific key knowing the id
-    fn specific_key_query(key_id: KeyID) -> Query {
-        let mut query = Query::new();
-        query.insert_key(key_id.encode_var_vec());
-        query
-    }
-
-    /// Contruct the query for the request
-    fn construct_search_query(
-        key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,
-    ) -> Query {
-        fn construct_security_level_query(
-            key_requests: BTreeMap<SecurityLevelU8, KeyKindRequestType>,
-        ) -> Query {
-            let mut query = Query::new();
-
-            for (security_level, key_request_type) in key_requests {
-                let key = vec![security_level];
-                let subquery = match key_request_type {
-                    CurrentKeyOfKindRequest => {
-                        let mut subquery = Query::new();
-                        subquery.insert_key(vec![]);
-                        subquery
-                    }
-                    AllKeysOfKindRequest => {
-                        let mut subquery = Query::new();
-                        subquery.insert_range_after(vec![]..);
-                        subquery
-                    }
-                };
-                query.add_conditional_subquery(QueryItem::Key(key), None, Some(subquery));
-            }
-            query
-        }
-        let mut query = Query::new();
-
-        for (purpose, leftover_query) in key_requests {
-            let key = vec![purpose];
-            if !leftover_query.is_empty() {
-                query.add_conditional_subquery(
-                    QueryItem::Key(key),
-                    None,
-                    Some(construct_security_level_query(leftover_query)),
-                );
-            }
-        }
-        query
-    }
-}
+use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store
@@ -364,80 +199,30 @@ impl Drive {
         }
     }
 
-    /// Fetch all the current keys of every kind for a specific Identity
-    pub fn fetch_all_current_identity_keys(
+    /// Given an identity, fetches the identity with its flags from storage.
+    pub fn fetch_identity_balance_with_keys(
         &self,
-        identity_id: [u8; 32],
-        apply: bool,
+        identity_key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_all_current_identity_keys_operations(
-            identity_id,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )
-    }
+    ) -> Result<Option<Identity>, Error> {
+        // let's start by getting the balance
+        let id = Identifier::new(identity_key_request.identity_id);
+        let balance = self.fetch_identity_balance(identity_key_request.identity_id, true, transaction)?;
+        if balance.is_none() {
+            return Ok(None);
+        }
+        let balance = balance.unwrap();
 
-    /// Operations for fetching all the current keys of every kind for a specific Identity
-    pub(crate) fn fetch_all_current_identity_keys_operations(
-        &self,
-        identity_id: [u8; 32],
-        _apply: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
-        let path_query = key_request.to_path_query();
-
-        let (serialized_keys, _) =
-            self.grove_get_path_query(&path_query, transaction, drive_operations)?;
-        serialized_keys
-            .into_iter()
-            .map(|serialized_key| {
-                let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
-                Ok((key.id, key))
-            })
-            .collect()
-    }
-
-    /// Fetch all the keys of every kind for a specific Identity
-    pub fn fetch_all_identity_keys(
-        &self,
-        identity_id: [u8; 32],
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_all_identity_keys_operations(
-            identity_id,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )
-    }
-
-    /// Operations for fetching all the keys of every kind for a specific Identity
-    pub(crate) fn fetch_all_identity_keys_operations(
-        &self,
-        identity_id: [u8; 32],
-        _apply: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
-        let path_query = key_request.to_path_query();
-
-        let (serialized_keys, _) =
-            self.grove_get_path_query(&path_query, transaction, drive_operations)?;
-        serialized_keys
-            .into_iter()
-            .map(|serialized_key| {
-                let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
-                Ok((key.id, key))
-            })
-            .collect()
+        let public_keys = self.fetch_identity_keys(identity_key_request, transaction)?;
+        Ok(Some(Identity {
+            protocol_version: PROTOCOL_VERSION,
+            id,
+            public_keys,
+            balance,
+            revision:u64::MAX,
+            asset_lock_proof: None,
+            metadata: None,
+        }))
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -458,7 +243,7 @@ impl Drive {
                 "revision not found on identity".to_string(),
             )))?;
 
-        let public_keys = self.fetch_all_identity_keys(identity_id, true, transaction)?;
+        let public_keys = self.fetch_all_identity_keys(identity_id, transaction)?;
         Ok(Some(Identity {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
@@ -539,66 +324,51 @@ impl Drive {
             .collect()
     }
 
-    /// Given a vector of identities, fetches the identities from storage.
-    pub fn fetch_identities(
-        &self,
-        ids: &Vec<[u8; 32]>,
-        transaction: TransactionArg,
-    ) -> Result<Vec<Identity>, Error> {
-        Ok(self
-            .fetch_identities_with_flags(ids, transaction)?
-            .into_iter()
-            .map(|(identity, _)| identity)
-            .collect())
-    }
-
-    /// Given a vector of identities, fetches the identities with their flags from storage.
-    pub fn fetch_identities_with_flags(
-        &self,
-        ids: &Vec<[u8; 32]>,
-        transaction: TransactionArg,
-    ) -> Result<Vec<(Identity, Option<StorageFlags>)>, Error> {
-        let mut query = Query::new();
-        query.set_subquery_key(IDENTITY_KEY.to_vec());
-        for id in ids {
-            query.insert_item(QueryItem::Key(id.to_vec()));
-        }
-        let path_query = PathQuery {
-            path: vec![vec![RootTree::Identities as u8]],
-            query: SizedQuery {
-                query,
-                limit: None,
-                offset: None,
-            },
-        };
-        let (result_items, _) = self
-            .grove
-            .query_raw(&path_query, QueryElementResultType, transaction)
-            .unwrap()
-            .map_err(Error::GroveDB)?;
-
-        result_items
-            .to_elements()
-            .into_iter()
-            .map(|element| {
-                if let Element::Item(identity_cbor, element_flags) = &element {
-                    let identity =
-                        Identity::from_buffer(identity_cbor.as_slice()).map_err(|_| {
-                            Error::Identity(IdentityError::IdentitySerialization(
-                                "failed to deserialize an identity",
-                            ))
-                        })?;
-
-                    Ok((
-                        identity,
-                        StorageFlags::from_some_element_flags_ref(element_flags)?,
-                    ))
-                } else {
-                    Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
-                        "identity must be an item",
-                    )))
-                }
-            })
-            .collect()
-    }
+    // /// Given a vector of identities, fetches the identities with their keys
+    // /// matching the request from storage.
+    // pub fn fetch_identities_with_keys(
+    //     &self,
+    //     ids: Vec<[u8; 32]>,
+    //     key_ref_request: KeyRequestType,
+    //     transaction: TransactionArg,
+    // ) -> Result<Vec<Identity>, Error> {
+    //     let key_request = IdentityKeysRequest {
+    //         identity_id: [],
+    //         key_request: KeyRequestType::AllKeysRequest,
+    //         limit: None,
+    //         offset: None,
+    //     }
+    //     let mut query = Query::new();
+    //     query.set_subquery_key(IDENTITY_KEY.to_vec());
+    //
+    //     let (result_items, _) = self
+    //         .grove
+    //         .query_raw(&path_query, QueryElementResultType, transaction)
+    //         .unwrap()
+    //         .map_err(Error::GroveDB)?;
+    //
+    //     result_items
+    //         .to_elements()
+    //         .into_iter()
+    //         .map(|element| {
+    //             if let Element::Item(identity_cbor, element_flags) = &element {
+    //                 let identity =
+    //                     Identity::from_buffer(identity_cbor.as_slice()).map_err(|_| {
+    //                         Error::Identity(IdentityError::IdentitySerialization(
+    //                             "failed to deserialize an identity",
+    //                         ))
+    //                     })?;
+    //
+    //                 Ok((
+    //                     identity,
+    //                     StorageFlags::from_some_element_flags_ref(element_flags)?,
+    //                 ))
+    //             } else {
+    //                 Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
+    //                     "identity must be an item",
+    //                 )))
+    //             }
+    //         })
+    //         .collect()
+    // }
 }

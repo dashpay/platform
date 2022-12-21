@@ -1525,7 +1525,7 @@ mod tests {
             .0
             .is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 147739040);
+        assert_eq!(fee_result.processing_fee, 147661810);
     }
 
     #[test]
