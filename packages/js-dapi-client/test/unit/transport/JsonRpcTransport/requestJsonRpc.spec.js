@@ -1,4 +1,3 @@
-const axios = require('axios');
 const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/requestJsonRpc');
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
@@ -15,63 +14,24 @@ describe('requestJsonRpc', () => {
     params = { data: 'test' };
     timeout = 1000;
 
-    const options = { timeout };
-
-    const url = `http://${host}:${port}`;
-    const payload = {
-      jsonrpc: '2.0',
-      params,
-      id: 1,
-    };
-
-    const axiosStub = this.sinon.stub(axios, 'post');
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'shouldPass' },
-        options,
-      )
-      .resolves({ status: 200, data: { result: 'passed', error: null } });
-
-    axiosStub
-      .withArgs(
-        `https://${host}`,
-        { ...payload, method: 'httpsRequest' },
-        options,
-      )
-      .resolves({ status: 200, data: { result: 'passed', error: null } });
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'wrongData' },
-        options,
-      )
-      .resolves({ status: 400, data: { result: null, error: { message: 'Wrong data' } }, statusMessage: 'Status message' });
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'invalidData' },
-        options,
-      )
-      .resolves({ status: 200, data: { result: null, error: { message: 'invalid data' } } });
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'errorData' },
-        { timeout: undefined },
-      )
-      .resolves({ status: 200, data: { result: null, error: { message: 'Invalid data for error.data', data: 'additional data here', code: -1 } } });
+    // eslint-disable-next-line
+    this.sinon.stub(globalThis, 'fetch');
   });
 
   afterEach(() => {
-    axios.post.restore();
+    // eslint-disable-next-line
+    fetch.restore();
   });
 
   it('should make rpc request and return result', async () => {
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
+
     const result = await requestJsonRpc(
       host,
       port,
@@ -85,6 +45,14 @@ describe('requestJsonRpc', () => {
 
   it('should make https rpc request and return result', async () => {
     port = 443;
+
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
 
     const result = await requestJsonRpc(
       host,
@@ -100,6 +68,15 @@ describe('requestJsonRpc', () => {
   it('should throw WrongHttpCodeError if response status is not 200', async () => {
     const method = 'wrongData';
     const options = { timeout };
+
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: null, error: { message: 'Wrong data' } }),
+      {
+        status: 400,
+        statusText: 'Status message',
+      },
+    ));
 
     try {
       await requestJsonRpc(
@@ -127,6 +104,15 @@ describe('requestJsonRpc', () => {
 
   it('should throw error if there is an error object in the response body', async () => {
     try {
+      // eslint-disable-next-line
+      fetch.resolves(new Response(
+        JSON.stringify({ result: null, error: { message: 'invalid data' } }),
+        {
+          status: 200,
+          statusText: 'Status message',
+        },
+      ));
+
       await requestJsonRpc(
         host,
         port,
@@ -145,6 +131,15 @@ describe('requestJsonRpc', () => {
     const method = 'errorData';
 
     try {
+      // eslint-disable-next-line
+      fetch.resolves(new Response(
+        JSON.stringify({ result: null, error: { message: 'Invalid data for error.data', data: 'additional data here', code: -1 } }),
+        {
+          status: 200,
+          statusText: 'Status message',
+        },
+      ));
+
       await requestJsonRpc(
         host,
         port,
