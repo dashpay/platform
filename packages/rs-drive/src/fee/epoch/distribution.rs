@@ -484,7 +484,7 @@ mod tests {
 
         #[test]
         fn should_calculate_amount_and_leftovers() {
-            let storage_fee = 10000;
+            let storage_fee = 1000;
 
             let (amount, leftovers) = calculate_storage_fee_distribution_amount_and_leftovers(
                 storage_fee,

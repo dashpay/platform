@@ -76,15 +76,11 @@ impl Drive {
                     ))
                 })?);
 
-            let Element::SumItem(..) = element else {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must be sum items")));
-            };
-
-            let credits: SignedCredits = element.sum_value().ok_or(
-            Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must have value")
-            ))?;
-
-            Ok((epoch_index, credits))
+            if let Element::SumItem(credits, _) = element {
+                Ok((epoch_index, credits))
+            } else {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must be sum items")))
+            }
         }).collect::<Result<SignedCreditsPerEpoch, Error>>()
     }
 

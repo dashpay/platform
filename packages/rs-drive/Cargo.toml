@@ -36,15 +36,15 @@ rust_decimal_macros = "1.25.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+branch = "develop"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+branch = "develop"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+branch = "develop"
 
 [dev-dependencies]
 criterion = "0.3.5"
