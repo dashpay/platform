@@ -66,9 +66,9 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
 use crate::drive::identity::{
-    balance_path_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path_vec,
+    balance_path_vec, identity_key_tree_path_vec, identity_path_vec,
 };
-use dpp::prelude::IdentityPublicKey;
+
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
 

@@ -1,6 +1,6 @@
 use crate::drive::block_info::BlockInfo;
 
-use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
+use crate::drive::flags::{StorageFlags};
 use crate::drive::identity::{balance_path_vec, identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
