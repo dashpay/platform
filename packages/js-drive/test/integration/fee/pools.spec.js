@@ -1,9 +1,14 @@
 const moment = require('moment');
 
+const DashPlatformProtocol = require('@dashevo/dpp');
+
 const masternodeRewardSharesSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const getMasternodeRewardSharesContractFixture = require('@dashevo/dpp/lib/test/fixtures/getMasternodeRewardSharesContractFixture');
 const getMasternodeRewardShareDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getMasternodeRewardShareDocumentsFixture');
+
+const withdrawalContractDocumentsSchema = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+const withdrawalContractIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
@@ -34,6 +39,23 @@ describe('Fee Pools', () => {
      */
     rsDrive = container.resolve('rsDrive');
     await rsDrive.getAbci().initChain({});
+
+    const dpp = new DashPlatformProtocol({
+      stateRepository: {
+        fetchDataContract: () => {},
+      },
+    });
+
+    await dpp.initialize();
+
+    const withdrawalsDataContract = dpp.dataContract.create(
+      generateRandomIdentifier(),
+      withdrawalContractDocumentsSchema,
+    );
+
+    withdrawalsDataContract.id = Identifier.from(withdrawalContractIds.contractId);
+
+    await dataContractRepository.create(withdrawalsDataContract, blockInfo);
 
     // setup mn reward shares contract
     const mnSharesContract = getMasternodeRewardSharesContractFixture();
@@ -93,6 +115,8 @@ describe('Fee Pools', () => {
         blockTimeMs,
         proposerProTxHash: mnIdentity.getId(),
         validatorSetQuorumHash: Buffer.alloc(32),
+        coreChainLockedHeight: 1,
+        lastSyncedCoreHeight: 1,
       };
 
       if (previousBlockTimeMs) {

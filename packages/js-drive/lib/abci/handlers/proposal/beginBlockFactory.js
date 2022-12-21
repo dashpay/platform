@@ -20,6 +20,7 @@ const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {RSAbci} rsAbci
  * @param {ExecutionTimer} executionTimer
+ * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
  *
  * @return {beginBlock}
  */
@@ -35,6 +36,7 @@ function beginBlockFactory(
   synchronizeMasternodeIdentities,
   rsAbci,
   executionTimer,
+  lastSyncedCoreHeightRepository,
 ) {
   /**
    * @typedef beginBlock
@@ -107,6 +109,12 @@ function beginBlockFactory(
 
     await groveDBStore.startTransaction();
 
+    const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
+      useTransaction: true,
+    });
+
+    const lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || coreChainLockedHeight;
+
     // Call RS ABCI
 
     /**
@@ -118,6 +126,8 @@ function beginBlockFactory(
       proposerProTxHash,
       // TODO replace with real value
       validatorSetQuorumHash: Buffer.alloc(32),
+      coreChainLockedHeight,
+      lastSyncedCoreHeight,
     };
 
     if (!latestBlockExecutionContext.isEmpty()) {

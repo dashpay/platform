@@ -1636,6 +1636,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/rs-drive": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0

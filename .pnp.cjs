@@ -2659,6 +2659,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@types/pino", "npm:6.3.12"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],\
