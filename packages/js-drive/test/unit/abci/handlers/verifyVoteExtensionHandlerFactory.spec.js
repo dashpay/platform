@@ -33,6 +33,28 @@ describe('verifyVoteExtensionHandlerFactory', () => {
     );
   });
 
+  it('should return ResponseVerifyVoteExtension with REJECT status if vote extensions length not match', async () => {
+    const voteExtensions = [
+      { type: VoteExtensionType.THRESHOLD_RECOVER, extension: Buffer.alloc(32, 1) },
+      { type: VoteExtensionType.THRESHOLD_RECOVER, extension: Buffer.alloc(32, 2) },
+      { type: VoteExtensionType.THRESHOLD_RECOVER, extension: Buffer.alloc(32, 3) },
+    ];
+
+    const unsignedWithdrawalTransactionsMap = {
+      [Buffer.alloc(32, 1).toString('hex')]: undefined,
+      [Buffer.alloc(32, 2).toString('hex')]: undefined,
+    };
+
+    proposalBlockExecutionContextMock.getWithdrawalTransactionsMap.returns(
+      unsignedWithdrawalTransactionsMap,
+    );
+
+    const result = await verifyVoteExtensionHandler({ voteExtensions });
+
+    expect(result).to.be.an.instanceOf(ResponseVerifyVoteExtension);
+    expect(result.status).to.equal(2);
+  });
+
   it('should return ResponseVerifyVoteExtension with REJECT status if vote extension is missing', async () => {
     const voteExtensions = [
       { type: VoteExtensionType.THRESHOLD_RECOVER, extension: Buffer.alloc(32, 1) },
@@ -53,7 +75,7 @@ describe('verifyVoteExtensionHandlerFactory', () => {
     expect(result.status).to.equal(2);
   });
 
-  it('should return ResponseVerifyVoteExtension', async () => {
+  it('should return ACCEPT if everything is fine', async () => {
     const voteExtensions = [
       { type: VoteExtensionType.THRESHOLD_RECOVER, extension: Buffer.alloc(32, 1) },
       { type: VoteExtensionType.THRESHOLD_RECOVER, extension: Buffer.alloc(32, 2) },

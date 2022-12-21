@@ -45,6 +45,10 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
         extension: Buffer.from(txHashHex, 'hex'),
       }));
 
+    const numberOfVoteExtensionsMatch = (
+      voteExtensionsToCheck.length === (voteExtensions || []).length
+    );
+
     const allVoteExtensionsPresent = voteExtensionsToCheck.reduce((result, nextExtension) => {
       const searchedVoteExtension = (voteExtensions || []).find((voteExtension) => (
         voteExtension.type === nextExtension.type
@@ -68,7 +72,9 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
       return result && (searchedVoteExtension !== undefined);
     }, true);
 
-    const status = allVoteExtensionsPresent ? verifyStatus.ACCEPT : verifyStatus.REJECT;
+    const status = (numberOfVoteExtensionsMatch && allVoteExtensionsPresent)
+      ? verifyStatus.ACCEPT
+      : verifyStatus.REJECT;
 
     return new ResponseVerifyVoteExtension({
       status,
