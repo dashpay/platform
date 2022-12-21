@@ -176,8 +176,9 @@ mod tests {
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
+        use crate::fee::credits::Credits;
         use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
-        use grovedb::batch::{GroveDbOp, Op};
+        use grovedb::batch::Op;
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {
@@ -211,15 +212,14 @@ mod tests {
                 .into_iter()
                 .enumerate()
                 .map(|(i, epoch_index)| {
-                    let credits = 10 - i as SignedCredits;
+                    let credits = 10 - i as Credits;
 
-                    GroveDbOp::insert_op(
-                        Epoch::new(epoch_index).get_vec_path(),
-                        KEY_POOL_STORAGE_FEES.to_vec(),
-                        Element::new_sum_item(credits),
-                    )
+                    let epoch = Epoch::new(epoch_index);
+
+                    epoch.update_storage_fee_pool_operation(credits)
                 })
-                .collect();
+                .collect::<Result<_, _>>()
+                .expect("should add operations");
 
             let batch = GroveDbOpBatch::from_operations(operations);
 
