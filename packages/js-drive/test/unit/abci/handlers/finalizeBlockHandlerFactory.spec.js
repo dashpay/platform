@@ -32,6 +32,7 @@ describe('finalizeBlockHandlerFactory', () => {
   let round;
   let block;
   let processProposalMock;
+  let updateWithdrawalTransactionIdAndStatusMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -84,6 +85,10 @@ describe('finalizeBlockHandlerFactory', () => {
     proposalBlockExecutionContextMock.getHeight.returns(new Long(42));
     proposalBlockExecutionContextMock.getRound.returns(round);
     proposalBlockExecutionContextMock.getDataContracts.returns([dataContract]);
+    proposalBlockExecutionContextMock.getEpochInfo.returns({
+      currentEpochIndex: 1,
+    })
+    proposalBlockExecutionContextMock.getTimeMs.returns((new Date()).getTime());
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
@@ -98,6 +103,8 @@ describe('finalizeBlockHandlerFactory', () => {
 
     processProposalMock = this.sinon.stub();
 
+    updateWithdrawalTransactionIdAndStatusMock = this.sinon.stub();
+
     finalizeBlockHandler = finalizeBlockHandlerFactory(
       groveDBStoreMock,
       blockExecutionContextRepositoryMock,
@@ -107,6 +114,7 @@ describe('finalizeBlockHandlerFactory', () => {
       latestBlockExecutionContextMock,
       proposalBlockExecutionContextMock,
       processProposalMock,
+      updateWithdrawalTransactionIdAndStatusMock,
     );
   });
 
