@@ -111,19 +111,16 @@ impl Drive {
             )));
         }
 
-        let mut storage_fee_pool_query = Query::new();
-        storage_fee_pool_query.insert_key(KEY_POOL_STORAGE_FEES.to_vec());
+        let mut query = Query::new();
 
-        let mut epochs_query = Query::new();
+        query.insert_range_inclusive(min_encoded_epoch_index..=max_encoded_epoch_index);
 
-        epochs_query.insert_range_inclusive(min_encoded_epoch_index..=max_encoded_epoch_index);
-
-        epochs_query.set_subquery(storage_fee_pool_query);
+        query.set_subquery_key(KEY_POOL_STORAGE_FEES.to_vec());
 
         let (storage_fee_pools_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_vec_path(), epochs_query),
+                &PathQuery::new_unsized(pools_vec_path(), query),
                 QueryResultType::QueryElementResultType,
                 transaction,
             )
