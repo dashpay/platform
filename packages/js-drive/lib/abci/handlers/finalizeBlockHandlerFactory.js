@@ -6,6 +6,7 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const lodashCloneDeep = require('lodash/cloneDeep');
 
 /**
  *
@@ -48,8 +49,11 @@ function finalizeBlockHandlerFactory(
       abciMethod: 'finalizeBlock',
     });
 
+    const requestToLog = lodashCloneDeep(request);
+    delete requestToLog.block.data;
+
     consensusLogger.debug('FinalizeBlock ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
+    consensusLogger.trace({ abciRequest: requestToLog });
 
     const lastProcessedRound = proposalBlockExecutionContext.getRound();
 

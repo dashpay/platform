@@ -6,6 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const lodashCloneDeep = require('lodash/cloneDeep');
 const aggregateFees = require('./proposal/fees/aggregateFees');
 
 const txAction = {
@@ -58,8 +59,11 @@ function prepareProposalHandlerFactory(
       abciMethod: 'prepareProposal',
     });
 
+    const requestToLog = lodashCloneDeep(request);
+    delete requestToLog.txs;
+
     consensusLogger.debug('PrepareProposal ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
+    consensusLogger.trace({ abciRequest: requestToLog });
 
     consensusLogger.info(`Preparing a block proposal for height #${height} round #${round}`);
 
