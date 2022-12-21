@@ -46,6 +46,12 @@ if (process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY === undefined) {
 if (process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY === undefined) {
   process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY = testPublicKey;
 }
+if (process.env.WITHDRAWALS_MASTER_PUBLIC_KEY === undefined) {
+  process.env.WITHDRAWALS_MASTER_PUBLIC_KEY = testPublicKey;
+}
+if (process.env.WITHDRAWALS_SECOND_PUBLIC_KEY === undefined) {
+  process.env.WITHDRAWALS_SECOND_PUBLIC_KEY = testPublicKey;
+}
 
 const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),

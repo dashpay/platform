@@ -214,6 +214,14 @@ function createDIContainer(options) {
     throw new Error('MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY must be set');
   }
 
+  if (!options.WITHDRAWALS_MASTER_PUBLIC_KEY) {
+    throw new Error('WITHDRAWALS_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.WITHDRAWALS_SECOND_PUBLIC_KEY) {
+    throw new Error('WITHDRAWALS_SECOND_PUBLIC_KEY must be set');
+  }
+
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
   });
