@@ -85,13 +85,12 @@ impl Drive {
         to_epoch_index: EpochIndex,
         transaction: TransactionArg,
     ) -> Result<Option<(EpochIndex, u64)>, Error> {
-        let mut query = Query::new();
-
         let from_epoch_key = paths::encode_epoch_index_key(from_epoch_index)?.to_vec();
         let current_epoch_key = paths::encode_epoch_index_key(to_epoch_index)?.to_vec();
 
-        query.insert_range_after_to_inclusive(from_epoch_key..=current_epoch_key);
+        let mut query = Query::new();
 
+        query.insert_range_after_to_inclusive(from_epoch_key..=current_epoch_key);
         query.set_subquery_key(KEY_START_BLOCK_HEIGHT.to_vec());
 
         let sized_query = SizedQuery::new(query, Some(1), None);
