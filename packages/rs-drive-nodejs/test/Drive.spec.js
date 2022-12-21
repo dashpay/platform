@@ -26,7 +26,9 @@ const FeeResult = require('../FeeResult');
 
 const TEST_DATA_PATH = './test_data';
 
-describe('Drive', () => {
+describe('Drive', function describe() {
+  this.timeout(10000);
+
   let drive;
   let dataContract;
   let identity;
