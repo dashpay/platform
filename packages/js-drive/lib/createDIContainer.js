@@ -133,6 +133,7 @@ const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemo
 const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
 const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
+const updateWithdrawalTransactionIdAndStatusFactory = require('./identity/withdrawals/updateWithdrawalTransactionIdAndStatusFactory');
 
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
@@ -675,6 +676,15 @@ function createDIContainer(options) {
    */
   container.register({
     validatorSet: asClass(ValidatorSet),
+  });
+
+  /**
+   * Register withrawals stuff
+   */
+  container.register({
+    updateWithdrawalTransactionIdAndStatus: asFunction(
+      updateWithdrawalTransactionIdAndStatusFactory,
+    ),
   });
 
   /**

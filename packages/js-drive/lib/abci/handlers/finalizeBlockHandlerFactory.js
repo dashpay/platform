@@ -8,6 +8,8 @@ const {
 } = require('@dashevo/abci/types');
 const lodashCloneDeep = require('lodash/cloneDeep');
 
+const BlockInfo = require('../../blockExecution/BlockInfo');
+
 /**
  *
  * @return {finalizeBlockHandler}
@@ -29,6 +31,7 @@ function finalizeBlockHandlerFactory(
   latestBlockExecutionContext,
   proposalBlockExecutionContext,
   processProposal,
+  updateWithdrawalTransactionIdAndStatus,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -116,6 +119,8 @@ function finalizeBlockHandlerFactory(
 
     const { thresholdVoteExtensions } = commitInfo;
 
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
+
     for (const { extension, signature } of (thresholdVoteExtensions || [])) {
       const withdrawalTransactionHash = extension.toString('hex');
 
@@ -131,6 +136,15 @@ function finalizeBlockHandlerFactory(
 
         // TODO: think about Core error handling
         await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
+
+        await updateWithdrawalTransactionIdAndStatus(
+          blockInfo,
+          unsignedWithdrawalTransactionBytes,
+          transactionBytes,
+          {
+            useTransaction: true,
+          },
+        );
       }
     }
 
