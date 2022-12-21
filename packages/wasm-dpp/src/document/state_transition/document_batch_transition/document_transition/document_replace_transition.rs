@@ -1,6 +1,6 @@
 use dpp::{
     document::document_transition::{
-        document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
+        document_replace_transition, DocumentReplaceTransition, DocumentTransitionObjectLike,
     },
     util::json_value::JsonValueExt,
 };
@@ -11,20 +11,20 @@ use crate::{
     buffer::Buffer, identifier::IdentifierWrapper, lodash::lodash_set, utils::WithJsError,
 };
 
-#[wasm_bindgen(js_name=DocumentCreateTransition)]
+#[wasm_bindgen(js_name=DocumentTransition)]
 #[derive(Debug, Clone)]
-pub struct DocumentCreateTransitionWasm {
-    inner: DocumentCreateTransition,
+pub struct DocumentReplaceTransitionWasm {
+    inner: DocumentReplaceTransition,
 }
 
-impl From<DocumentCreateTransition> for DocumentCreateTransitionWasm {
-    fn from(v: DocumentCreateTransition) -> Self {
+impl From<DocumentReplaceTransition> for DocumentReplaceTransitionWasm {
+    fn from(v: DocumentReplaceTransition) -> Self {
         Self { inner: v }
     }
 }
 
-#[wasm_bindgen(js_class=DocumentCreateTransition)]
-impl DocumentCreateTransitionWasm {
+#[wasm_bindgen(js_class=DocumentTransition)]
+impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(js_name=getAction)]
     pub fn action(&self) -> u8 {
         self.inner.base.action as u8
@@ -44,7 +44,7 @@ impl DocumentCreateTransitionWasm {
 
         for path in identifiers_paths
             .into_iter()
-            .chain(document_create_transition::IDENTIFIER_FIELDS)
+            .chain(document_replace_transition::IDENTIFIER_FIELDS)
         {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
                 let id = IdentifierWrapper::new(bytes)?;
@@ -52,10 +52,7 @@ impl DocumentCreateTransitionWasm {
             }
         }
 
-        for path in binary_paths
-            .into_iter()
-            .chain(document_create_transition::BINARY_FIELDS)
-        {
+        for path in binary_paths.into_iter() {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
                 let buffer = Buffer::from_bytes(&bytes);
                 lodash_set(&js_value, path, buffer.into());

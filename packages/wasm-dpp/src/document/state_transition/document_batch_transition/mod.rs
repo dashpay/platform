@@ -143,14 +143,14 @@ impl DocumentsBatchTransitionWASM {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
         let is_null_signature = value.get("signature").is_none();
-        let is_null_identity_public_key = value.get("signaturePublicKeyId").is_none();
+        let is_null_signature_public_key_id = value.get("signaturePublicKeyId").is_none();
 
         let js_value = value.serialize(&serializer)?;
 
         if is_null_signature {
             js_sys::Reflect::set(&js_value, &"signature".into(), &JsValue::undefined())?;
         }
-        if is_null_identity_public_key {
+        if is_null_signature_public_key_id {
             js_sys::Reflect::set(
                 &js_value,
                 &"signaturePublicKeyId".into(),
@@ -163,6 +163,24 @@ impl DocumentsBatchTransitionWASM {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let skip_signature: bool = true;
+
+        // we can create the transition -> 3 types of the transition
+
+        // then for each transition we should -> transitions is the array!
+
+        // for each document transition we also need to change the fields!!!
+        // how we can do that???
+
+        // for every object we need also the dataContract
+
+        // replace the paths that are specific for DocumentsBatchTransition
+
+        // DocumentsBatchTransition::binary_property_paths()
+        // DocumentsBatchTransition::identifiers_property_paths()
+
+        // we have all arrays for all byte-arrays data
+
         todo!()
     }
 

@@ -1,10 +1,10 @@
 mod document_create_transition;
 mod document_delete_transition;
-mod document_update_transition;
+mod document_replace_transition;
 
 pub use document_create_transition::*;
 pub use document_delete_transition::*;
-pub use document_update_transition::*;
+pub use document_replace_transition::*;
 
 use dpp::prelude::DocumentTransition;
 use wasm_bindgen::prelude::*;

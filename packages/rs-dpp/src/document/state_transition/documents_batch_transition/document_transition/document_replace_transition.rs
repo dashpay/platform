@@ -8,9 +8,12 @@ use crate::{
 };
 
 use super::{
-    document_base_transition, merge_serde_json_values, Action, DocumentBaseTransition,
-    DocumentTransitionObjectLike,
+    document_base_transition, document_base_transition::DocumentBaseTransition,
+    merge_serde_json_values, Action, DocumentTransitionObjectLike,
 };
+
+/// Identifier fields in [`DocumentReplaceTransition`]
+pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

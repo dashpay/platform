@@ -2,21 +2,25 @@ use std::convert::TryFrom;
 
 use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
-
-pub use document_base_transition::*;
-pub use document_create_transition::*;
-pub use document_delete_transition::*;
-pub use document_replace_transition::*;
+use serde_json::Value;
 
 use crate::{
     data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
 };
+use document_base_transition::DocumentBaseTransition;
 
-mod document_base_transition;
-mod document_create_transition;
-mod document_delete_transition;
-mod document_replace_transition;
+pub mod document_base_transition;
+pub mod document_create_transition;
+pub mod document_delete_transition;
+pub mod document_replace_transition;
 
+pub use document_base_transition::{Action, DocumentTransitionObjectLike};
+pub use document_create_transition::DocumentCreateTransition;
+pub use document_delete_transition::DocumentDeleteTransition;
+pub use document_replace_transition::DocumentReplaceTransition;
+
+/// the initial revision of newly created document
+pub const INITIAL_REVISION: u32 = 1;
 pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {
@@ -26,7 +30,7 @@ pub trait DocumentTransitionExt {
     fn get_updated_at(&self) -> Option<i64>;
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
-    fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue>;
+    fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
     ///  get the id
     fn get_id(&self) -> &Identifier;
     /// get the document type
@@ -39,7 +43,7 @@ pub trait DocumentTransitionExt {
     fn get_data_contract_id(&self) -> &Identifier;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
-    fn insert_dynamic_property(&mut self, property_name: String, value: JsonValue);
+    fn insert_dynamic_property(&mut self, property_name: String, value: Value);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,7 +83,7 @@ struct TransitionWithAction {
 
 impl DocumentTransitionObjectLike for DocumentTransition {
     fn from_json_object(
-        json_value: JsonValue,
+        json_value: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
@@ -102,7 +106,7 @@ impl DocumentTransitionObjectLike for DocumentTransition {
     }
 
     fn from_raw_object(
-        raw_transition: JsonValue,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
@@ -123,11 +127,11 @@ impl DocumentTransitionObjectLike for DocumentTransition {
         })
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_json)
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_object)
     }
 }
@@ -202,7 +206,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue> {
+    fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
         match self {
             DocumentTransition::Create(t) => {
                 if let Some(ref data) = t.data {
@@ -223,7 +227,7 @@ impl DocumentTransitionExt for DocumentTransition {
     }
 
     #[cfg(test)]
-    fn insert_dynamic_property(&mut self, property_name: String, value: JsonValue) {
+    fn insert_dynamic_property(&mut self, property_name: String, value: Value) {
         match self {
             DocumentTransition::Create(ref mut t) => {
                 if let Some(ref mut data) = t.data {
@@ -242,9 +246,9 @@ impl DocumentTransitionExt for DocumentTransition {
 
 /// Assumes the both values are maps and merge them together. In case of overlap, the
 /// values from b d
-fn merge_serde_json_values(a: &mut JsonValue, b: JsonValue) -> Result<(), anyhow::Error> {
-    if let JsonValue::Object(ref mut map_a) = a {
-        if let JsonValue::Object(map_b) = b {
+fn merge_serde_json_values(a: &mut Value, b: Value) -> Result<(), anyhow::Error> {
+    if let Value::Object(ref mut map_a) = a {
+        if let Value::Object(map_b) = b {
             map_a.extend(map_b);
         } else {
             bail!("{} isn't a map", b)

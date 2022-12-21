@@ -25,13 +25,16 @@ pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
 
-const PROPERTY_DATA_CONTRACT_ID: &str = "$dataContractId";
-const PROPERTY_TRANSITIONS: &str = "transitions";
-const PROPERTY_OWNER_ID: &str = "ownerId";
-const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
-const PROPERTY_SIGNATURE: &str = "signature";
-const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
-const PROPERTY_SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
+pub mod property_names {
+    pub const DATA_CONTRACT_ID: &str = "$dataContractId";
+    pub const TRANSITIONS: &str = "transitions";
+    pub const OWNER_ID: &str = "ownerId";
+    pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
+    pub const SIGNATURE: &str = "signature";
+    pub const PROTOCOL_VERSION: &str = "protocolVersion";
+    pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
+}
+
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -73,26 +76,26 @@ impl DocumentsBatchTransition {
     ) -> Result<Self, ProtocolError> {
         let mut json_value = json_value;
 
-        let maybe_signature = json_value.get_string(PROPERTY_SIGNATURE).ok();
-
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: json_value
-                .get_u64(PROPERTY_PROTOCOL_VERSION)
+                .get_u64(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: base64::decode(json_value.get_string(PROPERTY_SIGNATURE)?)
+            signature: base64::decode(json_value.get_string(property_names::SIGNATURE)?)
                 .context("decoding signature from base64 failed")
                 .unwrap_or_default(),
-            signature_public_key_id: json_value.get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID).ok(),
+            signature_public_key_id: json_value
+                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .ok(),
             owner_id: Identifier::from_string(
-                json_value.get_string(PROPERTY_OWNER_ID)?,
+                json_value.get_string(property_names::OWNER_ID)?,
                 Encoding::Base58,
             )?,
             ..Default::default()
         };
 
         let mut document_transitions: Vec<DocumentTransition> = vec![];
-        let maybe_transitions = json_value.remove(PROPERTY_TRANSITIONS);
+        let maybe_transitions = json_value.remove(property_names::TRANSITIONS);
         if let Ok(JsonValue::Array(json_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
@@ -101,7 +104,7 @@ impl DocumentsBatchTransition {
 
             for json_transition in json_transitions {
                 let id = Identifier::from_string(
-                    json_transition.get_string(PROPERTY_DATA_CONTRACT_ID)?,
+                    json_transition.get_string(property_names::DATA_CONTRACT_ID)?,
                     Encoding::Base58,
                 )?;
                 let data_contract =
@@ -130,17 +133,21 @@ impl DocumentsBatchTransition {
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: raw_object
-                .get_u64(PROPERTY_PROTOCOL_VERSION)
+                .get_u64(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: raw_object.get_bytes(PROPERTY_SIGNATURE).unwrap_or_default(),
-            signature_public_key_id: raw_object.get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID).ok(),
-            owner_id: Identifier::from_bytes(&raw_object.get_bytes(PROPERTY_OWNER_ID)?)?,
+            signature: raw_object
+                .get_bytes(property_names::SIGNATURE)
+                .unwrap_or_default(),
+            signature_public_key_id: raw_object
+                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .ok(),
+            owner_id: Identifier::from_bytes(&raw_object.get_bytes(property_names::OWNER_ID)?)?,
             ..Default::default()
         };
 
         let mut document_transitions: Vec<DocumentTransition> = vec![];
-        let maybe_transitions = raw_object.remove(PROPERTY_TRANSITIONS);
+        let maybe_transitions = raw_object.remove(property_names::TRANSITIONS);
         if let Ok(JsonValue::Array(raw_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
@@ -148,7 +155,7 @@ impl DocumentsBatchTransition {
                 .collect();
 
             for raw_transition in raw_transitions {
-                let id = raw_transition.get_bytes(PROPERTY_DATA_CONTRACT_ID)?;
+                let id = raw_transition.get_bytes(property_names::DATA_CONTRACT_ID)?;
                 let data_contract = data_contracts_map.get(&id).ok_or_else(|| {
                     anyhow!(
                         "Data Contract doesn't exists for Transition: {:?}",
@@ -217,15 +224,15 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
 
 impl StateTransitionConvert for DocumentsBatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE]
+        vec![property_names::SIGNATURE]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_OWNER_ID]
+        vec![property_names::OWNER_ID]
     }
 
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE]
+        vec![property_names::SIGNATURE]
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
@@ -237,7 +244,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
             transitions.push(transition.to_json()?)
         }
         json_value.insert(
-            String::from(PROPERTY_TRANSITIONS),
+            String::from(property_names::TRANSITIONS),
             JsonValue::Array(transitions),
         )?;
 
@@ -261,7 +268,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
             transitions.push(transition.to_object()?)
         }
         json_object.insert(
-            String::from(PROPERTY_TRANSITIONS),
+            String::from(property_names::TRANSITIONS),
             JsonValue::Array(transitions),
         )?;
 
@@ -299,7 +306,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
 }
 
 pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> SecurityLevel {
-    let maybe_security_level = v.get_u64(PROPERTY_SECURITY_LEVEL_REQUIREMENT);
+    let maybe_security_level = v.get_u64(property_names::SECURITY_LEVEL_REQUIREMENT);
     match maybe_security_level {
         Ok(some_level) => (some_level as usize).try_into().unwrap_or(default),
         Err(_) => default,
@@ -328,7 +335,7 @@ mod test {
             .get_mut("niceDocument")
             .unwrap()
             .insert(
-                PROPERTY_SECURITY_LEVEL_REQUIREMENT.to_string(),
+                property_names::SECURITY_LEVEL_REQUIREMENT.to_string(),
                 json!(SecurityLevel::MEDIUM),
             )
             .unwrap();
@@ -337,7 +344,7 @@ mod test {
             .get_mut("prettyDocument")
             .unwrap()
             .insert(
-                PROPERTY_SECURITY_LEVEL_REQUIREMENT.to_string(),
+                property_names::SECURITY_LEVEL_REQUIREMENT.to_string(),
                 json!(SecurityLevel::MASTER),
             )
             .unwrap();

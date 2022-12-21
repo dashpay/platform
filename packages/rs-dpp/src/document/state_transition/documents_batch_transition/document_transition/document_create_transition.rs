@@ -3,30 +3,32 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    data_contract::DataContract,
-    document::document_transition::Action,
-    errors::ProtocolError,
-    util::json_value::JsonValueExt,
-    util::json_value::{self, ReplaceWith},
+    data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
+    util::json_value::JsonValueExt, util::json_value::ReplaceWith,
 };
 
+use super::INITIAL_REVISION;
 use super::{
-    document_base_transition, merge_serde_json_values, DocumentBaseTransition,
-    DocumentTransitionObjectLike,
+    document_base_transition, document_base_transition::DocumentBaseTransition,
+    merge_serde_json_values, DocumentTransitionObjectLike,
 };
 
-pub const INITIAL_REVISION: u32 = 1;
+/// The Binary fields in [`DocumentCreateTransition`]
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
+/// The Identifier fields in [`DocumentCreateTransition`]
+pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentCreateTransition {
-    #[serde(flatten)]
     /// Document Base Transition
+    #[serde(flatten)]
     pub base: DocumentBaseTransition,
+
+    /// Entropy used to create a Document ID.
     #[serde(rename = "$entropy")]
-    /// Entropy used in creating the Document ID.
     pub entropy: [u8; 32],
+
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]

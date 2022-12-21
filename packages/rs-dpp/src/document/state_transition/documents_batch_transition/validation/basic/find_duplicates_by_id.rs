@@ -1,6 +1,8 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use crate::document::document_transition::{DocumentBaseTransition, DocumentTransition};
+use crate::document::document_transition::{
+    document_base_transition::DocumentBaseTransition, DocumentTransition,
+};
 use crate::util::string_encoding::Encoding;
 
 /// Find the duplicates in the collection of Document Transitions
