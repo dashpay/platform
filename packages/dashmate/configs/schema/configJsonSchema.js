@@ -632,8 +632,34 @@ module.exports = {
           required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
+        withdrawals: {
+          type: 'object',
+          properties: {
+            contract: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+              },
+              required: ['id'],
+              additionalProperties: false,
+            },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
+          additionalProperties: false,
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals'],
       additionalProperties: false,
     },
     dashmate: {
