@@ -478,6 +478,6 @@ mod tests {
             .fetch_all_identity_keys(identity.id.to_buffer(), true, None)
             .expect("expected to get balance");
 
-        assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 30
+        assert_eq!(identity_keys.len(), 29); // we had 5 keys and we added 24
     }
 }

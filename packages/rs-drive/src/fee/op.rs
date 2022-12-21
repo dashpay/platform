@@ -138,7 +138,7 @@ impl BaseOp {
 }
 
 /// Supported Hash Functions
-#[derive(Debug, Enum)]
+#[derive(Debug, Enum, PartialEq, Eq)]
 pub enum HashFunction {
     /// Used for crypto addresses
     Sha256RipeMD160,
@@ -181,7 +181,7 @@ impl HashFunction {
 }
 
 /// A Hash Function Operation
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FunctionOp {
     pub(crate) hash: HashFunction,
     pub(crate) rounds: u16,
@@ -209,7 +209,7 @@ impl FunctionOp {
 }
 
 /// Drive operation
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DriveOperation {
     /// Grove operation
     GroveOperation(GroveDbOp),

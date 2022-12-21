@@ -57,7 +57,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::CalculatedCostOperation;
-use grovedb::operations::delete::DeleteOptions;
+use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::Error as GroveError;
@@ -286,6 +286,7 @@ impl Drive {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
+            validate_tree_at_path_exists: false,
         };
         let cost_context = self.grove.delete(path, key, Some(options), transaction);
         push_drive_operation_result(cost_context, drive_operations)
@@ -607,6 +608,123 @@ impl Drive {
         }
     }
 
+    /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
+    /// Will also check the current drive operations
+    pub(crate) fn batch_insert_empty_tree_if_not_exists_check_existing_operations<
+        'a,
+        'c,
+        const N: usize,
+    >(
+        &'a self,
+        path_key_info: PathKeyInfo<'c, N>,
+        storage_flags: Option<&StorageFlags>,
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<bool, Error> {
+        match path_key_info {
+            PathKeyRef((path, key)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path.clone(),
+                    key.to_vec(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let has_raw = self.grove_has_raw(
+                        path_iter.clone(),
+                        key,
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+            PathKeySize(_key_path_info, _key_info) => Err(Error::Drive(
+                DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
+            )),
+            PathKey((path, key)) => {
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path.clone(),
+                    key.clone(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                    let has_raw = self.grove_has_raw(
+                        path_iter.clone(),
+                        key.as_slice(),
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+            PathFixedSizeKey((path, key)) => {
+                let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path_items,
+                    key.to_vec(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let has_raw = self.grove_has_raw(
+                        path,
+                        key.as_slice(),
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+            PathFixedSizeKeyRef((path, key)) => {
+                let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path_items,
+                    key.to_vec(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let has_raw = self.grove_has_raw(
+                        path,
+                        key,
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+        }
+    }
+
     /// Pushes an "insert element" operation to `drive_operations`.
     pub(crate) fn batch_insert<const N: usize>(
         &self,
@@ -767,6 +885,7 @@ impl Drive {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
+            validate_tree_at_path_exists: false, //todo: not sure about this one
         };
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
@@ -776,7 +895,7 @@ impl Drive {
                 &KeyInfoPath::from_known_path(path),
                 &KeyInfo::KnownKey(key.to_vec()),
                 is_sum_tree,
-                true,
+                false,
                 true,
                 0,
                 estimated_value_size,
@@ -788,7 +907,6 @@ impl Drive {
                 path,
                 key,
                 &options,
-                true,
                 is_known_to_be_subtree_with_sum,
                 &current_batch_operations.operations,
                 transaction,
@@ -831,17 +949,17 @@ impl Drive {
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
             } => {
-                let options = DeleteOptions {
+                let options = DeleteUpTreeOptions {
                     allow_deleting_non_empty_trees: false,
                     deleting_non_empty_trees_returns_error: true,
                     base_root_storage_is_free: true,
+                    validate_tree_at_path_exists: false,
+                    stop_path_height,
                 };
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
                     path.to_path_refs(),
                     key,
-                    stop_path_height,
                     &options,
-                    true,
                     is_known_to_be_subtree_with_sum,
                     current_batch_operations.operations,
                     transaction,
