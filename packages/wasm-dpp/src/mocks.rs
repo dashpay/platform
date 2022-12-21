@@ -9,6 +9,9 @@ use dpp::document::document_transition::{
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 
 use crate::buffer::Buffer;
+use crate::document_batch_transition::document_transition::{
+    DocumentCreateTransitionWasm, DocumentDeleteTransitionWasm, DocumentReplaceTransitionWasm,
+};
 use crate::identifier::IdentifierWrapper;
 use crate::utils::WithJsError;
 use crate::{with_js_error, BinaryType, DataContractWasm};
@@ -75,9 +78,20 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getObject)]
-    pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        // TODO
-        todo!("the conversion of objects to buffer and identifiers must be included")
+    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
+        // TODO options??
+
+        match self.0 {
+            DocumentTransition::Create(ref t) => {
+                DocumentCreateTransitionWasm::from(t.to_owned()).to_object()
+            }
+            DocumentTransition::Replace(ref t) => {
+                DocumentReplaceTransitionWasm::from(t.to_owned()).to_object()
+            }
+            DocumentTransition::Delete(ref t) => {
+                DocumentDeleteTransitionWasm::from(t.to_owned()).to_object()
+            }
+        }
     }
 
     #[wasm_bindgen(js_name=toJSON)]

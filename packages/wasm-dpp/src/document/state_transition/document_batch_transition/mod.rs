@@ -10,7 +10,7 @@ use dpp::{
     util::json_value::JsonValueExt,
 };
 use itertools::Itertools;
-use js_sys::Array;
+use js_sys::{Array, Reflect};
 use serde::Serialize;
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi, RefFromWasmAbi},
@@ -19,8 +19,10 @@ use wasm_bindgen::{
 
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
+    buffer::Buffer,
     console_log,
     identifier::IdentifierWrapper,
+    lodash::lodash_set,
     mocks::DocumentTransitionWasm,
     utils::{ToSerdeJSONExt, WithJsError},
     with_js_error, DocumentWasm, IdentityPublicKeyWasm,
@@ -47,11 +49,6 @@ impl DocumentsContainer {
         Default::default()
     }
 
-    #[wasm_bindgen(js_name=extend)]
-    pub fn extend(&mut self, data: js_sys::Array) {
-        for js in data.iter() {}
-    }
-
     #[wasm_bindgen(js_name=pushDocumentCreate)]
     pub fn push_document_create(&mut self, d: DocumentWasm) {
         self.create.push(d.0);
@@ -65,13 +62,6 @@ impl DocumentsContainer {
     #[wasm_bindgen(js_name=pushDocumentDelete)]
     pub fn push_document_delete(&mut self, d: DocumentWasm) {
         self.delete.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=display)]
-    pub fn display(&self) {
-        for d in self.create.iter() {
-            console_log!("the document: {:?}", d)
-        }
     }
 }
 
@@ -162,59 +152,45 @@ impl DocumentsBatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        let skip_signature: bool = true;
+    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
+        let skip_signature = if options.is_object() {
+            let options = options.with_serde_to_json_value()?;
+            options.get_bool("skipSignature").unwrap_or_default()
+        } else {
+            false
+        };
 
-        // we can create the transition -> 3 types of the transition
+        let mut value = self.0.to_object(skip_signature).with_js_error()?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_value = value.serialize(&serializer)?;
 
-        // then for each transition we should -> transitions is the array!
+        // transform every transition individually
+        let transitions = Array::new();
+        for transition in self.0.transitions.iter() {
+            let js_value =
+                DocumentTransitionWasm::from(transition.to_owned()).to_object(options)?;
+            transitions.push(&js_value);
+        }
+        // replace the whole collection of transitions
+        Reflect::set(&js_value, &"transitions".into(), &transitions.into())?;
 
-        // for each document transition we also need to change the fields!!!
-        // how we can do that???
+        // transform paths that are specific to the DocumentsBatchTransition
+        for path in DocumentsBatchTransition::binary_property_paths() {
+            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+                let buffer = Buffer::from_bytes(&bytes);
+                lodash_set(&js_value, path, buffer.into());
+            }
+        }
 
-        // for every object we need also the dataContract
+        for path in DocumentsBatchTransition::identifiers_property_paths() {
+            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+                let id = IdentifierWrapper::new(bytes)?;
+                lodash_set(&js_value, path, id.into());
+            }
+        }
 
-        // replace the paths that are specific for DocumentsBatchTransition
-
-        // DocumentsBatchTransition::binary_property_paths()
-        // DocumentsBatchTransition::identifiers_property_paths()
-
-        // we have all arrays for all byte-arrays data
-
-        todo!()
+        Ok(js_value)
     }
-
-    // conversion to object:
-    // convert:
-    // Identfiers -> to IdentifierWrapper
-    // Binary -> to Buffer
-
-    // #[wasm_bindgen(js_name=toObject)]
-    // pub fn to_object(&self) -> Result<JsValue, JsValue> {
-    //     // when we replace the we should use data contract to replace
-    //     let value = self.0.to_object(false).with_js_error()?;
-    //     // we need to convert every single transition
-
-    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    //     let js_value = value.serialize(&serializer)?;
-
-    //     for path in identifiers_paths.into_iter().chain(IDENTIFIER_FIELDS) {
-    //         if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
-    //             let id = IdentifierWrapper::new(bytes)?;
-    //             lodash_set(&js_value, path, id.into());
-    //         }
-    //     }
-
-    //     for path in binary_paths {
-    //         if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
-    //             let buffer = Buffer::from_bytes(&bytes);
-    //             lodash_set(&js_value, path, buffer.into());
-    //         }
-    //     }
-    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-    //     with_js_error!(value.serialize(&serializer))
-    // }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
     pub fn get_modified_ids(&self) -> Array {
@@ -228,7 +204,7 @@ impl DocumentsBatchTransitionWASM {
         array
     }
 
-    // next we implement AbstractSTateTransitionIdentitySigned methods
+    // AbstractSTateTransitionIdentitySigned methods
     #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
     pub fn get_signature_public_key_id(&self) -> Option<f64> {
         self.0.get_signature_public_key_id().map(|v| v as f64)

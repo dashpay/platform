@@ -91,6 +91,7 @@ pub trait JsonValueExt {
         &mut self,
         property_name: &str,
     ) -> Result<K, anyhow::Error>;
+    fn get_bool(&self, property_name: &str) -> Result<bool, anyhow::Error>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -393,6 +394,25 @@ impl JsonValueExt for JsonValue {
             .ok_or_else(|| anyhow!("the '{path}' doesn't exists in '{self:#?}'"))?;
 
         serde_json::from_value(data).map_err(|err| anyhow!("unable convert data: {}`", err))
+    }
+
+    fn get_bool(&self, property_name: &str) -> Result<bool, anyhow::Error> {
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let JsonValue::Bool(s) = property_value {
+            return Ok(*s);
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
     }
 }
 
