@@ -236,7 +236,7 @@ mod tests {
 
         mod helpers {
             use super::*;
-            use drive::fee::epoch::SignedCreditsPerEpoch;
+            use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate an epoch change
             pub fn process_and_validate_epoch_change(
@@ -293,7 +293,7 @@ mod tests {
                 let block_fees = BlockFees {
                     storage_fee: 1000000000,
                     processing_fee: 10000,
-                    fee_refunds: SignedCreditsPerEpoch::from_iter([(0, -10000)]),
+                    fee_refunds: CreditsPerEpoch::from_iter([(0, -10000)]),
                 };
 
                 let mut batch = GroveDbOpBatch::new();
@@ -427,7 +427,7 @@ mod tests {
 
         mod helpers {
             use super::*;
-            use drive::fee::epoch::SignedCreditsPerEpoch;
+            use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate block fees
             pub fn process_and_validate_block_fees(
@@ -458,7 +458,7 @@ mod tests {
                 let block_fees = BlockFees {
                     storage_fee: 1000,
                     processing_fee: 10000,
-                    fee_refunds: SignedCreditsPerEpoch::from_iter([(epoch_index, -100)]),
+                    fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, -100)]),
                 };
 
                 let distribute_storage_pool_result = platform

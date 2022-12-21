@@ -39,7 +39,7 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::credits::{Creditable, Credits};
 use drive::fee::epoch::distribution::distribute_storage_fee_to_epochs_collection;
-use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
+use drive::fee::epoch::{CreditsPerEpoch, EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
 
 /// Leftovers in result of divisions and rounding after storage fee distribution to epochs
@@ -63,7 +63,8 @@ impl Platform {
         // Distribute from storage distribution pool
         let leftovers = distribute_storage_fee_to_epochs_collection(
             &mut credits_per_epochs,
-            storage_distribution_fees.to_signed()?,
+            storage_distribution_fees,
+            false,
             current_epoch_index,
             None,
         )?;
@@ -76,6 +77,7 @@ impl Platform {
             distribute_storage_fee_to_epochs_collection(
                 &mut credits_per_epochs,
                 credits,
+                true,
                 epoch_index,
                 Some(current_epoch_index),
             )?;
@@ -167,12 +169,8 @@ mod tests {
 
             // Add pending refunds
 
-            let refunds = SignedCreditsPerEpoch::from_iter([
-                (0, -10000),
-                (1, -15000),
-                (2, -20000),
-                (3, -25000),
-            ]);
+            let refunds =
+                CreditsPerEpoch::from_iter([(0, 10000), (1, 15000), (2, 20000), (3, 25000)]);
 
             add_update_pending_epoch_storage_pool_update_operations(&mut batch, refunds.clone())
                 .expect("should update pending updates");
@@ -219,12 +217,13 @@ mod tests {
                     let leftovers = distribute_storage_fee_to_epochs_collection(
                         &mut credits_per_epochs,
                         credits,
+                        false,
                         epoch_index,
                         None,
                     )
                     .expect("should distribute refunds");
 
-                    let already_paid_epochs = current_epoch_index as i64 - epoch_index as i64;
+                    let already_paid_epochs = current_epoch_index as u64 - epoch_index as u64;
 
                     let already_paid_credits = if already_paid_epochs > 0 {
                         credits_per_epochs

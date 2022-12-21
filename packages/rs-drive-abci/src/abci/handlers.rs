@@ -185,7 +185,7 @@ mod tests {
         use chrono::{Duration, Utc};
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee::epoch::SignedCreditsPerEpoch;
+        use drive::fee::epoch::CreditsPerEpoch;
         use rust_decimal::prelude::ToPrimitive;
         use std::ops::Div;
 
@@ -361,7 +361,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: SignedCreditsPerEpoch::from_iter([(0, -100)]),
+                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 
@@ -517,7 +517,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: SignedCreditsPerEpoch::from_iter([(0, -100)]),
+                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 

@@ -34,9 +34,9 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::SignedCredits;
+use crate::fee::credits::{Credits, SignedCredits};
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-use crate::fee::epoch::SignedCreditsPerEpoch;
+use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use bincode::Options;
 use costs::storage_cost::removal::{Identifier, StorageRemovalPerEpochByIdentifier};
@@ -45,11 +45,11 @@ use std::collections::btree_map::{IntoIter, Iter};
 use std::collections::BTreeMap;
 
 /// Credits per Epoch by Identifier
-pub type SignedCreditsPerEpochByIdentifier = BTreeMap<Identifier, SignedCreditsPerEpoch>;
+pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
-pub struct FeeRefunds(pub SignedCreditsPerEpochByIdentifier);
+pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
@@ -66,18 +66,18 @@ impl FeeRefunds {
 
                         // TODO We should use multipliers
 
-                        let credits: SignedCredits = (bytes as i64)
-                            .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE as i64)
+                        let credits: Credits = (bytes as Credits)
+                            .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
                             .ok_or_else(|| {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;
 
-                        Ok((epoch_index, -credits))
+                        Ok((epoch_index, credits))
                     })
-                    .collect::<Result<SignedCreditsPerEpoch, Error>>()
+                    .collect::<Result<CreditsPerEpoch, Error>>()
                     .map(|credits_per_epochs| (identifier, credits_per_epochs))
             })
-            .collect::<Result<SignedCreditsPerEpochByIdentifier, Error>>()?;
+            .collect::<Result<CreditsPerEpochByIdentifier, Error>>()?;
 
         Ok(Self(refunds_per_epoch_by_identifier))
     }
@@ -98,7 +98,7 @@ impl FeeRefunds {
                         };
                         combined.map(|c| (k, c))
                     })
-                    .collect::<Result<SignedCreditsPerEpoch, Error>>()?;
+                    .collect::<Result<CreditsPerEpoch, Error>>()?;
                 intersection.into_iter().chain(int_map_b).collect()
             } else {
                 int_map_b
@@ -110,17 +110,17 @@ impl FeeRefunds {
     }
 
     /// Passthrough method for get
-    pub fn get(&self, key: &Identifier) -> Option<&SignedCreditsPerEpoch> {
+    pub fn get(&self, key: &Identifier) -> Option<&CreditsPerEpoch> {
         self.0.get(key)
     }
 
     /// Passthrough method for iteration
-    pub fn iter(&self) -> Iter<Identifier, SignedCreditsPerEpoch> {
+    pub fn iter(&self) -> Iter<Identifier, CreditsPerEpoch> {
         self.0.iter()
     }
 
     /// Passthrough method for into iteration
-    pub fn into_iter(self) -> IntoIter<Identifier, SignedCreditsPerEpoch> {
+    pub fn into_iter(self) -> IntoIter<Identifier, CreditsPerEpoch> {
         self.0.into_iter()
     }
 

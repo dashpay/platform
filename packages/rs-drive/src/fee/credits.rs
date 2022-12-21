@@ -39,6 +39,7 @@
 
 // TODO: Should be moved to DPP when integration is done
 
+use integer_encoding::VarInt;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::get_overflow_error;
@@ -52,7 +53,7 @@ pub type Credits = u64;
 pub type SignedCredits = i64;
 
 /// Maximum value of credits
-pub const MAX: Credits = SignedCredits::MAX as Credits;
+pub const MAX_CREDITS: Credits = SignedCredits::MAX as Credits;
 
 /// Trait for signed and unsigned credits
 pub trait Creditable: Into<Decimal> {
@@ -80,17 +81,15 @@ impl Creditable for Credits {
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
-        Ok(Self::from_be_bytes(vec.as_slice().try_into().map_err(
-            |_| {
-                Error::Drive(DriveError::CorruptedSerialization(
-                    "pending updates epoch index for must be u16",
-                ))
-            },
-        )?))
+        Self::decode_var(vec.as_slice()).map(|(n, s)| n).ok_or(
+            Error::Drive(DriveError::CorruptedSerialization(
+                "pending updates epoch index for must be u16",
+            ))
+        )
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
+        self.encode_var_vec()
     }
 }
 impl Creditable for SignedCredits {
@@ -103,16 +102,14 @@ impl Creditable for SignedCredits {
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
-        Ok(Self::from_be_bytes(vec.as_slice().try_into().map_err(
-            |_| {
-                Error::Drive(DriveError::CorruptedSerialization(
-                    "pending updates epoch index for must be u16",
-                ))
-            },
-        )?))
+        Self::decode_var(vec.as_slice()).map(|(n, s)| n).ok_or(
+            Error::Drive(DriveError::CorruptedSerialization(
+                "pending updates epoch index for must be u16",
+            ))
+        )
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
+        self.encode_var_vec()
     }
 }

@@ -31,8 +31,8 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, SignedCredits};
-use crate::fee::epoch::SignedCreditsPerEpoch;
+use crate::fee::credits::{Creditable, Credits, SignedCredits};
+use crate::fee::epoch::{CreditsPerEpoch, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::{paths, Epoch};
@@ -137,7 +137,7 @@ impl Drive {
                 .get(i)
                 .map_or(0u64.to_vec_bytes(), |c| c.to_owned());
 
-            let existing_storage_fee = SignedCredits::from_vec_bytes(encoded_existing_storage_fee)?;
+            let existing_storage_fee =  Credits::from_vec_bytes(encoded_existing_storage_fee)?.to_signed()?;
 
             let credits_to_update = existing_storage_fee.checked_add(credits).ok_or_else(|| {
                 get_overflow_error("can't add credits to existing epoch pool storage fee")
@@ -217,8 +217,8 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
-                .map(|epoch_index| (epoch_index, epoch_index as SignedCredits))
+            let credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX).enumerate()
+                .map(|(credits, epoch_index)| (epoch_index, credits as SignedCredits))
                 .collect();
 
             let mut batch = GroveDbOpBatch::new();

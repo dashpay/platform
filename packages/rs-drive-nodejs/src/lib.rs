@@ -11,7 +11,7 @@ use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::error::Error;
 use drive::fee::credits::SignedCredits;
-use drive::fee::epoch::SignedCreditsPerEpoch;
+use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
@@ -2040,7 +2040,7 @@ impl PlatformWrapper {
 
         let js_fee_refunds: Handle<JsObject> = js_fees.get(&mut cx, "feeRefunds")?;
 
-        let mut fee_refunds: SignedCreditsPerEpoch = Default::default();
+        let mut fee_refunds: CreditsPerEpoch = Default::default();
 
         for js_epoch_index_value in js_fee_refunds
             .get_own_property_names(&mut cx)?
