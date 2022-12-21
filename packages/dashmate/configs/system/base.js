@@ -19,6 +19,10 @@ const {
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const {
+  contractId: withdrawalsContractId,
+} = require('@dashevo/withdrawals-contract/lib/systemIds');
+
+const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
@@ -190,6 +194,13 @@ module.exports = {
     masternodeRewardShares: {
       contract: {
         id: masternodeRewardSharesContractId,
+      },
+      masterPublicKey: null,
+      secondPublicKey: null,
+    },
+    withdrawals: {
+      contract: {
+        id: withdrawalsContractId,
       },
       masterPublicKey: null,
       secondPublicKey: null,

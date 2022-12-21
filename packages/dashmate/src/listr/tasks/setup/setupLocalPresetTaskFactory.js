@@ -125,6 +125,14 @@ function setupLocalPresetTaskFactory(
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
+            hdPrivateKey: withdrawalsPrivateKey,
+            derivedPrivateKeys: [
+              withdrawalsDerivedMasterPrivateKey,
+              withdrawalsDerivedSecondPrivateKey,
+            ],
+          } = await generateHDPrivateKeys(network, [0, 1]);
+
+          const {
             hdPrivateKey: masternodeRewardSharesPrivateKey,
             derivedPrivateKeys: [
               masternodeRewardSharesDerivedMasterPrivateKey,
@@ -143,6 +151,9 @@ function setupLocalPresetTaskFactory(
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Withdrawals Private Key: ${withdrawalsPrivateKey.toString()}`;
 
           const subTasks = ctx.configGroup.map((config, i) => (
             {
@@ -213,6 +224,9 @@ function setupLocalPresetTaskFactory(
 
                   config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
                   config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+
+                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
 
                   config.set(
                     'platform.masternodeRewardShares.masterPublicKey',

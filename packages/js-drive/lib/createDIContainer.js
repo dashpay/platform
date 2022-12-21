@@ -43,6 +43,9 @@ const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-co
 const dashpaySystemIds = require('@dashevo/dashpay-contract/lib/systemIds');
 const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 
+const withdrawalsSystemIds = require('@dashevo/withdrawals-contract/lib/systemIds');
+const withdrawalsDocuments = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+
 const packageJSON = require('../package.json');
 
 const ZMQClient = require('./core/ZmqClient');
@@ -164,6 +167,8 @@ const processProposalFactory = require('./abci/handlers/proposal/processProposal
  * @param {string} options.FEATURE_FLAGS_SECOND_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY
+ * @param {string} options.WITHDRAWALS_MASTER_PUBLIC_KEY
+ * @param {string} options.WITHDRAWALS_SECOND_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.TENDERDASH_P2P_PORT
@@ -333,6 +338,19 @@ function createDIContainer(options) {
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
+    withdrawalsContractId: asValue(Identifier.from(withdrawalsSystemIds.contractId)),
+    withdrawalsOwnerId: asValue(Identifier.from(withdrawalsSystemIds.ownerId)),
+    withdrawalsOwnerMasterPublicKey: asValue(
+      PublicKey.fromString(
+        options.WITHDRAWALS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    withdrawalsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.WITHDRAWALS_SECOND_PUBLIC_KEY,
+      ),
+    ),
+    withdrawalsDocuments: asValue(withdrawalsDocuments),
     tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
   });
 

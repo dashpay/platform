@@ -22,6 +22,11 @@
  * @param {PublicKey} dashpayOwnerMasterPublicKey
  * @param {PublicKey} dashpayOwnerSecondPublicKey
  * @param {Object} dashpayDocuments
+ * @param {Identifier} withdrawalsContractId
+ * @param {Identifier} withdrawalsOwnerId
+ * @param {PublicKey} withdrawalsOwnerMasterPublicKey
+ * @param {PublicKey} withdrawalsOwnerSecondPublicKey
+ * @param {Object} withdrawalsDocuments
  *
  * @return {registerSystemDataContracts}
  */
@@ -48,6 +53,11 @@ function registerSystemDataContractsFactory(
   dashpayOwnerMasterPublicKey,
   dashpayOwnerSecondPublicKey,
   dashpayDocuments,
+  withdrawalsContractId,
+  withdrawalsOwnerId,
+  withdrawalsOwnerMasterPublicKey,
+  withdrawalsOwnerSecondPublicKey,
+  withdrawalsDocuments,
 ) {
   /**
    * @typedef {registerSystemDataContracts}
@@ -129,6 +139,24 @@ function registerSystemDataContractsFactory(
       dashpayOwnerMasterPublicKey,
       dashpayOwnerSecondPublicKey,
       dashpayDocuments,
+      blockInfo,
+    );
+
+    contextLogger.debug('Registering withdrawals data contract');
+    contextLogger.trace({
+      ownerId: withdrawalsOwnerId,
+      contractId: withdrawalsContractId,
+      masterPublicKey: withdrawalsOwnerMasterPublicKey,
+      secondPublicKey: withdrawalsOwnerSecondPublicKey,
+    });
+
+    // Registering withdrawals data contract
+    await registerSystemDataContract(
+      withdrawalsOwnerId,
+      withdrawalsContractId,
+      withdrawalsOwnerMasterPublicKey,
+      withdrawalsOwnerSecondPublicKey,
+      withdrawalsDocuments,
       blockInfo,
     );
   }
