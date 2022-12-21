@@ -19,6 +19,7 @@ const {
   driveQueryDocuments,
   driveProveDocumentsQuery,
   driveInsertIdentity,
+  driveFetchIdentity,
   driveAddToIdentityBalance,
   driveAddKeysToIdentity,
   driveRemoveFromIdentityBalance,
@@ -59,6 +60,7 @@ const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
   promisify(driveEnqueueWithdrawalTransaction),
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
+const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
 const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
@@ -339,6 +341,42 @@ class Drive {
       !dryRun,
       useTransaction,
     ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {number} [epochIndex]
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<[DataContract|null, FeeResult]>}
+   */
+  async fetchIdentity(id, epochIndex = undefined, useTransaction = false) {
+    return driveFetchIdentityAsync.call(
+        this.drive,
+        Buffer.from(id),
+        epochIndex,
+        useTransaction,
+    ).then(([encodedDataContract, innerFeeResult]) => {
+      let dataContract = encodedDataContract;
+
+      if (encodedDataContract !== null) {
+        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+            encodedDataContract,
+        );
+
+        rawDataContract.protocolVersion = protocolVersion;
+
+        dataContract = new DataContract(rawDataContract);
+      }
+
+      const result = [dataContract];
+
+      if (innerFeeResult) {
+        result.push(new FeeResult(innerFeeResult));
+      }
+
+      return result;
+    });
   }
 
   /**

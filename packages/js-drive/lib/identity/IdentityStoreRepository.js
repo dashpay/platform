@@ -188,44 +188,31 @@ class IdentityStoreRepository {
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<null|Identity>>}
    */
-  async fetch(id, options = { }) {
+  async fetchFullIdentity(id, options = { }) {
     if (options.dryRun) {
-      return new StorageResult(null, []);
-    }
-
-    let encodedIdentityResult;
-    try {
-      encodedIdentityResult = await this.storage.get(
-        IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        options,
-      );
-    } catch (e) {
-      if (!e.message.startsWith('grovedb: path parent layer not found')) {
-        throw e;
-      }
-
-      encodedIdentityResult = new StorageResult(
+      return new StorageResult(
         null,
         [],
       );
     }
 
-    if (encodedIdentityResult.isNull()) {
-      return encodedIdentityResult;
-    }
-
-    const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
-      encodedIdentityResult.getValue(),
+    const [dataContract, feeResult] = await this.storage.getDrive().fetchContract(
+      id,
+      options && options.blockInfo ? options.blockInfo.epoch : undefined,
+      Boolean(options.useTransaction),
     );
 
-    rawIdentity.protocolVersion = protocolVersion;
+    const operations = [];
+    if (feeResult) {
+      operations.push(new PreCalculatedOperation(feeResult));
+    }
 
     return new StorageResult(
-      new Identity(rawIdentity),
-      encodedIdentityResult.getOperations(),
+      dataContract,
+      operations,
     );
   }
 
