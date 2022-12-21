@@ -134,7 +134,9 @@ impl TenderdashAbci for Platform {
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                request.block_height as u32,
+                request.block_time_ms,
+                request.block_height,
+                epoch_info.current_epoch_index,
                 request.validator_set_quorum_hash,
                 transaction,
             )?;

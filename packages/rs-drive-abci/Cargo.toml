@@ -21,6 +21,4 @@ bs58 = "0.4.0"
 base64 = "0.13.0"
 hex = "0.4.3"
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, rev = "6092d584487918c5330fec93152e4df06a714067" }
-
-[dev-dependencies]
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"]}
