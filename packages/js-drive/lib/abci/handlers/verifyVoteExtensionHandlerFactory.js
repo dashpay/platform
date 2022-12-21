@@ -27,13 +27,18 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
    *
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
-  async function verifyVoteExtensionHandler({ voteExtensions }) {
+  async function verifyVoteExtensionHandler(request) {
+    const {
+      voteExtensions,
+    } = request;
+
     const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
       .child({
         abciMethod: 'verifyVoteExtension',
       });
 
     consensusLogger.debug('VerifyVote ABCI method requested');
+    consensusLogger.trace({ request });
 
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
