@@ -29,7 +29,8 @@
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::fee_pools::pools_vec_path;
-use crate::fee::credits::Credits;
+use crate::error::Error;
+use crate::fee::credits::{Creditable, Credits};
 use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use crate::fee_pools::epochs::Epoch;
 use crate::fee_pools::epochs_root_tree_key_constants::{
@@ -44,9 +45,9 @@ pub mod epochs;
 pub mod epochs_root_tree_key_constants;
 
 /// Adds the operations to groveDB op batch to create the fee pool trees
-pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) {
+pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Result<(), Error> {
     // Init storage credit pool
-    batch.push(update_storage_fee_distribution_pool_operation(0));
+    batch.push(update_storage_fee_distribution_pool_operation(0)?);
 
     // Init next epoch to pay
     batch.push(update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
@@ -57,22 +58,26 @@ pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) {
     // with 20 epochs per year that's 1000 epochs
     for i in GENESIS_EPOCH_INDEX..PERPETUAL_STORAGE_EPOCHS {
         let epoch = Epoch::new(i);
-        epoch.add_init_empty_operations(batch);
+        epoch.add_init_empty_operations(batch)?;
     }
+
+    Ok(())
 }
 
 /// Adds operations to batch to create pending pool updates tree
 pub fn add_create_pending_pool_updates_tree_operations(batch: &mut GroveDbOpBatch) {
-    batch.add_insert_empty_tree(pools_vec_path(), KEY_PENDING_POOL_UPDATES.to_vec());
+    batch.add_insert_empty_sum_tree(pools_vec_path(), KEY_PENDING_POOL_UPDATES.to_vec());
 }
 
 /// Updates the storage fee distribution pool with a new storage fee
-pub fn update_storage_fee_distribution_pool_operation(storage_fee: Credits) -> GroveDbOp {
-    GroveDbOp::insert_op(
+pub fn update_storage_fee_distribution_pool_operation(
+    storage_fee: Credits,
+) -> Result<GroveDbOp, Error> {
+    Ok(GroveDbOp::insert_op(
         pools_vec_path(),
         KEY_STORAGE_FEE_POOL.to_vec(),
-        Element::new_item(storage_fee.to_be_bytes().to_vec()),
-    )
+        Element::new_sum_item(storage_fee.to_signed()?),
+    ))
 }
 
 /// Updates the unpaid epoch index
@@ -90,14 +95,13 @@ pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp
 mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::error::Error;
 
     mod add_create_fee_pool_trees_operations {
         use super::*;
 
         #[test]
         fn test_values_are_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let storage_fee_pool = drive
@@ -109,11 +113,11 @@ mod tests {
 
         #[test]
         fn test_epoch_trees_are_created() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             for epoch_index in 0..1000 {
-                let epoch = super::Epoch::new(epoch_index);
+                let epoch = Epoch::new(epoch_index);
 
                 let storage_fee = drive
                     .get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction))
@@ -122,14 +126,12 @@ mod tests {
                 assert_eq!(storage_fee, 0);
             }
 
-            let epoch = super::Epoch::new(1000); // 1001th epochs pool
+            let epoch = Epoch::new(1000); // 1001th epochs pool
 
-            match drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => unreachable!("must be an error"),
-                Err(e) => {
-                    assert!(matches!(e, Error::GroveDB(..)));
-                }
-            }
+            let result =
+                drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+
+            assert!(matches!(result, Err(Error::GroveDB(_))));
         }
     }
 
@@ -145,7 +147,10 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            batch.push(update_storage_fee_distribution_pool_operation(storage_fee));
+            batch.push(
+                update_storage_fee_distribution_pool_operation(storage_fee)
+                    .expect("should return operation"),
+            );
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))

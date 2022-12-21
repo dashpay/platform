@@ -41,11 +41,9 @@ use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{batch::GroveDbOp, Element};
-use std::collections::BTreeMap;
 
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
-use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::default_costs::{
     STORAGE_DISK_USAGE_CREDIT_PER_BYTE, STORAGE_LOAD_CREDIT_PER_BYTE,

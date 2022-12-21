@@ -42,7 +42,7 @@ use crate::drive::fee_pools::pools_pending_updates_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, SignedCredits};
+use crate::fee::credits::Creditable;
 use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use grovedb::query_result_type::QueryResultType;
@@ -68,20 +68,26 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        query_result.to_key_elements().into_iter().map(|(epoch_index_key, element)| {
-            let epoch_index =
-                u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedSerialization(
-                        "epoch index for pending pool updates must be i64",
-                    ))
-                })?);
+        query_result
+            .to_key_elements()
+            .into_iter()
+            .map(|(epoch_index_key, element)| {
+                let epoch_index =
+                    u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "epoch index for pending pool updates must be i64",
+                        ))
+                    })?);
 
-            if let Element::SumItem(credits, _) = element {
-                Ok((epoch_index, credits.to_unsigned()))
-            } else {
-                Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must be sum items")))
-            }
-        }).collect::<Result<CreditsPerEpoch, Error>>()
+                if let Element::SumItem(credits, _) = element {
+                    Ok((epoch_index, credits.to_unsigned()))
+                } else {
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "pending updates credits must be sum items",
+                    )))
+                }
+            })
+            .collect::<Result<CreditsPerEpoch, Error>>()
     }
 
     /// Fetches existing pending epoch pool updates using specified epochs
@@ -123,17 +129,18 @@ impl Drive {
                     ))
                 })?);
 
-            let credits_to_update = credits_per_epoch.get(&epoch_index).ok_or(
-                Error::Drive(DriveError::CorruptedCodeExecution("pending updates should contain fetched epochs")))?;
+            let existing_credits = credits_per_epoch.get_mut(&epoch_index).ok_or(Error::Drive(
+                DriveError::CorruptedCodeExecution("pending updates should contain fetched epochs"),
+            ))?;
 
             if let Element::SumItem(credits, _) = element {
-                let result_credits = credits.to_unsigned()
-                    .checked_add(*credits_to_update)
+                *existing_credits = existing_credits
+                    .checked_add(credits.to_unsigned())
                     .ok_or_else(|| get_overflow_error("pending updates credits overflow"))?;
-
-                credits_per_epoch.insert(epoch_index, result_credits);
             } else {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution("pending updates credits must be sum items")));
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "pending updates credits must be sum items",
+                )));
             }
         }
 

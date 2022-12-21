@@ -10,7 +10,7 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::error::Error;
-use drive::fee::credits::SignedCredits;
+use drive::fee::credits::Credits;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
@@ -2054,7 +2054,7 @@ impl PlatformWrapper {
                 .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
 
             let js_credits: Handle<JsNumber> = js_fee_refunds.get(&mut cx, js_epoch_index)?;
-            let credits = js_credits.value(&mut cx) as SignedCredits;
+            let credits = js_credits.value(&mut cx) as Credits;
 
             fee_refunds.insert(epoch_index, credits);
         }

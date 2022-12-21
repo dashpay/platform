@@ -35,9 +35,9 @@
 use grovedb::{Element, TransactionArg};
 
 use crate::drive::Drive;
-use crate::error::fee::FeeError;
+use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::Credits;
+use crate::fee::credits::{Creditable, Credits};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::Epoch;
 
@@ -60,19 +60,13 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if let Element::Item(item, _) = element {
-            Ok(u64::from_be_bytes(item.as_slice().try_into().map_err(
-                |_| {
-                    Error::Fee(FeeError::CorruptedStorageFeeInvalidItemLength(
-                        "epochs storage fee is not u64",
-                    ))
-                },
-            )?))
-        } else {
-            Err(Error::Fee(FeeError::CorruptedStorageFeeNotItem(
+        let Element::SumItem(item, _) = element else {
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs storage fee must be an item",
             )))
-        }
+        };
+
+        Ok(item.to_unsigned())
     }
 
     /// Gets the amount of processing fees to be distributed for the Epoch.
@@ -91,19 +85,13 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if let Element::Item(item, _) = element {
-            Ok(u64::from_be_bytes(item.as_slice().try_into().map_err(
-                |_| {
-                    Error::Fee(FeeError::CorruptedProcessingFeeInvalidItemLength(
-                        "epochs processing fee is not u64",
-                    ))
-                },
-            )?))
-        } else {
-            Err(Error::Fee(FeeError::CorruptedProcessingFeeNotItem(
+        let Element::SumItem(credits, _) = element else {
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs processing fee must be an item",
             )))
-        }
+        };
+
+        Ok(credits.to_unsigned())
     }
 
     /// Gets the Fee Multiplier for the Epoch.
@@ -122,19 +110,19 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if let Element::Item(item, _) = element {
-            Ok(f64::from_be_bytes(item.as_slice().try_into().map_err(
-                |_| {
-                    Error::Fee(FeeError::CorruptedMultiplierInvalidItemLength(
-                        "epochs multiplier item have an invalid length",
-                    ))
-                },
-            )?))
-        } else {
-            Err(Error::Fee(FeeError::CorruptedMultiplierNotItem(
+        let Element::Item(encoded_multiplier, _) = element else {
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs multiplier must be an item",
             )))
-        }
+        };
+
+        Ok(f64::from_be_bytes(
+            encoded_multiplier.as_slice().try_into().map_err(|_| {
+                Error::Drive(DriveError::CorruptedSerialization(
+                    "epochs multiplier must be f64",
+                ))
+            })?,
+        ))
     }
 
     /// Gets the total credits to be distributed for the Epoch.
@@ -157,103 +145,89 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::drive::batch::GroveDbOpBatch;
-    use crate::error;
-    use crate::error::fee::FeeError;
-    use crate::fee::credits::Credits;
-    use crate::fee_pools::epochs::epoch_key_constants;
-    use crate::fee_pools::epochs::Epoch;
-    use grovedb::Element;
+    use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
     mod get_epoch_storage_credits_for_distribution {
-        use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+        use super::*;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(7000);
+            let epoch = Epoch::new(7000);
 
-            match drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to get storage fee on uninit epochs pool"
-                ),
-                Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result =
+                drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            ));
         }
 
         #[test]
         fn test_error_if_value_has_invalid_length() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             drive
                 .grove
                 .insert(
                     epoch.get_path(),
                     KEY_STORAGE_FEE_POOL.as_slice(),
-                    super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to decode stored value"),
-                Err(e) => match e {
-                    super::error::Error::Fee(
-                        super::FeeError::CorruptedStorageFeeInvalidItemLength(_),
-                    ) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result =
+                drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::UnexpectedElementType(_)))
+            ));
         }
     }
 
     mod get_epoch_processing_credits_for_distribution {
+        use super::*;
+
         #[test]
-        fn test_error_if_value_has_invalid_length() {
-            let drive = super::setup_drive_with_initial_state_structure();
+        fn test_error_if_value_has_wrong_element_type() {
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             drive
                 .grove
                 .insert(
                     epoch.get_path(),
-                    super::epoch_key_constants::KEY_POOL_PROCESSING_FEES.as_slice(),
-                    super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    epoch_key_constants::KEY_POOL_PROCESSING_FEES.as_slice(),
+                    Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to decode stored value"),
-                Err(e) => match e {
-                    super::error::Error::Fee(
-                        super::FeeError::CorruptedProcessingFeeInvalidItemLength(_),
-                    ) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "ivalid error type"),
-                },
-            }
+            let result =
+                drive.get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::UnexpectedElementType(_)))
+            ));
         }
     }
 
@@ -269,9 +243,17 @@ mod tests {
 
         let mut batch = GroveDbOpBatch::new();
 
-        batch.push(epoch.update_processing_fee_pool_operation(processing_fee));
+        batch.push(
+            epoch
+                .update_processing_fee_pool_operation(processing_fee)
+                .expect("should add operation"),
+        );
 
-        batch.push(epoch.update_storage_fee_pool_operation(storage_fee));
+        batch.push(
+            epoch
+                .update_storage_fee_pool_operation(storage_fee)
+                .expect("should add operation"),
+        );
 
         drive
             .grove_apply_batch(batch, false, Some(&transaction))
@@ -285,71 +267,64 @@ mod tests {
     }
 
     mod fee_multiplier {
+        use super::*;
+
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(7000);
+            let epoch = Epoch::new(7000);
 
-            match drive.get_epoch_fee_multiplier(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to get multiplier on uninit epochs pool"
-                ),
-                Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            ));
         }
 
         #[test]
         fn test_error_if_value_has_invalid_length() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             drive
                 .grove
                 .insert(
                     epoch.get_path(),
-                    super::epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
-                    super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
+                    Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_epoch_fee_multiplier(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to decode stored value"),
-                Err(e) => match e {
-                    super::error::Error::Fee(
-                        super::FeeError::CorruptedMultiplierInvalidItemLength(_),
-                    ) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "ivalid error type"),
-                },
-            }
+            let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedSerialization(_)))
+            ));
         }
 
         #[test]
         fn test_value_is_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             let multiplier = 42.0;
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_empty_operations(&mut batch);
+            epoch
+                .add_init_empty_operations(&mut batch)
+                .expect("should add empty epoch operations");
 
             epoch.add_init_current_operations(multiplier, 1, 1, &mut batch);
 

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
-use crate::identity::{KeyType, Purpose, SecurityLevel};
+use crate::identity::{Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
 use crate::tests::utils::serde_set_ref;
 use crate::{assert_consensus_errors, NativeBlsModule};
@@ -414,7 +414,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     );
     assert_eq!(
         error.validation_error().as_ref().unwrap().message(),
-        "Key secp256k1 error: secp: malformed public key"
+        "Key secp256k1 error: malformed public key"
     );
 }
 

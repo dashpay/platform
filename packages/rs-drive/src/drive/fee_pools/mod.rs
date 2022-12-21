@@ -31,14 +31,15 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits, SignedCredits};
-use crate::fee::epoch::{CreditsPerEpoch, SignedCreditsPerEpoch};
+use crate::fee::credits::SignedCredits;
+use crate::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::{paths, Epoch};
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL,
 };
+use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use itertools::Itertools;
 
@@ -104,7 +105,7 @@ impl Drive {
         let max_encoded_epoch_index =
             paths::encode_epoch_index_key(max_epoch_index.to_owned())?.to_vec();
 
-        if max_epoch_index - min_epoch_index + 1 != credits_per_epochs.len() as u16 {
+        if max_epoch_index - min_epoch_index + 1 != credits_per_epochs.len() as EpochIndex {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "gaps in credits per epoch are not supported",
             )));
@@ -119,36 +120,47 @@ impl Drive {
 
         epochs_query.set_subquery(storage_fee_pool_query);
 
-        let (storage_fee_pools, _) = self
+        let (storage_fee_pools_result, _) = self
             .grove
-            .query(
+            .query_raw(
                 &PathQuery::new_unsized(pools_vec_path(), epochs_query),
+                QueryResultType::QueryElementResultType,
                 transaction,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
+
+        let storage_fee_pools = storage_fee_pools_result.to_elements();
 
         for (i, (epoch_index, credits)) in credits_per_epochs
             .into_iter()
             .sorted_by_key(|x| x.0)
             .enumerate()
         {
-            let encoded_existing_storage_fee = storage_fee_pools
-                .get(i)
-                .map_or(0u64.to_vec_bytes(), |c| c.to_owned());
-
-            let existing_storage_fee =  Credits::from_vec_bytes(encoded_existing_storage_fee)?.to_signed()?;
+            let existing_storage_fee: SignedCredits = match storage_fee_pools.get(i) {
+                Some(Element::SumItem(storage_fee, _)) => *storage_fee,
+                None => 0,
+                Some(_) => {
+                    return Err(Error::Drive(DriveError::UnexpectedElementType(
+                        "epoch storage pools must be sum items",
+                    )))
+                }
+            };
 
             let credits_to_update = existing_storage_fee.checked_add(credits).ok_or_else(|| {
                 get_overflow_error("can't add credits to existing epoch pool storage fee")
             })?;
 
-            let element = Element::new_item(credits_to_update.to_unsigned().to_vec_bytes());
+            if credits_to_update < 0 {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "epoch storage pool went bellow zero",
+                )));
+            }
 
             batch.add_insert(
                 Epoch::new(epoch_index).get_vec_path(),
                 KEY_POOL_STORAGE_FEES.to_vec(),
-                element,
+                Element::new_sum_item(credits_to_update),
             );
         }
 
@@ -164,7 +176,6 @@ mod tests {
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
-        use crate::fee::credits::Credits;
         use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
         use grovedb::batch::{GroveDbOp, Op};
 
@@ -198,15 +209,14 @@ mod tests {
             // Store initial epoch storage pool values
             let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
                 .into_iter()
-                .map(|epoch_index| {
-                    let credits = 10 - epoch_index as Credits;
-
-                    let element = Element::new_item(credits.to_unsigned().to_vec_bytes());
+                .enumerate()
+                .map(|(i, epoch_index)| {
+                    let credits = 10 - i as SignedCredits;
 
                     GroveDbOp::insert_op(
                         Epoch::new(epoch_index).get_vec_path(),
                         KEY_POOL_STORAGE_FEES.to_vec(),
-                        element,
+                        Element::new_sum_item(credits),
                     )
                 })
                 .collect();
@@ -217,7 +227,8 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX).enumerate()
+            let credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
+                .enumerate()
                 .map(|(credits, epoch_index)| (epoch_index, credits as SignedCredits))
                 .collect();
 
@@ -238,15 +249,12 @@ mod tests {
 
                 assert_eq!(
                     operation.path.to_path(),
-                    Epoch::new(i as u16).get_vec_path()
+                    Epoch::new(i as EpochIndex).get_vec_path()
                 );
 
-                let Op::Insert{ element: Element::Item (encoded_credits, _)} = operation.op else {
+                let Op::Insert{ element: Element::SumItem (credits, _)} = operation.op else {
                     panic!("invalid operation");
                 };
-
-                let credits =
-                    Credits::from_vec_bytes(encoded_credits).expect("should decide credits");
 
                 assert_eq!(credits, 10);
             }

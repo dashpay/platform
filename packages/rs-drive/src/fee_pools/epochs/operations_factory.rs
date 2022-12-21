@@ -36,11 +36,12 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::fee_pools::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::fee::credits::{Creditable, Credits};
 use crate::fee_pools::epochs::epoch_key_constants::{
-    KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_START_BLOCK_HEIGHT,
-    KEY_START_TIME,
+    KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
+    KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
 };
-use crate::fee_pools::epochs::{epoch_key_constants, Epoch};
+use crate::fee_pools::epochs::Epoch;
 use grovedb::batch::GroveDbOp;
 use grovedb::{Element, TransactionArg};
 
@@ -54,32 +55,37 @@ impl Epoch {
         transaction: TransactionArg,
     ) -> Result<GroveDbOp, Error> {
         // get current proposer's block count
-        let proposed_block_count = match cached_previous_block_count {
-            Some(block_count) => block_count,
-            None => drive
+        let proposed_block_count = if let Some(block_count) = cached_previous_block_count {
+            block_count
+        } else {
+            drive
                 .get_epochs_proposer_block_count(self, proposer_pro_tx_hash, transaction)
                 .or_else(|e| match e {
                     Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => Ok(0u64),
                     _ => Err(e),
-                })?,
+                })?
         };
 
-        Ok(self
-            .update_proposer_block_count_operation(proposer_pro_tx_hash, proposed_block_count + 1))
+        let operation = self
+            .update_proposer_block_count_operation(proposer_pro_tx_hash, proposed_block_count + 1);
+
+        Ok(operation)
     }
 
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
     pub fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch) {
-        batch.add_insert_empty_tree(pools_vec_path(), self.key.to_vec());
+        batch.add_insert_empty_sum_tree(pools_vec_path(), self.key.to_vec());
     }
 
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
     /// and sets the storage distribution pool to 0.
-    pub fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) {
+    pub fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) -> Result<(), Error> {
         self.add_init_empty_without_storage_operations(batch);
 
         // init storage fee item to 0
-        batch.push(self.update_storage_fee_pool_operation(0));
+        batch.push(self.update_storage_fee_pool_operation(0)?);
+
+        Ok(())
     }
 
     /// Adds to the groveDB op batch initialization operations for the epoch.
@@ -136,12 +142,15 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
-    pub fn update_processing_fee_pool_operation(&self, processing_fee: u64) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    pub fn update_processing_fee_pool_operation(
+        &self,
+        processing_fee: Credits,
+    ) -> Result<GroveDbOp, Error> {
+        Ok(GroveDbOp::insert_op(
             self.get_vec_path(),
             KEY_POOL_PROCESSING_FEES.to_vec(),
-            Element::new_item(processing_fee.to_be_bytes().to_vec()),
-        )
+            Element::new_sum_item(processing_fee.to_signed()?),
+        ))
     }
 
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
@@ -150,12 +159,15 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    pub fn update_storage_fee_pool_operation(&self, storage_fee: u64) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    pub fn update_storage_fee_pool_operation(
+        &self,
+        storage_fee: Credits,
+    ) -> Result<GroveDbOp, Error> {
+        Ok(GroveDbOp::insert_op(
             self.get_vec_path(),
             KEY_POOL_STORAGE_FEES.to_vec(),
-            Element::new_item(storage_fee.to_be_bytes().to_vec()),
-        )
+            Element::new_sum_item(storage_fee.to_signed()?),
+        ))
     }
 
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
@@ -180,18 +192,14 @@ impl Epoch {
     pub fn init_proposers_tree_operation(&self) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_vec_path(),
-            epoch_key_constants::KEY_PROPOSERS.to_vec(),
+            KEY_PROPOSERS.to_vec(),
             Element::empty_tree(),
         )
     }
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
     pub fn delete_proposers_tree_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_tree_op(
-            self.get_vec_path(),
-            epoch_key_constants::KEY_PROPOSERS.to_vec(),
-            false,
-        )
+        GroveDbOp::delete_tree_op(self.get_vec_path(), KEY_PROPOSERS.to_vec(), false)
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
@@ -208,22 +216,23 @@ impl Epoch {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::drive::batch::GroveDbOpBatch;
-    use crate::fee_pools::epochs::Epoch;
+    use super::*;
+    use crate::common::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use chrono::Utc;
 
     mod increment_proposer_block_count_operation {
+        use super::*;
+
         #[test]
         fn test_increment_block_count_to_1_if_proposers_tree_is_not_committed() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
@@ -251,14 +260,14 @@ mod tests {
 
         #[test]
         fn test_existing_block_count_is_incremented() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = super::Epoch::new(1);
+            let epoch = Epoch::new(1);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
@@ -267,7 +276,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, 1));
 
@@ -276,7 +285,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(
                 epoch
@@ -302,41 +311,41 @@ mod tests {
     }
 
     mod add_init_empty_operations {
-        use crate::common::helpers::setup::setup_drive;
-        use crate::error;
+        use super::*;
 
         #[test]
         fn test_error_if_fee_pools_not_initialized() {
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(1042);
+            let epoch = Epoch::new(1042);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_empty_operations(&mut batch);
+            epoch
+                .add_init_empty_operations(&mut batch)
+                .expect("should init empty epoch");
 
-            match drive.grove_apply_batch(batch, false, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to init epochs without FeePools"),
-                Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::InvalidPath(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.grove_apply_batch(batch, false, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::InvalidPath(_)))
+            ));
         }
 
         #[test]
         fn test_values_are_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(1042);
+            let epoch = Epoch::new(1042);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_empty_operations(&mut batch);
+            epoch
+                .add_init_empty_operations(&mut batch)
+                .expect("should init empty epoch");
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
@@ -351,21 +360,24 @@ mod tests {
     }
 
     mod add_init_current_operations {
+        use super::*;
 
         #[test]
         fn test_values_are_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(1042);
+            let epoch = Epoch::new(1042);
 
             let multiplier = 42.0;
             let start_time = 1;
             let start_block_height = 2;
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_empty_operations(&mut batch);
+            epoch
+                .add_init_empty_operations(&mut batch)
+                .expect("should init empty epoch");
 
             epoch.add_init_current_operations(
                 multiplier,
@@ -409,17 +421,16 @@ mod tests {
     }
 
     mod add_mark_as_paid_operations {
-        use crate::error;
-        use crate::fee_pools::epochs::epoch_key_constants;
+        use super::*;
 
         #[test]
         fn test_values_are_deleted() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             epoch.add_init_current_operations(1.0, 2, 3, &mut batch);
 
@@ -428,7 +439,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             epoch.add_mark_as_paid_operations(&mut batch);
 
@@ -436,56 +447,49 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match drive
+            let result = drive
                 .grove
                 .get(
                     epoch.get_path(),
-                    epoch_key_constants::KEY_PROPOSERS.as_slice(),
+                    KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
                 )
-                .unwrap()
-            {
-                Ok(_) => assert!(false, "should not be able to get proposers"),
-                Err(e) => match e {
-                    grovedb::Error::PathKeyNotFound(_) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+                .unwrap();
 
-            match drive.get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to get processing fee"),
-                Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            assert!(matches!(result, Err(grovedb::Error::PathKeyNotFound(_))));
 
-            match drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to get storage fee"),
-                Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result =
+                drive.get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            ));
+
+            let result =
+                drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            ));
         }
     }
 
     mod update_proposer_block_count {
+        use super::*;
+
         #[test]
         fn test_value_is_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let pro_tx_hash: [u8; 32] = rand::random();
             let block_count = 42;
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
@@ -508,7 +512,7 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
-        let epoch_tree = super::Epoch::new(0);
+        let epoch_tree = Epoch::new(0);
 
         let start_time_ms: u64 = Utc::now().timestamp_millis() as u64;
 
@@ -550,41 +554,39 @@ mod tests {
     }
 
     mod update_epoch_processing_credits_for_distribution {
-        use crate::error;
+        use super::*;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(7000);
+            let epoch = Epoch::new(7000);
 
-            let op = epoch.update_processing_fee_pool_operation(42);
+            let op = epoch
+                .update_processing_fee_pool_operation(42)
+                .expect("should return operation");
 
-            match drive.grove_apply_operation(op, false, Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to update processing fee on uninit epochs pool"
-                ),
-                Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::InvalidPath(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.grove_apply_operation(op, false, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::InvalidPath(_)))
+            ));
         }
 
         #[test]
         fn test_value_is_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             let processing_fee: u64 = 42;
 
-            let op = epoch.update_processing_fee_pool_operation(42);
+            let op = epoch
+                .update_processing_fee_pool_operation(42)
+                .expect("should return operation");
 
             drive
                 .grove_apply_operation(op, false, Some(&transaction))
@@ -599,41 +601,39 @@ mod tests {
     }
 
     mod update_epoch_storage_credits_for_distribution {
-        use crate::error;
+        use super::*;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(7000);
+            let epoch = Epoch::new(7000);
 
-            let op = epoch.update_storage_fee_pool_operation(42);
+            let op = epoch
+                .update_storage_fee_pool_operation(42)
+                .expect("should return operation");
 
-            match drive.grove_apply_operation(op, false, Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to update storage fee on uninit epochs pool"
-                ),
-                Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::InvalidPath(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "{}", format!("invalid error type {}", e)),
-                },
-            }
+            let result = drive.grove_apply_operation(op, false, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::InvalidPath(_)))
+            ));
         }
 
         #[test]
         fn test_value_is_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             let storage_fee = 42;
 
-            let op = epoch.update_storage_fee_pool_operation(storage_fee);
+            let op = epoch
+                .update_storage_fee_pool_operation(storage_fee)
+                .expect("should return operation");
 
             drive
                 .grove_apply_operation(op, false, Some(&transaction))
@@ -648,16 +648,16 @@ mod tests {
     }
 
     mod delete_proposers_tree {
-        use crate::fee_pools::epochs::epoch_key_constants::KEY_PROPOSERS;
+        use super::*;
 
         #[test]
         fn test_values_has_been_deleted() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
@@ -666,7 +666,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.delete_proposers_tree_operation());
 
@@ -693,14 +693,16 @@ mod tests {
     }
 
     mod delete_proposers {
+        use super::*;
+
         #[test]
         fn test_values_are_being_deleted() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
@@ -711,7 +713,7 @@ mod tests {
 
             let pro_tx_hashes: Vec<[u8; 32]> = (0..10).map(|_| rand::random()).collect();
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             for pro_tx_hash in pro_tx_hashes.iter() {
                 batch.push(epoch.update_proposer_block_count_operation(pro_tx_hash, 1));
@@ -746,7 +748,7 @@ mod tests {
             awaited_result.remove(0);
             awaited_result.remove(1);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             epoch.add_delete_proposers_operations(deleted_pro_tx_hashes, &mut batch);
 

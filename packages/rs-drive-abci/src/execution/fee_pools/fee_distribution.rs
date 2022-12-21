@@ -401,7 +401,7 @@ impl Platform {
 
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
 
-        batch.push(current_epoch.update_processing_fee_pool_operation(total_processing_fees));
+        batch.push(current_epoch.update_processing_fee_pool_operation(total_processing_fees)?);
 
         // update storage fee pool
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
@@ -415,7 +415,7 @@ impl Platform {
 
         batch.push(update_storage_fee_distribution_pool_operation(
             storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
-        ));
+        )?);
 
         Ok(FeesInPools {
             processing_fees: total_processing_fees,
@@ -477,7 +477,11 @@ mod tests {
 
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(unpaid_epoch_tree_0.update_processing_fee_pool_operation(10000));
+            batch.push(
+                unpaid_epoch_tree_0
+                    .update_processing_fee_pool_operation(10000)
+                    .expect("should add operation"),
+            );
 
             let proposers_count = 100u16;
 
@@ -546,7 +550,11 @@ mod tests {
 
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(unpaid_epoch_tree_0.update_processing_fee_pool_operation(10000));
+            batch.push(
+                unpaid_epoch_tree_0
+                    .update_processing_fee_pool_operation(10000)
+                    .expect("should add operation"),
+            );
 
             let proposers_count = 100u16;
 
@@ -630,7 +638,11 @@ mod tests {
 
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(unpaid_epoch_tree_0.update_processing_fee_pool_operation(10000));
+            batch.push(
+                unpaid_epoch_tree_0
+                    .update_processing_fee_pool_operation(10000)
+                    .expect("should add operation"),
+            );
 
             let proposers_count = 200u16;
 
@@ -725,9 +737,17 @@ mod tests {
 
             unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(unpaid_epoch.update_processing_fee_pool_operation(processing_fees));
+            batch.push(
+                unpaid_epoch
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
+            );
 
-            batch.push(unpaid_epoch.update_storage_fee_pool_operation(storage_fees));
+            batch.push(
+                unpaid_epoch
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
 
             current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
 
@@ -810,9 +830,17 @@ mod tests {
 
             unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(unpaid_epoch.update_processing_fee_pool_operation(processing_fees));
+            batch.push(
+                unpaid_epoch
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
+            );
 
-            batch.push(unpaid_epoch.update_storage_fee_pool_operation(storage_fees));
+            batch.push(
+                unpaid_epoch
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
 
             current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
 
@@ -1174,9 +1202,17 @@ mod tests {
 
             unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, &mut batch);
 
-            batch.push(unpaid_epoch_tree.update_processing_fee_pool_operation(processing_fees));
+            batch.push(
+                unpaid_epoch_tree
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
+            );
 
-            batch.push(unpaid_epoch_tree.update_storage_fee_pool_operation(storage_fees));
+            batch.push(
+                unpaid_epoch_tree
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
 
             next_epoch_tree.add_init_current_operations(
                 1.0,

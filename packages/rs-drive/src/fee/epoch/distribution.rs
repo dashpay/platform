@@ -39,7 +39,9 @@
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits, SignedCredits};
-use crate::fee::epoch::{EpochIndex, CreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS, SignedCreditsPerEpoch};
+use crate::fee::epoch::{
+    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
+};
 use crate::fee::get_overflow_error;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
@@ -62,37 +64,27 @@ pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_YEARS as usize] = 
     dec!(0.00325), dec!(0.00275), dec!(0.00225), dec!(0.00175), dec!(0.00125),
 ];
 
-/// Distributes storage fees to epochs into `CreditsPerEpoch` and returns leftovers
-/// It skips epochs up to specified `skip_up_to_epoch_index`
+type DistributionAmount = Credits;
+type DistributionLeftovers = Credits;
+
+/// Distributes storage fees to epochs into `SignedCreditsPerEpoch` and returns leftovers
 pub fn distribute_storage_fee_to_epochs_collection(
     credits_per_epochs: &mut SignedCreditsPerEpoch,
     storage_fee: Credits,
-    remove_instead: bool,
     start_epoch_index: EpochIndex,
-    skip_distribution_until_epoch_index: Option<EpochIndex>,
 ) -> Result<DistributionLeftovers, Error> {
     distribution_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
         |epoch_index, epoch_fee_share| {
-            if let Some(skip_epoch_index) = skip_distribution_until_epoch_index {
-                if epoch_index < skip_epoch_index {
-                    return Ok(());
-                }
-            }
+            let epoch_credits: SignedCredits =
+                credits_per_epochs.get(&epoch_index).map_or(0, |i| *i);
 
-            let epoch_credits: SignedCredits = credits_per_epochs
-                .get(&epoch_index)
-                .map_or(0, |i| *i);
-
-            let result_storage_fee: SignedCredits = if !remove_instead { // we add
-                epoch_credits
-                    .checked_add(epoch_fee_share.to_signed()?)
-            } else {
-                epoch_credits
-                    .checked_sub(epoch_fee_share.to_signed()?)
-
-            }.ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
+            let result_storage_fee: SignedCredits = epoch_credits
+                .checked_add(epoch_fee_share.to_signed()?)
+                .ok_or_else(|| {
+                    get_overflow_error("updated epoch credits are not fitting to credits max size")
+                })?;
 
             credits_per_epochs.insert(epoch_index, result_storage_fee);
 
@@ -101,8 +93,37 @@ pub fn distribute_storage_fee_to_epochs_collection(
     )
 }
 
-type DistributionAmount = Credits;
-type DistributionLeftovers = Credits;
+/// Distributes refunds to epochs into `SignedCreditsPerEpoch` and returns leftovers
+/// It skips epochs up to specified `skip_until_epoch_index`
+pub fn distribute_refunds_to_epochs_collection(
+    credits_per_epochs: &mut SignedCreditsPerEpoch,
+    storage_fee: Credits,
+    start_epoch_index: EpochIndex,
+    skip_until_epoch_index: EpochIndex,
+) -> Result<DistributionLeftovers, Error> {
+    distribution_storage_fee_to_epochs_map(
+        storage_fee,
+        start_epoch_index,
+        |epoch_index, epoch_fee_share| {
+            if epoch_index < skip_until_epoch_index {
+                return Ok(());
+            }
+
+            let epoch_credits: SignedCredits =
+                credits_per_epochs.get(&epoch_index).map_or(0, |i| *i);
+
+            let result_storage_fee: SignedCredits = epoch_credits
+                .checked_sub(epoch_fee_share.to_signed()?)
+                .ok_or_else(|| {
+                    get_overflow_error("updated epoch credits are not fitting to credits min size")
+                })?;
+
+            credits_per_epochs.insert(epoch_index, result_storage_fee);
+
+            Ok(())
+        },
+    )
+}
 
 /// Calculates leftovers and amount of credits by distributing storage fees to epochs
 pub fn calculate_storage_fee_distribution_amount_and_leftovers(
@@ -132,7 +153,7 @@ pub fn calculate_storage_fee_distribution_amount_and_leftovers(
 fn distribution_storage_fee_to_epochs_map<F>(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
-    mut f: F,
+    mut map_function: F,
 ) -> Result<DistributionLeftovers, Error>
 where
     F: FnMut(EpochIndex, Credits) -> Result<(), Error>,
@@ -162,7 +183,7 @@ where
         let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
 
         for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
-            f(epoch_index, epoch_fee_share)?;
+            map_function(epoch_index, epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
                 .checked_sub(epoch_fee_share)
@@ -181,6 +202,7 @@ mod tests {
 
     use crate::fee::credits::{Creditable, MAX_CREDITS};
     use crate::fee::epoch::GENESIS_EPOCH_INDEX;
+    use crate::fee::epoch::PERPETUAL_STORAGE_EPOCHS;
 
     mod fee_distribution_table {
         use super::*;
@@ -203,26 +225,28 @@ mod tests {
         }
     }
 
-    mod distribute_storage_fee_to_epochs_collection {
+    mod distribution_storage_fee_to_epochs_map {
         use super::*;
-        use crate::fee::epoch::PERPETUAL_STORAGE_EPOCHS;
 
         #[test]
         fn should_distribute_nothing_if_storage_fee_are_zero() {
-            let mut credits_per_epochs = SignedCreditsPerEpoch::default();
+            let mut calls = 0;
 
-            let leftovers = distribute_storage_fee_to_epochs_collection(
-                &mut credits_per_epochs,
-                0,
-                false,
-                GENESIS_EPOCH_INDEX,
-                None,
-            )
-            .expect("should distribute storage fee");
+            let leftovers =
+                distribution_storage_fee_to_epochs_map(0, GENESIS_EPOCH_INDEX, |_, _| {
+                    calls += 1;
 
-            assert_eq!(credits_per_epochs.len(), 0);
+                    Ok(())
+                })
+                .expect("should distribute storage fee");
+
+            assert_eq!(calls, 0);
             assert_eq!(leftovers, 0);
         }
+    }
+
+    mod distribute_storage_fee_to_epochs_collection {
+        use super::*;
 
         #[test]
         fn should_distribute_max_credits_value_without_overflow() {
@@ -233,9 +257,7 @@ mod tests {
             let leftovers = distribute_storage_fee_to_epochs_collection(
                 &mut credits_per_epochs,
                 storage_fee,
-                false,
                 GENESIS_EPOCH_INDEX,
-                None,
             )
             .expect("should distribute storage fee");
 
@@ -253,9 +275,7 @@ mod tests {
             let leftovers = distribute_storage_fee_to_epochs_collection(
                 &mut credits_per_epochs,
                 storage_fee,
-                false,
                 current_epoch_index,
-                None,
             )
             .expect("should distribute storage fee");
 
@@ -264,7 +284,7 @@ mod tests {
 
             // compare them with reference table
             #[rustfmt::skip]
-            let reference_fees: [Credits; PERPETUAL_STORAGE_EPOCHS as usize] = [
+                let reference_fees: [SignedCredits; PERPETUAL_STORAGE_EPOCHS as usize] = [
                 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
                 2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
                 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
@@ -334,16 +354,13 @@ mod tests {
             ];
 
             assert_eq!(
-                credits_per_epochs
-                    .clone()
-                    .into_values()
-                    .collect::<Vec<SignedCredits>>(),
+                credits_per_epochs.clone().into_values().collect::<Vec<_>>(),
                 reference_fees
             );
 
             let total_distributed: SignedCredits = credits_per_epochs.values().sum();
 
-            assert_eq!(total_distributed + leftovers, storage_fee);
+            assert_eq!(total_distributed.to_unsigned() + leftovers, storage_fee);
 
             /*
 
@@ -354,28 +371,28 @@ mod tests {
             let leftovers = distribute_storage_fee_to_epochs_collection(
                 &mut credits_per_epochs,
                 storage_fee,
-                false,
                 current_epoch_index,
-                None,
             )
             .expect("should distribute storage fee");
 
             // assert that all the values doubled meaning that distribution is reproducible
             assert_eq!(
-                credits_per_epochs
-                    .into_values()
-                    .collect::<Vec<SignedCredits>>(),
+                credits_per_epochs.into_values().collect::<Vec<_>>(),
                 reference_fees
                     .into_iter()
                     .map(|val| val * 2)
-                    .collect::<Vec<SignedCredits>>()
+                    .collect::<Vec<_>>()
             );
 
             assert_eq!(leftovers, 180);
         }
+    }
+
+    mod distribute_refunds_to_epochs_collection {
+        use super::*;
 
         #[test]
-        fn should_add_to_collection_from_specific_epoch() {
+        fn should_deduct_refunds_from_collection_since_specific_epoch() {
             let storage_fee: Credits = 1000000;
             let start_epoch_index: EpochIndex = 0;
 
@@ -383,12 +400,11 @@ mod tests {
 
             let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
-            let leftovers = distribute_storage_fee_to_epochs_collection(
+            let leftovers = distribute_refunds_to_epochs_collection(
                 &mut credits_per_epochs,
                 storage_fee,
-                false,
                 start_epoch_index,
-                Some(SKIP_UP_TO_EPOCH_INDEX),
+                SKIP_UP_TO_EPOCH_INDEX,
             )
             .expect("should distribute storage fee");
 
@@ -396,93 +412,100 @@ mod tests {
             assert_eq!(leftovers, 180);
 
             // compare them with reference table
-            #[rustfmt::skip]
-                let reference_fees: [SignedCredits; (PERPETUAL_STORAGE_EPOCHS - SKIP_UP_TO_EPOCH_INDEX) as usize] = [
-                2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300, 2300,
-                2300, 2300, 2300, 2300, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200,
-                2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 2100, 2100, 2100, 2100,
-                2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100, 2100,
-                2100, 2100, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000,
-                2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 1925, 1925, 1925, 1925, 1925, 1925,
-                1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925, 1925,
-                1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850, 1850,
-                1850, 1850, 1850, 1850, 1850, 1850, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775,
-                1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1775, 1700, 1700,
-                1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700, 1700,
-                1700, 1700, 1700, 1700, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625,
-                1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1625, 1550, 1550, 1550, 1550,
-                1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550, 1550,
-                1550, 1550, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475,
-                1475, 1475, 1475, 1475, 1475, 1475, 1475, 1475, 1425, 1425, 1425, 1425, 1425, 1425,
-                1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425, 1425,
-                1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375, 1375,
-                1375, 1375, 1375, 1375, 1375, 1375, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325,
-                1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1325, 1275, 1275,
-                1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275, 1275,
-                1275, 1275, 1275, 1275, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225,
-                1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1225, 1175, 1175, 1175, 1175,
-                1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175, 1175,
-                1175, 1175, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125,
-                1125, 1125, 1125, 1125, 1125, 1125, 1125, 1125, 1075, 1075, 1075, 1075, 1075, 1075,
-                1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075, 1075,
-                1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025, 1025,
-                1025, 1025, 1025, 1025, 1025, 1025, 975, 975, 975, 975, 975, 975, 975, 975, 975,
-                975, 975, 975, 975, 975, 975, 975, 975, 975, 975, 975, 937, 937, 937, 937, 937,
-                937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 937, 900,
-                900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900,
-                900, 900, 900, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862, 862,
-                862, 862, 862, 862, 862, 862, 862, 825, 825, 825, 825, 825, 825, 825, 825, 825,
-                825, 825, 825, 825, 825, 825, 825, 825, 825, 825, 825, 787, 787, 787, 787, 787,
-                787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 787, 750,
-                750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750, 750,
-                750, 750, 750, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712,
-                712, 712, 712, 712, 712, 712, 712, 675, 675, 675, 675, 675, 675, 675, 675, 675,
-                675, 675, 675, 675, 675, 675, 675, 675, 675, 675, 675, 637, 637, 637, 637, 637,
-                637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 600,
-                600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600,
-                600, 600, 600, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562,
-                562, 562, 562, 562, 562, 562, 562, 525, 525, 525, 525, 525, 525, 525, 525, 525,
-                525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 487, 487, 487, 487, 487,
-                487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 450,
-                450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450, 450,
-                450, 450, 450, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412, 412,
-                412, 412, 412, 412, 412, 412, 412, 375, 375, 375, 375, 375, 375, 375, 375, 375,
-                375, 375, 375, 375, 375, 375, 375, 375, 375, 375, 375, 337, 337, 337, 337, 337,
-                337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 337, 300,
-                300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
-                300, 300, 300, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262, 262,
-                262, 262, 262, 262, 262, 262, 262, 237, 237, 237, 237, 237, 237, 237, 237, 237,
-                237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 212, 212, 212, 212, 212,
-                212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 187,
-                187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187, 187,
-                187, 187, 187, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162,
-                162, 162, 162, 162, 162, 162, 162, 137, 137, 137, 137, 137, 137, 137, 137, 137,
-                137, 137, 137, 137, 137, 137, 137, 137, 137, 137, 137, 112, 112, 112, 112, 112,
-                112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 112, 87,
-                87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 87, 62,
-                62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62
+            let reference_fees: [SignedCredits;
+                (PERPETUAL_STORAGE_EPOCHS - SKIP_UP_TO_EPOCH_INDEX) as usize] = [
+                -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300,
+                -2300, -2300, -2300, -2300, -2300, -2300, -2200, -2200, -2200, -2200, -2200, -2200,
+                -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200,
+                -2200, -2200, -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2100,
+                -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2100, -2000, -2000,
+                -2000, -2000, -2000, -2000, -2000, -2000, -2000, -2000, -2000, -2000, -2000, -2000,
+                -2000, -2000, -2000, -2000, -2000, -2000, -1925, -1925, -1925, -1925, -1925, -1925,
+                -1925, -1925, -1925, -1925, -1925, -1925, -1925, -1925, -1925, -1925, -1925, -1925,
+                -1925, -1925, -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1850,
+                -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1850, -1775, -1775,
+                -1775, -1775, -1775, -1775, -1775, -1775, -1775, -1775, -1775, -1775, -1775, -1775,
+                -1775, -1775, -1775, -1775, -1775, -1775, -1700, -1700, -1700, -1700, -1700, -1700,
+                -1700, -1700, -1700, -1700, -1700, -1700, -1700, -1700, -1700, -1700, -1700, -1700,
+                -1700, -1700, -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1625,
+                -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1625, -1550, -1550,
+                -1550, -1550, -1550, -1550, -1550, -1550, -1550, -1550, -1550, -1550, -1550, -1550,
+                -1550, -1550, -1550, -1550, -1550, -1550, -1475, -1475, -1475, -1475, -1475, -1475,
+                -1475, -1475, -1475, -1475, -1475, -1475, -1475, -1475, -1475, -1475, -1475, -1475,
+                -1475, -1475, -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1425,
+                -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1425, -1375, -1375,
+                -1375, -1375, -1375, -1375, -1375, -1375, -1375, -1375, -1375, -1375, -1375, -1375,
+                -1375, -1375, -1375, -1375, -1375, -1375, -1325, -1325, -1325, -1325, -1325, -1325,
+                -1325, -1325, -1325, -1325, -1325, -1325, -1325, -1325, -1325, -1325, -1325, -1325,
+                -1325, -1325, -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1275,
+                -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1275, -1225, -1225,
+                -1225, -1225, -1225, -1225, -1225, -1225, -1225, -1225, -1225, -1225, -1225, -1225,
+                -1225, -1225, -1225, -1225, -1225, -1225, -1175, -1175, -1175, -1175, -1175, -1175,
+                -1175, -1175, -1175, -1175, -1175, -1175, -1175, -1175, -1175, -1175, -1175, -1175,
+                -1175, -1175, -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1125,
+                -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1125, -1075, -1075,
+                -1075, -1075, -1075, -1075, -1075, -1075, -1075, -1075, -1075, -1075, -1075, -1075,
+                -1075, -1075, -1075, -1075, -1075, -1075, -1025, -1025, -1025, -1025, -1025, -1025,
+                -1025, -1025, -1025, -1025, -1025, -1025, -1025, -1025, -1025, -1025, -1025, -1025,
+                -1025, -1025, -975, -975, -975, -975, -975, -975, -975, -975, -975, -975, -975,
+                -975, -975, -975, -975, -975, -975, -975, -975, -975, -937, -937, -937, -937, -937,
+                -937, -937, -937, -937, -937, -937, -937, -937, -937, -937, -937, -937, -937, -937,
+                -937, -900, -900, -900, -900, -900, -900, -900, -900, -900, -900, -900, -900, -900,
+                -900, -900, -900, -900, -900, -900, -900, -862, -862, -862, -862, -862, -862, -862,
+                -862, -862, -862, -862, -862, -862, -862, -862, -862, -862, -862, -862, -862, -825,
+                -825, -825, -825, -825, -825, -825, -825, -825, -825, -825, -825, -825, -825, -825,
+                -825, -825, -825, -825, -825, -787, -787, -787, -787, -787, -787, -787, -787, -787,
+                -787, -787, -787, -787, -787, -787, -787, -787, -787, -787, -787, -750, -750, -750,
+                -750, -750, -750, -750, -750, -750, -750, -750, -750, -750, -750, -750, -750, -750,
+                -750, -750, -750, -712, -712, -712, -712, -712, -712, -712, -712, -712, -712, -712,
+                -712, -712, -712, -712, -712, -712, -712, -712, -712, -675, -675, -675, -675, -675,
+                -675, -675, -675, -675, -675, -675, -675, -675, -675, -675, -675, -675, -675, -675,
+                -675, -637, -637, -637, -637, -637, -637, -637, -637, -637, -637, -637, -637, -637,
+                -637, -637, -637, -637, -637, -637, -637, -600, -600, -600, -600, -600, -600, -600,
+                -600, -600, -600, -600, -600, -600, -600, -600, -600, -600, -600, -600, -600, -562,
+                -562, -562, -562, -562, -562, -562, -562, -562, -562, -562, -562, -562, -562, -562,
+                -562, -562, -562, -562, -562, -525, -525, -525, -525, -525, -525, -525, -525, -525,
+                -525, -525, -525, -525, -525, -525, -525, -525, -525, -525, -525, -487, -487, -487,
+                -487, -487, -487, -487, -487, -487, -487, -487, -487, -487, -487, -487, -487, -487,
+                -487, -487, -487, -450, -450, -450, -450, -450, -450, -450, -450, -450, -450, -450,
+                -450, -450, -450, -450, -450, -450, -450, -450, -450, -412, -412, -412, -412, -412,
+                -412, -412, -412, -412, -412, -412, -412, -412, -412, -412, -412, -412, -412, -412,
+                -412, -375, -375, -375, -375, -375, -375, -375, -375, -375, -375, -375, -375, -375,
+                -375, -375, -375, -375, -375, -375, -375, -337, -337, -337, -337, -337, -337, -337,
+                -337, -337, -337, -337, -337, -337, -337, -337, -337, -337, -337, -337, -337, -300,
+                -300, -300, -300, -300, -300, -300, -300, -300, -300, -300, -300, -300, -300, -300,
+                -300, -300, -300, -300, -300, -262, -262, -262, -262, -262, -262, -262, -262, -262,
+                -262, -262, -262, -262, -262, -262, -262, -262, -262, -262, -262, -237, -237, -237,
+                -237, -237, -237, -237, -237, -237, -237, -237, -237, -237, -237, -237, -237, -237,
+                -237, -237, -237, -212, -212, -212, -212, -212, -212, -212, -212, -212, -212, -212,
+                -212, -212, -212, -212, -212, -212, -212, -212, -212, -187, -187, -187, -187, -187,
+                -187, -187, -187, -187, -187, -187, -187, -187, -187, -187, -187, -187, -187, -187,
+                -187, -162, -162, -162, -162, -162, -162, -162, -162, -162, -162, -162, -162, -162,
+                -162, -162, -162, -162, -162, -162, -162, -137, -137, -137, -137, -137, -137, -137,
+                -137, -137, -137, -137, -137, -137, -137, -137, -137, -137, -137, -137, -137, -112,
+                -112, -112, -112, -112, -112, -112, -112, -112, -112, -112, -112, -112, -112, -112,
+                -112, -112, -112, -112, -112, -87, -87, -87, -87, -87, -87, -87, -87, -87, -87,
+                -87, -87, -87, -87, -87, -87, -87, -87, -87, -87, -62, -62, -62, -62, -62, -62,
+                -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62,
             ];
 
-            let skipped_reference_fees: [SignedCredits; SKIP_UP_TO_EPOCH_INDEX as usize] = [
+            let skipped_reference_fees: [Credits; SKIP_UP_TO_EPOCH_INDEX as usize] = [
                 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
                 2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
                 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
             ];
 
             assert_eq!(
-                credits_per_epochs
-                    .clone()
-                    .into_values()
-                    .collect::<Vec<SignedCredits>>(),
+                credits_per_epochs.clone().into_values().collect::<Vec<_>>(),
                 reference_fees
             );
 
             let total_distributed: SignedCredits = credits_per_epochs.values().sum();
 
             assert_eq!(
-                total_distributed
+                total_distributed.to_unsigned()
                     + leftovers
-                    + skipped_reference_fees.into_iter().sum::<SignedCredits>(),
+                    + skipped_reference_fees.into_iter().sum::<Credits>(),
                 storage_fee
             );
         }

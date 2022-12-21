@@ -1,4 +1,4 @@
-use drive::fee::credits::SignedCredits;
+use drive::fee::credits::Credits;
 use drive::fee::epoch::distribution::calculate_storage_fee_distribution_amount_and_leftovers;
 use drive::fee::epoch::EpochIndex;
 use neon::prelude::*;
@@ -9,7 +9,7 @@ pub fn js_calculate_storage_fee_distribution_amount_and_leftovers(
     mut cx: FunctionContext,
 ) -> JsResult<JsArray> {
     let js_storage_fees = cx.argument::<JsNumber>(0)?;
-    let storage_fees = js_storage_fees.value(&mut cx) as SignedCredits;
+    let storage_fees = js_storage_fees.value(&mut cx) as Credits;
 
     let js_start_epoch_index = cx.argument::<JsNumber>(1)?;
 

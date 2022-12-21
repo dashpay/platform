@@ -34,7 +34,7 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::{Credits, SignedCredits};
+use crate::fee::credits::Credits;
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;

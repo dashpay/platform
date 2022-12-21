@@ -37,14 +37,13 @@ use std::option::Option::None;
 
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
-use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 
 use crate::abci::messages::BlockFees;
 use crate::block::BlockInfo;
 use crate::error::Error;
-use crate::execution::fee_pools::distribute_storage_pool::DistributionLeftoverCredits;
+use crate::execution::fee_pools::distribute_storage_pool::DistributionStorageFeeResult;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
@@ -70,6 +69,8 @@ pub struct ProcessedBlockFeesResult {
     pub fees_in_pools: FeesInPools,
     /// A struct with the number of proposers to be paid out and the last paid epoch index
     pub payouts: Option<ProposersPayouts>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<usize>,
 }
 
 impl Platform {
@@ -85,7 +86,7 @@ impl Platform {
         block_fees: &BlockFees,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<Option<DistributionLeftoverCredits>, Error> {
+    ) -> Result<Option<DistributionStorageFeeResult>, Error> {
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
             .previous_epoch_index
@@ -144,7 +145,7 @@ impl Platform {
 
         let mut batch = GroveDbOpBatch::new();
 
-        let storage_fee_distribution_leftover_credits = if epoch_info.is_epoch_change {
+        let storage_fee_distribution_result = if epoch_info.is_epoch_change {
             self.add_process_epoch_change_operations(
                 block_info,
                 epoch_info,
@@ -193,7 +194,9 @@ impl Platform {
             &current_epoch,
             &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
-            storage_fee_distribution_leftover_credits,
+            storage_fee_distribution_result
+                .as_ref()
+                .map(|result| result.leftovers),
             transaction,
             &mut batch,
         )?;
@@ -218,6 +221,8 @@ impl Platform {
         Ok(ProcessedBlockFeesResult {
             fees_in_pools,
             payouts,
+            refunded_epochs_count: storage_fee_distribution_result
+                .map(|result| result.refunded_epochs_count),
         })
     }
 }
@@ -293,7 +298,7 @@ mod tests {
                 let block_fees = BlockFees {
                     storage_fee: 1000000000,
                     processing_fee: 10000,
-                    fee_refunds: CreditsPerEpoch::from_iter([(0, -10000)]),
+                    fee_refunds: CreditsPerEpoch::from_iter([(0, 10000)]),
                 };
 
                 let mut batch = GroveDbOpBatch::new();
@@ -458,7 +463,7 @@ mod tests {
                 let block_fees = BlockFees {
                     storage_fee: 1000,
                     processing_fee: 10000,
-                    fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, -100)]),
+                    fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
                 };
 
                 let distribute_storage_pool_result = platform

@@ -39,10 +39,10 @@
 
 // TODO: Should be moved to DPP when integration is done
 
-use integer_encoding::VarInt;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::get_overflow_error;
+use integer_encoding::VarInt;
 use rust_decimal::Decimal;
 
 /// Credits type
@@ -81,11 +81,11 @@ impl Creditable for Credits {
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
-        Self::decode_var(vec.as_slice()).map(|(n, s)| n).ok_or(
-            Error::Drive(DriveError::CorruptedSerialization(
+        Self::decode_var(vec.as_slice())
+            .map(|(n, _)| n)
+            .ok_or(Error::Drive(DriveError::CorruptedSerialization(
                 "pending updates epoch index for must be u16",
-            ))
-        )
+            )))
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {
@@ -102,11 +102,11 @@ impl Creditable for SignedCredits {
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
-        Self::decode_var(vec.as_slice()).map(|(n, s)| n).ok_or(
-            Error::Drive(DriveError::CorruptedSerialization(
+        Self::decode_var(vec.as_slice())
+            .map(|(n, _)| n)
+            .ok_or(Error::Drive(DriveError::CorruptedSerialization(
                 "pending updates epoch index for must be u16",
-            ))
-        )
+            )))
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {
