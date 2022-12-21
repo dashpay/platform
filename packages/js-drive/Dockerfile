@@ -74,6 +74,7 @@ COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/dpns-contract packages/dpns-contract
 COPY packages/dashpay-contract packages/dashpay-contract
+COPY packages/withdrawals-contract packages/withdrawals-contract
 
 # Build RS Drive Node.JS binding
 RUN --mount=type=cache,target=target \
