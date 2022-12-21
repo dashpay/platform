@@ -79,7 +79,7 @@ impl<'a, const N: usize> PathInfo<'a, N> {
                 (*path_iterator).into_iter().map(|a| a.len() as u32).sum()
             }
             PathIterator(path_iterator) => path_iterator.iter().map(|a| a.len() as u32).sum(),
-            PathWithSizes(path_size) => path_size.iter().map(|a| a.len() as u32).sum(),
+            PathWithSizes(path_size) => path_size.iterator().map(|a| a.max_length() as u32).sum(),
         }
     }
 
@@ -151,7 +151,7 @@ impl<'a> DriveKeyInfo<'a> {
         match self {
             Key(key) => key.len() as u32,
             KeyRef(key) => key.len() as u32,
-            KeySize(info) => info.len() as u32,
+            KeySize(info) => info.max_length() as u32,
         }
     }
 
@@ -160,7 +160,7 @@ impl<'a> DriveKeyInfo<'a> {
         match self {
             Key(key) => key.is_empty(),
             KeyRef(key) => key.is_empty(),
-            KeySize(info) => info.len() == 0,
+            KeySize(info) => info.max_length() == 0,
         }
     }
 
@@ -261,7 +261,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
                 (*path_iterator).iter().map(|a| a.len() as u32).sum::<u32>() + key.len() as u32
             }
             PathKeySize(key_info_path, key_size) => {
-                key_info_path.iter().map(|a| a.len() as u32).sum::<u32>() + key_size.len() as u32
+                key_info_path.iterator().map(|a| a.max_length() as u32).sum::<u32>() + key_size.max_length() as u32
             }
         }
     }
@@ -281,7 +281,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
             PathFixedSizeKeyRef((path_iterator, key)) => {
                 key.is_empty() && (*path_iterator).iter().all(|a| a.is_empty())
             }
-            PathKeySize(path_info, key_info) => path_info.is_empty() && key_info.len() == 0,
+            PathKeySize(path_info, key_info) => path_info.is_empty() && key_info.max_length() == 0,
         }
     }
 
