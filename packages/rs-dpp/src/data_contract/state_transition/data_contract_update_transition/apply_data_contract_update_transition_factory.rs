@@ -11,11 +11,10 @@ where
     state_repository: SR,
 }
 
-pub fn fetch_documents_factory<SR>(state_repository: SR) -> ApplyDataContractUpdateTransition<SR>
-where
-    SR: StateRepositoryLike,
-{
-    ApplyDataContractUpdateTransition { state_repository }
+impl<SR: StateRepositoryLike> ApplyDataContractUpdateTransition<SR> {
+    pub fn new(state_repository: SR) -> Self {
+        ApplyDataContractUpdateTransition { state_repository }
+    }
 }
 
 impl<SR> ApplyDataContractUpdateTransition<SR>

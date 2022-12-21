@@ -13,7 +13,6 @@ use wasm_bindgen::prelude::*;
 use crate::{
     data_contract::errors::InvalidDataContractError,
     errors::{
-        consensus::basic::decode::SerializedObjectParsingErrorWasm,
         consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
         RustConversionError,
     },
