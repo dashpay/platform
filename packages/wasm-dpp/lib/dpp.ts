@@ -1,4 +1,5 @@
 import * as dpp_module from '../wasm/wasm_dpp';
+import { patchConsensusErrors } from './patchConsensusErrors';
 
 // While we declared it above, those fields do not hold any values - let's assign them.
 // We need to suppress the compiler here, as he won't be happy about those reassignments.

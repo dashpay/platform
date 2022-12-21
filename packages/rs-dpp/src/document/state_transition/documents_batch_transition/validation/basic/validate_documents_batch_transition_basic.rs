@@ -23,6 +23,7 @@ use crate::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
+use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -209,7 +210,7 @@ fn validate_raw_transitions<'a>(
     for raw_document_transition in raw_document_transitions.iter() {
         let document_type = match raw_document_transition.get_string("$type") {
             Err(_) => {
-                result.add_error(BasicError::MissingDocumentTypeError);
+                result.add_error(BasicError::MissingDocumentTransitionTypeError);
                 return Ok(result);
             }
 
@@ -292,8 +293,7 @@ fn validate_raw_transitions<'a>(
 
     let raw_document_transitions_iter = raw_document_transitions.into_iter();
 
-    let duplicate_transitions =
-        find_duplicates_by_indices(raw_document_transitions_iter.clone(), data_contract)?;
+    let duplicate_transitions = find_duplicates_by_id(raw_document_transitions_iter.clone())?;
     if !duplicate_transitions.is_empty() {
         let references: Vec<(String, Vec<u8>)> = duplicate_transitions
             .iter()
@@ -304,6 +304,20 @@ fn validate_raw_transitions<'a>(
             })
             .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
         result.add_error(BasicError::DuplicateDocumentTransitionsWithIdsError { references });
+    }
+
+    let duplicate_transitions_by_indices =
+        find_duplicates_by_indices(raw_document_transitions_iter.clone(), data_contract)?;
+    if !duplicate_transitions_by_indices.is_empty() {
+        let references: Vec<(String, Vec<u8>)> = duplicate_transitions_by_indices
+            .iter()
+            .map(|t| {
+                let doc_type = t.get_string("$type")?.to_string();
+                let id = t.get_bytes("$id")?;
+                Ok((doc_type, id))
+            })
+            .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
+        result.add_error(BasicError::DuplicateDocumentTransitionsWithIndicesError { references });
     }
 
     let validation_result = validate_partial_compound_indices(
