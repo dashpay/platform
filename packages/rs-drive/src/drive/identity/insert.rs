@@ -37,7 +37,7 @@ impl Drive {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         self.add_new_identity_add_to_operations(
             identity,
-            &block_info,
+            block_info,
             apply,
             transaction,
             &mut drive_operations,
