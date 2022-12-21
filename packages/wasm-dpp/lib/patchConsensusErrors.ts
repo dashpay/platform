@@ -71,7 +71,7 @@ const {
     InvalidDataContractVersionError,
     IncompatibleDataContractSchemaError,
     DataContractImmutablePropertiesUpdateError,
-    DataContractIndicesChangedError,
+    DataContractUniqueIndicesChangedError,
     DuplicateIndexNameError,
     DataContractInvalidIndexDefinitionUpdateError,
     DataContractHaveNewUniqueIndexError,
@@ -79,8 +79,8 @@ const {
     IdentityPublicKeyIsReadOnlyError,
     InvalidIdentityPublicKeyIdError,
     InvalidIdentityRevisionError,
-    StateMaxIdentityPublicKeyLimitReachedError,
-    DuplicatedIdentityPublicKeyStateError,
+    MaxIdentityPublicKeyLimitReachedError,
+    DuplicatedIdentityPublicKeyError,
     DuplicatedIdentityPublicKeyIdStateError,
     InvalidIdentityKeySignatureError,
     InvalidSignaturePublicKeySecurityLevelError,
@@ -159,7 +159,7 @@ export function patchConsensusErrors() {
     extend(InvalidDataContractVersionError, AbstractConsensusError);
     extend(IncompatibleDataContractSchemaError, AbstractConsensusError);
     extend(DataContractImmutablePropertiesUpdateError, AbstractConsensusError);
-    extend(DataContractIndicesChangedError, AbstractConsensusError);
+    extend(DataContractUniqueIndicesChangedError, AbstractConsensusError);
     extend(DuplicateIndexNameError, AbstractConsensusError);
     extend(DataContractInvalidIndexDefinitionUpdateError, AbstractConsensusError);
     extend(DataContractHaveNewUniqueIndexError, AbstractConsensusError);
@@ -167,7 +167,7 @@ export function patchConsensusErrors() {
     extend(IdentityPublicKeyIsReadOnlyError, AbstractConsensusError);
     extend(InvalidIdentityPublicKeyIdError, AbstractConsensusError);
     extend(InvalidIdentityRevisionError, AbstractConsensusError);
-    extend(StateMaxIdentityPublicKeyLimitReachedError, AbstractConsensusError);
+    extend(MaxIdentityPublicKeyLimitReachedError, AbstractConsensusError);
     extend(DuplicatedIdentityPublicKeyStateError, AbstractConsensusError);
     extend(DuplicatedIdentityPublicKeyIdStateError, AbstractConsensusError);
     extend(InvalidIdentityKeySignatureError, AbstractConsensusError);
