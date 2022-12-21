@@ -199,7 +199,7 @@ class IdentityStoreRepository {
       );
     }
 
-    const [dataContract, feeResult] = await this.storage.getDrive().fetchContract(
+    const [identity, feeResult] = await this.storage.getDrive().fetchIdentity(
       id,
       options && options.blockInfo ? options.blockInfo.epoch : undefined,
       Boolean(options.useTransaction),
@@ -211,7 +211,7 @@ class IdentityStoreRepository {
     }
 
     return new StorageResult(
-      dataContract,
+        identity,
       operations,
     );
   }

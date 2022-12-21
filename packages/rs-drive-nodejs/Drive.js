@@ -352,24 +352,24 @@ class Drive {
    */
   async fetchIdentity(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchIdentityAsync.call(
-        this.drive,
-        Buffer.from(id),
-        epochIndex,
-        useTransaction,
-    ).then(([encodedDataContract, innerFeeResult]) => {
-      let dataContract = encodedDataContract;
+      this.drive,
+      Buffer.from(id),
+      epochIndex,
+      useTransaction,
+    ).then(([encodedIdentity, innerFeeResult]) => {
+      let identity = encodedIdentity;
 
-      if (encodedDataContract !== null) {
-        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
-            encodedDataContract,
+      if (encodedIdentity !== null) {
+        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+          encodedIdentity,
         );
 
-        rawDataContract.protocolVersion = protocolVersion;
+        rawIdentity.protocolVersion = protocolVersion;
 
-        dataContract = new DataContract(rawDataContract);
+        identity = new Identity(rawIdentity);
       }
 
-      const result = [dataContract];
+      const result = [identity];
 
       if (innerFeeResult) {
         result.push(new FeeResult(innerFeeResult));
