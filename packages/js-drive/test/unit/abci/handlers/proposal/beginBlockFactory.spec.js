@@ -46,6 +46,7 @@ describe('beginBlockFactory', () => {
   let timeMs;
   let epochInfo;
   let time;
+  let lastSyncedCoreHeightRepositoryMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -106,6 +107,12 @@ describe('beginBlockFactory', () => {
       blockBegin: this.sinon.stub().resolves(rsResponseMock),
     };
 
+    lastSyncedCoreHeightRepositoryMock = {
+      fetch: this.sinon.stub().resolves({
+        getValue: () => undefined,
+      }),
+    };
+
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
       latestBlockExecutionContextMock,
@@ -118,6 +125,7 @@ describe('beginBlockFactory', () => {
       synchronizeMasternodeIdentitiesMock,
       rsAbciMock,
       executionTimerMock,
+      lastSyncedCoreHeightRepositoryMock,
     );
 
     lastCommitInfo = {};
