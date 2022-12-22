@@ -13,25 +13,6 @@ describe('validateIndicesAreBackwardCompatible', () => {
     const oldDataContract = getDataContractFixture();
     const newDataContract = getDataContractFixture();
 
-    newDataContract.getDocumentSchema('indexedDocument').properties.otherName = {
-      type: 'string',
-    };
-
-    newDataContract.getDocumentSchema('indexedDocument').indices.push({
-      name: 'index42',
-      unique: false,
-      properties: [
-        { otherName: 'asc' },
-      ],
-    });
-
-    newDataContract.getDocumentSchema('indexedDocument').indices.push({
-      name: 'index42',
-      properties: [
-        { otherName: 'asc' },
-      ],
-    });
-
     oldDocumentsSchema = oldDataContract.getDocuments();
     newDocumentsSchema = newDataContract.getDocuments();
   });
@@ -49,8 +30,8 @@ describe('validateIndicesAreBackwardCompatible', () => {
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[0].name);
   });
 
-  it('should return invalid result if non-unique index update failed due to changed old properties', async () => {
-    newDocumentsSchema.indexedDocument.indices[2].properties[0].$id = 'asc';
+  it('should return invalid result if already defined properties are changed in existing index', async () => {
+    newDocumentsSchema.indexedDocument.indices[2].properties[0].otherName = 'asc';
 
     const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
@@ -62,7 +43,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
   });
 
-  it('should return invalid result if non-unique index update failed due old properties used', async () => {
+  it('should return invalid result if already indexed properties are added to existing index', async () => {
     newDocumentsSchema.indexedDocument.indices[2].properties.push({ firstName: 'asc' });
 
     const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
@@ -111,6 +92,23 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(error).to.be.an.instanceOf(DataContractHaveNewUniqueIndexError);
     expect(error.getIndexName()).to.equal('index_other');
+  });
+
+  it('should return invalid result if existing property was used in a new index', async () => {
+    newDocumentsSchema.indexedDocument.indices.push({
+      name: 'oldFieldIndex',
+      properties: [
+        {
+          otherProperty: 'asc',
+        },
+      ],
+    });
+
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
+
+    expect(result.isValid()).to.be.false();
+
+    // TODO: Check an error
   });
 
   it('should return valid result if indices are not changed', async () => {
