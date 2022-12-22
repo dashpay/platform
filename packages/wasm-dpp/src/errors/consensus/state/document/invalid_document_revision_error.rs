@@ -17,7 +17,7 @@ impl InvalidDocumentRevisionErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> u64 {
+    pub fn current_revision(&self) -> Revision {
         self.current_revision
     }
 

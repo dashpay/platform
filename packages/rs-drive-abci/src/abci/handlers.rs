@@ -123,14 +123,15 @@ impl TenderdashAbci for Platform {
         self.block_execution_context
             .replace(Some(block_execution_context));
 
-        self.drive.update_withdrawal_statuses(
-            request.last_synced_core_height,
-            request.core_chain_locked_height,
-            request.block_time_ms,
-            request.block_height,
-            epoch_info.current_epoch_index,
-            transaction,
-        )?;
+        self.drive
+            .update_broadcasted_withdrawal_transaction_statuses(
+                request.last_synced_core_height,
+                request.core_chain_locked_height,
+                request.block_time_ms,
+                request.block_height,
+                epoch_info.current_epoch_index,
+                transaction,
+            )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(

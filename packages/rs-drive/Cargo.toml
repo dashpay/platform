@@ -53,4 +53,4 @@ name = "benchmarks"
 harness = false
 
 [features]
-core-rpc-mock = ["mockall"]
+fixtures-and-mocks = ["mockall"]

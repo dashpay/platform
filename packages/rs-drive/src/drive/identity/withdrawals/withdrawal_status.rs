@@ -151,8 +151,8 @@ fn fetch_core_block_transactions(
 }
 
 impl Drive {
-    /// Update statuses for pending withdrawals
-    pub fn update_withdrawal_statuses(
+    /// Update statuses for broadcasted withdrawals
+    pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
         last_synced_core_height: u64,
         core_chain_locked_height: u64,
@@ -517,7 +517,14 @@ mod tests {
             setup_document(&drive, &document_2, &data_contract, Some(&transaction));
 
             drive
-                .update_withdrawal_statuses(95, 96, 1, 1, 1, Some(&transaction))
+                .update_broadcasted_withdrawal_transaction_statuses(
+                    95,
+                    96,
+                    1,
+                    1,
+                    1,
+                    Some(&transaction),
+                )
                 .expect("to update withdrawal statuses");
 
             let documents = fetch_withdrawal_documents_by_status(
