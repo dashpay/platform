@@ -259,7 +259,7 @@ module.exports = {
           enum: [0, 1],
         },
         indexes: {
-          type: 'boolean'
+          type: 'boolean',
         },
         allowPrivateNet: {
           type: 'integer',
