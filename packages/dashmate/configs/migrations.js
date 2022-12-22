@@ -408,7 +408,7 @@ module.exports = {
         config.core.allowPrivateNet = 0
         config.core.indexes = config.name === 'mainnet' ? 0 : 1
         config.core.zmq = {port: 29998}
-        config.core.minimumDifficultyBlock = 1000
+        config.core.minimumDifficultyBlocks = 1000
         config.core.powTargetSpacing = null
       });
 

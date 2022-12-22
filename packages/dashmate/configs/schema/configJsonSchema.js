@@ -228,7 +228,7 @@ module.exports = {
           required: ['docker'],
           additionalProperties: false,
         },
-        minimumDifficultyBlock: {
+        minimumDifficultyBlocks: {
           type: 'integer',
           minimum: 1,
         },
@@ -281,7 +281,7 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex', 'minimumDifficultyBlocks'],
       additionalProperties: false,
     },
     platform: {
