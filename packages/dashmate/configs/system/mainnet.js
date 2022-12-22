@@ -23,7 +23,7 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
     rpc: {
       port: 9998,
     },
-    indexes: false
+    indexes: false,
   },
   network: NETWORK_MAINNET,
 });
