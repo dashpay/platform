@@ -224,19 +224,19 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe.skip('#isDataContractStateTransition', () => {
+  describe('#isDataContractStateTransition', () => {
     it('should return false', () => {
       expect(stateTransition.isDataContractStateTransition()).to.be.false();
     });
   });
 
-  describe.skip('#isDocumentStateTransition', () => {
+  describe('#isDocumentStateTransition', () => {
     it('should return false', () => {
       expect(stateTransition.isDocumentStateTransition()).to.be.false();
     });
   });
 
-  describe.skip('#isIdentityStateTransition', () => {
+  describe('#isIdentityStateTransition', () => {
     it('should return true', () => {
       expect(stateTransition.isIdentityStateTransition()).to.be.true();
     });

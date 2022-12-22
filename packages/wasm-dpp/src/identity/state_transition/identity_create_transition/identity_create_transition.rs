@@ -376,6 +376,21 @@ impl IdentityCreateTransitionWasm {
             .collect()
     }
 
+    #[wasm_bindgen(js_name=isDataContractStateTransition)]
+    pub fn is_data_contract_state_transition(&self) -> bool {
+        self.0.is_data_contract_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=isDocumentStateTransition)]
+    pub fn is_document_state_transition(&self) -> bool {
+        self.0.is_document_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=isIdentityStateTransition)]
+    pub fn is_identity_state_transition(&self) -> bool {
+        self.0.is_identity_state_transition()
+    }
+
     #[wasm_bindgen(js_name=setExecutionContext)]
     pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
