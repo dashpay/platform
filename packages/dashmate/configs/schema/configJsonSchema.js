@@ -154,16 +154,6 @@ module.exports = {
           required: ['port', 'user', 'password'],
           additionalProperties: false,
         },
-        zmq: {
-          type: 'object',
-          properties: {
-            port: {
-              $ref: '#/definitions/port',
-            },
-          },
-          required: ['port'],
-          additionalProperties: false,
-        },
         spork: {
           type: 'object',
           properties: {
@@ -248,10 +238,6 @@ module.exports = {
           type: 'integer',
           enum: [0, 1],
         },
-        listen: {
-          type: 'integer',
-          enum: [0, 1],
-        },
         indexes: {
           type: 'boolean',
         },
@@ -271,7 +257,7 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'logips', 'reindex', 'minimumDifficultyBlocks'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'logIps', 'reindex', 'minimumDifficultyBlocks'],
       additionalProperties: false,
     },
     platform: {

@@ -4,8 +4,8 @@ reindex={{?it.core.reindex.enable}}1{{??}}0{{?}}
 logtimestamps=1
 maxconnections=256
 printtoconsole=1
-debug={{?it.core.debug.enable}}1{{??}}0{{?}}
-{{? it.core.debug.logIps === true}}
+debug={{=it.core.debug }}
+{{? it.core.logIps === true}}
 logips=1
 {{?}}
 
@@ -53,18 +53,23 @@ masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
-{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
-{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
-{{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
-{{~it.core.p2p.seeds :seed}}
-addnode={{=seed.host}}:{{=seed.port}}{{~}}
-{{?? it.network === 'devnet'}}
-devnet={{=it.core.devnetName}}
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
 llmqinstantsenddip0024=llmq_devnet_dip0024
 
+{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
+{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
+{{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
+
+{{~it.core.p2p.seeds :seed}}
+addnode={{=seed.host}}:{{=seed.port}}{{~}}
+{{?? it.network === 'devnet'}}
+devnet={{=it.core.devnetName}}
 [devnet]
+llmqchainlocks=llmq_devnet
+llmqinstantsend=llmq_devnet
+llmqinstantsenddip0024=llmq_devnet_dip0024
+
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
 
