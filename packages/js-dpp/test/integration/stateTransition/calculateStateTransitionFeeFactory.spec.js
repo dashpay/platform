@@ -35,14 +35,14 @@ describe('calculateStateTransitionFeeFactory', () => {
         {
           identifier: stateTransition.getOwnerId().toBuffer(),
           creditsPerEpoch: {
-            0: -100,
-            1: -50,
+            0: 100,
+            1: 50,
           },
         },
         {
           identifier: stateTransition.getOwnerId().toBuffer(),
           creditsPerEpoch: {
-            1: -50,
+            1: 50,
           },
         },
       ],
@@ -67,8 +67,8 @@ describe('calculateStateTransitionFeeFactory', () => {
         {
           identifier: Buffer.alloc(32, 1),
           creditsPerEpoch: {
-            0: -100,
-            1: -50,
+            0: 100,
+            1: 50,
           },
         },
       ],

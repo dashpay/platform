@@ -520,13 +520,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, 50);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: 50,
+                    paid_epoch_index: 0
+                })
+            ));
         }
 
         #[test]
@@ -607,13 +607,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, 100);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: 100,
+                    paid_epoch_index: 0
+                })
+            ));
         }
 
         #[test]
@@ -709,13 +709,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, 150);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: 150,
+                    paid_epoch_index: 0
+                })
+            ));
         }
 
         #[test]
@@ -795,19 +795,18 @@ mod tests {
             assert_eq!(next_unpaid_epoch_index, current_epoch.index);
 
             // check we've removed proposers tree
-            match platform.drive.get_epochs_proposer_block_count(
+            let result = platform.drive.get_epochs_proposer_block_count(
                 &unpaid_epoch,
                 &proposers[0],
                 Some(&transaction),
-            ) {
-                Ok(_) => assert!(false, "expect tree not exists"),
-                Err(e) => match e {
-                    DriveError::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            );
+
+            assert!(matches!(
+                result,
+                Err(DriveError::GroveDB(
+                    grovedb::Error::PathParentLayerNotFound(_)
+                ))
+            ));
         }
 
         #[test]
@@ -872,13 +871,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, proposers_count);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: proposers_count,
+                    paid_epoch_index: 0
+                })
+            ));
 
             // The Epoch 0 should still not marked as paid because proposers count == proposers limit
             let next_unpaid_epoch_index = platform
@@ -914,19 +913,18 @@ mod tests {
             assert_eq!(next_unpaid_epoch_index, current_epoch.index);
 
             // check we've removed proposers tree
-            match platform.drive.get_epochs_proposer_block_count(
+            let result = platform.drive.get_epochs_proposer_block_count(
                 &unpaid_epoch,
                 &proposers[0],
                 Some(&transaction),
-            ) {
-                Ok(_) => assert!(false, "expect tree not exists"),
-                Err(e) => match e {
-                    DriveError::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            );
+
+            assert!(matches!(
+                result,
+                Err(DriveError::GroveDB(
+                    grovedb::Error::PathParentLayerNotFound(_)
+                ))
+            ));
         }
     }
 
@@ -1010,11 +1008,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1051,11 +1051,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1093,11 +1095,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1136,11 +1140,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1169,11 +1175,10 @@ mod tests {
                 Some(&transaction),
             );
 
-            match unpaid_epoch {
-                Ok(_) => assert!(false, "should return code execution error"),
-                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_))) => assert!(true),
-                Err(_) => assert!(false, "wrong error type"),
-            }
+            assert!(matches!(
+                unpaid_epoch,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+            ));
         }
     }
 
