@@ -27,13 +27,18 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
    *
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
-  async function verifyVoteExtensionHandler({ voteExtensions }) {
+  async function verifyVoteExtensionHandler(request) {
+    const {
+      voteExtensions,
+    } = request;
+
     const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
       .child({
         abciMethod: 'verifyVoteExtension',
       });
 
     consensusLogger.debug('VerifyVote ABCI method requested');
+    consensusLogger.trace({ request });
 
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
@@ -44,6 +49,10 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
         type: VoteExtensionType.THRESHOLD_RECOVER,
         extension: Buffer.from(txHashHex, 'hex'),
       }));
+
+    const numberOfVoteExtensionsMatch = (
+      voteExtensionsToCheck.length === (voteExtensions || []).length
+    );
 
     const allVoteExtensionsPresent = voteExtensionsToCheck.reduce((result, nextExtension) => {
       const searchedVoteExtension = (voteExtensions || []).find((voteExtension) => (
@@ -59,7 +68,7 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
           Math.min(30, extensionString.length),
         );
 
-        consensusLogger.debug({
+        consensusLogger.warn({
           type: nextExtension.type,
           extension: extensionString,
         }, `${nextExtension.type} vote extension ${extensionTruncatedString}... was not found in verify request`);
@@ -68,7 +77,9 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
       return result && (searchedVoteExtension !== undefined);
     }, true);
 
-    const status = allVoteExtensionsPresent ? verifyStatus.ACCEPT : verifyStatus.REJECT;
+    const status = (numberOfVoteExtensionsMatch && allVoteExtensionsPresent)
+      ? verifyStatus.ACCEPT
+      : verifyStatus.REJECT;
 
     return new ResponseVerifyVoteExtension({
       status,
