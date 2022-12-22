@@ -154,6 +154,16 @@ module.exports = {
           required: ['port', 'user', 'password'],
           additionalProperties: false,
         },
+        zmq: {
+          type: 'object',
+          properties: {
+            port: {
+              $ref: '#/definitions/port',
+            },
+          },
+          required: ['port'],
+          additionalProperties: false,
+        },
         spork: {
           type: 'object',
           properties: {
@@ -218,11 +228,40 @@ module.exports = {
           required: ['docker'],
           additionalProperties: false,
         },
+        minimumDifficultyBlock: {
+          type: 'integer',
+          minimum: 1,
+        },
+        powTargetSpacing: {
+          type: ['string', 'null'],
+          minLength: 1,
+        },
         devnetName: {
           type: ['string', 'null'],
           minLength: 1,
         },
         debug: {
+          type: 'object',
+          properties: {
+            enable: {
+              type: 'boolean',
+            },
+            logIps: {
+              type: 'boolean',
+            },
+            additionalProperties: false,
+          },
+          required: ['enable', 'logIps'],
+          additionalProperties: false,
+        },
+        listen: {
+          type: 'integer',
+          enum: [0, 1],
+        },
+        indexes: {
+          type: 'boolean'
+        },
+        allowPrivateNet: {
           type: 'integer',
           enum: [0, 1],
         },

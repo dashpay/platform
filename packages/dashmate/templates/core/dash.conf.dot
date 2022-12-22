@@ -4,7 +4,10 @@ reindex={{?it.core.reindex.enable}}1{{??}}0{{?}}
 logtimestamps=1
 maxconnections=256
 printtoconsole=1
-debug={{=it.core.debug }}
+debug={{?it.core.debug.enable}}1{{??}}0{{?}}
+{{? it.core.debug.logIps === true}}
+logips=1
+{{?}}
 
 # JSONRPC
 server=1
@@ -19,15 +22,15 @@ rpcworkqueue=64
 rpcthreads=16
 
 # external network
-listen=1
+listen={{=it.core.listen}}
 dnsseed=0
-allowprivatenet=0
+allowprivatenet={{=it.core.allowPrivateNet}}
 externalip={{=it.externalIp}}
 {{? it.network === 'local'}}
 whitelist={{=it.externalIp}}
 {{?}}
 
-{{? it.network !== 'mainnet'}}# Indices
+{{? it.core.indexes }}# Indices
 txindex=1
 addressindex=1
 timestampindex=1
@@ -35,12 +38,12 @@ spentindex=1
 {{?}}
 
 # ZeroMQ notifications
-zmqpubrawtx=tcp://0.0.0.0:29998
-zmqpubrawtxlock=tcp://0.0.0.0:29998
-zmqpubhashblock=tcp://0.0.0.0:29998
-zmqpubrawchainlocksig=tcp://0.0.0.0:29998
-zmqpubrawchainlock=tcp://0.0.0.0:29998
-zmqpubrawtxlocksig=tcp://0.0.0.0:29998
+zmqpubrawtx=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawtxlock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubhashblock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawchainlocksig=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawchainlock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawtxlocksig=tcp://0.0.0.0:{{=it.core.zmq.port}}
 
 {{? it.core.masternode.enable === true}}
 masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
@@ -60,18 +63,22 @@ addnode={{=seed.host}}:{{=seed.port}}{{~}}
 devnet={{=it.core.devnetName}}
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
+llmqinstantsenddip0024=llmq_devnet_dip0024
+
 [devnet]
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
 
 sporkaddr={{=it.core.spork.address}}
-minimumdifficultyblocks=1000
+minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
 highsubsidyblocks=500
 highsubsidyfactor=10{{?}}
 
+{{? it.core.powTargetSpacing}}powtargetspacing={{=it.core.powTargetSpacing}}{{?}}
+
 # network
 port={{=it.core.p2p.port}}
-bind=0.0.0.0
+{{? it.core.listen}}bind=0.0.0.0{{?}}
 rpcbind=0.0.0.0
 rpcport={{=it.core.rpc.port}}
 
