@@ -107,7 +107,7 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if result_items.len() == 0 {
+        if result_items.is_empty() {
             return Ok(None);
         }
 

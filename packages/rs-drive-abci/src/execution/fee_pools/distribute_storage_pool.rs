@@ -257,7 +257,7 @@ mod tests {
 
             assert_eq!(
                 total_distributed,
-                total_storage_pool_distribution + total_refunds
+                total_storage_pool_distribution - total_refunds
             );
         }
     }
