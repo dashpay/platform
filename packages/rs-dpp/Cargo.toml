@@ -15,7 +15,8 @@ lazy_static = { version ="1.4"}
 serde = { version="1.0", features=["derive"]}
 dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, branch="master" }
 serde_json = { version="1.0", features=["preserve_order"]}
-ciborium = { version="0.2"}
+ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
+# ciborium = { version="0.2"}
 byteorder = { version="1.4"}
 sha2  = { version="0.10"}
 jsonschema = { git="https://github.com/qrayven/jsonschema-rs", branch="feat-unknown-format-cutsom-keywords", default-features=false, features=["draft202012"] }

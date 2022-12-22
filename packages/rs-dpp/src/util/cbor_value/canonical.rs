@@ -211,7 +211,9 @@ impl CborCanonicalMap {
 
         let map = CborValue::Map(self.inner);
 
-        ciborium::ser::into_writer(&map, &mut bytes)?;
+        ciborium::ser::SerializerOptions::default()
+            .serialize_null_as_undefined(true)
+            .into_writer(&map, &mut bytes)?;
 
         Ok(bytes)
     }
@@ -366,6 +368,13 @@ fn recursively_sort_canonical_cbor_map(cbor_map: &mut [(CborValue, CborValue)]) 
     for (_, value) in cbor_map.iter_mut() {
         if let CborValue::Map(map) = value {
             recursively_sort_canonical_cbor_map(map)
+        }
+        if let CborValue::Array(array) = value {
+            for item in array.iter_mut() {
+                if let CborValue::Map(map) = item {
+                    recursively_sort_canonical_cbor_map(map)
+                }
+            }
         }
     }
 

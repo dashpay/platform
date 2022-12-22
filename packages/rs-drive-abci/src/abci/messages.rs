@@ -37,7 +37,7 @@ use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -153,7 +153,7 @@ impl<'a> Serializable<'a> for AfterFinalizeBlockRequest {}
 impl<'a> Serializable<'a> for AfterFinalizeBlockResponse {}
 
 /// A trait for serializing or deserializing ABCI messages
-pub trait Serializable<'a>: Serialize + Deserialize<'a> {
+pub trait Serializable<'a>: Serialize + DeserializeOwned {
     /// Serialize ABCI message
     fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let mut bytes = vec![];

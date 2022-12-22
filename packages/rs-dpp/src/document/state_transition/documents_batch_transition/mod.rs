@@ -53,10 +53,13 @@ pub struct DocumentsBatchTransition {
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip_serializing)]
     pub transitions: Vec<DocumentTransition>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature_public_key_id: Option<KeyID>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub signature: Vec<u8>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Vec<u8>>,
+
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
 }
@@ -69,7 +72,7 @@ impl std::default::Default for DocumentsBatchTransition {
             owner_id: Identifier::default(),
             transitions: vec![],
             signature_public_key_id: None,
-            signature: vec![],
+            signature: None,
             execution_context: Default::default(),
         }
     }
@@ -82,14 +85,19 @@ impl DocumentsBatchTransition {
     ) -> Result<Self, ProtocolError> {
         let mut json_value = json_value;
 
+        let maybe_signature = json_value.get_string(property_names::SIGNATURE).ok();
+        let signature = if let Some(signature) = maybe_signature {
+            Some(base64::decode(signature).context("signature exists but isn't valid base64")?)
+        } else {
+            None
+        };
+
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: json_value
                 .get_u64(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: base64::decode(json_value.get_string(property_names::SIGNATURE)?)
-                .context("decoding signature from base64 failed")
-                .unwrap_or_default(),
+            signature,
             signature_public_key_id: json_value
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
                 .ok(),
@@ -142,9 +150,7 @@ impl DocumentsBatchTransition {
                 .get_u64(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: raw_object
-                .get_bytes(property_names::SIGNATURE)
-                .unwrap_or_default(),
+            signature: raw_object.get_bytes(property_names::SIGNATURE).ok(),
             signature_public_key_id: raw_object
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
                 .ok(),
@@ -157,7 +163,7 @@ impl DocumentsBatchTransition {
         if let Ok(JsonValue::Array(raw_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
-                .map(|dc| (dc.id.to_buffer().to_vec(), dc))
+                .map(|dc| (dc.id.as_bytes().to_vec(), dc))
                 .collect();
 
             for raw_transition in raw_transitions {
@@ -263,10 +269,8 @@ impl StateTransitionConvert for DocumentsBatchTransition {
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Bytes)?;
 
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_object {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
+            for path in Self::signature_property_paths() {
+                let _ = json_object.remove(path);
             }
         }
         let mut transitions = vec![];
@@ -284,8 +288,10 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.to_le_bytes().to_vec();
         let value = self.to_object(skip_signature)?;
+
         let map = CborValue::serialized(&value)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
         let mut canonical_map: CborCanonicalMap = map.try_into()?;
         canonical_map.remove(property_names::PROTOCOL_VERSION);
 
@@ -307,11 +313,13 @@ impl StateTransitionConvert for DocumentsBatchTransition {
                 if transition.get_updated_at().is_none() {
                     cbor_transition.remove("$updatedAt");
                 }
-                // the entropy is only for the document transition
-                // should it be included?
 
                 cbor_transition.replace_paths(
-                    identifier_properties.into_iter().chain(binary_properties),
+                    identifier_properties
+                        .into_iter()
+                        .chain(binary_properties)
+                        .chain(document_base_transition::IDENTIFIER_FIELDS)
+                        .chain(document_create_transition::BINARY_FIELDS),
                     FieldType::ArrayInt,
                     FieldType::Bytes,
                 );
@@ -326,12 +334,16 @@ impl StateTransitionConvert for DocumentsBatchTransition {
             FieldType::Bytes,
         );
 
-        if self.signature.is_empty() {
-            canonical_map.remove(property_names::SIGNATURE);
+        if !skip_signature {
+            if self.signature.is_none() {
+                canonical_map.insert(property_names::SIGNATURE, CborValue::Null)
+            }
+            if self.signature_public_key_id.is_none() {
+                canonical_map.insert(property_names::SIGNATURE_PUBLIC_KEY_ID, CborValue::Null)
+            }
         }
-        if self.signature_public_key_id.is_none() {
-            canonical_map.remove(property_names::SIGNATURE_PUBLIC_KEY_ID);
-        }
+
+        canonical_map.sort_canonical();
 
         let mut buffer = canonical_map
             .to_bytes()
@@ -348,7 +360,8 @@ impl StateTransitionLike for DocumentsBatchTransition {
     }
 
     fn get_signature(&self) -> &Vec<u8> {
-        &self.signature
+        todo!()
+        // &self.signature
     }
 
     fn get_type(&self) -> StateTransitionType {
@@ -356,7 +369,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
     }
 
     fn set_signature(&mut self, signature: Vec<u8>) {
-        self.signature = signature;
+        self.signature = Some(signature);
     }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context
@@ -381,17 +394,26 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 
 #[cfg(test)]
 mod test {
+    use document_create_transition::DocumentCreateTransition;
+    // use pretty_assertions::*;
     use serde_json::json;
 
     use crate::{
         document::document_factory::DocumentFactory,
         mocks,
-        tests::fixtures::{
-            get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
+        tests::{
+            fixtures::{
+                get_data_contract_fixture, get_document_transitions_fixture,
+                get_document_validator_fixture, get_documents_fixture,
+            },
+            utils::generate_random_identifier_struct,
         },
     };
 
-    use super::{document_transition::Action, *};
+    use super::{
+        document_transition::{document_base_transition::DocumentBaseTransition, Action},
+        *,
+    };
 
     #[test]
     fn should_return_highest_sec_level_for_all_transitions() {
@@ -467,5 +489,50 @@ mod test {
             SecurityLevel::HIGH,
             batch_transition.get_security_level_requirement()
         );
+    }
+
+    #[test]
+    fn should_convert_to_batch_transition_to_the_buffer() {
+        let transition_id_base58 = "6o8UfoeE2s7dTkxxyPCixuxe8TM5DtCGHTMummUN6t5M";
+        let expected_bytes_hex ="01000000a5647479706501676f776e657249645820a858bdc49c968148cd12648ee048d34003e9da3fbf2cbc62c31bb4c717bf690d697369676e6174757265f76b7472616e736974696f6e7381a7632469645820561b9b2e90b7c0ca355f729777b45bc646a18f5426a9462f0333c766135a3120646e616d656543757469656524747970656c6e696365446f63756d656e746724616374696f6e006824656e74726f707958202cdbaeda81c14765ba48432ff5cc900a7cacd4538b817fc71f38907aaa7023746a246372656174656441741b000001853a3602876f2464617461436f6e74726163744964582049aea5df2124a51d5d8dcf466e238fbc77fd72601be69daeb6dba75e8d26b30c747369676e61747572655075626c69634b65794964f7" ;
+        let data_contract_id_base58 = "5xdDqypFMPfvF6UdWxefCGvRFyxgkPZCAK6TS4pvvw6T";
+        let owner_id_base58 = "CL9ydpdxP4kQniGx6z5JUL8K72gnwcemKT2aJmh7sdwJ";
+        let entropy_base64 = "LNuu2oHBR2W6SEMv9cyQCnys1FOLgX/HHziQeqpwI3Q=";
+
+        let transition_id =
+            Identifier::from_string(transition_id_base58, Encoding::Base58).unwrap();
+        let expected_bytes = hex::decode(expected_bytes_hex).unwrap();
+        let data_contract_id =
+            Identifier::from_string(data_contract_id_base58, Encoding::Base58).unwrap();
+        let owner_id = Identifier::from_string(owner_id_base58, Encoding::Base58).unwrap();
+        let entropy_bytes: [u8; 32] = base64::decode(entropy_base64).unwrap().try_into().unwrap();
+
+        let mut data_contract = get_data_contract_fixture(Some(owner_id.clone()));
+        data_contract.id = data_contract_id;
+
+        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let mut document = documents.first().unwrap().to_owned();
+        document.entropy = entropy_bytes;
+
+        let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
+        let mut transition = transitions.first().unwrap().to_owned();
+        if let DocumentTransition::Create(ref mut t) = transition {
+            t.created_at = Some(1671718896263);
+            t.base.id = transition_id;
+        }
+
+        let state_transition = DocumentsBatchTransition::from_raw_object(
+            json!({
+                "ownerId" : owner_id.as_bytes(),
+                "transitions" : [transition.to_object().unwrap()],
+            }),
+            vec![data_contract],
+        )
+        .expect("transition should be created");
+
+        let bytes = state_transition.to_buffer(false).unwrap();
+
+        pretty_assertions::assert_eq!(expected_bytes.len(), bytes.len());
+        pretty_assertions::assert_eq!(expected_bytes, bytes);
     }
 }

@@ -4,6 +4,7 @@ const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTran
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const DocumentFactoryJs = require('@dashevo/dpp/lib/document/DocumentFactory');
+const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 const serializer = require('@dashevo/dpp/lib/util/serializer');
 const hash = require('@dashevo/dpp/lib/util/hash');
 const { default: loadWasmDpp } = require('../../../../../dist');
@@ -53,6 +54,7 @@ describe('DocumentsBatchTransition', () => {
   let encodeMock;
   let dataContractJs;
   let dataContract;
+  let factoryJs;
 
   beforeEach(async () => {
     ({
@@ -79,7 +81,7 @@ describe('DocumentsBatchTransition', () => {
     const protocolVersionValidatorRs = new ProtocolVersionValidator();
     const documentValidatorRs = new DocumentValidator(protocolVersionValidatorRs);
     const factory = new DocumentFactory(1, documentValidatorRs, {});
-    const factoryJs = new DocumentFactoryJs(createDPPMock(), undefined, undefined);
+    factoryJs = new DocumentFactoryJs(createDPPMock(), undefined, undefined);
 
     stateTransitionJs = factoryJs.createStateTransition({
       create: documentsJs,
@@ -218,12 +220,31 @@ describe('DocumentsBatchTransition', () => {
     });
 
     it('should return the same bytes as JS version', () => {
-      const bufferJs = stateTransitionJs.toBuffer();
-      const buffer = stateTransition.toBuffer();
 
-      // expect(100).to.equal(buffer.length);
-      // expect(buffer.length).to.equal(bufferJs.length);
-      expect(bufferJs).to.deep.equal(buffer);
+      // we need to generate the data
+
+      const [documentJs] = documentsJs;
+      console.log(documentJs.toJSON());
+
+      const stateTransitionJs = factoryJs.createStateTransition({
+        create: [documentJs],
+      });
+
+      console.log(stateTransitionJs.toJSON());
+      console.log(stateTransitionJs.toBuffer().toString('hex'));
+
+
+      // then we
+
+
+
+      // const bufferJs = stateTransitionJs.toBuffer();
+      // const buffer = stateTransition.toBuffer();
+
+      // // expect(100).to.equal(buffer.length);
+      // // expect(buffer.length).to.equal(bufferJs.length);
+      // expect(bufferJs).to.deep.equal(buffer);
+
       // expect(bufferJs.length).to.equal(buffer.length);
 
 

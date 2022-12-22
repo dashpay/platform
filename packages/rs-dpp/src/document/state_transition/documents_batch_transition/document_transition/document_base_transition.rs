@@ -84,6 +84,7 @@ pub struct DocumentBaseTransition {
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
+
     #[serde(skip)]
     pub data_contract: DataContract,
 }
