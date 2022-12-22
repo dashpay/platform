@@ -12,11 +12,14 @@ describe('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;
   let newDocumentsSchema;
   let validateIndicesAreBackwardCompatible;
+  let DataContractUniqueIndicesChangedError;
+  let DataContractInvalidIndexDefinitionUpdateError;
 
   before(async () => {
     ({
       validateIndicesAreBackwardCompatible,
       DataContractUniqueIndicesChangedError,
+      DataContractInvalidIndexDefinitionUpdateError,
       // DataContractCreateTransition,
       // StateTransitionExecutionContext,
       // validateDataContractCreateTransitionState,
@@ -65,18 +68,18 @@ describe('validateIndicesAreBackwardCompatible', () => {
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[0].name);
   });
 
-  // it('should return invalid result if non-unique index update failed due to changed old properties', async () => {
-  //   newDocumentsSchema.indexedDocument.indices[2].properties[0].$id = 'asc';
+  it('should return invalid result if non-unique index update failed due to changed old properties', async () => {
+    newDocumentsSchema.indexedDocument.indices[2].properties[0].lastName = 'desc';
 
-  //   const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
-  //   expect(result.isValid()).to.be.false();
+    expect(result.isValid()).to.be.false();
 
-  //   const error = result.getErrors()[0];
+    const error = result.getErrors()[0];
 
-  //   expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
-  //   expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
-  // });
+    expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
+    expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
+  });
 
   // it('should return invalid result if non-unique index update failed due old properties used', async () => {
   //   newDocumentsSchema.indexedDocument.indices[2].properties.push({ firstName: 'asc' });
