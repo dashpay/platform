@@ -8,11 +8,15 @@ const {
 
 /**
  * @param {unserializeStateTransition} unserializeStateTransition
+ * @param {AsyncLocalStorage} unserializeStateTransition
+ * @param {Logger} logger
  *
  * @returns {checkTxHandler}
  */
 function checkTxHandlerFactory(
   unserializeStateTransition,
+  createContextLogger,
+  logger,
 ) {
   /**
    * CheckTx ABCI Handler
@@ -24,6 +28,10 @@ function checkTxHandlerFactory(
    * @returns {Promise<abci.ResponseCheckTx>}
    */
   async function checkTxHandler({ tx: stateTransitionByteArray }) {
+    createContextLogger(logger, {
+      abciMethod: 'checkTx',
+    });
+
     await unserializeStateTransition(stateTransitionByteArray);
 
     return new ResponseCheckTx();

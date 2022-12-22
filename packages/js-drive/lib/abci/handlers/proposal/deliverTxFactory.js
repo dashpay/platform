@@ -33,6 +33,7 @@ function deliverTxFactory(
   transactionalDpp,
   proposalBlockExecutionContext,
   executionTimer,
+  createContextLogger,
 ) {
   /**
    * @typedef deliverTx
@@ -65,11 +66,9 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    const txConsensusLogger = consensusLogger.child({
+    const txConsensusLogger = createContextLogger(consensusLogger, {
       txId: stHash,
     });
-
-    proposalBlockExecutionContext.setConsensusLogger(txConsensusLogger);
 
     txConsensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 

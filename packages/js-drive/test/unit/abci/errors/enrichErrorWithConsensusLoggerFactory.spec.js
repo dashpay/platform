@@ -1,4 +1,4 @@
-const enrichErrorWithConsensusLoggerFactory = require('../../../../lib/abci/errors/enrichErrorWithConsensusLoggerFactory');
+const enrichErrorWithConsensusLoggerFactory = require('../../../../lib/abci/errors/enrichErrorWithContextLoggerFactory');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 

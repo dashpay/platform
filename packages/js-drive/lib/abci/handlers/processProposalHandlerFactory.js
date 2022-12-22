@@ -21,6 +21,7 @@ function processProposalHandlerFactory(
   verifyChainLock,
   processProposal,
   proposalBlockExecutionContext,
+  createContextLogger,
 ) {
   /**
    * @typedef processProposalHandler
@@ -34,7 +35,7 @@ function processProposalHandlerFactory(
       round,
     } = request;
 
-    const consensusLogger = logger.child({
+    const contextLogger = createContextLogger(logger, {
       height: height.toString(),
       round,
       abciMethod: 'processProposal',
@@ -43,8 +44,8 @@ function processProposalHandlerFactory(
     const requestToLog = lodashCloneDeep(request);
     delete requestToLog.txs;
 
-    consensusLogger.debug('ProcessProposal ABCI method requested');
-    consensusLogger.trace({ abciRequest: requestToLog });
+    contextLogger.debug('ProcessProposal ABCI method requested');
+    contextLogger.trace({ abciRequest: requestToLog });
 
     // Skip process proposal if it was already prepared for this height and round
     const prepareProposalResult = proposalBlockExecutionContext.getPrepareProposalResult();
@@ -52,7 +53,7 @@ function processProposalHandlerFactory(
     if (prepareProposalResult
       && proposalBlockExecutionContext.getHeight().toNumber() === height.toNumber()
       && proposalBlockExecutionContext.getRound() === round) {
-      consensusLogger.debug('Skip processing proposal and return prepared result');
+      contextLogger.debug('Skip processing proposal and return prepared result');
 
       const {
         appHash,
@@ -74,7 +75,7 @@ function processProposalHandlerFactory(
       const chainLockIsValid = await verifyChainLock(coreChainLockUpdate);
 
       if (!chainLockIsValid) {
-        consensusLogger.warn({
+        contextLogger.warn({
           coreChainLockUpdate,
         }, `Block proposal #${height} round #${round} rejected due to invalid core chain locked height update`);
 
@@ -88,7 +89,7 @@ function processProposalHandlerFactory(
       }, `ChainLock is valid for height ${coreChainLockUpdate.coreBlockHeight}`);
     }
 
-    return processProposal(request, consensusLogger);
+    return processProposal(request, contextLogger);
   }
 
   return processProposalHandler;

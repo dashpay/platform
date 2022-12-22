@@ -26,6 +26,7 @@ function infoHandlerFactory(
   updateSimplifiedMasternodeList,
   logger,
   groveDBStore,
+  createContextLogger,
 ) {
   /**
    * Info ABCI handler
@@ -36,37 +37,32 @@ function infoHandlerFactory(
    * @return {Promise<ResponseInfo>}
    */
   async function infoHandler(request) {
-    let contextLogger = logger.child({
+    let contextLogger = createContextLogger(logger, {
       abciMethod: 'info',
     });
 
     contextLogger.debug('Info ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
-    // Initialize Block Execution Contexts
-
-    const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch();
-    if (persistedBlockExecutionContext) {
-      latestBlockExecutionContext.populate(persistedBlockExecutionContext);
-    }
-
     // Initialize current heights
 
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
 
-    if (!latestBlockExecutionContext.isEmpty()) {
+    // Initialize latest Block Execution Context
+    const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch();
+    if (!persistedBlockExecutionContext.isEmpty()) {
+      latestBlockExecutionContext.populate(persistedBlockExecutionContext);
+
       lastHeight = latestBlockExecutionContext.getHeight();
       lastCoreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
-    }
 
-    contextLogger = contextLogger.child({
-      height: lastHeight.toString(),
-    });
+      contextLogger = createContextLogger(contextLogger, {
+        height: lastHeight.toString(),
+      });
 
-    // Update SML store to latest saved core chain lock to make sure
-    // that verify chain lock handler has updated SML Store to verify signatures
-    if (!latestBlockExecutionContext.isEmpty()) {
+      // Update SML store to latest saved core chain lock to make sure
+      // that verify chain lock handler has updated SML Store to verify signatures
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });
