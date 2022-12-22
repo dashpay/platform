@@ -9,6 +9,10 @@ use crate::drive::identity::{
     IDENTITY_KEY,
 };
 
+use crate::drive::identity::key::fetch::KeyKindRequestType::CurrentKeyOfKindRequest;
+use crate::drive::identity::key::fetch::KeyRequestType::{
+    AllKeysRequest, SearchKeyRequest, SpecificKeysRequest,
+};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -26,8 +30,6 @@ use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
-use crate::drive::identity::key::fetch::KeyKindRequestType::CurrentKeyOfKindRequest;
-use crate::drive::identity::key::fetch::KeyRequestType::{AllKeysRequest, SearchKeyRequest, SpecificKeysRequest};
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -228,11 +230,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_all_identity_keys_operations(
-            identity_id,
-            transaction,
-            &mut drive_operations,
-        )
+        self.fetch_all_identity_keys_operations(identity_id, transaction, &mut drive_operations)
     }
 
     /// Operations for fetching all the keys of every kind for a specific Identity
@@ -253,11 +251,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_identity_keys_operations(
-            key_request,
-            transaction,
-            &mut drive_operations,
-        )
+        self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations)
     }
 
     /// Operations for fetching keys matching the request for a specific Identity
@@ -278,5 +272,151 @@ impl Drive {
                 Ok((key.id, key))
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::common::helpers::setup::setup_drive;
+    use crate::drive::block_info::BlockInfo;
+    use dpp::identity::Identity;
+
+    use tempfile::TempDir;
+
+    use crate::drive::identity::key::fetch::IdentityKeysRequest;
+    use crate::drive::identity::key::fetch::KeyRequestType::SpecificKeysRequest;
+    use crate::drive::Drive;
+
+    #[test]
+    fn test_fetch_all_keys_on_identity() {
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction))
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+            )
+            .expect("expected to insert identity");
+
+        let public_keys = drive
+            .fetch_all_identity_keys(identity.id.to_buffer(), Some(&transaction))
+            .expect("expected to fetch keys");
+
+        assert_eq!(public_keys.len(), 5);
+    }
+
+    #[test]
+    fn test_fetch_single_identity_key() {
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction))
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+            )
+            .expect("expected to insert identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id: identity.id.to_buffer(),
+            key_request: SpecificKeysRequest(vec![0]),
+            limit: None,
+            offset: None,
+        };
+
+        let public_keys = drive
+            .fetch_identity_keys(key_request, Some(&transaction))
+            .expect("expected to fetch keys");
+
+        assert_eq!(public_keys.len(), 1);
+    }
+
+    #[test]
+    fn test_fetch_multiple_identity_key() {
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction))
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+            )
+            .expect("expected to insert identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id: identity.id.to_buffer(),
+            key_request: SpecificKeysRequest(vec![0, 4]),
+            limit: None,
+            offset: None,
+        };
+
+        let public_keys = drive
+            .fetch_identity_keys(key_request, Some(&transaction))
+            .expect("expected to fetch keys");
+
+        assert_eq!(public_keys.len(), 2);
+    }
+
+    #[test]
+    fn test_fetch_unknown_identity_key_returns_not_found() {
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction))
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+            )
+            .expect("expected to insert identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id: identity.id.to_buffer(),
+            key_request: SpecificKeysRequest(vec![0, 4]),
+            limit: None,
+            offset: None,
+        };
+
+        let public_keys = drive
+            .fetch_identity_keys(key_request, Some(&transaction))
+            .expect("expected to fetch keys");
+
+        assert_eq!(public_keys.len(), 2);
     }
 }

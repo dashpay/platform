@@ -1,4 +1,3 @@
-
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -204,7 +203,7 @@ impl Drive {
     }
 
     /// Insert a new key into an identity operations
-    pub fn insert_new_key_operations(
+    pub(crate) fn insert_new_key_operations(
         &self,
         identity_id: &[u8],
         identity_key: IdentityPublicKey,

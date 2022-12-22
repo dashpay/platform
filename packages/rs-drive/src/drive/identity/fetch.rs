@@ -9,6 +9,7 @@ use crate::drive::identity::{
     IDENTITY_KEY,
 };
 
+use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -26,7 +27,6 @@ use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store
@@ -207,7 +207,8 @@ impl Drive {
     ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
         let id = Identifier::new(identity_key_request.identity_id);
-        let balance = self.fetch_identity_balance(identity_key_request.identity_id, true, transaction)?;
+        let balance =
+            self.fetch_identity_balance(identity_key_request.identity_id, true, transaction)?;
         if balance.is_none() {
             return Ok(None);
         }
@@ -219,7 +220,7 @@ impl Drive {
             id,
             public_keys,
             balance,
-            revision:u64::MAX,
+            revision: u64::MAX,
             asset_lock_proof: None,
             metadata: None,
         }))
