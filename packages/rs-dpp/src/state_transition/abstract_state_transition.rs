@@ -199,6 +199,7 @@ pub trait StateTransitionConvert: Serialize {
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut json_value = self.to_object(skip_signature)?;
         let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
+
         serializer::value_to_cbor(json_value, Some(protocol_version))
     }
 

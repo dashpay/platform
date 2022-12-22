@@ -46,7 +46,7 @@ pub(super) fn convert_to(
 
     let converted = match to {
         FieldType::ArrayInt => {
-            unimplemented!()
+            unimplemented!("this use case has no use for dpp so far")
         }
         FieldType::Bytes => CborValue::Bytes(data_bytes),
 

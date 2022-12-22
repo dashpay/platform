@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 
 use anyhow::{anyhow, Context};
+use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -9,6 +10,7 @@ use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
 use crate::version::LATEST_VERSION;
@@ -19,6 +21,10 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
+};
+
+use self::document_transition::{
+    document_base_transition, document_create_transition, DocumentTransitionExt,
 };
 
 pub mod apply_documents_batch_transition_factory;
@@ -273,6 +279,66 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         )?;
 
         Ok(json_object)
+    }
+
+    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        let mut result_buf = self.protocol_version.to_le_bytes().to_vec();
+        let value = self.to_object(skip_signature)?;
+        let map = CborValue::serialized(&value)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        let mut canonical_map: CborCanonicalMap = map.try_into()?;
+        canonical_map.remove(property_names::PROTOCOL_VERSION);
+
+        // now --> go over every and try to update the paths
+        if let Some(CborValue::Array(ref mut transitions)) =
+            canonical_map.get_mut(&CborValue::Text(property_names::TRANSITIONS.to_string()))
+        {
+            for (i, cbor_transition) in transitions.iter_mut().enumerate() {
+                let transition = self
+                    .transitions
+                    .get(i)
+                    .context(format!("transition with index {} doesn't exist", i))?;
+
+                let (identifier_properties, binary_properties) = transition
+                    .base()
+                    .data_contract
+                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type);
+
+                if transition.get_updated_at().is_none() {
+                    cbor_transition.remove("$updatedAt");
+                }
+                // the entropy is only for the document transition
+                // should it be included?
+
+                cbor_transition.replace_paths(
+                    identifier_properties.into_iter().chain(binary_properties),
+                    FieldType::ArrayInt,
+                    FieldType::Bytes,
+                );
+            }
+        }
+
+        canonical_map.replace_paths(
+            Self::binary_property_paths()
+                .into_iter()
+                .chain(Self::identifiers_property_paths()),
+            FieldType::ArrayInt,
+            FieldType::Bytes,
+        );
+
+        if self.signature.is_empty() {
+            canonical_map.remove(property_names::SIGNATURE);
+        }
+        if self.signature_public_key_id.is_none() {
+            canonical_map.remove(property_names::SIGNATURE_PUBLIC_KEY_ID);
+        }
+
+        let mut buffer = canonical_map
+            .to_bytes()
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        result_buf.append(&mut buffer);
+
+        Ok(result_buf)
     }
 }
 

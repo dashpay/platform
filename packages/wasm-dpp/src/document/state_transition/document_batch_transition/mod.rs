@@ -181,12 +181,22 @@ impl DocumentsBatchTransitionWASM {
                 lodash_set(&js_value, path, buffer.into());
             }
         }
-
         for path in DocumentsBatchTransition::identifiers_property_paths() {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
                 let id = IdentifierWrapper::new(bytes)?;
                 lodash_set(&js_value, path, id.into());
             }
+        }
+
+        if value.get("signature").is_none() && !skip_signature {
+            js_sys::Reflect::set(&js_value, &"signature".into(), &JsValue::undefined())?;
+        }
+        if value.get("signaturePublicKeyId").is_none() {
+            js_sys::Reflect::set(
+                &js_value,
+                &"signaturePublicKeyId".into(),
+                &JsValue::undefined(),
+            )?;
         }
 
         Ok(js_value)
@@ -307,6 +317,19 @@ impl DocumentsBatchTransitionWASM {
     #[wasm_bindgen(js_name=getExecutionContext)]
     pub fn get_execution_context(&mut self) -> StateExecutionContext {
         StateExecutionContext(self.0.get_execution_context().to_owned())
+    }
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self, options: &JsValue) -> Result<Buffer, JsValue> {
+        let skip_signature = if options.is_object() {
+            let options = options.with_serde_to_json_value()?;
+            options.get_bool("skipSignature").unwrap_or_default()
+        } else {
+            false
+        };
+        let bytes = self.0.to_buffer(skip_signature).with_js_error()?;
+
+        Ok(Buffer::from_bytes(&bytes))
     }
 }
 
