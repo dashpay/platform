@@ -53,34 +53,27 @@ masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
-llmqchainlocks=llmq_devnet
-llmqinstantsend=llmq_devnet
-llmqinstantsenddip0024=llmq_devnet_dip0024
-
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
 
-{{~it.core.p2p.seeds :seed}}
-addnode={{=seed.host}}:{{=seed.port}}{{~}}
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnetName}}
 [devnet]
+{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
+{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
+
+# devnet-specific
+{{? it.core.powTargetSpacing}}powtargetspacing={{=it.core.powTargetSpacing}}{{?}}
+minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
+highsubsidyblocks=500
+highsubsidyfactor=10{{?}}
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
 llmqinstantsenddip0024=llmq_devnet_dip0024
 
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
-
-{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
-{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
-
-minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
-highsubsidyblocks=500
-highsubsidyfactor=10{{?}}
-
-{{? it.core.powTargetSpacing}}powtargetspacing={{=it.core.powTargetSpacing}}{{?}}
 
 # network
 port={{=it.core.p2p.port}}
