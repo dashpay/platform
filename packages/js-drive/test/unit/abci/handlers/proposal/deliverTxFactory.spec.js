@@ -55,8 +55,8 @@ describe('deliverTxFactory', () => {
     stateTransitionExecutionContextMock.setLastCalculatedFeeDetails({
       storageFee: 100,
       processingFee: 10,
-      feeRefunds: [{ identifier: Buffer.alloc(32), creditsPerEpoch: { 1: -15 } }],
-      feeRefundsSum: -15,
+      feeRefunds: [{ identifier: Buffer.alloc(32), creditsPerEpoch: { 1: 15 } }],
+      feeRefundsSum: 15,
       total: 95,
     });
 
@@ -124,9 +124,9 @@ describe('deliverTxFactory', () => {
         processingFee: 10,
         storageFee: 100,
         feeRefunds: {
-          1: -15,
+          1: 15,
         },
-        feeRefundsSum: -15,
+        feeRefundsSum: 15,
       },
     });
 
@@ -161,9 +161,9 @@ describe('deliverTxFactory', () => {
         processingFee: 10,
         storageFee: 100,
         feeRefunds: {
-          1: -15,
+          1: 15,
         },
-        feeRefundsSum: -15,
+        feeRefundsSum: 15,
       },
     });
 

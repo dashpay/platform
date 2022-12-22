@@ -88,8 +88,8 @@ describe('calculateStateTransitionFeeFactory', () => {
   it('should calculate fee based on executed operations', async () => {
     const storageFee = 10000;
     const processingFee = 1000;
-    const feeRefundsSum = -450 - 995 - 400 - 400;
-    const total = storageFee + processingFee + feeRefundsSum;
+    const feeRefundsSum = 450 + 995 + 400 + 400;
+    const total = storageFee + processingFee - feeRefundsSum;
 
     const calculatedOperationsFeesResult = {
       storageFee,
@@ -98,8 +98,8 @@ describe('calculateStateTransitionFeeFactory', () => {
         {
           identifier: stateTransition.getOwnerId().toBuffer(),
           creditsPerEpoch: {
-            0: -1000,
-            1: -500,
+            0: 1000,
+            1: 500,
           },
         },
       ],
@@ -108,20 +108,20 @@ describe('calculateStateTransitionFeeFactory', () => {
     calculateOperationFeesMock.returns(calculatedOperationsFeesResult);
 
     stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers
-      .onCall(0).resolves([-995, 400]);
+      .onCall(0).resolves([995, 400]);
 
     stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers
-      .onCall(1).resolves([-450, 400]);
+      .onCall(1).resolves([450, 400]);
 
     const result = await calculateStateTransitionFee(stateTransition);
 
     expect(result).to.equal(total);
 
     expect(stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers)
-      .to.have.been.calledWithExactly(-1000, 0);
+      .to.have.been.calledWithExactly(1000, 0);
 
     expect(stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers)
-      .to.have.been.calledWithExactly(-500, 1);
+      .to.have.been.calledWithExactly(500, 1);
 
     const lastCalculatedFeeDetails = stateTransition.getExecutionContext()
       .getLastCalculatedFeeDetails();

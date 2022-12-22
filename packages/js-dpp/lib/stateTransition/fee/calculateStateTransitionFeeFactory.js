@@ -41,12 +41,11 @@ function calculateStateTransitionFeeFactory(stateRepository, calculateOperationF
           const [amount, leftovers] = await stateRepository
             .calculateStorageFeeDistributionAmountAndLeftovers(credits, Number(epochIndex));
 
-          return (await sum) + amount - leftovers;
+          return (await sum) + amount + leftovers;
         }, 0);
     }
 
-    // Fee refunds are negative
-    const total = (storageFee + processingFee + feeRefundsSum) + DEFAULT_USER_TIP;
+    const total = (storageFee + processingFee - feeRefundsSum) + DEFAULT_USER_TIP;
 
     executionContext.setLastCalculatedFeeDetails({
       ...calculatedFees,

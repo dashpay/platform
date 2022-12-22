@@ -105,11 +105,11 @@ describe('Fee Pools', () => {
       const blockEndRequest = {
         fees: {
           processingFee: 1000,
-          storageFee: 10000 + 15,
+          storageFee: 10000 - 15,
           feeRefunds: {
-            1: -15,
+            1: 15,
           },
-          feeRefundsSum: -15,
+          feeRefundsSum: 15,
         },
       };
 
