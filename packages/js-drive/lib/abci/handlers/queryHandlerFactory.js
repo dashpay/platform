@@ -5,6 +5,8 @@ const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
 /**
  * @param {Object} queryHandlerRouter
  * @param {Function} sanitizeUrl
+ * @param {BaseLogger} logger
+ * @param {createContextLogger} createContextLogger
  * @return {queryHandler}
  */
 function queryHandlerFactory(queryHandlerRouter, sanitizeUrl, logger, createContextLogger) {

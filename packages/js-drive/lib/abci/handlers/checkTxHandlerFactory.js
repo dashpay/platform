@@ -9,6 +9,7 @@ const {
 /**
  * @param {unserializeStateTransition} unserializeStateTransition
  * @param {AsyncLocalStorage} unserializeStateTransition
+ * @param {createContextLogger} createContextLogger
  * @param {Logger} logger
  *
  * @returns {checkTxHandler}

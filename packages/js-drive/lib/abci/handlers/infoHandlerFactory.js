@@ -17,6 +17,7 @@ const { version: driveVersion } = require('../../../package.json');
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
  * @param {GroveDBStore} groveDBStore
+ * @param {createContextLogger} createContextLogger
  * @return {infoHandler}
  */
 function infoHandlerFactory(

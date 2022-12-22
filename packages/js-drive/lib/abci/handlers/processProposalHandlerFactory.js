@@ -14,6 +14,7 @@ const statuses = require('./proposal/statuses');
  * @param {verifyChainLock} verifyChainLock
  * @param {processProposal} processProposal
  * @param {BlockExecutionContext} proposalBlockExecutionContext
+ * @param {createContextLogger} createContextLogger
  * @return {processProposalHandler}
  */
 function processProposalHandlerFactory(

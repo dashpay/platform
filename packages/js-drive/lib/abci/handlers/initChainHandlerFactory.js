@@ -22,6 +22,7 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {GroveDBStore} groveDBStore
  * @param {RSAbci} rsAbci
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
+ * @param {createContextLogger} createContextLogger
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(

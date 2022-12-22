@@ -24,6 +24,7 @@ const txAction = {
  * @param {endBlock} endBlock
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @param {ExecutionTimer} executionTimer
+ * @param {createContextLogger} createContextLogger
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(

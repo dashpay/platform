@@ -25,6 +25,7 @@ const TIMERS = require('../timers');
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
+ * @param {createContextLogger} createContextLogger
  *
  * @return {deliverTx}
  */
