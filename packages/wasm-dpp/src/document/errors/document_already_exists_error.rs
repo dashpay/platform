@@ -1,4 +1,4 @@
-use crate::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
+use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
 use dpp::prelude::DocumentTransition;
 use thiserror::Error;
 

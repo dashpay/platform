@@ -31,7 +31,7 @@ function scheduleRenewZeroSslCertificateFactory(
     }
 
     let expiresAt = new Date(certificate.expires);
-    expiresAt.setDay(expiresAt.getDay() - 7);
+    expiresAt.setDate(expiresAt.getDate() - 7);
 
     if (expiresAt.getTime() < Date.now()) {
       expiresAt = new Date(Date.now() + 3000);

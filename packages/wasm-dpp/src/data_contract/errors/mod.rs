@@ -17,7 +17,12 @@ pub fn from_data_contract_to_js_error(e: DataContractError) -> JsValue {
         } => {
             let js_errors = errors.into_iter().map(from_consensus_error).collect();
 
-            InvalidDataContractError::new(js_errors, raw_data_contract.into()).into()
+            InvalidDataContractError::new(
+                js_errors,
+                serde_wasm_bindgen::to_value(&raw_data_contract)
+                    .expect("statically known structure should be a valid JSON"),
+            )
+            .into()
         }
         DataContractError::InvalidDocumentTypeError {
             doc_type,

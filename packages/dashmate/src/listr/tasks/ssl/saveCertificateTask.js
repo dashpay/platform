@@ -4,11 +4,11 @@ const fs = require('fs');
 const { HOME_DIR_PATH } = require('../../../constants');
 
 /**
- *
+ * @typedef {saveCertificateTask}
  * @param {Config} config
- * @return {Promise<Listr>}
+ * @return {Listr}
  */
-async function saveCertificateTask(config) {
+function saveCertificateTask(config) {
   return new Listr([
     {
       title: 'Save certificates',
