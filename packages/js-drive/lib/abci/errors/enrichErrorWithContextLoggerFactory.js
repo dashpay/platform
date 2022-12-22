@@ -22,14 +22,12 @@ function enrichErrorWithContextLoggerFactory() {
     async function methodHandler(...args) {
       const asyncLocalStorage = new AsyncLocalStorage();
 
-      return asyncLocalStorage.run(new Map(), () => {
-        return method(...args).catch((error) => {
-          // eslint-disable-next-line no-param-reassign
-          error.contextLogger = asyncLocalStorage.getStore().get('logger');
+      return asyncLocalStorage.run(new Map(), () => method(...args).catch((error) => {
+        // eslint-disable-next-line no-param-reassign
+        error.contextLogger = asyncLocalStorage.getStore().get('logger');
 
-          return Promise.reject(error);
-        });
-      });
+        return Promise.reject(error);
+      }));
     }
 
     return methodHandler;
