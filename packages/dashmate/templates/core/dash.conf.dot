@@ -22,9 +22,8 @@ rpcworkqueue=64
 rpcthreads=16
 
 # external network
-listen={{=it.core.listen}}
+listen=1
 dnsseed=0
-allowprivatenet={{=it.core.allowPrivateNet}}
 externalip={{=it.externalIp}}
 {{? it.network === 'local'}}
 whitelist={{=it.externalIp}}
@@ -38,12 +37,12 @@ spentindex=1
 {{?}}
 
 # ZeroMQ notifications
-zmqpubrawtx=tcp://0.0.0.0:{{=it.core.zmq.port}}
-zmqpubrawtxlock=tcp://0.0.0.0:{{=it.core.zmq.port}}
-zmqpubhashblock=tcp://0.0.0.0:{{=it.core.zmq.port}}
-zmqpubrawchainlocksig=tcp://0.0.0.0:{{=it.core.zmq.port}}
-zmqpubrawchainlock=tcp://0.0.0.0:{{=it.core.zmq.port}}
-zmqpubrawtxlocksig=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawtx=tcp://0.0.0.0:29998
+zmqpubrawtxlock=tcp://0.0.0.0:29998
+zmqpubhashblock=tcp://0.0.0.0:29998
+zmqpubrawchainlocksig=tcp://0.0.0.0:29998
+zmqpubrawchainlock=tcp://0.0.0.0:29998
+zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 
 {{? it.core.masternode.enable === true}}
 masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
@@ -80,7 +79,7 @@ highsubsidyfactor=10{{?}}
 
 # network
 port={{=it.core.p2p.port}}
-{{? it.core.listen}}bind=0.0.0.0{{?}}
+bind=0.0.0.0
 rpcbind=0.0.0.0
 rpcport={{=it.core.rpc.port}}
 

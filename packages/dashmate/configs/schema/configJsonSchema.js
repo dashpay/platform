@@ -241,18 +241,12 @@ module.exports = {
           minLength: 1,
         },
         debug: {
-          type: 'object',
-          properties: {
-            enable: {
-              type: 'boolean',
-            },
-            logIps: {
-              type: 'boolean',
-            },
-            additionalProperties: false,
-          },
-          required: ['enable', 'logIps'],
-          additionalProperties: false,
+          type: 'integer',
+          enum: [0, 1],
+        },
+        logIps: {
+          type: 'integer',
+          enum: [0, 1],
         },
         listen: {
           type: 'integer',
@@ -260,10 +254,6 @@ module.exports = {
         },
         indexes: {
           type: 'boolean',
-        },
-        allowPrivateNet: {
-          type: 'integer',
-          enum: [0, 1],
         },
         reindex: {
           type: 'object',
@@ -281,7 +271,7 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex', 'minimumDifficultyBlocks'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'logips', 'reindex', 'minimumDifficultyBlocks'],
       additionalProperties: false,
     },
     platform: {

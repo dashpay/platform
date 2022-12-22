@@ -398,16 +398,11 @@ module.exports = {
 
     return configFile;
   },
-  '0.23.1-alpha-1': (configFile) => {
+  '0.24.0-dev.11': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        const enable = config.core.debug;
-
-        config.core.debug = { enable: Boolean(enable), logIps: false };
-        config.core.listen = 1;
-        config.core.allowPrivateNet = 0;
+        config.core.logIps = 0;
         config.core.indexes = config.name === 'mainnet' ? 0 : 1;
-        config.core.zmq = { port: 29998 };
         config.core.minimumDifficultyBlocks = 1000;
         config.core.powTargetSpacing = null;
       });
