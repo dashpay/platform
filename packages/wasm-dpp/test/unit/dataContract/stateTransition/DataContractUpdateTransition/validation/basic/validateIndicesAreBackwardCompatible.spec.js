@@ -1,9 +1,3 @@
-// const validateIndicesAreBackwardCompatible = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
-// const DataContractHaveNewIndexWithOldPropertiesError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
-// const DataContractHaveNewUniqueIndexError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
-// const DataContractIndicesChangedError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
-// const DataContractInvalidIndexDefinitionUpdateError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
@@ -14,18 +8,15 @@ describe('validateIndicesAreBackwardCompatible', () => {
   let validateIndicesAreBackwardCompatible;
   let DataContractUniqueIndicesChangedError;
   let DataContractInvalidIndexDefinitionUpdateError;
+  let DataContractHaveNewIndexWithOldPropertiesError;
+  let DataContractHaveNewUniqueIndexError;
 
   before(async () => {
     ({
       validateIndicesAreBackwardCompatible,
       DataContractUniqueIndicesChangedError,
       DataContractInvalidIndexDefinitionUpdateError,
-      // DataContractCreateTransition,
-      // StateTransitionExecutionContext,
-      // validateDataContractCreateTransitionState,
-      // ValidationResult,
-      // DataContractFactory,
-      // DataContractValidator,
+      DataContractHaveNewUniqueIndexError,
     } = await loadWasmDpp());
   });
 
@@ -113,28 +104,28 @@ describe('validateIndicesAreBackwardCompatible', () => {
   //   expect(error.getIndexName()).to.equal('index_other');
   // });
 
-  // it('should return invalid result if one of new indices is unique', async () => {
-  //   newDocumentsSchema.indexedDocument.indices.push({
-  //     name: 'index_other',
-  //     properties: [
-  //       { otherName: 'asc' },
-  //     ],
-  //     unique: true,
-  //   });
+  it('should return invalid result if one of new indices is unique', async () => {
+    newDocumentsSchema.indexedDocument.indices.push({
+      name: 'index_other',
+      properties: [
+        { otherName: 'asc' },
+      ],
+      unique: true,
+    });
 
-  //   const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
-  //   expect(result.isValid()).to.be.false();
+    expect(result.isValid()).to.be.false();
 
-  //   const error = result.getErrors()[0];
+    const error = result.getErrors()[0];
 
-  //   expect(error).to.be.an.instanceOf(DataContractHaveNewUniqueIndexError);
-  //   expect(error.getIndexName()).to.equal('index_other');
-  // });
+    expect(error).to.be.an.instanceOf(DataContractHaveNewUniqueIndexError);
+    expect(error.getIndexName()).to.equal('index_other');
+  });
 
-  // it('should return valid result if indices are not changed', async () => {
-  //   const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
+  it('should return valid result if indices are not changed', async () => {
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
-  //   expect(result.isValid()).to.be.true();
-  // });
+    expect(result.isValid()).to.be.true();
+  });
 });
