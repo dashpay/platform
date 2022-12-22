@@ -25,23 +25,26 @@ enum-map = "2.0.3"
 thiserror = "1.0.30"
 moka = "0.8.1"
 intmap = { version="2.0.0", features=["serde"] }
+nohash-hasher = "0.2.0"
 chrono = "0.4.20"
 bincode = "1.3.3"
 dpp = { path = "../rs-dpp" }
 itertools = { version = "0.10.5" }
 dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
+rust_decimal = "1.2.5"
+rust_decimal_macros = "1.25.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+rev = "1e92ea9875b4952e30142ac9353f4a12470eb9a3"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+rev = "1e92ea9875b4952e30142ac9353f4a12470eb9a3"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "6864631af1042e2f61ea9533ec72d95204df41f0"
+rev = "1e92ea9875b4952e30142ac9353f4a12470eb9a3"
 
 [dev-dependencies]
 criterion = "0.3.5"

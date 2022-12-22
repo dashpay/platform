@@ -36,8 +36,6 @@ use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 use grovedb::TransactionArg;
 
-/// Constants module
-pub mod constants;
 pub mod credit_distribution_pools;
 pub mod proposers;
 pub mod start_block;
@@ -59,13 +57,14 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod is_epoch_tree_exists {
-        use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-        use crate::drive::fee_pools::epochs::constants::{
-            GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
-        };
-        use crate::fee_pools::epochs::Epoch;
+        use super::*;
+
+        use crate::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 
         #[test]
         fn test_return_true_if_tree_exists() {

@@ -33,6 +33,7 @@
 //!
 
 use crate::drive::RootTree;
+use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee_pools::epochs::epoch_key_constants;
@@ -84,8 +85,8 @@ pub fn encode_epoch_index_key(index: u16) -> Result<[u8; 2], Error> {
 /// Decodes an epoch index key
 pub fn decode_epoch_index_key(epoch_key: &[u8]) -> Result<u16, Error> {
     let index_with_offset = u16::from_be_bytes(epoch_key.try_into().map_err(|_| {
-        Error::Fee(FeeError::CorruptedProposerBlockCountItemLength(
-            "item have an invalid length",
+        Error::Drive(DriveError::CorruptedSerialization(
+            "epoch index must be u16",
         ))
     })?);
 
