@@ -66,10 +66,10 @@ devnet={{=it.core.devnetName}}
 powtargetspacing={{=it.core.powTargetSpacing}}
 minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
 highsubsidyblocks=500
-highsubsidyfactor=10{{?}}
+highsubsidyfactor=10
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
-llmqinstantsenddip0024=llmq_devnet_dip0024
+llmqinstantsenddip0024=llmq_devnet_dip0024{{?}}
 
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
