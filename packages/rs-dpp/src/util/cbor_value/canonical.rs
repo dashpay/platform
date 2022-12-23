@@ -67,36 +67,6 @@ impl CborCanonicalMap {
         }
     }
 
-    // fn get_cbor_path_mut(&mut self, path: &[CborValue]) -> Option<&mut CborValue> {
-    //     if path.is_empty() {
-    //         return None;
-    //     }
-    //     if path.len() == 1 {
-    //         return self.get_mut(&path[0]);
-    //     }
-
-    //     let mut current_level: &mut CborValue = self.get_mut(&path[0])?;
-    //     for step in path.iter().skip(1) {
-    //         match current_level {
-    //             CborValue::Map(ref mut cbor_map) => {
-    //                 current_level = get_from_cbor_map(cbor_map, step)?
-    //             }
-    //             CborValue::Array(ref mut cbor_array) => {
-    //                 if let Some(idx) = step.as_integer() {
-    //                     let id: usize = idx.try_into().ok()?;
-    //                     current_level = cbor_array.get_mut(id)?
-    //                 } else {
-    //                     return None;
-    //                 }
-    //             }
-    //             _ => {
-    //                 // do nothing if it's not a container type
-    //             }
-    //         }
-    //     }
-    //     Some(current_level)
-    // }
-
     pub fn replace_paths<I, C>(&mut self, paths: I, from: FieldType, to: FieldType)
     where
         I: IntoIterator<Item = C>,
@@ -165,32 +135,6 @@ impl CborCanonicalMap {
             None
         }
     }
-
-    // pub fn replace_values<'a>(
-    //     &mut self,
-    //     paths: impl IntoIterator<Item = &'a str>,
-    //     with: ReplaceWith,
-    // ) -> Result<(), anyhow::Error> {
-    //     for raw_path in paths {
-    //         let mut to_replace = get_value_mut(raw_path, self);
-    //         match to_replace {
-    //             Some(ref mut v) => {
-    //                 replace_identifier(v, with).map_err(|err| {
-    //                     anyhow!(
-    //                         "unable replace the {:?} with {:?}: '{}'",
-    //                         raw_path,
-    //                         with,
-    //                         err
-    //                     )
-    //                 })?;
-    //             }
-    //             None => {
-    //                 trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
 
     /// From the CBOR RFC on how to sort the keys:
     /// *  If two keys have different lengths, the shorter one sorts

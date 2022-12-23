@@ -331,6 +331,19 @@ impl DocumentsBatchTransitionWASM {
 
         Ok(Buffer::from_bytes(&bytes))
     }
+
+    #[wasm_bindgen(js_name=hash)]
+    pub fn hash(&self, options: JsValue) -> Result<Buffer, JsValue> {
+        let skip_signature = if options.is_object() {
+            let options = options.with_serde_to_json_value()?;
+            options.get_bool("skipSignature").unwrap_or_default()
+        } else {
+            false
+        };
+        let bytes = self.0.hash(skip_signature).with_js_error()?;
+
+        Ok(Buffer::from_bytes(&bytes))
+    }
 }
 
 #[wasm_bindgen(js_name=StateExecutionContext)]

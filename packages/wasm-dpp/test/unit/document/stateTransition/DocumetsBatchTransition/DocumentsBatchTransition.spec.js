@@ -4,9 +4,7 @@ const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTran
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const DocumentFactoryJs = require('@dashevo/dpp/lib/document/DocumentFactory');
-const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
-const serializer = require('@dashevo/dpp/lib/util/serializer');
-const hash = require('@dashevo/dpp/lib/util/hash');
+const lodash = require('lodash');
 const { default: loadWasmDpp } = require('../../../../../dist');
 
 let Identifier;
@@ -75,9 +73,6 @@ describe('DocumentsBatchTransition', () => {
 
     });
 
-    // encodeMock = this.sinonSandbox.stub(serializer, 'encode');
-    // hashMock = this.sinonSandbox.stub(hash, 'hash');
-
     const protocolVersionValidatorRs = new ProtocolVersionValidator();
     const documentValidatorRs = new DocumentValidator(protocolVersionValidatorRs);
     const factory = new DocumentFactory(1, documentValidatorRs, {});
@@ -92,10 +87,6 @@ describe('DocumentsBatchTransition', () => {
     }));
   });
 
-  // afterEach(() => {
-  //   encodeMock.restore();
-  //   hashMock.restore();
-  // };
 
   describe('#getProtocolVersion', () => {
     it('should return the current protocol version', () => {
@@ -183,101 +174,38 @@ describe('DocumentsBatchTransition', () => {
     });
 
     it('should return State Transition as plain object -  Rust', () => {
-      // TODO
-      // console.log(stateTransition.toObject());
-      // console.log(stateTransitionJs.toObject());
+      const rawObject = stateTransition.toObject();
+      const rawObjectJs = stateTransitionJs.toObject();
+      const rawObjectWithBuffers = lodash.cloneDeepWith(rawObject, (value) => {
+        if (value instanceof Identifier) {
+          return value.toBuffer();
+        }
+      });
 
-      // expect(stateTransition.toObject()).to.deep.equal({
-      //   protocolVersion: protocolVersion.latestVersion,
-      //   type: stateTransitionTypes.DOCUMENTS_BATCH,
-      //   ownerId: documentsJs[0].getOwnerId(),
-      //   transitions: stateTransitionJs.getTransitions().map((d) => d.toObject()),
-      //   signaturePublicKeyId: undefined,
-      //   signature: undefined,
-      // });
+      expect(rawObjectWithBuffers).to.deep.equal(rawObjectJs);
     });
   });
 
   describe('#toBuffer', () => {
-    it('should return serialized Documents State Transition', () => {
-      // const serializedStateTransition = Buffer.from('123');
-
-      // encodeMock.returns(serializedStateTransition);
-
-      // const result = stateTransitionJs.toBuffer();
-
-      // const protocolVersionUInt32 = Buffer.alloc(4);
-      // protocolVersionUInt32.writeUInt32LE(stateTransitionJs.protocolVersion, 0);
-
-      // expect(result).to.deep.equal(
-      //   Buffer.concat([protocolVersionUInt32, serializedStateTransition]),
-      // );
-
-      // const dataToEncode = stateTransitionJs.toObject();
-      // delete dataToEncode.protocolVersion;
-
-      // expect(encodeMock).to.have.been.calledOnceWith(dataToEncode);
-    });
-
     it('should return the same bytes as JS version', () => {
+      const bufferJs = stateTransitionJs.toBuffer();
+      const buffer = stateTransition.toBuffer();
 
-      // we need to generate the data
-
-      const [documentJs] = documentsJs;
-      console.log(documentJs.toJSON());
-
-      const stateTransitionJs = factoryJs.createStateTransition({
-        create: [documentJs],
-      });
-
-      console.log(stateTransitionJs.toJSON());
-      console.log(stateTransitionJs.toBuffer().toString('hex'));
-
-
-      // then we
-
-
-
-      // const bufferJs = stateTransitionJs.toBuffer();
-      // const buffer = stateTransition.toBuffer();
-
-      // // expect(100).to.equal(buffer.length);
-      // // expect(buffer.length).to.equal(bufferJs.length);
-      // expect(bufferJs).to.deep.equal(buffer);
-
-      // expect(bufferJs.length).to.equal(buffer.length);
-
-
+      expect(bufferJs).to.deep.equal(buffer);
     });
+
   });
 
 
 
-
   describe('#hash', () => {
-    it('should return Documents State Transition hash as hex', () => {
-      // const serializedDocument = Buffer.from('123');
-      // const hashedDocument = '456';
+    it('should return the same hash as the JS version', () => {
+      const hashJs = stateTransitionJs.hash();
+      const hash = stateTransitionJs.hash();
 
-      // encodeMock.returns(serializedDocument);
-      // hashMock.returns(hashedDocument);
-
-      // const result = stateTransitionJs.hash();
-
-      // expect(result).to.equal(hashedDocument);
-
-      // const dataToEncode = stateTransitionJs.toObject();
-      // delete dataToEncode.protocolVersion;
-
-      // expect(encodeMock).to.have.been.calledOnceWith(dataToEncode);
-
-      // const protocolVersionUInt32 = Buffer.alloc(4);
-      // protocolVersionUInt32.writeUInt32LE(stateTransitionJs.protocolVersion, 0);
-
-      // expect(hashMock).to.have.been.calledOnceWith(
-      //   Buffer.concat([protocolVersionUInt32, serializedDocument]),
-      // );
+      expect(hash).to.deep.equal(hashJs);
     });
+
   });
 
   describe('#getOwnerId', () => {

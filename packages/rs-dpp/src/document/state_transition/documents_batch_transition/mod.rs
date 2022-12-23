@@ -42,6 +42,7 @@ pub mod property_names {
 }
 
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
+const EMPTY_VEC: Vec<u8> = vec![];
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -360,8 +361,13 @@ impl StateTransitionLike for DocumentsBatchTransition {
     }
 
     fn get_signature(&self) -> &Vec<u8> {
-        todo!()
-        // &self.signature
+        if let Some(ref signature) = self.signature {
+            signature
+        } else {
+            // TODO This is temporary solution to not break the `get_signature()` method
+            // TODO for other transitions
+            todo!()
+        }
     }
 
     fn get_type(&self) -> StateTransitionType {
@@ -394,26 +400,18 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 
 #[cfg(test)]
 mod test {
-    use document_create_transition::DocumentCreateTransition;
-    // use pretty_assertions::*;
     use serde_json::json;
 
     use crate::{
         document::document_factory::DocumentFactory,
         mocks,
-        tests::{
-            fixtures::{
-                get_data_contract_fixture, get_document_transitions_fixture,
-                get_document_validator_fixture, get_documents_fixture,
-            },
-            utils::generate_random_identifier_struct,
+        tests::fixtures::{
+            get_data_contract_fixture, get_document_transitions_fixture,
+            get_document_validator_fixture, get_documents_fixture,
         },
     };
 
-    use super::{
-        document_transition::{document_base_transition::DocumentBaseTransition, Action},
-        *,
-    };
+    use super::{document_transition::Action, *};
 
     #[test]
     fn should_return_highest_sec_level_for_all_transitions() {
