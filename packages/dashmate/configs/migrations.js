@@ -403,7 +403,7 @@ module.exports = {
       .forEach(([, config]) => {
         config.core.logIps = 0;
         config.core.indexes = config.name === 'mainnet' ? 0 : 1;
-        config.core.minimumDifficultyBlocks = 1000;
+        config.core.minimumDifficultyBlocks = 0;
         config.core.powTargetSpacing = 150;
       });
 
