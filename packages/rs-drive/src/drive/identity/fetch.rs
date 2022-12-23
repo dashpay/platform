@@ -4,7 +4,7 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::identity::{balance_path, identity_path};
+use crate::drive::identity::{balance_path, balance_path_vec, identity_path, identity_path_vec};
 
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
 use crate::drive::{Drive, RootTree};
@@ -63,6 +63,34 @@ impl Drive {
         )?;
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok((value, fees))
+    }
+
+    pub fn identity_balance_query(identity_id: [u8; 32]) -> PathQuery {
+        let balance_path = balance_path_vec();
+        let mut query = Query::new();
+        query.insert_key(identity_id.to_vec());
+        PathQuery {
+            path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: Some(1),
+                offset: None,
+            },
+        }
+    }
+
+    pub fn identity_revision_query(identity_id: [u8; 32]) -> PathQuery {
+        let identity_path = identity_path_vec(identity_id.as_slice());
+        let mut query = Query::new();
+        query.insert_key(vec![IdentityTreeRevision as u8]);
+        PathQuery {
+            path: identity_path,
+            query: SizedQuery {
+                query,
+                limit: Some(1),
+                offset: None,
+            },
+        }
     }
 
     /// Creates the operations to get Identity's balance from the backing store
@@ -241,6 +269,33 @@ impl Drive {
             self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)?;
         let fee = calculate_fee(None, Some(drive_operations), epoch)?;
         Ok((maybe_identity, fee))
+    }
+
+    pub fn full_identity_query(identity_id: [u8; 32]) -> Result<PathQuery, Error> {
+        let balance_query = Self::identity_balance_query(identity_id);
+        let revision_query = Self::identity_revision_query(identity_id);
+        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
+        let all_keys_query = key_request.into_path_query();
+        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
+            .map_err(Error::GroveDB)
+    }
+
+    /// Fetches an identity with all its information from storage.
+    pub fn fetch_proved_full_identity(
+        &self,
+        identity_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let query = Self::full_identity_query(identity_id)?;
+        let result = self.grove_get_proved_path_query(&query, transaction, &mut drive_operations);
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            | Err(Error::GroveDB(grovedb::Error::PathNotFound(_))) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Fetches an identity with all its information from storage.
