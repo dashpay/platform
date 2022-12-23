@@ -593,7 +593,7 @@ mod tests {
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
             key_request: SpecificKeysRequest(vec![0]),
-            limit: None,
+            limit: Some(1),
             offset: None,
         };
 
@@ -628,7 +628,7 @@ mod tests {
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
             key_request: SpecificKeysRequest(vec![0, 4]),
-            limit: None,
+            limit: Some(2),
             offset: None,
         };
 
@@ -663,7 +663,7 @@ mod tests {
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
             key_request: SpecificKeysRequest(vec![0, 6]),
-            limit: None,
+            limit: Some(2),
             offset: None,
         };
 
