@@ -1,3 +1,5 @@
+const { calculateStorageFeeDistributionAmountAndLeftovers } = require('@dashevo/rs-drive');
+
 const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
@@ -406,9 +408,9 @@ class DriveStateRepository {
   /**
    * Fetch the latest platform block time
    *
-   * @return {number}
+   * @return {Promise<number>}
    */
-  fetchLatestPlatformBlockTime() {
+  async fetchLatestPlatformBlockTime() {
     const timeMs = this.blockExecutionContext.getTimeMs();
 
     if (!timeMs) {
@@ -509,6 +511,27 @@ class DriveStateRepository {
       index,
       transactionBytes,
       this.#options.useTransaction,
+    );
+  }
+
+  /**
+   * Calculates storage fee to epochs distribution amount and leftovers
+   *
+   * @param {number} storageFee
+   * @param {number} startEpochIndex
+   * @returns {Promise<[number, number]>}
+   */
+  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
+    const epochInfo = this.blockExecutionContext.getEpochInfo();
+
+    if (!epochInfo) {
+      throw new Error('epoch info is not set');
+    }
+
+    return calculateStorageFeeDistributionAmountAndLeftovers(
+      storageFee,
+      startEpochIndex,
+      epochInfo.currentEpochIndex,
     );
   }
 

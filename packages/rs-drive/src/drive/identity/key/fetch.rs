@@ -146,7 +146,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
             .collect()
     }
 
-    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
         )))
@@ -169,7 +169,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
             .collect()
     }
 
-    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
         )))
@@ -203,7 +203,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
             .collect()
     }
 
-    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
         )))
@@ -226,7 +226,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeM
             .collect()
     }
 
-    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
         )))
@@ -275,7 +275,7 @@ impl IdentityKeysRequest {
     }
 
     /// Create the path query for the request
-    pub fn to_path_query(&self) -> PathQuery {
+    pub fn into_path_query(self) -> PathQuery {
         let IdentityKeysRequest {
             identity_id,
             key_request,
@@ -289,8 +289,8 @@ impl IdentityKeysRequest {
                     path: query_keys_path,
                     query: SizedQuery {
                         query: Self::all_keys_query(),
-                        limit: *limit,
-                        offset: *offset,
+                        limit,
+                        offset,
                     },
                 }
             }
@@ -300,8 +300,8 @@ impl IdentityKeysRequest {
                     path: query_keys_path,
                     query: SizedQuery {
                         query: Self::specific_keys_query(key_ids.clone()),
-                        limit: None,
-                        offset: None,
+                        limit,
+                        offset,
                     },
                 }
             }
@@ -311,8 +311,8 @@ impl IdentityKeysRequest {
                     path: query_keys_path,
                     query: SizedQuery {
                         query: Self::construct_search_query(map.clone()),
-                        limit: *limit,
-                        offset: *limit,
+                        limit,
+                        offset,
                     },
                 }
             }
@@ -446,10 +446,10 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<T, Error> {
-        let path_query = key_request.to_path_query();
-
-        match key_request.key_request {
+        match &key_request.key_request {
             AllKeys => {
+                let path_query = key_request.into_path_query();
+
                 let (result, _) = self.grove_get_raw_path_query(
                     &path_query,
                     transaction,
@@ -460,6 +460,8 @@ impl Drive {
                 T::try_from_query_results(result)
             }
             SpecificKeys(_) => {
+                let path_query = key_request.into_path_query();
+
                 let result = self.grove_get_raw_path_query_with_optional(
                     &path_query,
                     transaction,
@@ -469,6 +471,8 @@ impl Drive {
                 T::try_from_path_key_optional(result)
             }
             SearchKey(_) => {
+                let path_query = key_request.into_path_query();
+
                 let result = self.grove_get_path_query_with_optional(
                     &path_query,
                     transaction,
@@ -541,7 +545,7 @@ mod tests {
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
             key_request: SpecificKeys(vec![0]),
-            limit: None,
+            limit: Some(1),
             offset: None,
         };
 
@@ -576,7 +580,7 @@ mod tests {
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
             key_request: SpecificKeys(vec![0, 4]),
-            limit: None,
+            limit: Some(2),
             offset: None,
         };
 
@@ -611,7 +615,7 @@ mod tests {
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
             key_request: SpecificKeys(vec![0, 6]),
-            limit: None,
+            limit: Some(2),
             offset: None,
         };
 

@@ -34,13 +34,13 @@
 
 use crate::error::execution::ExecutionError;
 
+use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
 use drive::error::fee::FeeError;
-use drive::fee::op::DriveOperation;
-use drive::fee::FeeResult;
+use drive::fee::credits::Credits;
+use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
@@ -49,6 +49,7 @@ use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use drive::fee::op::DriveOperation;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -301,7 +302,7 @@ impl Platform {
                         ))
                     })?;
 
-                let share_percentage = Decimal::from(share_percentage_integer) / dec!(10000);
+                let share_percentage = Decimal::from(share_percentage_integer) / dec!(10000.0);
 
                 let reward = masternode_reward * share_percentage;
 
@@ -378,8 +379,8 @@ impl Platform {
     pub fn add_distribute_block_fees_into_pools_operations(
         &self,
         current_epoch: &Epoch,
-        block_fees: &FeeResult,
-        cached_aggregated_storage_fees: Option<u64>,
+        block_fees: &BlockFees,
+        cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<FeesInPools, Error> {
@@ -395,10 +396,7 @@ impl Platform {
 
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
 
-        batch.push(
-            current_epoch
-                .update_processing_credits_for_distribution_operation(total_processing_fees),
-        );
+        batch.push(current_epoch.update_processing_fee_pool_operation(total_processing_fees)?);
 
         // update storage fee pool
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
@@ -412,7 +410,7 @@ impl Platform {
 
         batch.push(update_storage_fee_distribution_pool_operation(
             storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
-        ));
+        )?);
 
         Ok(FeesInPools {
             processing_fees: total_processing_fees,
@@ -423,14 +421,15 @@ impl Platform {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use drive::error::Error;
-        use drive::fee_pools::epochs::Epoch;
-        use drive::grovedb;
+        use super::*;
+
+        use drive::error::Error as DriveError;
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
@@ -474,7 +473,9 @@ mod tests {
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
             batch.push(
-                unpaid_epoch_tree_0.update_processing_credits_for_distribution_operation(10000),
+                unpaid_epoch_tree_0
+                    .update_processing_fee_pool_operation(10000)
+                    .expect("should add operation"),
             );
 
             let proposers_count = 100u16;
@@ -515,13 +516,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, 50);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: 50,
+                    paid_epoch_index: 0
+                })
+            ));
         }
 
         #[test]
@@ -546,7 +547,9 @@ mod tests {
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
             batch.push(
-                unpaid_epoch_tree_0.update_processing_credits_for_distribution_operation(10000),
+                unpaid_epoch_tree_0
+                    .update_processing_fee_pool_operation(10000)
+                    .expect("should add operation"),
             );
 
             let proposers_count = 100u16;
@@ -602,13 +605,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, 100);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: 100,
+                    paid_epoch_index: 0
+                })
+            ));
         }
 
         #[test]
@@ -634,7 +637,9 @@ mod tests {
             unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
 
             batch.push(
-                unpaid_epoch_tree_0.update_processing_credits_for_distribution_operation(10000),
+                unpaid_epoch_tree_0
+                    .update_processing_fee_pool_operation(10000)
+                    .expect("should add operation"),
             );
 
             let proposers_count = 200u16;
@@ -705,13 +710,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, 150);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: 150,
+                    paid_epoch_index: 0
+                })
+            ));
         }
 
         #[test]
@@ -734,11 +739,16 @@ mod tests {
             unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
 
             batch.push(
-                unpaid_epoch.update_processing_credits_for_distribution_operation(processing_fees),
+                unpaid_epoch
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
             );
 
-            batch
-                .push(unpaid_epoch.update_storage_credits_for_distribution_operation(storage_fees));
+            batch.push(
+                unpaid_epoch
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
 
             current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
 
@@ -787,17 +797,18 @@ mod tests {
             assert_eq!(next_unpaid_epoch_index, current_epoch.index);
 
             // check we've removed proposers tree
-            match platform.drive.get_epochs_proposer_block_count(
+            let result = platform.drive.get_epochs_proposer_block_count(
                 &unpaid_epoch,
                 &proposers[0],
                 Some(&transaction),
-            ) {
-                Ok(_) => assert!(false, "expect tree not exists"),
-                Err(e) => match e {
-                    Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            );
+
+            assert!(matches!(
+                result,
+                Err(DriveError::GroveDB(
+                    grovedb::Error::PathParentLayerNotFound(_)
+                ))
+            ));
         }
 
         #[test]
@@ -821,11 +832,16 @@ mod tests {
             unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
 
             batch.push(
-                unpaid_epoch.update_processing_credits_for_distribution_operation(processing_fees),
+                unpaid_epoch
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
             );
 
-            batch
-                .push(unpaid_epoch.update_storage_credits_for_distribution_operation(storage_fees));
+            batch.push(
+                unpaid_epoch
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
 
             current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
 
@@ -858,13 +874,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, proposers_count);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: proposers_count,
+                    paid_epoch_index: 0
+                })
+            ));
 
             // The Epoch 0 should still not marked as paid because proposers count == proposers limit
             let next_unpaid_epoch_index = platform
@@ -900,28 +916,23 @@ mod tests {
             assert_eq!(next_unpaid_epoch_index, current_epoch.index);
 
             // check we've removed proposers tree
-            match platform.drive.get_epochs_proposer_block_count(
+            let result = platform.drive.get_epochs_proposer_block_count(
                 &unpaid_epoch,
                 &proposers[0],
                 Some(&transaction),
-            ) {
-                Ok(_) => assert!(false, "expect tree not exists"),
-                Err(e) => match e {
-                    Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            );
+
+            assert!(matches!(
+                result,
+                Err(DriveError::GroveDB(
+                    grovedb::Error::PathParentLayerNotFound(_)
+                ))
+            ));
         }
     }
 
     mod find_oldest_epoch_needing_payment {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use crate::error::execution::ExecutionError;
-        use crate::error::Error;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use drive::fee_pools::epochs::Epoch;
-        use drive::fee_pools::update_unpaid_epoch_index_operation;
+        use super::*;
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
@@ -1000,11 +1011,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1041,11 +1054,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1083,11 +1098,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1126,11 +1143,13 @@ mod tests {
                     assert_eq!(unpaid_epoch.start_block_height, 1);
                     assert_eq!(unpaid_epoch.end_block_height, 2);
 
-                    let block_count = unpaid_epoch.block_count().expect("should calculate ");
+                    let block_count = unpaid_epoch
+                        .block_count()
+                        .expect("should calculate block count");
 
                     assert_eq!(block_count, 1);
                 }
-                None => assert!(false, "unpaid epoch should be present"),
+                None => unreachable!("unpaid epoch should be present"),
             }
         }
 
@@ -1159,23 +1178,18 @@ mod tests {
                 Some(&transaction),
             );
 
-            match unpaid_epoch {
-                Ok(_) => assert!(false, "should return code execution error"),
-                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_))) => assert!(true),
-                Err(_) => assert!(false, "wrong error type"),
-            }
+            assert!(matches!(
+                unpaid_epoch,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+            ));
         }
     }
 
     mod add_epoch_pool_to_proposers_payout_operations {
-        use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use crate::execution::fee_pools::fee_distribution::UnpaidEpoch;
-        use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee_pools::epochs::Epoch;
-        use rust_decimal::Decimal;
-        use rust_decimal_macros::dec;
+        use super::*;
+        use crate::common::helpers::fee_pools::{
+            create_test_masternode_share_identities_and_documents, refetch_identities,
+        };
 
         #[test]
         fn test_payout_to_proposers() {
@@ -1198,11 +1212,14 @@ mod tests {
 
             batch.push(
                 unpaid_epoch_tree
-                    .update_processing_credits_for_distribution_operation(processing_fees),
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
             );
 
             batch.push(
-                unpaid_epoch_tree.update_storage_credits_for_distribution_operation(storage_fees),
+                unpaid_epoch_tree
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
             );
 
             next_epoch_tree.add_init_current_operations(
@@ -1307,10 +1324,7 @@ mod tests {
     }
 
     mod add_distribute_block_fees_into_pools_operations {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee::FeeResult;
-        use drive::fee_pools::epochs::Epoch;
+        use super::*;
 
         #[test]
         fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
@@ -1329,7 +1343,7 @@ mod tests {
             platform
                 .add_distribute_block_fees_into_pools_operations(
                     &current_epoch_tree,
-                    &FeeResult::from_fees(storage_fees, processing_fees),
+                    &BlockFees::from_fees(storage_fees, processing_fees),
                     None,
                     Some(&transaction),
                     &mut batch,
@@ -1383,7 +1397,7 @@ mod tests {
             platform
                 .add_distribute_block_fees_into_pools_operations(
                     &current_epoch_tree,
-                    &FeeResult::from_fees(storage_fees, processing_fees),
+                    &BlockFees::from_fees(storage_fees, processing_fees),
                     None,
                     Some(&transaction),
                     &mut batch,

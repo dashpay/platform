@@ -261,11 +261,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
                 (*path_iterator).iter().map(|a| a.len() as u32).sum::<u32>() + key.len() as u32
             }
             PathKeySize(key_info_path, key_size) => {
-                key_info_path
-                    .iterator()
-                    .map(|a| a.max_length() as u32)
-                    .sum::<u32>()
-                    + key_size.max_length() as u32
+                key_info_path.iterator().map(|a| a.max_length() as u32).sum::<u32>() + key_size.max_length() as u32
             }
         }
     }

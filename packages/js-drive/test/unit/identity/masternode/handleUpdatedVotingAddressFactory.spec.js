@@ -54,8 +54,11 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     const result = await handleUpdatedVotingAddress(smlEntry);
 
-    expect(result).to.have.lengthOf(1);
-    expect(result[0]).to.deep.equal(identity);
+    expect(result.createdEntities).to.have.lengthOf(1);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
+    expect(result.createdEntities[0]).to.deep.equal(identity);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
       Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
       Buffer.from('8fd1a9502c58ab103792693e951bf39f10ee46a9', 'hex'),
@@ -69,7 +72,10 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     const result = await handleUpdatedVotingAddress(smlEntry);
 
-    expect(result).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
     expect(createMasternodeIdentityMock).to.not.be.called();
     expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });
@@ -81,7 +87,10 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     const result = await handleUpdatedVotingAddress(smlEntry);
 
-    expect(result).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
     expect(createMasternodeIdentityMock).to.not.be.called();
     expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });

@@ -8,7 +8,7 @@ const {
 
 const statuses = require('./statuses');
 
-const aggregateFees = require('./fees/aggregateFees');
+const addToFeeTxResults = require('./fees/addToFeeTxResults');
 
 /**
  *
@@ -61,7 +61,12 @@ function processProposalFactory(
     );
 
     const txResults = [];
-    const feeResults = [];
+    const feeResults = {
+      storageFee: 0,
+      processingFee: 0,
+      feeRefunds: { },
+      feeRefundsSum: 0,
+    };
 
     let validTxCount = 0;
     let invalidTxCount = 0;
@@ -75,8 +80,8 @@ function processProposalFactory(
 
       if (code === 0) {
         validTxCount += 1;
-        // TODO We probably should calculate fees for invalid transitions as well
-        feeResults.push(fees);
+        // TODO We should calculate fees for invalid transitions as well
+        addToFeeTxResults(feeResults, fees);
       } else {
         invalidTxCount += 1;
       }
@@ -100,7 +105,7 @@ function processProposalFactory(
     } = await endBlock({
       height,
       round,
-      fees: aggregateFees(feeResults),
+      fees: feeResults,
       coreChainLockedHeight,
     }, consensusLogger);
 

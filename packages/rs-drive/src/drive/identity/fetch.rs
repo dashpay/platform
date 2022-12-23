@@ -1,35 +1,34 @@
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::flags::StorageFlags;
+
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{
-    balance_path, identity_key_tree_path_vec, identity_path, identity_query_keys_tree_path_vec,
-    IDENTITY_KEY,
+    balance_path, identity_path,
 };
 
 use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, IdentityPublicKeyResult, KeyIDIdentityPublicKeyPairBTreeMap,
-    KeyRequestType,
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
 };
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
+
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::{calculate_fee};
 use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, KeyID, Purpose, SecurityLevel};
-use dpp::prelude::IdentityPublicKey;
+use dpp::identity::{Identity};
+
 use grovedb::query_result_type::QueryResultType::{
     QueryElementResultType, QueryKeyElementPairResultType,
 };
 use grovedb::Element::{Item, SumItem};
-use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
+use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
+use crate::fee::result::FeeResult;
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store

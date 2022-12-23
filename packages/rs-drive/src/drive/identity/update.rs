@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::{calculate_fee};
 use grovedb::batch::KeyInfoPath;
 
 use crate::fee_pools::epochs::Epoch;
@@ -15,6 +15,7 @@ use dpp::identity::IdentityPublicKey;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
+use crate::fee::result::FeeResult;
 
 impl Drive {
     /// We can set an identities balance
@@ -306,7 +307,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::drive::Drive;
-    use crate::fee::FeeResult;
+    use crate::fee::result::FeeResult;
     use crate::fee_pools::epochs::Epoch;
 
     #[test]
@@ -381,7 +382,7 @@ mod tests {
             FeeResult {
                 storage_fee: 0,
                 processing_fee: 5528800,
-                removed_bytes_from_epochs_by_identities: Default::default(),
+                fee_refunds: Default::default(),
                 removed_bytes_from_system: 0,
             }
         );
