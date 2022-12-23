@@ -68,7 +68,7 @@ module.exports = {
     debug: 0,
     logIps: 0,
     indexes: true,
-    minimumDifficultyBlocks: 1000,
+    minimumDifficultyBlocks: 0,
     powTargetSpacing: 150,
     reindex: {
       enable: false,
