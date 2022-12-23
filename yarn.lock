@@ -1405,7 +1405,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#ef97583b951ec8449e66c6fac2af6c5aec208998"
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#ebc7a2413ddf3530a7b6b24823b81089b1f0c3a8"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
@@ -1492,13 +1492,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@github:dashpay/dashd-rpc#ef97583b951ec8449e66c6fac2af6c5aec208998":
+"@dashevo/dashd-rpc@github:dashpay/dashd-rpc#ebc7a2413ddf3530a7b6b24823b81089b1f0c3a8":
   version: 18.0.2
-  resolution: "@dashevo/dashd-rpc@https://github.com/dashpay/dashd-rpc.git#commit=ef97583b951ec8449e66c6fac2af6c5aec208998"
+  resolution: "@dashevo/dashd-rpc@https://github.com/dashpay/dashd-rpc.git#commit=ebc7a2413ddf3530a7b6b24823b81089b1f0c3a8"
   dependencies:
     async: ^3.2.4
     bluebird: ^3.7.2
-  checksum: 9c116a5436e06ee903ad002f599a27f535012340056e8f9b66dc45c5e43cc91eccf820a5cdc896706c83dd91881e026e2fc7fdae01faa31eb8fe3f30f8476970
+  checksum: 7aed94d8dfbcb44e62f4914d49610ea1e3fb02ea8add588b61cea8c7a02fdccadc11e14e4768e6d2850b0c7b219c8e3ce590f01ee21d636f78b0f2aad095f8fe
   languageName: node
   linkType: hard
 
@@ -1637,7 +1637,7 @@ __metadata:
     "@dashevo/abci": "github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#ef97583b951ec8449e66c6fac2af6c5aec208998"
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#ebc7a2413ddf3530a7b6b24823b81089b1f0c3a8"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpns-contract": "workspace:*"
@@ -5745,7 +5745,7 @@ __metadata:
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#ef97583b951ec8449e66c6fac2af6c5aec208998"
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#ebc7a2413ddf3530a7b6b24823b81089b1f0c3a8"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.1
     "@dashevo/dpns-contract": "workspace:*"
