@@ -223,8 +223,8 @@ module.exports = {
           minimum: 1,
         },
         powTargetSpacing: {
-          type: ['string', 'null'],
-          minLength: 1,
+          type: 'integer',
+          minimum: 1,
         },
         devnetName: {
           type: ['string', 'null'],
