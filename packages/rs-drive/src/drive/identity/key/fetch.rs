@@ -317,7 +317,7 @@ impl IdentityKeysRequest {
     }
 
     /// Create the path query for the request
-    pub fn to_path_query(self) -> PathQuery {
+    pub fn into_path_query(self) -> PathQuery {
         let IdentityKeysRequest {
             identity_id,
             key_request,
@@ -342,8 +342,8 @@ impl IdentityKeysRequest {
                     path: query_keys_path,
                     query: SizedQuery {
                         query: Self::specific_keys_query(key_ids),
-                        limit: None,
-                        offset: None,
+                        limit,
+                        offset,
                     },
                 }
             }
@@ -490,7 +490,7 @@ impl Drive {
     ) -> Result<T, Error> {
         match &key_request.key_request {
             AllKeysRequest => {
-                let path_query = key_request.to_path_query();
+                let path_query = key_request.into_path_query();
 
                 let (result, _) = self.grove_get_raw_path_query(
                     &path_query,
@@ -502,7 +502,7 @@ impl Drive {
                 T::try_from_query_results(result)
             }
             SpecificKeysRequest(_) => {
-                let path_query = key_request.to_path_query();
+                let path_query = key_request.into_path_query();
 
                 let result = self.grove_get_raw_path_query_with_optional(
                     &path_query,
@@ -513,7 +513,7 @@ impl Drive {
                 T::try_from_path_key_optional(result)
             }
             SearchKeyRequest(_) => {
-                let path_query = key_request.to_path_query();
+                let path_query = key_request.into_path_query();
 
                 let result = self.grove_get_path_query_with_optional(
                     &path_query,
