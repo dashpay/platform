@@ -20,7 +20,7 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::{calculate_fee};
 use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, KeyID, Purpose, SecurityLevel};

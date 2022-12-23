@@ -6,11 +6,12 @@ use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::{calculate_fee};
 use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::fee::result::FeeResult;
 
 impl Drive {
     /// Deserialize an identity from cbor encoded bytes and potentially apply it to the state
