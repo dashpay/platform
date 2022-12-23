@@ -40,7 +40,6 @@ use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::config::DriveConfig;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::GroveOperation;
@@ -76,10 +75,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
 use crate::fee::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use dpp::data_contract::extra::DriveContractExt;
-
-type TransactionPointerAddress = usize;
 
 /// Drive struct
 pub struct Drive {
@@ -89,8 +85,6 @@ pub struct Drive {
     pub config: DriveConfig,
     /// Drive Cache
     pub cache: RefCell<DriveCache>,
-    /// Core RPC Client
-    pub core_rpc: Option<Box<dyn CoreRPCLike>>,
 }
 
 /// Keys for the root tree.
@@ -161,24 +155,6 @@ impl Drive {
                 let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
                 let data_contracts_block_cache_size = config.data_contracts_block_cache_size;
 
-                let core_rpc: Option<Box<dyn CoreRPCLike>> =
-                    if let (Some(url), Some(username), Some(password)) = (
-                        &config.core_rpc_url,
-                        &config.core_rpc_username,
-                        &config.core_rpc_password,
-                    ) {
-                        Some(Box::new(
-                            DefaultCoreRPC::open(url.clone(), username.clone(), password.clone())
-                                .map_err(|_| {
-                                Error::Drive(DriveError::CorruptedCodeExecution(
-                                    "Could not setup Dash Core RPC client",
-                                ))
-                            })?,
-                        ))
-                    } else {
-                        None
-                    };
-
                 Ok(Drive {
                     grove,
                     config,
@@ -189,7 +165,6 @@ impl Drive {
                         ),
                         genesis_time_ms,
                     }),
-                    core_rpc,
                 })
             }
             Err(e) => Err(Error::GroveDB(e)),

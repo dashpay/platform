@@ -31,9 +31,11 @@
 //!
 
 use crate::block::BlockExecutionContext;
+use crate::config::PlatformConfig;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use drive::drive::config::DriveConfig;
 use drive::drive::Drive;
+use drive::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -43,15 +45,32 @@ pub struct Platform {
     pub drive: Drive,
     /// Block execution context
     pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
+    /// Core RPC Client
+    pub core_rpc: Box<dyn CoreRPCLike>,
 }
 
 impl Platform {
     /// Open Platform with Drive and block execution context.
-    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
-        let drive = Drive::open(path, config).map_err(Error::Drive)?;
+    pub fn open<P: AsRef<Path>>(path: P, config: PlatformConfig) -> Result<Self, Error> {
+        let drive = Drive::open(path, config.drive).map_err(Error::Drive)?;
+
+        let core_rpc: Box<dyn CoreRPCLike> = Box::new(
+            DefaultCoreRPC::open(
+                config.core.rpc_url,
+                config.core.rpc_username,
+                config.core.rpc_password,
+            )
+            .map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "Could not setup Dash Core RPC client",
+                ))
+            })?,
+        );
+
         Ok(Platform {
             drive,
             block_execution_context: RefCell::new(None),
+            core_rpc,
         })
     }
 }

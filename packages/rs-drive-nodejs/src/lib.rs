@@ -1,9 +1,7 @@
 mod converter;
 mod fee_result;
 
-use drive::dpp::dashcore::hashes::hex::FromHex;
-use drive::dpp::dashcore::BlockHash;
-use drive::rpc::core::MockCoreRPCLike;
+use drive_abci::config::{CoreConfig, PlatformConfig};
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
@@ -22,7 +20,6 @@ use drive_abci::abci::messages::{
 };
 use drive_abci::platform::Platform;
 use neon::prelude::*;
-use serde_json::json;
 
 type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
 type UnitCallback = Box<dyn FnOnce(&Channel) + Send>;
@@ -60,7 +57,18 @@ impl PlatformWrapper {
     fn new(cx: &mut FunctionContext) -> NeonResult<Self> {
         // Drive's configuration
         let path_string = cx.argument::<JsString>(0)?.value(cx);
-        let drive_config = cx.argument::<JsObject>(1)?;
+        let platform_config = cx.argument::<JsObject>(1)?;
+
+        let drive_config: Handle<JsObject> = platform_config.get(cx, "drive")?;
+        let core_config: Handle<JsObject> = platform_config.get(cx, "core")?;
+
+        let js_core_rpc_url: Handle<JsString> = core_config.get(cx, "rpc_url")?;
+        let js_core_rpc_username: Handle<JsString> = core_config.get(cx, "rpc_username")?;
+        let js_core_rpc_password: Handle<JsString> = core_config.get(cx, "rpc_password")?;
+
+        let core_rpc_url = js_core_rpc_url.value(cx);
+        let core_rpc_username = js_core_rpc_username.value(cx);
+        let core_rpc_password = js_core_rpc_password.value(cx);
 
         let js_data_contracts_cache_size: Handle<JsNumber> =
             drive_config.get(cx, "dataContractsGlobalCacheSize")?;
@@ -100,27 +108,19 @@ impl PlatformWrapper {
                 ..Default::default()
             };
 
+            let core_config = CoreConfig {
+                rpc_url: core_rpc_url,
+                rpc_username: core_rpc_username,
+                rpc_password: core_rpc_password,
+            };
+
+            let platform_config = PlatformConfig {
+                drive: Some(drive_config),
+                core: core_config,
+            };
+
             // TODO: think how to pass this error to JS
-            let mut platform: Platform = Platform::open(path, Some(drive_config)).unwrap();
-
-            if cfg!(feature = "enable-core-rpc-mocking") {
-                let mut core_rpc_mock = MockCoreRPCLike::new();
-
-                core_rpc_mock.expect_get_block_hash().returning(|_| {
-                    Ok(BlockHash::from_hex(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
-                    )
-                    .unwrap())
-                });
-
-                core_rpc_mock.expect_get_block_json().returning(|_| {
-                    Ok(json!({
-                        "tx": [],
-                    }))
-                });
-
-                platform.drive.core_rpc = Some(Box::new(core_rpc_mock));
-            }
+            let platform: Platform = Platform::open(path, platform_config).unwrap();
 
             let mut maybe_transaction: Option<Transaction> = None;
 

@@ -32,7 +32,7 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
-use crate::platform::Platform;
+use crate::{config::PlatformConfig, platform::Platform};
 #[cfg(test)]
 use dpp::prelude::DataContract;
 #[cfg(test)]
@@ -46,7 +46,8 @@ use tempfile::TempDir;
 /// A function which sets up Platform.
 pub fn setup_platform() -> Platform {
     let tmp_dir = TempDir::new().unwrap();
-    let drive: Platform = Platform::open(tmp_dir, None).expect("should open Platform successfully");
+    let drive: Platform = Platform::open(tmp_dir, PlatformConfig::default())
+        .expect("should open Platform successfully");
 
     drive
 }

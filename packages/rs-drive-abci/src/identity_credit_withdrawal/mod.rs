@@ -54,7 +54,7 @@ impl Platform {
             ExecutionError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
         ))?;
 
-        let core_transactions = self.drive.fetch_core_block_transactions(
+        let core_transactions = self.fetch_core_block_transactions(
             last_synced_core_height,
             block_execution_context.block_info.core_chain_locked_height,
         )?;
@@ -103,13 +103,7 @@ impl Platform {
 
                     self.drive
                         .grove
-                        .insert(
-                            path,
-                            &bytes,
-                            Element::Item(bytes.to_vec(), None),
-                            None,
-                            transaction,
-                        )
+                        .insert(path, &bytes, Element::Item(vec![], None), None, transaction)
                         .unwrap()
                         .map_err(|_| {
                             Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -305,6 +299,47 @@ impl Platform {
 
         Ok(())
     }
+
+    /// Fetch Core transactions by range of Core heights
+    pub fn fetch_core_block_transactions(
+        &self,
+        last_synced_core_height: u64,
+        core_chain_locked_height: u64,
+    ) -> Result<Vec<String>, Error> {
+        let mut tx_hashes: Vec<String> = vec![];
+
+        for height in last_synced_core_height..=core_chain_locked_height {
+            let block_hash = self.core_rpc.get_block_hash(height).map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "could not get block by height",
+                ))
+            })?;
+
+            let block_json: JsonValue =
+                self.core_rpc.get_block_json(&block_hash).map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "could not get block by hash",
+                    ))
+                })?;
+
+            if let Some(transactions) = block_json.get("tx") {
+                if let Some(transactions) = transactions.as_array() {
+                    for transaction_hash in transactions {
+                        tx_hashes.push(
+                            transaction_hash
+                                .as_str()
+                                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                    "could not get transaction hash as string",
+                                )))?
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(tx_hashes)
+    }
 }
 
 #[cfg(test)]
@@ -383,7 +418,7 @@ mod tests {
                     }))
                 });
 
-            platform.drive.core_rpc = Some(Box::new(mock_rpc_client));
+            platform.core_rpc = Box::new(mock_rpc_client);
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -588,6 +623,71 @@ mod tests {
 
                 assert!(tx_ids.contains(&tx_id_hex.as_str()));
             }
+        }
+    }
+
+    mod fetch_core_block_transactions {
+
+        use super::*;
+
+        #[test]
+        fn test_fetches_core_transactions() {
+            let mut platform = setup_platform_with_initial_state_structure();
+
+            let mut mock_rpc_client = MockCoreRPCLike::new();
+
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 1)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 2)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "1111111111111111111111111111111111111111111111111111111111111111",
+                    )
+                    .unwrap())
+                });
+
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "0000000000000000000000000000000000000000000000000000000000000000"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["1"]
+                    }))
+                });
+
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "1111111111111111111111111111111111111111111111111111111111111111"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["2"]
+                    }))
+                });
+
+            platform.core_rpc = Box::new(mock_rpc_client);
+
+            let transactions = platform
+                .fetch_core_block_transactions(1, 2)
+                .expect("to fetch core transactions");
+
+            assert_eq!(transactions.len(), 2);
+            assert_eq!(transactions, ["1", "2"]);
         }
     }
 }

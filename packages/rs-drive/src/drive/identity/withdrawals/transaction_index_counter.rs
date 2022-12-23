@@ -40,10 +40,10 @@ impl Drive {
         if expired_index_elements.len() > 0 {
             let expired_index_element_pair = expired_index_elements.into_iter().next().unwrap();
 
-            if let QueryResultElement::KeyElementPairResultItem((key, Element::Item(bytes, _))) =
+            if let QueryResultElement::KeyElementPairResultItem((key, _)) =
                 expired_index_element_pair
             {
-                let index = u64::from_be_bytes(bytes.try_into().map_err(|_| {
+                let index = u64::from_be_bytes(key.clone().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "Transaction index has wrong length",
                     ))
