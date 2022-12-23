@@ -48,12 +48,12 @@ describe('errorHandlerFactory', () => {
   it('should use consensus logger if it\'s present', async function it() {
     const error = new Error('message');
 
-    error.consensusLogger = new LoggerMock(this.sinon);
+    error.contextLogger = new LoggerMock(this.sinon);
 
     await errorHandler(error);
 
     expect(loggerMock.fatal).to.not.be.called();
-    expect(error.consensusLogger.fatal).to.be.calledOnceWithExactly({ err: error }, error.message);
+    expect(error.contextLogger.fatal).to.be.calledOnceWithExactly({ err: error }, error.message);
 
     expect(containerMock.dispose).to.be.calledOnceWithExactly();
 

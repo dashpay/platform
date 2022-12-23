@@ -1,31 +1,29 @@
-const enrichErrorWithConsensusLoggerFactory = require('../../../../lib/abci/errors/enrichErrorWithContextLoggerFactory');
+const enrichErrorWithContextLoggerFactory = require('../../../../lib/abci/errors/enrichErrorWithContextLoggerFactory');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
-describe('enrichErrorWithConsensusLoggerFactory', () => {
+describe('enrichErrorWithContextLoggerFactory', () => {
   let blockExecutionContextMock;
-  let enrichErrorWithConsensusLogger;
+  let enrichErrorWithContextLogger;
   let loggerMock;
 
   beforeEach(function beforeEach() {
     loggerMock = new LoggerMock(this.sinon);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.consensusLogger = loggerMock;
+    blockExecutionContextMock.contextLogger = loggerMock;
 
-    enrichErrorWithConsensusLogger = enrichErrorWithConsensusLoggerFactory(
-      blockExecutionContextMock,
-    );
+    enrichErrorWithContextLogger = enrichErrorWithContextLoggerFactory();
   });
 
-  it('should add consensusLogger from BlockExecutionContext to thrown error', async () => {
+  it('should add contextLogger from BlockExecutionContext to thrown error', async () => {
     const error = new Error();
 
     const method = () => {
       throw error;
     };
 
-    const methodHandler = enrichErrorWithConsensusLogger(method);
+    const methodHandler = enrichErrorWithContextLogger(method);
 
     try {
       await methodHandler();
@@ -33,7 +31,7 @@ describe('enrichErrorWithConsensusLoggerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(e.consensusLogger).to.equal(loggerMock);
+      expect(e.contextLogger).to.equal(loggerMock);
     }
   });
 });

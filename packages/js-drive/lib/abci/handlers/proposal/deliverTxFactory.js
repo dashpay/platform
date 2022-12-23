@@ -41,12 +41,12 @@ function deliverTxFactory(
    *
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<{
    *  code: number,
    *  fees: BlockFeeResult}>}
    */
-  async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
+  async function deliverTx(stateTransitionByteArray, round, contextLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
 
     // Start execution timer
@@ -67,16 +67,16 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    const txConsensusLogger = createContextLogger(consensusLogger, {
+    const txContextLogger = createContextLogger(contextLogger, {
       txId: stHash,
     });
 
-    txConsensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
+    txContextLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
     const stateTransition = await transactionalUnserializeStateTransition(
       stateTransitionByteArray,
       {
-        logger: txConsensusLogger,
+        logger: txContextLogger,
         executionTimer,
       },
     );
@@ -98,8 +98,8 @@ function deliverTxFactory(
       const consensusError = result.getFirstError();
       const message = 'State transition is invalid against the state';
 
-      txConsensusLogger.info(message);
-      txConsensusLogger.debug({
+      txContextLogger.info(message);
+      txContextLogger.debug({
         consensusError,
       });
 
@@ -122,7 +122,7 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     if (actualStateTransitionFees.total > predictedStateTransitionFees.total) {
-      txConsensusLogger.warn({
+      txContextLogger.warn({
         predictedFee: predictedStateTransitionFees.total,
         actualFee: actualStateTransitionFees.total,
       }, `Actual fees are greater than predicted for ${actualStateTransitionFees.total - predictedStateTransitionFees.total} credits`);
@@ -155,7 +155,7 @@ function deliverTxFactory(
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
@@ -167,7 +167,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_CREATE: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -179,7 +179,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_TOP_UP: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -191,7 +191,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -203,7 +203,7 @@ function deliverTxFactory(
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
-          txConsensusLogger.info(
+          txContextLogger.info(
             {
               documentId: transition.getId().toString(),
             },
@@ -219,7 +219,7 @@ function deliverTxFactory(
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
-    txConsensusLogger.trace(
+    txContextLogger.trace(
       {
         timings: {
           overall: deliverTxTiming,

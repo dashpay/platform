@@ -16,17 +16,24 @@ const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 describe('extendVoteHandlerFactory', () => {
   let extendVoteHandler;
   let blockExecutionContextMock;
+  let createContextLoggerMock;
+  let loggerMock;
 
   beforeEach(function beforeEach() {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    const loggerMock = new LoggerMock(this.sinon);
+    loggerMock = new LoggerMock(this.sinon);
 
-    blockExecutionContextMock.getConsensusLogger.returns(loggerMock);
+    blockExecutionContextMock.getContextLogger.returns(loggerMock);
 
     blockExecutionContextMock.getWithdrawalTransactionsMap.returns({});
 
-    extendVoteHandler = extendVoteHandlerFactory(blockExecutionContextMock);
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
+
+    extendVoteHandler = extendVoteHandlerFactory(
+      blockExecutionContextMock,
+      createContextLoggerMock,
+    );
   });
 
   it('should return ResponseExtendVote with vote extensions if withdrawal transactions are present', async () => {
@@ -53,5 +60,9 @@ describe('extendVoteHandlerFactory', () => {
         extension: hash(txTwoBytes),
       },
     ]);
+
+    expect(createContextLoggerMock).to.be.calledOnceWith(loggerMock, {
+      abciMethod: 'extendVote',
+    })
   });
 });

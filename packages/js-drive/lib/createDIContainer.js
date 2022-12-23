@@ -697,7 +697,12 @@ function createDIContainer(options) {
    */
   container.register({
     createContextLogger: asFunction(createContextLoggerFactory),
-    abciAsyncLocalStorage: asValue(new AsyncLocalStorage()),
+    abciAsyncLocalStorage: asFunction(() => {
+      const asyncLocalStorage = new AsyncLocalStorage();
+      asyncLocalStorage.enterWith(new Map());
+      return asyncLocalStorage;
+    }).singleton(),
+    // abciAsyncLocalStorage: asValue(new AsyncLocalStorage()),
     createQueryResponse: asFunction(createQueryResponseFactory).singleton(),
     createValidatorSetUpdate: asValue(createValidatorSetUpdate),
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),

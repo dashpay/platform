@@ -11,6 +11,7 @@ const {
 
 /**
  * @param {BlockExecutionContext} proposalBlockExecutionContext
+ * @param {createContextLogger} createContextLogger
  *
  * @return {extendVoteHandler}
  */
