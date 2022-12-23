@@ -15,6 +15,8 @@ const {
 
 const Drive = require('../Drive');
 
+const FeeResult = require('../FeeResult');
+
 const TEST_DATA_PATH = './test_data';
 
 describe('Drive', () => {
@@ -67,10 +69,19 @@ describe('Drive', () => {
     });
 
     it('should return null if contract not exists', async () => {
-      const result = await drive.fetchContract(Buffer.alloc(32));
+      const result = await drive.fetchContract(Buffer.alloc(32), blockInfo.epoch);
 
-      expect(result).to.be.instanceOf(Array);
-      expect(result).to.have.lengthOf(0);
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [fetchedDataContract, feeResult] = result;
+
+      expect(fetchedDataContract).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
     });
 
     it('should return contract if contract is present', async () => {
@@ -83,11 +94,9 @@ describe('Drive', () => {
 
       const [fetchedDataContract, feeResult] = result;
 
-      expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
+      expect(fetchedDataContract.toBuffer()).to.deep.equal(dataContract.toBuffer());
 
-      expect(feeResult).to.have.property('processingFee');
-      expect(feeResult).to.have.property('storageFee');
-      expect(feeResult).to.have.property('removedFromIdentities');
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
 
       expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
       expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -103,7 +112,7 @@ describe('Drive', () => {
 
       const [fetchedDataContract] = result;
 
-      expect(fetchedDataContract).to.deep.equal(dataContract.toBuffer());
+      expect(fetchedDataContract.toBuffer()).to.deep.equal(dataContract.toBuffer());
     });
   });
 
@@ -263,9 +272,7 @@ describe('Drive', () => {
 
       const result = await drive.updateDocument(documentWithoutIndices, blockInfo, undefined, true);
 
-      expect(result).to.have.property('processingFee');
-      expect(result).to.have.property('storageFee');
-      expect(result).to.have.property('removedFromIdentities');
+      expect(result).to.be.an.instanceOf(FeeResult);
 
       expect(result.processingFee).to.be.greaterThan(0);
       expect(result.storageFee).to.be.greaterThan(0, 'storage fee must be higher than 0');
@@ -299,9 +306,7 @@ describe('Drive', () => {
           blockInfo,
         );
 
-        expect(result).to.have.property('processingFee');
-        expect(result).to.have.property('storageFee');
-        expect(result).to.have.property('removedFromIdentities');
+        expect(result).to.be.an.instanceOf(FeeResult);
 
         expect(result.processingFee).to.be.greaterThan(0, 'processing fee must be higher than 0');
         expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -326,9 +331,7 @@ describe('Drive', () => {
           blockInfo,
         );
 
-        expect(result).to.have.property('processingFee');
-        expect(result).to.have.property('storageFee');
-        expect(result).to.have.property('removedFromIdentities');
+        expect(result).to.be.an.instanceOf(FeeResult);
 
         expect(result.processingFee).to.be.greaterThan(0, 'processing fee must be higher than 0');
         expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -354,9 +357,7 @@ describe('Drive', () => {
         true,
       );
 
-      expect(result).to.have.property('processingFee');
-      expect(result).to.have.property('storageFee');
-      expect(result).to.have.property('removedFromIdentities');
+      expect(result).to.be.an.instanceOf(FeeResult);
 
       expect(result.processingFee).to.be.greaterThan(0, 'processing fee must be higher than 0');
       expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
@@ -554,6 +555,7 @@ describe('Drive', () => {
     describe('BlockEnd', () => {
       beforeEach(async () => {
         await drive.getAbci().initChain({});
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
@@ -565,8 +567,12 @@ describe('Drive', () => {
       it('should process a block', async () => {
         const request = {
           fees: {
-            storageFees: 100,
-            processingFees: 100,
+            storageFee: 100,
+            processingFee: 100,
+            feeRefunds: {
+              1: 15,
+              2: 16,
+            },
           },
         };
 
@@ -582,19 +588,23 @@ describe('Drive', () => {
         this.timeout(10000);
 
         await drive.createInitialStateStructure();
+
         await drive.createContract(dataContract, blockInfo);
 
         await drive.getAbci().initChain({});
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
         });
+
         await drive.getAbci().blockEnd({
           fees: {
-            storageFees: 100,
-            processingFees: 100,
+            storageFee: 100,
+            processingFee: 100,
+            feeRefunds: {},
           },
         });
       });
@@ -610,6 +620,20 @@ describe('Drive', () => {
 
         expect(response).to.be.empty();
       });
+    });
+  });
+
+  describe('.calculateStorageFeeDistributionAmountAndLeftovers', () => {
+    it('should calculate amount and leftovers', () => {
+      const result = Drive.calculateStorageFeeDistributionAmountAndLeftovers(1000, 1, 2);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.be.lengthOf(2);
+
+      const [amount, leftovers] = result;
+
+      expect(amount).to.equals(558);
+      expect(leftovers).to.equals(440);
     });
   });
 });

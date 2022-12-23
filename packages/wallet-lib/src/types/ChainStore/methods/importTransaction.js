@@ -8,11 +8,20 @@ function importTransaction(transaction, metadata = {}) {
     throw new Error('Will not import an array of transaction');
   }
   const normalizedTransaction = is.string(transaction) ? new Transaction(transaction) : transaction;
+  let time = null;
+
+  if (typeof metadata.time === 'number') {
+    time = new Date(metadata.time);
+  } else if (metadata.time instanceof Date) {
+    time = metadata.time;
+  }
+
   this.state.transactions.set(normalizedTransaction.hash, {
     transaction: normalizedTransaction,
     metadata: {
       blockHash: metadata.blockHash || null,
       height: metadata.height || null,
+      time,
       isInstantLocked: metadata.isInstantLocked || false,
       isChainLocked: metadata.isChainLocked || false,
     },

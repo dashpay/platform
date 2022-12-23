@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "3.24.0-dev.8",
+  "version": "3.24.0-dev.11",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "build/src/index.js",
   "unpkg": "dist/dash.min.js",
@@ -44,7 +44,8 @@
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "bs58": "^4.0.1",
-    "node-inspect-extracted": "^1.0.8"
+    "node-inspect-extracted": "^1.0.8",
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "@types/chai": "^4.2.12",

@@ -1,3 +1,5 @@
+const { calculateStorageFeeDistributionAmountAndLeftovers } = require('@dashevo/rs-drive');
+
 const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
@@ -18,7 +20,7 @@ class DriveStateRepository {
    * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
-   * @param {BlockExecutionContext} latestBlockExecutionContext
+   * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {RSDrive} rsDrive
    * @param {Object} [options]
@@ -32,7 +34,7 @@ class DriveStateRepository {
     documentRepository,
     spentAssetLockTransactionsRepository,
     coreRpcClient,
-    latestBlockExecutionContext,
+    blockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
     options = {},
@@ -44,7 +46,7 @@ class DriveStateRepository {
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionContext = latestBlockExecutionContext;
+    this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
     this.#options = options;
@@ -221,6 +223,7 @@ class DriveStateRepository {
         dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
+        // TODO: We don't need this anymore
         useTransaction: false,
       },
     );
@@ -434,9 +437,9 @@ class DriveStateRepository {
   /**
    * Fetch the latest platform block time
    *
-   * @return {number}
+   * @return {Promise<number>}
    */
-  fetchLatestPlatformBlockTime() {
+  async fetchLatestPlatformBlockTime() {
     const timeMs = this.blockExecutionContext.getTimeMs();
 
     if (!timeMs) {
@@ -537,6 +540,27 @@ class DriveStateRepository {
       index,
       transactionBytes,
       this.#options.useTransaction,
+    );
+  }
+
+  /**
+   * Calculates storage fee to epochs distribution amount and leftovers
+   *
+   * @param {number} storageFee
+   * @param {number} startEpochIndex
+   * @returns {Promise<[number, number]>}
+   */
+  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
+    const epochInfo = this.blockExecutionContext.getEpochInfo();
+
+    if (!epochInfo) {
+      throw new Error('epoch info is not set');
+    }
+
+    return calculateStorageFeeDistributionAmountAndLeftovers(
+      storageFee,
+      startEpochIndex,
+      epochInfo.currentEpochIndex,
     );
   }
 

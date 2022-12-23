@@ -12,11 +12,16 @@ function handleRemovedMasternodeFactory(
    * @param {Identifier} masternodeIdentifier
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
+   * @return {Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
+   * }>}
    */
   async function handleRemovedMasternode(masternodeIdentifier, dataContract, blockInfo) {
     //  Delete documents belongs to masternode identity (ownerId) from rewards contract
     // since max amount is 16, we can fetch all of them in one request
-    const result = [];
+    const removedEntities = [];
 
     const fetchedDocumentsResult = await documentRepository.find(
       dataContract,
@@ -40,12 +45,16 @@ function handleRemovedMasternodeFactory(
         { useTransaction: true },
       );
 
-      result.push(
+      removedEntities.push(
         document,
       );
     }
 
-    return result;
+    return {
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities,
+    };
   }
 
   return handleRemovedMasternode;

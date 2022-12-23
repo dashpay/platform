@@ -33,6 +33,7 @@ pub(super) enum BinaryType {
     Buffer,
     None,
 }
+pub mod state_transition;
 
 #[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]

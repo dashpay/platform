@@ -137,6 +137,7 @@ const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
+const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
 
 /**
  *
@@ -583,7 +584,7 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      latestBlockExecutionContext,
+      proposalBlockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
       rsDrive,
@@ -596,7 +597,7 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        latestBlockExecutionContext,
+        proposalBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
         {
@@ -614,7 +615,7 @@ function createDIContainer(options) {
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,
-        latestBlockExecutionContext,
+        proposalBlockExecutionContext,
       );
     }).singleton(),
 
@@ -721,56 +722,49 @@ function createDIContainer(options) {
       return router;
     }).singleton(),
 
-    infoHandler: asFunction(infoHandlerFactory).singleton(),
-    checkTxHandler: asFunction(checkTxHandlerFactory).singleton(),
+    beginBlock: asFunction(beginBlockFactory).singleton(),
 
-    beginBlockHandler: asFunction(beginBlockFactory).singleton(),
-    beginBlock: asFunction((
-      enrichErrorWithConsensusError,
-      beginBlockHandler,
-    ) => enrichErrorWithConsensusError(beginBlockHandler)).singleton(),
-    deliverTxHandler: asFunction(deliverTxFactory).singleton(),
+    processProposal: asFunction(processProposalFactory),
+
+    deliverTx: asFunction(deliverTxFactory).singleton(),
+
     wrappedDeliverTx: asFunction((
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
-      deliverTxHandler,
+      deliverTx,
     ) => wrapInErrorHandler(
-      enrichErrorWithConsensusError(deliverTxHandler),
+      enrichErrorWithConsensusError(deliverTx),
       { respondWithInternalError: true },
     )).singleton(),
-    endBlockHandler: asFunction(endBlockFactory).singleton(),
-    endBlock: asFunction((
-      enrichErrorWithConsensusError,
-      endBlockHandler,
-    ) => enrichErrorWithConsensusError(endBlockHandler)).singleton(),
-    verifyChainLockHandler: asFunction(verifyChainLockFactory).singleton(),
-    verifyChainLock: asFunction((
-      enrichErrorWithConsensusError,
-      verifyChainLockHandler,
-    ) => enrichErrorWithConsensusError(verifyChainLockHandler)).singleton(),
-    rotateAndCreateValidatorSetUpdateHandler: asFunction(
+
+    endBlock: asFunction(endBlockFactory).singleton(),
+
+    verifyChainLock: asFunction(verifyChainLockFactory).singleton(),
+
+    rotateAndCreateValidatorSetUpdate: asFunction(
       rotateAndCreateValidatorSetUpdateFactory,
     ).singleton(),
-    rotateAndCreateValidatorSetUpdate: asFunction((
-      enrichErrorWithConsensusError,
-      rotateAndCreateValidatorSetUpdateHandler,
-    ) => enrichErrorWithConsensusError(rotateAndCreateValidatorSetUpdateHandler)).singleton(),
-    createConsensusParamUpdateHandler: asFunction(createConsensusParamUpdateFactory).singleton(),
-    createConsensusParamUpdate: asFunction((
-      enrichErrorWithConsensusError,
-      createConsensusParamUpdateHandler,
-    ) => enrichErrorWithConsensusError(createConsensusParamUpdateHandler)).singleton(),
-    createCoreChainLockUpdateHandler: asFunction(createCoreChainLockUpdateFactory).singleton(),
-    createCoreChainLockUpdate: asFunction((
-      enrichErrorWithConsensusError,
-      createCoreChainLockUpdateHandler,
-    ) => enrichErrorWithConsensusError(createCoreChainLockUpdateHandler)).singleton(),
+
+    createConsensusParamUpdate: asFunction(createConsensusParamUpdateFactory).singleton(),
+
+    createCoreChainLockUpdate: asFunction(createCoreChainLockUpdateFactory).singleton(),
+
+    infoHandler: asFunction(infoHandlerFactory).singleton(),
+
+    checkTxHandler: asFunction(checkTxHandlerFactory).singleton(),
+
     initChainHandler: asFunction(initChainHandlerFactory).singleton(),
+
     queryHandler: asFunction(queryHandlerFactory).singleton(),
+
     extendVoteHandler: asFunction(extendVoteHandlerFactory).singleton(),
+
     finalizeBlockHandler: asFunction(finalizeBlockHandlerFactory).singleton(),
+
     prepareProposalHandler: asFunction(prepareProposalHandlerFactory).singleton(),
+
     processProposalHandler: asFunction(processProposalHandlerFactory).singleton(),
+
     verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),

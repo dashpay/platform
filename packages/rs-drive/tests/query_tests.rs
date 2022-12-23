@@ -625,7 +625,6 @@ fn test_query_many() {
 fn test_reference_proof_single_index() {
     let (drive, contract) = setup_family_tests_only_first_name_index(1, true, 73509);
 
-    dbg!(drive.grove.verify_grovedb());
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive

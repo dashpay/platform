@@ -19,6 +19,9 @@ dpp = { path = "../rs-dpp" }
 itertools  = { version="0.10.5"}
 console_error_panic_hook = { version="0.1.7"}
 
+wasm-bindgen-futures = "0.4.33"
+async-trait = "0.1.59"
+anyhow = "1.0.66"
 
 [profile.release]
 lto = true

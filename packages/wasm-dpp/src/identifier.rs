@@ -17,11 +17,11 @@ enum IdentifierSource {
 extern "C" {
     fn alert(s: &str);
 
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    #[wasm_bindgen(js_namespace = console, js_name=log)]
     fn log(a: &str);
 }
 
-#[wasm_bindgen(js_name = Identifier, inspectable)]
+#[wasm_bindgen(js_name=Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,
 }
@@ -32,7 +32,7 @@ impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
     }
 }
 
-#[wasm_bindgen(js_class = Identifier)]
+#[wasm_bindgen(js_class=Identifier)]
 impl IdentifierWrapper {
     #[wasm_bindgen(constructor)]
     pub fn new(buffer: Vec<u8>) -> Result<IdentifierWrapper, JsValue> {
@@ -57,7 +57,7 @@ impl IdentifierWrapper {
         }
     }
 
-    #[wasm_bindgen(js_name = fromString)]
+    #[wasm_bindgen(js_name=fromString)]
     pub fn from_string(value: String, encoding: Option<String>) -> IdentifierWrapper {
         // TODO: remove unwrap
         let identifier = identifier::Identifier::from_string_with_encoding_string(
@@ -71,17 +71,17 @@ impl IdentifierWrapper {
         }
     }
 
-    #[wasm_bindgen(js_name = toBuffer)]
+    #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Buffer {
         Buffer::from_bytes(self.wrapped.buffer.as_slice())
     }
 
-    #[wasm_bindgen(js_name = toJSON)]
+    #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> String {
         self.to_string(None)
     }
 
-    #[wasm_bindgen(js_name = toString)]
+    #[wasm_bindgen(js_name=toString)]
     pub fn to_string(&self, encoding: Option<String>) -> String {
         // Converting string to a string slice. Rust interfaces work
         // with immutable string slices more often, while js interop accepts mutable String.

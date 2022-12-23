@@ -2,7 +2,6 @@ const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 const Worker = require('../Worker');
-const logger = require('../../logger');
 
 const decodeProtocolEntity = decodeProtocolEntityFactory();
 
@@ -42,8 +41,6 @@ class IdentitySyncWorker extends Worker {
       unusedIndices.push(index);
     });
 
-    logger.silly('IdentitySyncWorker - sync start');
-
     let gapCount = 0;
     let unusedIndex;
     let index = -1;
@@ -78,11 +75,7 @@ class IdentitySyncWorker extends Worker {
       if (identityBuffers.length === 0) {
         gapCount += 1;
 
-        logger.silly(`IdentitySyncWorker - gap at index ${index}`);
-
         if (gapCount >= this.gapLimit) {
-          logger.silly('IdentitySyncWorker - gap limit is reached');
-
           break;
         }
 
@@ -111,8 +104,6 @@ class IdentitySyncWorker extends Worker {
 
       const identity = new Identity(rawIdentity);
 
-      logger.silly(`IdentitySyncWorker - got ${identity.getId()} at ${index}`);
-
       // eslint-disable-next-line no-await-in-loop
       await this.storage
         .getWalletStore(this.walletId)
@@ -121,8 +112,6 @@ class IdentitySyncWorker extends Worker {
           index,
         );
     }
-
-    logger.silly('IdentitySyncWorker - sync finished');
   }
 }
 

@@ -53,7 +53,7 @@ fn setup_test() -> TestData {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract()
-        .returning(move |_, _| Ok(data_contract.clone()));
+        .returning(move |_, _| Ok(Some(data_contract.clone())));
 
     TestData {
         version_validator,
@@ -431,7 +431,7 @@ async fn should_not_check_data_contract_on_dry_run() {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
+        .expect_fetch_data_contract()
         .returning(|_, _| Err(anyhow!("some error")));
 
     let execution_context = StateTransitionExecutionContext::default();

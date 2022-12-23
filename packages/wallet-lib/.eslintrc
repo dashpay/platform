@@ -4,5 +4,18 @@
     "node": true,
     "mocha": true
   },
-  "ignorePatterns": ["**/*.spec.js"]
+  "ignorePatterns": [
+    "**/*.spec.js",
+    "fixtures",
+    "dist",
+    "tests/*",
+    "!tests/integration",
+    "!tests/integration/plugins/Workers/BlockHeadersSyncWorker.spec.js",
+    "!tests/integration/plugins/Workers/TransactionsSyncWorker.spec.js",
+    "!src/plugins",
+    "!src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.spec.js",
+    "!src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.spec.js",
+    "!src/plugins/Workers/TransactionsSyncWorker/TransactionsReader.spec.js",
+    "!src/plugins/Workers/TransactionsSyncWorker/utils.spec.js"
+  ]
 }

@@ -19,12 +19,33 @@ module.exports = async function configure(opts = {}) {
   const storage = await this.adapter.getItem(`wallet_${opts.walletId}`);
   const storageVersion = storage && storage.version;
 
-  if (!(this.adapter instanceof InMem) && storageVersion !== CONSTANTS.STORAGE.version) {
-    if (typeof version === 'number') {
-      logger.warn('Storage version mismatch, resyncing from start');
+  if (storage && !(this.adapter instanceof InMem)) {
+    if (storageVersion !== CONSTANTS.STORAGE.version) {
+      if (typeof storageVersion === 'number') {
+        logger.warn('Storage version mismatch, re-syncing from start');
+      }
+
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
     }
 
-    await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    const { skipSynchronizationBeforeHeight } = this.application.syncOptions || {};
+    const skipSync = parseInt(skipSynchronizationBeforeHeight, 10);
+    const skipSyncPrev = storage.unsafeOptions
+      && storage.unsafeOptions.skipSynchronizationBeforeHeight;
+
+    if (skipSyncPrev && !skipSync) {
+      logger.warn('\'skipSynchronizationBeforeHeight\' option has been unset since the last use, re-syncing from start');
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    } else if (!skipSyncPrev && skipSync) {
+      logger.warn(`'skipSynchronizationBeforeHeight' option has been set, syncing from ${skipSync}`);
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    } else if (
+      skipSyncPrev && skipSync
+      && skipSyncPrev !== skipSync
+    ) {
+      logger.warn(`'skipSynchronizationBeforeHeight' option has been changed from ${skipSyncPrev} to ${skipSync}, re-syncing.`);
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    }
   }
 
   this.createWalletStore(opts.walletId);
@@ -32,6 +53,7 @@ module.exports = async function configure(opts = {}) {
 
   this.currentWalletId = opts.walletId;
   this.currentNetwork = opts.network;
+  this.logger = logger.getForWallet(this.currentWalletId);
 
   if (this.rehydrate) {
     await this.rehydrateState();

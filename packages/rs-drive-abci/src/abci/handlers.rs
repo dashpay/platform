@@ -156,7 +156,7 @@ impl TenderdashAbci for Platform {
         let process_block_fees_result = self.process_block_fees(
             &block_execution_context.block_info,
             &block_execution_context.epoch_info,
-            &request.fees,
+            request.fees,
             transaction,
         )?;
 
@@ -185,11 +185,12 @@ mod tests {
         use chrono::{Duration, Utc};
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee::epoch::CreditsPerEpoch;
         use rust_decimal::prelude::ToPrimitive;
         use std::ops::Div;
 
         use crate::abci::messages::{
-            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, FeesAggregate,
+            AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
             InitChainRequest,
         };
         use crate::common::helpers::setup::setup_platform;
@@ -357,9 +358,10 @@ mod tests {
                     }
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
+                        fees: BlockFees {
+                            storage_fee: storage_fees_per_block,
+                            processing_fee: 1600,
+                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 
@@ -512,9 +514,10 @@ mod tests {
                     );
 
                     let block_end_request = BlockEndRequest {
-                        fees: FeesAggregate {
-                            processing_fees: 1600,
-                            storage_fees: storage_fees_per_block,
+                        fees: BlockFees {
+                            storage_fee: storage_fees_per_block,
+                            processing_fee: 1600,
+                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 

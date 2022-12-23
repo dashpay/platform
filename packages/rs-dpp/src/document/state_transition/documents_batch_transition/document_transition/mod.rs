@@ -167,6 +167,10 @@ impl DocumentTransition {
             None
         }
     }
+
+    pub fn action(&self) -> Action {
+        self.base().action
+    }
 }
 
 impl DocumentTransitionExt for DocumentTransition {

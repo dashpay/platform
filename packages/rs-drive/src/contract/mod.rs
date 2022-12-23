@@ -5,7 +5,7 @@ use ciborium::value::Value;
 
 /// Import from dpp
 pub use dpp::data_contract::{
-    extra::{DocumentField, DocumentFieldType, DocumentType},
+    extra::{DocumentField, DocumentFieldType, DocumentType, IndexLevel},
     extra::{Index, IndexProperty},
     DataContract, DataContract as Contract,
 };

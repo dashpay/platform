@@ -89,10 +89,8 @@ module.exports = async function injectPlugin(
               // eslint-disable-next-line no-return-assign,no-param-reassign
               const setReadyWatch = (_watcher) => _watcher.ready = true;
 
-              const onStartedEvent = () => startWatcher(watcher)
-                && logger.silly(`WORKER/${pluginName.toUpperCase()}/STARTED`);
-              const onExecuteEvent = () => setReadyWatch(watcher)
-                && logger.silly(`WORKER/${pluginName.toUpperCase()}/EXECUTED`);
+              const onStartedEvent = () => startWatcher(watcher);
+              const onExecuteEvent = () => setReadyWatch(watcher);
 
               self.on(`WORKER/${pluginName.toUpperCase()}/STARTED`, onStartedEvent);
               self.on(`WORKER/${pluginName.toUpperCase()}/EXECUTED`, onExecuteEvent);

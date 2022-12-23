@@ -17,6 +17,11 @@ if (dotenvResult.error) {
 
 module.exports = (config) => {
   config.set({
+    client: {
+      mocha: {
+        bail: true,
+      },
+    },
     frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'src/test/karma/loader.js',

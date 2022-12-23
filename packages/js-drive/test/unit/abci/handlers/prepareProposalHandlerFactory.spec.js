@@ -30,8 +30,9 @@ describe('prepareProposalHandlerFactory', () => {
   let validatorSetUpdate;
   let coreChainLockUpdate;
   let endBlockResult;
-  let proposalBlockExecutionMock;
+  let proposalBlockExecutionContextMock;
   let round;
+  let executionTimerMock;
 
   beforeEach(function beforeEach() {
     round = 1;
@@ -56,9 +57,10 @@ describe('prepareProposalHandlerFactory', () => {
         appVersion: 1,
       },
     });
+
     validatorSetUpdate = new ValidatorSetUpdate();
 
-    proposalBlockExecutionMock = new BlockExecutionContextMock(this.sinon);
+    proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -69,24 +71,37 @@ describe('prepareProposalHandlerFactory', () => {
     };
 
     beginBlockMock = this.sinon.stub();
+
     deliverTxMock = this.sinon.stub().resolves({
       code: 0,
-      processingFees: 1,
-      storageFees: 2,
+      fees: {
+        processingFee: 10,
+        storageFee: 100,
+        feeRefunds: {
+          1: 15,
+        },
+        feeRefundsSum: 15,
+      },
     });
+
     endBlockMock = this.sinon.stub().resolves(
       endBlockResult,
     );
 
     updateCoreChainLockMock = this.sinon.stub().resolves(coreChainLockUpdate);
 
+    executionTimerMock = {
+      getTimer: this.sinon.stub().returns(0.1),
+    };
+
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
       loggerMock,
-      proposalBlockExecutionMock,
+      proposalBlockExecutionContextMock,
       beginBlockMock,
       endBlockMock,
       updateCoreChainLockMock,
+      executionTimerMock,
     );
 
     const maxTxBytes = 42;
@@ -154,18 +169,35 @@ describe('prepareProposalHandlerFactory', () => {
 
     expect(deliverTxMock).to.be.calledThrice();
 
-    expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(round, loggerMock);
+    expect(updateCoreChainLockMock).to.be.calledOnceWithExactly(
+      request.coreChainLockedHeight,
+      round,
+      loggerMock,
+    );
 
     expect(endBlockMock).to.be.calledOnceWithExactly(
       {
         height: request.height,
         round,
-        processingFees: 3,
-        storageFees: 6,
+        fees: {
+          processingFee: 10 * 3,
+          storageFee: 100 * 3,
+          feeRefunds: {
+            1: 15 * 3,
+          },
+          feeRefundsSum: 15 * 3,
+        },
         coreChainLockedHeight: request.coreChainLockedHeight,
       },
       loggerMock,
     );
+
+    expect(proposalBlockExecutionContextMock.setPrepareProposalResult).to.be.calledOnceWithExactly({
+      appHash,
+      txResults: new Array(3).fill({ code: 0 }),
+      consensusParamUpdates,
+      validatorSetUpdate,
+    });
   });
 
   it('should cut txs that are not fit into the size limit', async () => {

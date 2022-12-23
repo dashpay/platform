@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use anyhow::anyhow;
 use serde_json::{json, Number, Value as JsonValue};
 
@@ -19,9 +17,23 @@ use super::{
     DataContract,
 };
 
+/// A way to provide external entropy generator.
+pub trait EntropyGenerator {
+    fn generate(&self) -> [u8; 32];
+}
+
+struct DefaultEntropyGenerator;
+
+impl EntropyGenerator for DefaultEntropyGenerator {
+    fn generate(&self) -> [u8; 32] {
+        entropy_generator::generate()
+    }
+}
+
 pub struct DataContractFactory {
     protocol_version: u32,
     validate_data_contract: DataContractValidator,
+    entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 impl DataContractFactory {
@@ -29,6 +41,19 @@ impl DataContractFactory {
         Self {
             protocol_version,
             validate_data_contract,
+            entropy_generator: Box::new(DefaultEntropyGenerator),
+        }
+    }
+
+    pub fn new_with_entropy_generator(
+        protocol_version: u32,
+        validate_data_contract: DataContractValidator,
+        entropy_generator: Box<dyn EntropyGenerator>,
+    ) -> Self {
+        Self {
+            protocol_version,
+            validate_data_contract,
+            entropy_generator,
         }
     }
 
@@ -38,7 +63,8 @@ impl DataContractFactory {
         owner_id: Identifier,
         documents: JsonValue,
     ) -> Result<DataContract, ProtocolError> {
-        let entropy = entropy_generator::generate()?;
+        let entropy = self.entropy_generator.generate();
+
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
@@ -48,7 +74,7 @@ impl DataContractFactory {
             id: data_contract_id,
             version: 1,
             owner_id,
-            defs: BTreeMap::new(),
+            defs: None,
             entropy,
 
             ..Default::default()
@@ -225,8 +251,7 @@ mod test {
     }
 
     #[tokio::test]
-    #[ignore = "test should be fixed and method - create_from_buffer should be fixed"]
-    async fn should_crete_data_contract_from_buffer() {
+    async fn should_create_data_contract_from_buffer() {
         let TestData {
             data_contract,
             factory,

@@ -28,12 +28,14 @@
 //
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
 
-use grovedb::{GroveDb, Transaction, TransactionArg};
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
 use object_size_info::DocumentAndContractInfo;
-use object_size_info::DocumentInfo::DocumentSize;
+use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
@@ -54,25 +56,26 @@ pub mod contract;
 pub mod defaults;
 /// Document module
 pub mod document;
+mod estimation_costs;
 /// Fee pools module
 pub mod fee_pools;
 pub mod flags;
 /// Genesis time module
 pub mod genesis_time;
-mod grove_operations;
+pub(crate) mod grove_operations;
 /// Identity module
 pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
 pub mod query;
+#[cfg(test)]
+mod test_utils;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
-use crate::fee::FeeResult;
+use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::extra::DriveContractExt;
-
-type TransactionPointerAddress = usize;
 
 /// Drive struct
 pub struct Drive {
@@ -206,14 +209,16 @@ impl Drive {
     /// Applies a batch of Drive operations to groveDB.
     fn apply_batch_drive_operations(
         &self,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         batch_operations: Vec<DriveOperation>,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
         self.apply_batch_grovedb_operations(
-            apply,
+            estimated_costs_only_with_layer_info,
             transaction,
             grove_db_operations,
             drive_operations,
@@ -228,20 +233,36 @@ impl Drive {
     /// Applies a batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
     fn apply_batch_grovedb_operations(
         &self,
-        apply: bool,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         batch_operations: GroveDbOpBatch,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        if apply {
+        if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
+            // Leave this for future debugging
+            // for (k, v) in estimated_layer_info.iter() {
+            //     let path = k
+            //         .to_path()
+            //         .iter()
+            //         .map(|k| hex::encode(k.as_slice()))
+            //         .join("/");
+            //     dbg!(path, v);
+            // }
+            self.grove_batch_operations_costs(
+                batch_operations,
+                estimated_layer_info,
+                false,
+                drive_operations,
+            )?;
+        } else {
             self.grove_apply_batch_with_add_costs(
                 batch_operations,
                 false,
                 transaction,
                 drive_operations,
             )?;
-        } else {
-            self.grove_batch_operations_costs(batch_operations, false, drive_operations)?;
         }
         Ok(())
     }
@@ -256,7 +277,7 @@ impl Drive {
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentSize(document_type.max_size() as u32),
+                document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
                 contract,
                 document_type,
                 owner_id: None,

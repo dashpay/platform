@@ -74,7 +74,12 @@ export default async function broadcastStateTransition(
 
     if (error) {
         // Create DAPI response error from gRPC error passed as gRPC response
-        const grpcError = new GrpcError(error.code, error.message, error.data);
+        const grpcError = new GrpcError(error.code, error.message);
+        // It is important to assign metadata to the error object
+        // instead of passing it as GrpcError constructor argument
+        // Otherwise it will be converted to grpc-js metadata
+        // Which is not compatible with web
+        grpcError.metadata = error.data;
 
         let cause = createGrpcTransportError(grpcError);
 

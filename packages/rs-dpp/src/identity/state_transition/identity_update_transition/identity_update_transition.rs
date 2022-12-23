@@ -252,7 +252,7 @@ impl StateTransitionConvert for IdentityUpdateTransition {
         Ok(raw_object)
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         // The [state_transition_helpers::to_json] doesn't  convert the `add_public_keys` property.
         // The property must be serialized manually
         let mut add_public_keys: Vec<JsonValue> = vec![];
@@ -260,8 +260,12 @@ impl StateTransitionConvert for IdentityUpdateTransition {
             add_public_keys.push(key.to_json()?);
         }
 
-        let mut json_object: JsonValue =
-            state_transition_helpers::to_json(self, Self::binary_property_paths())?;
+        let mut json_object: JsonValue = state_transition_helpers::to_json(
+            self,
+            Self::binary_property_paths(),
+            Self::signature_property_paths(),
+            skip_signature,
+        )?;
         json_object.insert(
             property_names::ADD_PUBLIC_KEYS.to_owned(),
             JsonValue::Array(add_public_keys),
@@ -340,7 +344,7 @@ mod test {
         };
 
         let result = transition
-            .to_json()
+            .to_json(false)
             .expect("conversion to json shouldn't fail");
 
         assert!(matches!(

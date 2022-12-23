@@ -13,15 +13,24 @@ const verifyStatus = {
 };
 
 /**
- *
+ * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @return {verifyVoteExtensionHandler}
  */
-function verifyVoteExtensionHandlerFactory() {
+function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
   /**
    * @typedef verifyVoteExtensionHandler
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
   async function verifyVoteExtensionHandler() {
+    const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
+      .child({
+        abciMethod: 'verifyVoteExtension',
+      });
+
+    consensusLogger.debug('VerifyVote ABCI method requested');
+
+    // TODO Verify withdrawal vote extensions and add logs
+
     return new ResponseVerifyVoteExtension({
       status: verifyStatus.ACCEPT,
     });

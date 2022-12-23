@@ -14,6 +14,7 @@ describe('DataContract', () => {
   let entropy;
   let contractId;
   let dataContract;
+  let defs;
 
   let DataContract;
   let DataContractDefaults;
@@ -49,6 +50,8 @@ describe('DataContract', () => {
     entropy = Buffer.alloc(32, 420);
     contractId = generateRandomIdentifier();
 
+    defs = { something: { type: 'string' } };
+
     jsDataContract = new JsDataContract({
       $schema: JsDataContract.DEFAULTS.SCHEMA,
       $id: contractId,
@@ -56,7 +59,7 @@ describe('DataContract', () => {
       protocolVersion: 1,
       ownerId,
       documents,
-      $defs: {},
+      $defs: defs,
     });
 
     dataContract = new DataContract({
@@ -66,7 +69,7 @@ describe('DataContract', () => {
       protocolVersion: 1,
       ownerId,
       documents,
-      $defs: {},
+      $defs: defs,
     });
   });
 
@@ -81,14 +84,14 @@ describe('DataContract', () => {
         protocolVersion: 1,
         version: 1,
         documents,
-        $defs: {},
+        $defs: defs,
       });
 
       expect(dataContract.getId().toBuffer()).to.deep.equal(id.toBuffer());
       expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId.toBuffer());
       expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
       expect(dataContract.getDocuments()).to.deep.equal(documents);
-      expect(dataContract.getDefinitions()).to.deep.equal({});
+      expect(dataContract.getDefinitions()).to.deep.equal(defs);
     });
   });
 
@@ -191,13 +194,12 @@ describe('DataContract', () => {
 
   describe('#getDocumentSchema', () => {
     it('should throw error if Document is not defined', () => {
-      let error;
       try {
         dataContract.getDocumentSchema('undefinedObject');
+        expect.fail('Error was not thrown');
       } catch (e) {
-        error = e;
+        expect(e.getDocType()).to.equal('undefinedObject');
       }
-      expect(error.getDocType()).to.equal('undefinedObject');
     });
 
     it('should return Document Schema', () => {
@@ -209,13 +211,12 @@ describe('DataContract', () => {
 
   describe('#getDocumentSchemaRef', () => {
     it('should throw error if Document is not defined', () => {
-      let error;
       try {
         dataContract.getDocumentSchemaRef('undefinedObject');
+        expect.fail('Error was not thrown');
       } catch (e) {
-        error = e;
+        expect(e.getDocType()).to.equal('undefinedObject');
       }
-      expect(error.getDocType()).to.equal('undefinedObject');
     });
 
     it('should return schema ref', () => {
@@ -241,12 +242,12 @@ describe('DataContract', () => {
     it('should return $defs', () => {
       const result = dataContract.getDefinitions();
 
-      expect(result).to.deep.equal({});
+      expect(result).to.deep.equal(defs);
     });
   });
 
   describe('#toJSON', () => {
-    it('should return DataContract as plain object', () => {
+    it('should return JataContract as plain object', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
@@ -256,7 +257,7 @@ describe('DataContract', () => {
         version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
-        $defs: {},
+        $defs: defs,
       });
     });
 
@@ -321,14 +322,12 @@ describe('DataContract', () => {
     });
 
     it('should throw an error if document type is not found', () => {
-      let error;
       try {
         dataContract.getBinaryProperties('unknown');
         expect.fail('Error was not thrown');
       } catch (e) {
-        error = e;
+        expect(e.getDocType()).to.equal('unknown');
       }
-      expect(error.getDocType()).to.equal('unknown');
     });
   });
 

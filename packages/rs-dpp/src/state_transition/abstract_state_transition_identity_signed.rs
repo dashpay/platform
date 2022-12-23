@@ -358,7 +358,7 @@ mod test {
     #[test]
     fn to_json() {
         let st = get_mock_state_transition();
-        let st_json = st.to_json().unwrap();
+        let st_json = st.to_json(false).unwrap();
         assert_eq!(
             st_json,
             json!({

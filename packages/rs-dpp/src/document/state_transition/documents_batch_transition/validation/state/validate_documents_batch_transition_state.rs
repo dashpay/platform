@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use dashcore::BlockHeader;
 use futures::future::join_all;
 use itertools::Itertools;
@@ -6,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
-    data_contract::DataContract,
     data_trigger::DataTriggerExecutionContext,
     document::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
@@ -78,9 +79,12 @@ pub async fn validate_document_transitions(
 
     // Data Contract must exist
     let data_contract = state_repository
-        .fetch_data_contract::<DataContract>(data_contract_id, &tmp_execution_context)
-        .await
-        .map_err(|_| ProtocolError::DataContractNotPresentError {
+        .fetch_data_contract(data_contract_id, &tmp_execution_context)
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?
+        .ok_or_else(|| ProtocolError::DataContractNotPresentError {
             data_contract_id: data_contract_id.clone(),
         })?;
 
@@ -219,7 +223,7 @@ fn check_ownership(
     };
     if &fetched_document.owner_id != owner_id {
         result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentOwnerMismatchError {
+            StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id.clone(),
                 document_owner_id: owner_id.to_owned(),
                 existing_document_owner_id: fetched_document.owner_id.clone(),
@@ -302,7 +306,7 @@ fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> Va
 
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
         result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentTimestampMismatchError {
+            StateError::DocumentTimestampsMismatchError {
                 document_id: document_transition.base().id.clone(),
             },
         )));

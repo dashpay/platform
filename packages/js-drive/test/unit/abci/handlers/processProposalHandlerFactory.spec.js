@@ -9,6 +9,7 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+
 const Long = require('long');
 
 const processProposalHandlerFactory = require('../../../../lib/abci/handlers/processProposalHandlerFactory');
@@ -19,24 +20,21 @@ describe('processProposalHandlerFactory', () => {
   let processProposalHandler;
   let request;
   let loggerMock;
-  let beginBlockMock;
-  let endBlockMock;
   let verifyChainLockMock;
-  let deliverTxMock;
-  let appHash;
-  let validatorSetUpdate;
-  let consensusParamUpdates;
   let coreChainLockUpdate;
-  let proposalBlockExecutionContextMock;
+  let processProposalMock;
   let round;
+  let appHash;
+  let proposalBlockExecutionContextMock;
+  let consensusParamUpdates;
+  let validatorSetUpdate;
 
   beforeEach(function beforeEach() {
     round = 0;
+
     appHash = Buffer.alloc(1, 1);
 
     proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-
-    loggerMock = new LoggerMock(this.sinon);
 
     consensusParamUpdates = new ConsensusParams({
       block: {
@@ -54,27 +52,17 @@ describe('processProposalHandlerFactory', () => {
     });
     validatorSetUpdate = new ValidatorSetUpdate();
 
-    beginBlockMock = this.sinon.stub();
-    endBlockMock = this.sinon.stub().resolves({
-      consensusParamUpdates,
-      appHash,
-      validatorSetUpdate,
-    });
-    deliverTxMock = this.sinon.stub().resolves({
-      code: 0,
-      processingFees: 1,
-      storageFees: 2,
-    });
-    beginBlockMock = this.sinon.stub();
+    loggerMock = new LoggerMock(this.sinon);
+
     verifyChainLockMock = this.sinon.stub().resolves(true);
 
+    processProposalMock = this.sinon.stub().resolves(new ResponseProcessProposal({ status: 1 }));
+
     processProposalHandler = processProposalHandlerFactory(
-      deliverTxMock,
       loggerMock,
-      proposalBlockExecutionContextMock,
-      beginBlockMock,
-      endBlockMock,
       verifyChainLockMock,
+      processProposalMock,
+      proposalBlockExecutionContextMock,
     );
 
     const txs = new Array(3).fill(Buffer.alloc(5, 0));
@@ -114,39 +102,14 @@ describe('processProposalHandlerFactory', () => {
     const result = await processProposalHandler(request);
 
     expect(result).to.be.an.instanceOf(ResponseProcessProposal);
+
     expect(result.status).to.equal(1);
-    expect(result.appHash).to.equal(appHash);
-    expect(result.txResults).to.be.deep.equal(new Array(3).fill({ code: 0 }));
-    expect(result.consensusParamUpdates).to.be.equal(consensusParamUpdates);
-    expect(result.validatorSetUpdate).to.be.equal(validatorSetUpdate);
 
-    expect(beginBlockMock).to.be.calledOnceWithExactly(
-      {
-        lastCommitInfo: request.proposedLastCommit,
-        height: request.height,
-        coreChainLockedHeight: request.coreChainLockedHeight,
-        version: request.version,
-        time: request.time,
-        proposerProTxHash: Buffer.from(request.proposerProTxHash),
-        round,
-      },
-      loggerMock,
-    );
-
-    expect(deliverTxMock).to.be.calledThrice();
+    expect(processProposalMock).to.be.calledOnceWithExactly(request, loggerMock);
 
     expect(verifyChainLockMock).to.be.calledOnceWithExactly(
       coreChainLockUpdate,
     );
-
-    expect(endBlockMock).to.be.calledOnceWithExactly({
-      height: request.height,
-      round,
-      processingFees: 3,
-      storageFees: 6,
-      coreChainLockedHeight: request.coreChainLockedHeight,
-    },
-    loggerMock);
   });
 
   it('should return rejected ResponseProcessProposal if chainlock can\'t be verified', async () => {
@@ -156,5 +119,34 @@ describe('processProposalHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(ResponseProcessProposal);
     expect(result.status).to.equal(2);
+
+    expect(processProposalMock).to.not.be.called();
+  });
+
+  it('should return already prepared result for this height and round', async () => {
+    proposalBlockExecutionContextMock.getHeight.returns(request.height);
+    proposalBlockExecutionContextMock.getRound.returns(request.round);
+
+    proposalBlockExecutionContextMock.getPrepareProposalResult.returns({
+      appHash,
+      txResults: new Array(3).fill({ code: 0 }),
+      consensusParamUpdates,
+      validatorSetUpdate,
+    });
+
+    const result = await processProposalHandler(request);
+
+    expect(proposalBlockExecutionContextMock.getPrepareProposalResult).to.be.calledOnce();
+
+    expect(result).to.be.an.instanceOf(ResponseProcessProposal);
+    expect(result.status).to.equal(1);
+    expect(result.appHash).to.equal(appHash);
+    expect(result.txResults).to.be.deep.equal(new Array(3).fill({ code: 0 }));
+    expect(result.consensusParamUpdates).to.be.equal(consensusParamUpdates);
+    expect(result.validatorSetUpdate).to.be.equal(validatorSetUpdate);
+
+    expect(processProposalMock).to.not.be.called();
+
+    expect(verifyChainLockMock).to.not.be.called();
   });
 });

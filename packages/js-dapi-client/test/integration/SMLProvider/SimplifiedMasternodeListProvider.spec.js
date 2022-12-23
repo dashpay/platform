@@ -5,7 +5,7 @@ const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
 
 const getMNListDiffsFixture = require('../../../lib/test/fixtures/getMNListDiffsFixture');
 
-const wait = require('../../../lib/test/utils/wait');
+const wait = require('../../../lib/utils/wait');
 
 describe('SimplifiedMasternodeListProvider', () => {
   let jsonTransportMock;

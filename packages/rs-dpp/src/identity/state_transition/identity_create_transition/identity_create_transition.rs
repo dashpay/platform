@@ -274,6 +274,14 @@ impl StateTransitionConvert for IdentityCreateTransition {
             serde_json::Value::Array(public_keys),
         )?;
 
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
         Ok(json)
     }
 }
