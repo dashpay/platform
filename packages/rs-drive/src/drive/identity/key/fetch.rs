@@ -1,43 +1,25 @@
-use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::identity::{
-    balance_path, identity_key_tree_path_vec, identity_path, identity_query_keys_tree_path_vec,
-    IDENTITY_KEY,
-};
+use crate::drive::identity::{identity_key_tree_path_vec, identity_query_keys_tree_path_vec};
 
 use crate::drive::identity::key::fetch::KeyKindRequestType::{
     AllKeysOfKindRequest, CurrentKeyOfKindRequest,
 };
-use crate::drive::identity::key::fetch::KeyRequestType::{
-    AllKeysRequest, SearchKeyRequest, SpecificKeysRequest,
-};
-use crate::drive::{Drive, RootTree};
+use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, SearchKey, SpecificKeys};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
 use crate::query::{Query, QueryItem};
-use dpp::identifier::Identifier;
-use dpp::identity::{Identity, KeyID, Purpose, SecurityLevel};
+use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::prelude::IdentityPublicKey;
-use grovedb::query_result_type::QueryResultType::{
-    QueryElementResultType, QueryKeyElementPairResultType, QueryPathKeyElementTrioResultType,
-};
+use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::query_result_type::{
-    Key, Path, PathKeyElementTrio, PathKeyOptionalElementTrio, QueryResultElement,
-    QueryResultElements,
+    Key, Path, PathKeyOptionalElementTrio, QueryResultElement, QueryResultElements,
 };
-use grovedb::Element::{Item, SumItem};
+use grovedb::Element::Item;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
-use grovedb::batch::Op;
-use dpp::document::state_transition::documents_batch_transition::apply_documents_batch_transition_factory::apply_documents_batch_transition;
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -52,9 +34,9 @@ pub enum KeyKindRequestType {
 /// The type of key request
 #[derive(Clone)]
 pub enum KeyRequestType {
-    AllKeysRequest,
-    SpecificKeysRequest(Vec<KeyID>),
-    SearchKeyRequest(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
+    AllKeys,
+    SpecificKeys(Vec<KeyID>),
+    SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
 }
 
 type PurposeU8 = u8;
@@ -98,15 +80,16 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
     IdentityPublicKey::deserialize(value.as_slice()).map_err(Error::Protocol)
 }
 
-// fn element_to_identity_public_key_id_and_object_pair(element: Element) -> Result<IdentityPublicKey, Error> {
-//     let public_key = element_to_identity_public_key(element)?;
-//
-//     (public_key.idю public_key)
-// }
-//
+fn element_to_identity_public_key_id_and_object_pair(
+    element: Element,
+) -> Result<(KeyID, IdentityPublicKey), Error> {
+    let public_key = element_to_identity_public_key(element)?;
+
+    Ok((public_key.id, public_key))
+}
+
 fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
-    key: Key,
-    maybe_element: Option<Element>,
+    (_, key, maybe_element): (Path, Key, Option<Element>),
 ) -> Result<(KeyID, Option<IdentityPublicKey>), Error> {
     if let Some(element) = maybe_element {
         let public_key = element_to_identity_public_key(element)?;
@@ -120,17 +103,29 @@ fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
     Ok((key_id, None))
 }
 
+fn supported_query_result_element_to_identity_public_key_id_and_object_pair(
+    query_result_element: QueryResultElement,
+) -> Result<(KeyID, IdentityPublicKey), Error> {
+    match query_result_element {
+        QueryResultElement::ElementResultItem(_) => Err(Error::Identity(
+            IdentityError::IdentityKeyIncorrectQueryMissingInformation(
+                "no key present in return information",
+            ),
+        )),
+        QueryResultElement::KeyElementPairResultItem((_, element))
+        | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
+            element_to_identity_public_key_id_and_object_pair(element)
+        }
+    }
+}
+
 impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
     fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
         // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| element))
-            .map(|element| {
-                let public_key = element_to_identity_public_key(element)?;
-
-                Ok((public_key.id, public_key))
-            })
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key_id_and_object_pair)
             .collect()
     }
 
@@ -138,19 +133,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
         value
             .elements
             .into_iter()
-            .map(|query_result_element| match query_result_element {
-                QueryResultElement::ElementResultItem(element) => Err(Error::Identity(
-                    IdentityError::IdentityKeyIncorrectQueryMissingInformation(
-                        "no key present in return information",
-                    ),
-                )),
-                QueryResultElement::KeyElementPairResultItem((key, element))
-                | QueryResultElement::PathKeyElementTrioResultItem((_, key, element)) => {
-                    let public_key = element_to_identity_public_key(element)?;
-
-                    Ok((public_key.id, public_key))
-                }
-            })
+            .map(supported_query_result_element_to_identity_public_key_id_and_object_pair)
             .collect()
     }
 }
@@ -159,16 +142,11 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
     fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
         value
             .into_iter()
-            .map(|(_, key, maybe_element)| {
-                key_and_optional_element_to_identity_public_key_id_and_object_pair(
-                    key,
-                    maybe_element,
-                )
-            })
+            .map(key_and_optional_element_to_identity_public_key_id_and_object_pair)
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
         )))
@@ -191,7 +169,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
         )))
@@ -203,12 +181,8 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
         // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| (key, element)))
-            .map(|(key, element)| {
-                let public_key = element_to_identity_public_key(element)?;
-
-                Ok((public_key.id, public_key))
-            })
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key_id_and_object_pair)
             .collect()
     }
 
@@ -216,19 +190,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
         value
             .elements
             .into_iter()
-            .map(|query_result_element| match query_result_element {
-                QueryResultElement::ElementResultItem(element) => Err(Error::Identity(
-                    IdentityError::IdentityKeyIncorrectQueryMissingInformation(
-                        "no key present in return information",
-                    ),
-                )),
-                QueryResultElement::KeyElementPairResultItem((key, element))
-                | QueryResultElement::PathKeyElementTrioResultItem((_, key, element)) => {
-                    let public_key = element_to_identity_public_key(element)?;
-
-                    Ok((public_key.id, public_key))
-                }
-            })
+            .map(supported_query_result_element_to_identity_public_key_id_and_object_pair)
             .collect()
     }
 }
@@ -237,16 +199,11 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
     fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
         value
             .into_iter()
-            .map(|(_, key, maybe_element)| {
-                key_and_optional_element_to_identity_public_key_id_and_object_pair(
-                    key,
-                    maybe_element,
-                )
-            })
+            .map(key_and_optional_element_to_identity_public_key_id_and_object_pair)
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
         )))
@@ -269,7 +226,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeM
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
         )))
@@ -301,7 +258,7 @@ impl IdentityKeysRequest {
         }
         IdentityKeysRequest {
             identity_id,
-            key_request: SearchKeyRequest(purpose_btree_map),
+            key_request: SearchKey(purpose_btree_map),
             limit: None,
             offset: None,
         }
@@ -311,14 +268,14 @@ impl IdentityKeysRequest {
     pub fn new_all_keys_query(identity_id: [u8; 32]) -> Self {
         IdentityKeysRequest {
             identity_id,
-            key_request: AllKeysRequest,
+            key_request: AllKeys,
             limit: None,
             offset: None,
         }
     }
 
     /// Create the path query for the request
-    pub fn to_path_query(self) -> PathQuery {
+    pub fn to_path_query(&self) -> PathQuery {
         let IdentityKeysRequest {
             identity_id,
             key_request,
@@ -326,36 +283,36 @@ impl IdentityKeysRequest {
             offset,
         } = self;
         match key_request {
-            AllKeysRequest => {
+            AllKeys => {
                 let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
                         query: Self::all_keys_query(),
-                        limit,
-                        offset,
+                        limit: *limit,
+                        offset: *offset,
                     },
                 }
             }
-            SpecificKeysRequest(key_ids) => {
+            SpecificKeys(key_ids) => {
                 let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Self::specific_keys_query(key_ids),
+                        query: Self::specific_keys_query(key_ids.clone()),
                         limit: None,
                         offset: None,
                     },
                 }
             }
-            SearchKeyRequest(map) => {
-                let query_keys_path = identity_query_keys_tree_path_vec(identity_id);
+            SearchKey(map) => {
+                let query_keys_path = identity_query_keys_tree_path_vec(*identity_id);
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Self::construct_search_query(map),
-                        limit,
-                        offset,
+                        query: Self::construct_search_query(map.clone()),
+                        limit: *limit,
+                        offset: *limit,
                     },
                 }
             }
@@ -378,7 +335,7 @@ impl IdentityKeysRequest {
         query
     }
 
-    /// Contruct the query for the request
+    /// Construct the query for the request
     fn construct_search_query(
         key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,
     ) -> Query {
@@ -489,10 +446,10 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<T, Error> {
-        match &key_request.key_request {
-            AllKeysRequest => {
-                let path_query = key_request.to_path_query();
+        let path_query = key_request.to_path_query();
 
+        match key_request.key_request {
+            AllKeys => {
                 let (result, _) = self.grove_get_raw_path_query(
                     &path_query,
                     transaction,
@@ -502,9 +459,7 @@ impl Drive {
 
                 T::try_from_query_results(result)
             }
-            SpecificKeysRequest(_) => {
-                let path_query = key_request.to_path_query();
-
+            SpecificKeys(_) => {
                 let result = self.grove_get_raw_path_query_with_optional(
                     &path_query,
                     transaction,
@@ -513,9 +468,7 @@ impl Drive {
 
                 T::try_from_path_key_optional(result)
             }
-            SearchKeyRequest(_) => {
-                let path_query = key_request.to_path_query();
-
+            SearchKey(_) => {
                 let result = self.grove_get_path_query_with_optional(
                     &path_query,
                     transaction,
@@ -534,13 +487,7 @@ mod tests {
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
 
-    use tempfile::TempDir;
-
-    use crate::drive::identity::key::fetch::KeyRequestType::SpecificKeysRequest;
-    use crate::drive::identity::key::fetch::{
-        IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
-    };
-    use crate::drive::Drive;
+    use super::*;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
@@ -593,7 +540,7 @@ mod tests {
 
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
-            key_request: SpecificKeysRequest(vec![0]),
+            key_request: SpecificKeys(vec![0]),
             limit: None,
             offset: None,
         };
@@ -628,7 +575,7 @@ mod tests {
 
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
-            key_request: SpecificKeysRequest(vec![0, 4]),
+            key_request: SpecificKeys(vec![0, 4]),
             limit: None,
             offset: None,
         };
@@ -663,7 +610,7 @@ mod tests {
 
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
-            key_request: SpecificKeysRequest(vec![0, 6]),
+            key_request: SpecificKeys(vec![0, 6]),
             limit: None,
             offset: None,
         };
