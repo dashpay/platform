@@ -203,7 +203,6 @@ mod tests {
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee::epoch::CreditsPerEpoch;
-        use drive::fee::FeeResult;
         use drive::rpc::core::MockCoreRPCLike;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;

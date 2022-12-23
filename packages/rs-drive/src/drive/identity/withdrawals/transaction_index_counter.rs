@@ -37,8 +37,8 @@ impl Drive {
             )
             .unwrap()?;
 
-        if expired_index_elements.len() > 0 {
-            let expired_index_element_pair = expired_index_elements.into_iter().next().unwrap();
+        if !expired_index_elements.is_empty() {
+            let expired_index_element_pair = expired_index_elements.elements.get(0).unwrap();
 
             if let QueryResultElement::KeyElementPairResultItem((key, _)) =
                 expired_index_element_pair
@@ -51,7 +51,7 @@ impl Drive {
 
                 let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path_as_u8();
 
-                self.grove.delete(path, &key, None, transaction).unwrap()?;
+                self.grove.delete(path, key, None, transaction).unwrap()?;
 
                 return Ok(index);
             }
