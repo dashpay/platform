@@ -404,7 +404,7 @@ module.exports = {
         config.core.logIps = 0;
         config.core.indexes = config.name === 'mainnet' ? 0 : 1;
         config.core.minimumDifficultyBlocks = 1000;
-        config.core.powTargetSpacing = null;
+        config.core.powTargetSpacing = 150;
       });
 
     return configFile;

@@ -63,7 +63,7 @@ devnet={{=it.core.devnetName}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 
 # devnet-specific
-{{? it.core.powTargetSpacing}}powtargetspacing={{=it.core.powTargetSpacing}}{{?}}
+powtargetspacing={{=it.core.powTargetSpacing}}
 minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
 highsubsidyblocks=500
 highsubsidyfactor=10{{?}}

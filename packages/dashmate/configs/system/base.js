@@ -69,7 +69,7 @@ module.exports = {
     logIps: 0,
     indexes: true,
     minimumDifficultyBlocks: 1000,
-    powTargetSpacing: null,
+    powTargetSpacing: 150,
     reindex: {
       enable: false,
       containerId: null,
