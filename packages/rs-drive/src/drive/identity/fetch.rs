@@ -29,6 +29,7 @@ use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
 use crate::fee::result::FeeResult;
+use crate::fee_pools::epochs::Epoch;
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store
@@ -231,25 +232,54 @@ impl Drive {
         }))
     }
 
-    /// Given an identity, fetches the identity with its flags from storage.
+    /// Fetches an identity with all its information and
+    /// the cost it took from storage.
+    pub fn fetch_full_identity_with_costs(
+        &self,
+        identity_id: [u8; 32],
+        epoch: &Epoch,
+        transaction: TransactionArg,
+    ) -> Result<(Option<Identity>,FeeResult), Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let maybe_identity = self.fetch_full_identity_operations(
+            identity_id, transaction, &mut drive_operations,
+        )?;
+        let fee = calculate_fee(None, Some(drive_operations), epoch)?;
+        Ok((maybe_identity, fee))
+    }
+
+    /// Fetches an identity with all its information from storage.
     pub fn fetch_full_identity(
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Option<Identity>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.fetch_full_identity_operations(
+            identity_id, transaction, &mut drive_operations,
+        )
+    }
+
+    /// Given an identity, fetches the identity with its flags from storage.
+    pub fn fetch_full_identity_operations(
+        &self,
+        identity_id: [u8; 32],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
-        let balance = self.fetch_identity_balance(identity_id, true, transaction)?;
+        let balance = self.fetch_identity_balance_operations(identity_id, true, transaction, drive_operations)?;
         if balance.is_none() {
             return Ok(None);
         }
         let balance = balance.unwrap();
         let revision = self
-            .fetch_identity_revision(identity_id, true, transaction)?
+            .fetch_identity_revision_operations(identity_id, true, transaction, drive_operations)?
             .ok_or(Error::Drive(DriveError::CorruptedDriveState(
                 "revision not found on identity".to_string(),
             )))?;
 
-        let public_keys = self.fetch_all_identity_keys(identity_id, transaction)?;
+        let public_keys = self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations)?;
         Ok(Some(Identity {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
