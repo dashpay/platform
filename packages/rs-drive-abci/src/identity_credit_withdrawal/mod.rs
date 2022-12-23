@@ -9,7 +9,7 @@ use dpp::{
 };
 use drive::{
     drive::{
-        batch::GroveDbOpBatch,
+        batch::GroveDbOpBatch, block_info::BlockInfo,
         identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path_as_u8,
     },
     fee_pools::epochs::Epoch,
@@ -18,6 +18,7 @@ use drive::{
 use serde_json::{Number, Value as JsonValue};
 
 use crate::{
+    block::BlockExecutionContext,
     error::{execution::ExecutionError, Error},
     platform::Platform,
 };
@@ -29,10 +30,7 @@ impl Platform {
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
         last_synced_core_height: u64,
-        core_chain_locked_height: u64,
-        block_time_ms: u64,
-        block_height: u64,
-        current_epoch_index: u16,
+        block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
@@ -46,7 +44,9 @@ impl Platform {
                 ))
             })?
             .to_buffer(),
-            Some(&Epoch::new(current_epoch_index)),
+            Some(&Epoch::new(
+                block_execution_context.epoch_info.current_epoch_index,
+            )),
             transaction,
         )?;
 
@@ -54,9 +54,10 @@ impl Platform {
             ExecutionError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
         ))?;
 
-        let core_transactions = self
-            .drive
-            .fetch_core_block_transactions(last_synced_core_height, core_chain_locked_height)?;
+        let core_transactions = self.drive.fetch_core_block_transactions(
+            last_synced_core_height,
+            block_execution_context.block_info.core_chain_locked_height,
+        )?;
 
         let broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::statuses::BROADCASTED,
@@ -89,7 +90,9 @@ impl Platform {
             })?;
 
             if core_transactions.contains(&transaction_id)
-                || core_chain_locked_height - transaction_sign_height > 48
+                || block_execution_context.block_info.core_chain_locked_height
+                    - transaction_sign_height
+                    > 48
             {
                 let status = if core_transactions.contains(&transaction_id) {
                     withdrawals_contract::statuses::COMPLETE
@@ -120,9 +123,11 @@ impl Platform {
                 self.drive.update_document_data(
                     &contract_fetch_info.contract,
                     &mut document,
-                    block_time_ms,
-                    block_height,
-                    current_epoch_index,
+                    BlockInfo {
+                        time_ms: block_execution_context.block_info.block_time_ms,
+                        height: block_execution_context.block_info.block_height,
+                        epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+                    },
                     transaction,
                     |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                         document
@@ -147,9 +152,7 @@ impl Platform {
     /// Prepares a list of an unsigned withdrawal transaction bytes
     pub fn fetch_and_prepare_unsigned_withdrawal_transactions(
         &self,
-        block_time_ms: u64,
-        block_height: u64,
-        current_epoch_index: u16,
+        block_execution_context: &BlockExecutionContext,
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
@@ -164,7 +167,8 @@ impl Platform {
             .into_iter()
             .map(|(_, bytes)| {
                 let request_info = AssetUnlockRequestInfo {
-                    request_height: block_height as u32,
+                    request_height: block_execution_context.block_info.core_chain_locked_height
+                        as u32,
                     quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
                 };
 
@@ -184,9 +188,11 @@ impl Platform {
                 self.drive.update_document_transaction_id(
                     &original_transaction_id,
                     &update_transaction_id,
-                    block_time_ms,
-                    block_height,
-                    current_epoch_index,
+                    BlockInfo {
+                        time_ms: block_execution_context.block_info.block_time_ms,
+                        height: block_execution_context.block_info.block_height,
+                        epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+                    },
                     transaction,
                 )?;
 
@@ -198,9 +204,7 @@ impl Platform {
     /// Pool withdrawal documents into transactions
     pub fn pool_withdrawals_into_transactions(
         &self,
-        block_time_ms: u64,
-        block_height: u64,
-        current_epoch_index: u16,
+        block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
@@ -214,7 +218,9 @@ impl Platform {
                 ))
             })?
             .to_buffer(),
-            Some(&Epoch::new(current_epoch_index)),
+            Some(&Epoch::new(
+                block_execution_context.epoch_info.current_epoch_index,
+            )),
             transaction,
         )?;
 
@@ -238,9 +244,11 @@ impl Platform {
             self.drive.update_document_data(
                 &contract_fetch_info.contract,
                 document,
-                block_time_ms,
-                block_height,
-                current_epoch_index,
+                BlockInfo {
+                    time_ms: block_execution_context.block_info.block_time_ms,
+                    height: block_execution_context.block_info.block_height,
+                    epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+                },
                 transaction,
                 |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                     document
@@ -315,11 +323,14 @@ mod tests {
     use crate::common::helpers::setup::setup_system_data_contract;
 
     use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+
+    use crate::{
+        block::{BlockExecutionContext, BlockInfo},
+        execution::fee_pools::epoch::EpochInfo,
+    };
 
     mod update_withdrawal_statuses {
-
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-
         use super::*;
 
         #[test]
@@ -425,10 +436,23 @@ mod tests {
             platform
                 .update_broadcasted_withdrawal_transaction_statuses(
                     95,
-                    96,
-                    1,
-                    1,
-                    1,
+                    &BlockExecutionContext {
+                        block_info: BlockInfo {
+                            block_height: 1,
+                            block_time_ms: 1,
+                            previous_block_time_ms: Some(1),
+                            proposer_pro_tx_hash: [
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            ],
+                            core_chain_locked_height: 96,
+                        },
+                        epoch_info: EpochInfo {
+                            current_epoch_index: 1,
+                            previous_epoch_index: None,
+                            is_epoch_change: false,
+                        },
+                    },
                     Some(&transaction),
                 )
                 .expect("to update withdrawal statuses");
@@ -512,7 +536,26 @@ mod tests {
             );
 
             platform
-                .pool_withdrawals_into_transactions(1, 1, 1, Some(&transaction))
+                .pool_withdrawals_into_transactions(
+                    &BlockExecutionContext {
+                        block_info: BlockInfo {
+                            block_height: 1,
+                            block_time_ms: 1,
+                            previous_block_time_ms: Some(1),
+                            proposer_pro_tx_hash: [
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            ],
+                            core_chain_locked_height: 96,
+                        },
+                        epoch_info: EpochInfo {
+                            current_epoch_index: 1,
+                            previous_epoch_index: None,
+                            is_epoch_change: false,
+                        },
+                    },
+                    Some(&transaction),
+                )
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

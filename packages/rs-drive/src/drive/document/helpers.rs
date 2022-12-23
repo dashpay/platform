@@ -2,7 +2,7 @@ use dpp::{
     contracts::withdrawals_contract,
     data_contract::extra::common,
     prelude::{DataContract, Document, Identifier},
-    util::{json_value::JsonValueExt, string_encoding::Encoding},
+    util::string_encoding::Encoding,
 };
 use grovedb::TransactionArg;
 use serde_json::{json, Number, Value as JsonValue};
@@ -10,7 +10,6 @@ use serde_json::{json, Number, Value as JsonValue};
 use crate::{
     drive::{block_info::BlockInfo, Drive},
     error::{drive::DriveError, Error},
-    fee_pools::epochs::Epoch,
 };
 
 impl Drive {
@@ -19,9 +18,7 @@ impl Drive {
         &self,
         contract: &DataContract,
         document: &mut Document,
-        block_time_ms: u64,
-        block_height: u64,
-        current_epoch_index: u16,
+        block_info: BlockInfo,
         transaction: TransactionArg,
         update_fn: F,
     ) -> Result<(), Error>
@@ -30,7 +27,7 @@ impl Drive {
     {
         let document = update_fn(document)?;
 
-        document.updated_at = Some(block_time_ms.try_into().map_err(|_| {
+        document.updated_at = Some(block_info.time_ms.try_into().map_err(|_| {
             Error::Drive(DriveError::CorruptedCodeExecution(
                 "Can't convert u64 block time to i64 updated_at",
             ))
@@ -50,11 +47,7 @@ impl Drive {
             })?,
             withdrawals_contract::types::WITHDRAWAL,
             Some(document.owner_id.to_buffer()),
-            BlockInfo {
-                time_ms: block_time_ms,
-                height: block_height,
-                epoch: Epoch::new(current_epoch_index),
-            },
+            block_info,
             true,
             None,
             transaction,
@@ -69,9 +62,7 @@ impl Drive {
         &self,
         original_transaction_id: &[u8],
         update_transaction_id: &[u8],
-        block_time_ms: u64,
-        block_height: u64,
-        current_epoch_index: u16,
+        block_info: BlockInfo,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let data_contract_id = Identifier::from_string(
@@ -86,7 +77,7 @@ impl Drive {
 
         let (_, maybe_data_contract) = self.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
-            Some(&Epoch::new(current_epoch_index)),
+            Some(&block_info.epoch),
             transaction,
         )?;
 
@@ -126,9 +117,7 @@ impl Drive {
             self.update_document_data(
                 &contract_fetch_info.contract,
                 &mut document,
-                block_time_ms,
-                block_height,
-                current_epoch_index,
+                block_info.clone(),
                 transaction,
                 |document: &mut Document| -> Result<&mut Document, Error> {
                     document
@@ -168,8 +157,11 @@ mod tests {
         setup_document, setup_drive_with_initial_state_structure, setup_system_data_contract,
     };
 
+    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+
+    use crate::{drive::block_info::BlockInfo, fee_pools::epochs::Epoch};
+
     mod update_document_transaction_id {
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
         use super::*;
 
@@ -212,9 +204,11 @@ mod tests {
                 .update_document_transaction_id(
                     &original_transaction_id,
                     &updated_transaction_id,
-                    1,
-                    1,
-                    1,
+                    BlockInfo {
+                        time_ms: 1,
+                        height: 1,
+                        epoch: Epoch::new(1),
+                    },
                     Some(&transaction),
                 )
                 .expect("to update transactionId");

@@ -40,6 +40,8 @@ pub struct BlockInfo {
     pub previous_block_time_ms: Option<u64>,
     /// Block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
+    /// Core chain locked height
+    pub core_chain_locked_height: u64,
 }
 
 impl BlockInfo {
@@ -50,6 +52,7 @@ impl BlockInfo {
             block_time_ms: block_begin_request.block_time_ms,
             previous_block_time_ms: block_begin_request.previous_block_time_ms,
             proposer_pro_tx_hash: block_begin_request.proposer_pro_tx_hash,
+            core_chain_locked_height: block_begin_request.core_chain_locked_height,
         }
     }
 }

@@ -258,6 +258,7 @@ mod tests {
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
+                    core_chain_locked_height: 1,
                 };
 
                 let epoch_info =
@@ -423,6 +424,7 @@ mod tests {
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
+                    core_chain_locked_height: 1,
                 };
 
                 let epoch_info =
