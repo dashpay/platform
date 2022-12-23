@@ -17,24 +17,23 @@ let DocumentsContainer;
 
 function newDocumentsContainer(documents) {
   const {
-    // use constants
-    ["create"]: createDocuments,
-    ["replace"]: replaceDocuments,
-    ["delete"]: deleteDocuments,
+    create: createDocuments,
+    replace: replaceDocuments,
+    delete: deleteDocuments,
   } = documents;
-  const documentsContainer = new DocumentsContainer;
+  const documentsContainer = new DocumentsContainer();
   if (createDocuments != null) {
-    for (d of createDocuments) {
+    for (const d of createDocuments) {
       documentsContainer.pushDocumentCreate(d);
     }
   }
   if (replaceDocuments != null) {
-    for (d of replaceDocuments) {
+    for (const d of replaceDocuments) {
       documentsContainer.pushDocumentReplace(d);
     }
   }
   if (deleteDocuments != null) {
-    for (d of deleteDocuments) {
+    for (const d of deleteDocuments) {
       documentsContainer.pushDeleteDocument(d);
     }
   }
@@ -42,35 +41,31 @@ function newDocumentsContainer(documents) {
   return documentsContainer;
 }
 
-
 describe('DocumentsBatchTransition', () => {
   let stateTransitionJs;
   let stateTransition;
   let documentsJs;
   let documents;
-  let hashMock;
-  let encodeMock;
   let dataContractJs;
   let dataContract;
   let factoryJs;
 
   beforeEach(async () => {
     ({
-      Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract, Document, DocumentTransitions, Documents, DocumentsContainer
+      Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
+      Document, DocumentsContainer,
     } = await loadWasmDpp());
   });
 
-  beforeEach(function beforeEach() {
-
+  beforeEach(() => {
     dataContractJs = getDataContractFixture();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      let doc = new Document(d.toObject(), dataContract)
+      const doc = new Document(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
-
     });
 
     const protocolVersionValidatorRs = new ProtocolVersionValidator();
@@ -86,7 +81,6 @@ describe('DocumentsBatchTransition', () => {
       create: documents,
     }));
   });
-
 
   describe('#getProtocolVersion', () => {
     it('should return the current protocol version', () => {
@@ -130,9 +124,9 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#getTransitions - Rust', () => {
     it('should return document transitions', () => {
-      const transitionsJs = stateTransitionJs.getTransitions().map((t) => { return t.toJSON() });
-      const transitions = stateTransition.getTransitions().map((t) => { return t.toJSON() });
-      expect(transitionsJs).to.deep.equal(transitions)
+      const transitionsJs = stateTransitionJs.getTransitions().map((t) => t.toJSON());
+      const transitions = stateTransition.getTransitions().map((t) => t.toJSON());
+      expect(transitionsJs).to.deep.equal(transitions);
     });
   });
 
@@ -153,12 +147,11 @@ describe('DocumentsBatchTransition', () => {
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documentsJs[0].getOwnerId().toString(),
-        transitions: stateTransitionJs.getTransitions().map((d) => { return d.toJSON() }),
+        transitions: stateTransitionJs.getTransitions().map((d) => d.toJSON()),
         signaturePublicKeyId: undefined,
         signature: undefined,
       });
     });
-
   });
 
   describe('#toObject', () => {
@@ -193,10 +186,7 @@ describe('DocumentsBatchTransition', () => {
 
       expect(bufferJs).to.deep.equal(buffer);
     });
-
   });
-
-
 
   describe('#hash', () => {
     it('should return the same hash as the JS version', () => {
@@ -205,7 +195,6 @@ describe('DocumentsBatchTransition', () => {
 
       expect(hash).to.deep.equal(hashJs);
     });
-
   });
 
   describe('#getOwnerId', () => {
@@ -237,13 +226,12 @@ describe('DocumentsBatchTransition', () => {
   describe('#getModifiedDataIds - Rust', () => {
     it('should return ids of affected documents', () => {
       const expectedIds = documentsJs.map((doc) => doc.getId().toBuffer());
-      const result = stateTransition.getModifiedDataIds().map((id) => { return id.toBuffer() });
+      const result = stateTransition.getModifiedDataIds().map((id) => id.toBuffer());
 
       expect(result.length).to.be.equal(10);
       expect(result).to.be.deep.equal(expectedIds);
     });
   });
-
 
   describe('#isDataContractStateTransition', () => {
     it('should return false', () => {

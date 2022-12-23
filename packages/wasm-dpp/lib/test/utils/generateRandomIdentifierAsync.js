@@ -11,11 +11,3 @@ async function generateRandomIdentifierAsync() {
   const { Identifier } = await loadWasmDpp();
   return new Identifier(crypto.randomBytes(32));
 }
-
-
-
-
-
-
-
-

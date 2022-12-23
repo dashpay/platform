@@ -11,7 +11,6 @@ const cloneDeepWith = require('lodash.clonedeep');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../../dist');
-const { DocumentFactory } = require('../../../dist/wasm/wasm_dpp');
 
 let DataContractFactory;
 let DataContractValidator;

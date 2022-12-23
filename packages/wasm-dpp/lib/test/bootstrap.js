@@ -13,7 +13,7 @@ use(dirtyChai);
 use(chaiString);
 use(chaiExclude);
 
-globalThis.crypto = crypto.webcrypto
+globalThis.crypto = crypto.webcrypto;
 
 beforeEach(function beforeEach() {
   if (!this.sinonSandbox) {
