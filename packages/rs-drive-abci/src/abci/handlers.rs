@@ -120,8 +120,14 @@ impl TenderdashAbci for Platform {
             epoch_info: epoch_info.clone(),
         };
 
+        let last_synced_core_height = if request.last_synced_core_height == 0 {
+            block_execution_context.block_info.core_chain_locked_height
+        } else {
+            request.last_synced_core_height
+        };
+
         self.update_broadcasted_withdrawal_transaction_statuses(
-            request.last_synced_core_height,
+            last_synced_core_height,
             &block_execution_context,
             transaction,
         )?;

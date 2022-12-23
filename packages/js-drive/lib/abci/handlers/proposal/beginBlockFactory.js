@@ -113,7 +113,7 @@ function beginBlockFactory(
       useTransaction: true,
     });
 
-    const lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || coreChainLockedHeight;
+    const lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
 
     // Call RS ABCI
 
