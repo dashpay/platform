@@ -6,32 +6,30 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
-const lodashCloneDeep = require('lodash/cloneDeep');
 
-const BlockInfo = require('../../blockExecution/BlockInfo');
+const lodashCloneDeep = require('lodash/cloneDeep');
 
 /**
  *
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {processProposal} processProposal
+ * @param {broadcastWithdrawalTransactions} broadcastWithdrawalTransactions
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
   proposalBlockExecutionContext,
   processProposal,
-  updateWithdrawalTransactionIdAndStatus,
+  broadcastWithdrawalTransactions,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -119,34 +117,11 @@ function finalizeBlockHandlerFactory(
 
     const { thresholdVoteExtensions } = commitInfo;
 
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
-
-    for (const { extension, signature } of (thresholdVoteExtensions || [])) {
-      const withdrawalTransactionHash = extension.toString('hex');
-
-      const unsignedWithdrawalTransactionBytes = unsignedWithdrawalTransactionsMap[
-        withdrawalTransactionHash
-      ];
-
-      if (unsignedWithdrawalTransactionBytes) {
-        const transactionBytes = Buffer.concat([
-          unsignedWithdrawalTransactionBytes,
-          signature,
-        ]);
-
-        // TODO: think about Core error handling
-        await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
-
-        await updateWithdrawalTransactionIdAndStatus(
-          blockInfo,
-          unsignedWithdrawalTransactionBytes,
-          transactionBytes,
-          {
-            useTransaction: true,
-          },
-        );
-      }
-    }
+    await broadcastWithdrawalTransactions(
+      proposalBlockExecutionContext,
+      thresholdVoteExtensions,
+      unsignedWithdrawalTransactionsMap,
+    );
 
     proposalBlockExecutionContext.reset();
 

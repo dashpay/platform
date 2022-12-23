@@ -25,14 +25,13 @@ describe('finalizeBlockHandlerFactory', () => {
   let requestMock;
   let appHash;
   let groveDBStoreMock;
-  let coreRpcClientMock;
   let blockExecutionContextRepositoryMock;
   let dataContract;
   let proposalBlockExecutionContextMock;
   let round;
   let block;
   let processProposalMock;
-  let updateWithdrawalTransactionIdAndStatusMock;
+  let broadcastWithdrawalTransactions;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -93,28 +92,23 @@ describe('finalizeBlockHandlerFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
 
-    coreRpcClientMock = {
-      sendRawTransaction: this.sinon.stub(),
-    };
-
     blockExecutionContextRepositoryMock = new BlockExecutionContextRepositoryMock(
       this.sinon,
     );
 
     processProposalMock = this.sinon.stub();
 
-    updateWithdrawalTransactionIdAndStatusMock = this.sinon.stub();
+    broadcastWithdrawalTransactions = this.sinon.stub();
 
     finalizeBlockHandler = finalizeBlockHandlerFactory(
       groveDBStoreMock,
       blockExecutionContextRepositoryMock,
-      coreRpcClientMock,
       loggerMock,
       executionTimerMock,
       latestBlockExecutionContextMock,
       proposalBlockExecutionContextMock,
       processProposalMock,
-      updateWithdrawalTransactionIdAndStatusMock,
+      broadcastWithdrawalTransactions,
     );
   });
 
@@ -138,6 +132,12 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(latestBlockExecutionContextMock.populate).to.be.calledOnce();
     expect(processProposalMock).to.be.not.called();
+
+    expect(broadcastWithdrawalTransactions).to.have.been.calledOnceWith(
+      proposalBlockExecutionContextMock,
+      undefined,
+      undefined,
+    );
   });
 
   it('should send withdrawal transaction if vote extensions are present', async () => {
@@ -166,7 +166,6 @@ describe('finalizeBlockHandlerFactory', () => {
 
     await finalizeBlockHandler(requestMock);
 
-    expect(coreRpcClientMock.sendRawTransaction).to.have.been.calledTwice();
     expect(processProposalMock).to.be.not.called();
   });
 
