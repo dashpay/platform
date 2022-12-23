@@ -1,7 +1,8 @@
 use dpp::{
-    dashcore::anyhow::Context,
-    document::DocumentsBatchTransition,
-    prelude::{DataContract, Document, DocumentTransition, Identifier},
+    document::{
+        state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
+    },
+    prelude::{DataContract, Document, Identifier},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
@@ -9,23 +10,18 @@ use dpp::{
     },
     util::json_value::JsonValueExt,
 };
-use itertools::Itertools;
 use js_sys::{Array, Reflect};
 use serde::Serialize;
-use wasm_bindgen::{
-    convert::{FromWasmAbi, IntoWasmAbi, RefFromWasmAbi},
-    prelude::*,
-};
+use wasm_bindgen::prelude::*;
 
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
-    console_log,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     mocks::DocumentTransitionWasm,
     utils::{ToSerdeJSONExt, WithJsError},
-    with_js_error, DocumentWasm, IdentityPublicKeyWasm,
+    DocumentWasm, IdentityPublicKeyWasm,
 };
 pub mod document_transition;
 
@@ -132,18 +128,23 @@ impl DocumentsBatchTransitionWASM {
         let value = self.0.to_json().with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
-        let is_null_signature = value.get("signature").is_none();
-        let is_null_signature_public_key_id = value.get("signaturePublicKeyId").is_none();
+        let is_null_signature = value.get(property_names::SIGNATURE).is_none();
+        let is_null_signature_public_key_id =
+            value.get(property_names::SIGNATURE_PUBLIC_KEY_ID).is_none();
 
         let js_value = value.serialize(&serializer)?;
 
         if is_null_signature {
-            js_sys::Reflect::set(&js_value, &"signature".into(), &JsValue::undefined())?;
+            js_sys::Reflect::set(
+                &js_value,
+                &property_names::SIGNATURE.into(),
+                &JsValue::undefined(),
+            )?;
         }
         if is_null_signature_public_key_id {
             js_sys::Reflect::set(
                 &js_value,
-                &"signaturePublicKeyId".into(),
+                &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
                 &JsValue::undefined(),
             )?;
         }
@@ -172,7 +173,11 @@ impl DocumentsBatchTransitionWASM {
             transitions.push(&js_value);
         }
         // replace the whole collection of transitions
-        Reflect::set(&js_value, &"transitions".into(), &transitions.into())?;
+        Reflect::set(
+            &js_value,
+            &property_names::TRANSITIONS.into(),
+            &transitions.into(),
+        )?;
 
         // transform paths that are specific to the DocumentsBatchTransition
         for path in DocumentsBatchTransition::binary_property_paths() {
@@ -188,13 +193,17 @@ impl DocumentsBatchTransitionWASM {
             }
         }
 
-        if value.get("signature").is_none() && !skip_signature {
-            js_sys::Reflect::set(&js_value, &"signature".into(), &JsValue::undefined())?;
-        }
-        if value.get("signaturePublicKeyId").is_none() {
+        if value.get(property_names::SIGNATURE).is_none() && !skip_signature {
             js_sys::Reflect::set(
                 &js_value,
-                &"signaturePublicKeyId".into(),
+                &property_names::SIGNATURE.into(),
+                &JsValue::undefined(),
+            )?;
+        }
+        if value.get(property_names::SIGNATURE_PUBLIC_KEY_ID).is_none() {
+            js_sys::Reflect::set(
+                &js_value,
+                &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
                 &JsValue::undefined(),
             )?;
         }

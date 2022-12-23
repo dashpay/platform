@@ -1,24 +1,7 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    convert::TryFrom,
-};
-
-use dpp::{
-    dashcore::anyhow::Context,
-    document::{self, document_factory::DocumentFactory, document_transition::Action},
-    prelude::{DataContract, Document, Identifier},
-};
-use itertools::Itertools;
-use js_sys::Array;
-use wasm_bindgen::{
-    convert::{FromWasmAbi, IntoWasmAbi, RefFromWasmAbi, ReturnWasmAbi},
-    prelude::*,
-};
-use web_sys::console::{log_1, log_2};
+use dpp::document::{document_factory::DocumentFactory, document_transition::Action};
+use wasm_bindgen::prelude::*;
 
 use crate::{
-    bail_js, console_log,
-    errors::RustConversionError,
     identifier::IdentifierWrapper,
     utils::{ToSerdeJSONExt, WithJsError},
     DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM, DocumentsContainer,

@@ -5,7 +5,6 @@ use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use wasm_bindgen::__rt::IntoJsResult;
 use wasm_bindgen::prelude::*;
 
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
@@ -16,7 +15,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::{console_log, with_js_error};
+use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
