@@ -1,150 +1,305 @@
-use std::ops::RangeFull;
+use std::{collections::HashMap, ops::RangeFull};
 
-use grovedb::{
-    query_result_type::QueryResultType, Element, PathQuery, Query, QueryItem, SizedQuery,
-    TransactionArg,
+use dashcore::{
+    blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
+        AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
+    },
+    consensus::Encodable,
+    Script, TxOut,
 };
+use dpp::{
+    identity::convert_credits_to_satoshi,
+    prelude::{Document, Identifier},
+    util::json_value::JsonValueExt,
+};
+use grovedb::TransactionArg;
+use serde_json::Value as JsonValue;
 
 use crate::{
-    drive::{batch::GroveDbOpBatch, grove_operations::BatchDeleteApplyType, Drive},
+    drive::Drive,
     error::{drive::DriveError, Error},
-    fee::op::DriveOperation,
 };
 
-use super::paths::{
-    get_withdrawal_transactions_queue_path, get_withdrawal_transactions_queue_path_as_u8,
-    WithdrawalTransaction,
-};
+use super::paths::WithdrawalTransaction;
 
 impl Drive {
-    /// Add insert operations for withdrawal transactions to the batch
-    pub fn add_enqueue_withdrawal_transaction_operations(
+    /// Build list of Core transactions from withdrawal documents
+    pub fn build_withdrawal_transactions_from_documents(
         &self,
-        batch: &mut GroveDbOpBatch,
-        withdrawals: Vec<WithdrawalTransaction>,
-    ) {
-        for (id, bytes) in withdrawals {
-            batch.add_insert(
-                get_withdrawal_transactions_queue_path(),
-                id,
-                Element::Item(bytes, None),
-            );
-        }
-    }
-
-    /// Get specified amount of withdrawal transactions from the DB
-    pub fn dequeue_withdrawal_transactions(
-        &self,
-        num_of_transactions: u16,
+        documents: &[Document],
         transaction: TransactionArg,
-    ) -> Result<Vec<WithdrawalTransaction>, Error> {
-        let mut query = Query::new();
+    ) -> Result<HashMap<Identifier, WithdrawalTransaction>, Error> {
+        let mut withdrawals: HashMap<Identifier, WithdrawalTransaction> = HashMap::new();
 
-        query.insert_item(QueryItem::RangeFull(RangeFull));
+        let latest_withdrawal_index =
+            self.fetch_latest_withdrawal_transaction_index(transaction)?;
 
-        let path_query = PathQuery {
-            path: get_withdrawal_transactions_queue_path(),
-            query: SizedQuery {
-                query,
-                limit: Some(num_of_transactions),
-                offset: None,
-            },
-        };
+        for (i, document) in documents.iter().enumerate() {
+            let output_script = document.data.get_bytes("outputScript").map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Can't get outputScript from withdrawal document",
+                ))
+            })?;
 
-        let result_items = self
-            .grove
-            .query_raw(
-                &path_query,
-                QueryResultType::QueryKeyElementPairResultType,
-                transaction,
-            )
-            .unwrap()
-            .map_err(Error::GroveDB)?
-            .0
-            .to_key_elements();
+            let amount = document.data.get_u64("amount").map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Can't get amount from withdrawal document",
+                ))
+            })?;
 
-        let withdrawals = result_items
-            .into_iter()
-            .map(|(id, element)| match element {
-                Element::Item(bytes, _) => Ok((id, bytes)),
-                _ => Err(Error::Drive(DriveError::CorruptedWithdrawalNotItem(
-                    "withdrawal is not an item",
-                ))),
-            })
-            .collect::<Result<Vec<(Vec<u8>, Vec<u8>)>, Error>>()?;
+            let core_fee_per_byte = document.data.get_u64("coreFeePerByte").map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Can't get coreFeePerByte from withdrawal document",
+                ))
+            })?;
 
-        if !withdrawals.is_empty() {
-            let mut batch_operations: Vec<DriveOperation> = vec![];
-            let mut drive_operations: Vec<DriveOperation> = vec![];
+            let state_transition_size = 184;
 
-            let withdrawals_path: [&[u8]; 2] = get_withdrawal_transactions_queue_path_as_u8();
+            let output_script: Script = Script::from(output_script);
 
-            for (id, _) in withdrawals.iter() {
-                self.batch_delete(
-                    withdrawals_path,
-                    id,
-                    // we know that we are not deleting a subtree
-                    BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
-                    },
-                    transaction,
-                    &mut batch_operations,
-                )?;
-            }
+            let tx_out = TxOut {
+                value: convert_credits_to_satoshi(amount),
+                script_pubkey: output_script,
+            };
 
-            self.apply_batch_drive_operations(
-                None,
-                transaction,
-                batch_operations,
-                &mut drive_operations,
-            )?;
+            let transaction_index = latest_withdrawal_index + i as u64;
+
+            let withdrawal_transaction = AssetUnlockBaseTransactionInfo {
+                version: 1,
+                lock_time: 0,
+                output: vec![tx_out],
+                base_payload: AssetUnlockBasePayload {
+                    version: 1,
+                    index: transaction_index,
+                    fee: (state_transition_size * core_fee_per_byte * 1000) as u32,
+                },
+            };
+
+            let mut transaction_buffer: Vec<u8> = vec![];
+
+            withdrawal_transaction
+                .consensus_encode(&mut transaction_buffer)
+                .map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Can't consensus encode a withdrawal transaction",
+                    ))
+                })?;
+
+            withdrawals.insert(
+                document.id.clone(),
+                (
+                    transaction_index.to_be_bytes().to_vec(),
+                    transaction_buffer.clone(),
+                ),
+            );
         }
 
         Ok(withdrawals)
+    }
+
+    /// Fetch Core transactions by range of Core heights
+    pub fn fetch_core_block_transactions(
+        &self,
+        last_synced_core_height: u64,
+        core_chain_locked_height: u64,
+    ) -> Result<Vec<String>, Error> {
+        let core_rpc =
+            self.core_rpc
+                .as_ref()
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Core RPC client has not been set up",
+                )))?;
+
+        let mut tx_hashes: Vec<String> = vec![];
+
+        for height in last_synced_core_height..=core_chain_locked_height {
+            let block_hash = core_rpc.get_block_hash(height).map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "could not get block by height",
+                ))
+            })?;
+
+            let block_json: JsonValue = core_rpc.get_block_json(&block_hash).map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "could not get block by hash",
+                ))
+            })?;
+
+            if let Some(transactions) = block_json.get("tx") {
+                if let Some(transactions) = transactions.as_array() {
+                    for transaction_hash in transactions {
+                        tx_hashes.push(
+                            transaction_hash
+                                .as_str()
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "could not get transaction hash as string",
+                                )))?
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(tx_hashes)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        common::helpers::setup::setup_drive_with_initial_state_structure,
-        drive::batch::GroveDbOpBatch,
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+
+    use dashcore::{hashes::hex::FromHex, hashes::hex::ToHex, BlockHash};
+    use serde_json::json;
+
+    use crate::rpc::core::MockCoreRPCLike;
+
+    use dpp::{
+        contracts::withdrawals_contract,
+        tests::fixtures::{get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture},
     };
 
-    #[test]
-    fn test_enqueue_and_dequeue() {
-        let drive = setup_drive_with_initial_state_structure();
+    use crate::{
+        common::helpers::setup::{setup_document, setup_system_data_contract},
+        drive::identity::withdrawals::paths::WithdrawalTransaction,
+    };
 
-        let transaction = drive.grove.start_transaction();
+    mod fetch_core_block_transactions {
 
-        let withdrawals: Vec<(Vec<u8>, Vec<u8>)> = (0..17)
-            .map(|i: u8| (i.to_be_bytes().to_vec(), vec![i; 32]))
-            .collect();
+        use super::*;
 
-        let mut batch = GroveDbOpBatch::new();
+        #[test]
+        fn test_fetches_core_transactions() {
+            let mut drive = setup_drive_with_initial_state_structure();
 
-        drive.add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
+            let mut mock_rpc_client = MockCoreRPCLike::new();
 
-        drive
-            .grove_apply_batch(batch, true, Some(&transaction))
-            .expect("to apply ops");
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 1)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
 
-        let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction))
-            .expect("to dequeue withdrawals");
+            mock_rpc_client
+                .expect_get_block_hash()
+                .withf(|height| *height == 2)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "1111111111111111111111111111111111111111111111111111111111111111",
+                    )
+                    .unwrap())
+                });
 
-        assert_eq!(withdrawals.len(), 16);
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "0000000000000000000000000000000000000000000000000000000000000000"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["1"]
+                    }))
+                });
 
-        let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction))
-            .expect("to dequeue withdrawals");
+            mock_rpc_client
+                .expect_get_block_json()
+                .withf(|bh| {
+                    bh.to_hex()
+                        == "1111111111111111111111111111111111111111111111111111111111111111"
+                })
+                .returning(|_| {
+                    Ok(json!({
+                        "tx": ["2"]
+                    }))
+                });
 
-        assert_eq!(withdrawals.len(), 1);
+            drive.core_rpc = Some(Box::new(mock_rpc_client));
 
-        let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction))
-            .expect("to dequeue withdrawals");
+            let transactions = drive
+                .fetch_core_block_transactions(1, 2)
+                .expect("to fetch core transactions");
 
-        assert_eq!(withdrawals.len(), 0);
+            assert_eq!(transactions.len(), 2);
+            assert_eq!(transactions, ["1", "2"]);
+        }
+    }
+
+    mod build_withdrawal_transactions_from_documents {
+        use super::*;
+
+        #[test]
+        fn test_build() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let transaction = drive.grove.start_transaction();
+
+            let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            setup_system_data_contract(&drive, &data_contract, Some(&transaction));
+
+            let document_1 = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": 0,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::POOLED,
+                    "transactionIndex": 1,
+                }),
+            );
+
+            setup_document(&drive, &document_1, &data_contract, Some(&transaction));
+
+            let document_2 = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": 0,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::POOLED,
+                    "transactionIndex": 2,
+                }),
+            );
+
+            setup_document(&drive, &document_2, &data_contract, Some(&transaction));
+
+            let documents = vec![document_1, document_2];
+
+            let transactions = drive
+                .build_withdrawal_transactions_from_documents(&documents, Some(&transaction))
+                .expect("to build transactions from documents");
+
+            assert_eq!(
+                transactions
+                    .values()
+                    .cloned()
+                    .collect::<Vec<WithdrawalTransaction>>(),
+                vec![
+                    (
+                        vec![0, 0, 0, 0, 0, 0, 0, 0],
+                        vec![
+                            1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
+                            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
+                            1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 206, 2, 0,
+                        ],
+                    ),
+                    (
+                        vec![0, 0, 0, 0, 0, 0, 0, 1],
+                        vec![
+                            1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
+                            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
+                            1, 1, 0, 0, 0, 0, 0, 0, 0, 192, 206, 2, 0,
+                        ],
+                    ),
+                ],
+            );
+        }
     }
 }

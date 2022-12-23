@@ -66,7 +66,7 @@ pub fn setup_platform_with_initial_state_structure() -> Platform {
 /// A function to setup system data contract
 pub fn setup_system_data_contract(
     drive: &Drive,
-    data_contract: DataContract,
+    data_contract: &DataContract,
     transaction: TransactionArg,
 ) {
     drive

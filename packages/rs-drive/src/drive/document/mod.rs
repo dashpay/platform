@@ -45,6 +45,7 @@ use grovedb::Element;
 
 mod delete;
 mod estimation_costs;
+mod helpers;
 mod insert;
 mod update;
 
