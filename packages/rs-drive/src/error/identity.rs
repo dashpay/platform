@@ -5,6 +5,10 @@ pub enum IdentityError {
     #[error("identity already exists error: {0}")]
     IdentityAlreadyExists(&'static str),
 
+    /// A user is requesting an unknown key error
+    #[error("identity public key not found: {0}")]
+    IdentityPublicKeyNotFound(String),
+
     /// Missing required key error
     #[error("missing required key: {0}")]
     MissingRequiredKey(&'static str),
@@ -32,4 +36,8 @@ pub enum IdentityError {
     /// Critical balance overflow error
     #[error("critical balance overflow error: {0}")]
     CriticalBalanceOverflow(&'static str),
+
+    /// Identity key incorrect query missing information error
+    #[error("identity key incorrect query missing information error: {0}")]
+    IdentityKeyIncorrectQueryMissingInformation(&'static str),
 }

@@ -573,8 +573,8 @@ dependencies = [
 
 [[package]]
 name = "costs"
-version = "0.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#f993c46d6fe2b071ac9624386c724b4939348f00"
+version = "1.0.0"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1251,8 +1251,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.8.1"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#f993c46d6fe2b071ac9624386c724b4939348f00"
+version = "0.8.2"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
 dependencies = [
  "bincode",
  "costs",
@@ -1561,9 +1561,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.138"
+version = "0.2.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6d7e329c562c5dfab7a46a2afabc8b987ab9a4834c9d1ca04dc54c1546cef8"
+checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
 
 [[package]]
 name = "libloading"
@@ -1686,8 +1686,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "0.8.1"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#f993c46d6fe2b071ac9624386c724b4939348f00"
+version = "0.8.2"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2743,8 +2743,8 @@ dependencies = [
 
 [[package]]
 name = "storage"
-version = "0.2.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#f993c46d6fe2b071ac9624386c724b4939348f00"
+version = "1.0.0"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
 dependencies = [
  "blake3",
  "costs",
@@ -3131,7 +3131,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#f993c46d6fe2b071ac9624386c724b4939348f00"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
 dependencies = [
  "hex",
  "itertools",

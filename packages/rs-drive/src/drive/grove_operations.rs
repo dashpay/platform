@@ -59,7 +59,9 @@ use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::CalculatedCostOperation;
 use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
-use grovedb::query_result_type::{QueryResultElements, QueryResultType};
+use grovedb::query_result_type::{
+    KeyOptionalElementPair, PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
+};
 use grovedb::Error as GroveError;
 use intmap::IntMap;
 use storage::rocksdb_storage::RocksDbStorage;
@@ -381,7 +383,34 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let CostContext { value, cost } = self.grove.query(path_query, transaction);
+        let CostContext { value, cost } = self.grove.query_item_value(path_query, transaction);
+        drive_operations.push(CalculatedCostOperation(cost));
+        value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
+    pub(crate) fn grove_get_path_query_with_optional(
+        &self,
+        path_query: &PathQuery,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
+        let CostContext { value, cost } = self.grove.query_keys_optional(path_query, transaction);
+        drive_operations.push(CalculatedCostOperation(cost));
+        value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
+    pub(crate) fn grove_get_raw_path_query_with_optional(
+        &self,
+        path_query: &PathQuery,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
+        let CostContext { value, cost } =
+            self.grove.query_raw_keys_optional(path_query, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

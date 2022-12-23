@@ -9,7 +9,10 @@ use crate::drive::identity::{
     IDENTITY_KEY,
 };
 
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, IdentityPublicKeyResult, KeyIDIdentityPublicKeyPairBTreeMap,
+    KeyRequestType,
+};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -214,7 +217,10 @@ impl Drive {
         }
         let balance = balance.unwrap();
 
-        let public_keys = self.fetch_identity_keys(identity_key_request, transaction)?;
+        let public_keys = self.fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+            identity_key_request,
+            transaction,
+        )?;
         Ok(Some(Identity {
             protocol_version: PROTOCOL_VERSION,
             id,
