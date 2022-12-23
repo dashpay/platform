@@ -35,26 +35,25 @@ use costs::storage_cost::removal::Identifier;
 use costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
-use costs::storage_cost::StorageCost;
+
 use costs::OperationCost;
 use enum_map::Enum;
-use grovedb::{batch::GroveDbOp, Element, PathQuery};
-use std::collections::BTreeMap;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{batch::GroveDbOp, Element};
 
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
-use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::default_costs::{
     STORAGE_DISK_USAGE_CREDIT_PER_BYTE, STORAGE_LOAD_CREDIT_PER_BYTE,
     STORAGE_PROCESSING_CREDIT_PER_BYTE, STORAGE_SEEK_COST,
 };
 use crate::fee::op::DriveOperation::{
-    CalculatedCostOperation, CostCalculationDeleteOperation, CostCalculationInsertOperation,
-    CostCalculationQueryOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, GroveOperation, PreCalculatedFeeResult,
 };
-use crate::fee::removed_bytes_from_epochs_by_identities::RemovedBytesFromEpochsByIdentities;
-use crate::fee::FeeResult;
+use crate::fee::result::refunds::FeeRefunds;
+use crate::fee::{get_overflow_error, FeeResult};
 use crate::fee_pools::epochs::Epoch;
 
 /// Base ops
@@ -158,220 +157,6 @@ impl FunctionOp {
     }
 }
 
-/// Sizes of query operation
-#[derive(Debug)]
-pub struct SizesOfQueryOperation {
-    /// Key size
-    pub key_size: u32,
-    /// Path size
-    pub path_size: u32,
-    /// Value size
-    pub value_size: u32,
-}
-
-trait OperationCostConvert {
-    /// Cost
-    fn cost(&self) -> OperationCost;
-}
-
-impl SizesOfQueryOperation {
-    /// Get sizes from key_len and path
-    pub fn for_key_check_in_path<'a: 'b, 'b, 'c, P>(key_len: u32, path: P) -> Self
-    where
-        P: IntoIterator<Item = &'c [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
-        let path_size: u32 = path
-            .into_iter()
-            .map(|inner: &[u8]| inner.len() as u32)
-            .sum();
-        SizesOfQueryOperation {
-            key_size: key_len,
-            path_size,
-            value_size: 0,
-        }
-    }
-
-    /// Get sizes with zero for value
-    pub fn for_key_check_with_path_length(key_len: u32, path_len: u32) -> Self {
-        SizesOfQueryOperation {
-            key_size: key_len,
-            path_size: path_len,
-            value_size: 0,
-        }
-    }
-
-    /// Get sizes from key and value lengths and path
-    pub fn for_value_retrieval_in_path<'a: 'b, 'b, 'c, P>(
-        key_len: u16,
-        path: P,
-        value_len: u32,
-    ) -> Self
-    where
-        P: IntoIterator<Item = &'c [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
-        let path_size: u32 = path
-            .into_iter()
-            .map(|inner: &[u8]| inner.len() as u32)
-            .sum();
-        SizesOfQueryOperation {
-            key_size: key_len as u32,
-            path_size,
-            value_size: value_len,
-        }
-    }
-
-    /// Get sizes
-    pub fn for_value_retrieval_with_path_length(
-        key_len: usize,
-        path_len: usize,
-        value_len: usize,
-    ) -> Self {
-        SizesOfQueryOperation {
-            key_size: key_len as u32,
-            path_size: path_len as u32,
-            value_size: value_len as u32,
-        }
-    }
-
-    /// Get sizes from `PathQuery` and returned values
-    pub fn for_path_query(path_query: &PathQuery, returned_values: &[Vec<u8>]) -> Self {
-        SizesOfQueryOperation {
-            key_size: path_query
-                .query
-                .query
-                .items
-                .iter()
-                .map(|query_item| query_item.processing_footprint())
-                .sum(),
-            path_size: path_query.path.len() as u32,
-            value_size: returned_values.iter().map(|v| v.len() as u32).sum(),
-        }
-    }
-
-    /// Get sizes for empty path query
-    pub fn for_empty_path_query(path_query: &PathQuery) -> Self {
-        SizesOfQueryOperation {
-            key_size: path_query
-                .query
-                .query
-                .items
-                .iter()
-                .map(|query_item| query_item.processing_footprint())
-                .sum(),
-            path_size: path_query.path.len() as u32,
-            value_size: 0,
-        }
-    }
-}
-
-/// Sizes of insert operation
-#[derive(Debug)]
-pub struct SizesOfInsertOperation {
-    /// Path size
-    pub path_size: u32,
-    /// Key size
-    pub key_size: u16,
-    /// Value size
-    pub value_size: u32,
-}
-
-/// Sizes of delete operation
-#[derive(Debug)]
-pub struct SizesOfDeleteOperation {
-    /// Path size
-    pub path_size: u32,
-    /// Key size
-    pub key_size: u16,
-    /// Value size
-    pub value_size: u32,
-    /// Multiplier
-    pub multiplier: u8,
-}
-
-impl SizesOfDeleteOperation {
-    /// Get sizes for empty tree
-    pub fn for_empty_tree(path_size: u32, key_size: u16, multiplier: u8) -> Self {
-        SizesOfDeleteOperation {
-            path_size,
-            key_size,
-            value_size: 0,
-            multiplier,
-        }
-    }
-    /// Get sizes for key value
-    pub fn for_key_value(path_size: u32, key_size: u16, element: &Element, multiplier: u8) -> Self {
-        let value_size = match element {
-            Element::Item(item, _) => item.len(),
-            // subtracting one because we don't need to additional byte use to represent the Element::Reference type
-            Element::Reference(path, _, _) => path.encoding_length() - 1,
-            Element::Tree(..) => 32,
-        } as u32;
-        SizesOfDeleteOperation::for_key_value_size(path_size, key_size, value_size, multiplier)
-    }
-
-    /// Get sizes for key value size
-    pub fn for_key_value_size(
-        path_size: u32,
-        key_size: u16,
-        value_size: u32,
-        multiplier: u8,
-    ) -> Self {
-        SizesOfDeleteOperation {
-            path_size,
-            key_size,
-            value_size,
-            multiplier,
-        }
-    }
-}
-
-impl OperationCostConvert for SizesOfInsertOperation {
-    fn cost(&self) -> OperationCost {
-        OperationCost {
-            seek_count: 0,
-            storage_cost: StorageCost {
-                added_bytes: 0,
-                replaced_bytes: 0,
-                removed_bytes: NoStorageRemoval,
-            },
-            storage_loaded_bytes: 0,
-            hash_node_calls: 0,
-        }
-    }
-}
-
-impl OperationCostConvert for SizesOfQueryOperation {
-    fn cost(&self) -> OperationCost {
-        OperationCost {
-            seek_count: 0,
-            storage_cost: StorageCost {
-                added_bytes: 0,
-                replaced_bytes: 0,
-                removed_bytes: NoStorageRemoval,
-            },
-            storage_loaded_bytes: 0,
-            hash_node_calls: 0,
-        }
-    }
-}
-
-impl OperationCostConvert for SizesOfDeleteOperation {
-    fn cost(&self) -> OperationCost {
-        OperationCost {
-            seek_count: 0,
-            storage_cost: StorageCost {
-                added_bytes: 0,
-                replaced_bytes: 0,
-                removed_bytes: NoStorageRemoval,
-            },
-            storage_loaded_bytes: 0,
-            hash_node_calls: 0,
-        }
-    }
-}
-
 /// Drive operation
 #[derive(Debug)]
 pub enum DriveOperation {
@@ -381,12 +166,6 @@ pub enum DriveOperation {
     CalculatedCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
-    /// Cost calculation insert operation
-    CostCalculationInsertOperation(SizesOfInsertOperation),
-    /// Cost calculation delete operation
-    CostCalculationDeleteOperation(SizesOfDeleteOperation),
-    /// Cost calculation query operation
-    CostCalculationQueryOperation(SizesOfQueryOperation),
 }
 
 impl DriveOperation {
@@ -403,26 +182,30 @@ impl DriveOperation {
                     let cost = operation.operation_cost()?;
                     let storage_fee = cost.storage_cost(epoch)?;
                     let processing_fee = cost.ephemeral_cost(epoch)?;
-                    let (removed_bytes_from_identities, removed_bytes_from_system) =
+                    let (removed_bytes_from_epochs_by_identities, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
-                            NoStorageRemoval => (BTreeMap::default(), 0),
+                            NoStorageRemoval => (FeeRefunds::default(), 0),
                             BasicStorageRemoval(amount) => {
                                 // this is not always considered an error
-                                (BTreeMap::default(), amount)
+                                (FeeRefunds::default(), amount)
                             }
-                            SectionedStorageRemoval(mut s) => {
-                                let system_amount = s
+                            SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
+                                let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
-                                (s, system_amount)
+
+                                (
+                                    FeeRefunds::from_storage_removal(
+                                        removal_per_epoch_by_identifier,
+                                    )?,
+                                    system_amount,
+                                )
                             }
                         };
                     Ok(FeeResult {
                         storage_fee,
                         processing_fee,
-                        removed_bytes_from_identities: RemovedBytesFromEpochsByIdentities(
-                            removed_bytes_from_identities,
-                        ),
+                        fee_refunds: removed_bytes_from_epochs_by_identities,
                         removed_bytes_from_system,
                     })
                 }
@@ -436,15 +219,6 @@ impl DriveOperation {
             GroveOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "grove operations must be executed, not directly transformed to costs",
             ))),
-            CostCalculationInsertOperation(worst_case_insert_operation) => {
-                Ok(worst_case_insert_operation.cost())
-            }
-            CostCalculationQueryOperation(worst_case_query_operation) => {
-                Ok(worst_case_query_operation.cost())
-            }
-            CostCalculationDeleteOperation(worst_case_delete_operation) => {
-                Ok(worst_case_delete_operation.cost())
-            }
             CalculatedCostOperation(c) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "pre calculated fees should be requested by operation costs",
@@ -476,7 +250,7 @@ impl DriveOperation {
     }
 
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
-    pub fn for_empty_tree(
+    pub fn for_known_path_key_empty_tree(
         path: Vec<Vec<u8>>,
         key: Vec<u8>,
         storage_flags: Option<&StorageFlags>,
@@ -488,54 +262,37 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::for_path_key_element(path, key, tree)
+        DriveOperation::for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty tree at the given path and key
+    pub fn for_estimated_path_key_empty_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_tree(),
+        };
+
+        DriveOperation::for_estimated_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an element at the given path and key
-    pub fn for_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
-        GroveOperation(GroveDbOp::insert_run_op(path, key, element))
+    pub fn for_known_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
+        GroveOperation(GroveDbOp::insert_op(path, key, element))
     }
 
-    /// Sets `CostCalculationInsertOperation` given path, key, and value sizes.
-    pub fn for_insert_path_key_value_size(path_size: u32, key_size: u16, value_size: u32) -> Self {
-        CostCalculationInsertOperation(SizesOfInsertOperation {
-            path_size,
-            key_size,
-            value_size,
-        })
-    }
-
-    /// Sets `CostCalculationDeleteOperation`
-    pub fn for_delete_path_key_value_size(
-        path: Vec<Vec<u8>>,
-        key_size: u16,
-        value_size: u32,
-        multiplier: u8,
+    /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
+    pub fn for_estimated_path_key_element(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        element: Element,
     ) -> Self {
-        let path_sizes: Vec<u16> = path.into_iter().map(|x| x.len() as u16).collect();
-        Self::for_delete_path_key_value_max_sizes(path_sizes, key_size, value_size, multiplier)
-    }
-
-    /// Sets `CostCalculationDeleteOperation` with max sizes
-    pub fn for_delete_path_key_value_max_sizes(
-        path: Vec<u16>,
-        key_size: u16,
-        value_size: u32,
-        multiplier: u8,
-    ) -> Self {
-        let path_size: u32 = path.into_iter().map(|x| x as u32).sum();
-        CostCalculationDeleteOperation(SizesOfDeleteOperation::for_key_value_size(
-            path_size, key_size, value_size, multiplier,
-        ))
-    }
-
-    /// Sets `CostCalculationQueryOperation`
-    pub fn for_query_path_key_value_size(path_size: u32, key_size: u32, value_size: u32) -> Self {
-        CostCalculationQueryOperation(SizesOfQueryOperation {
-            path_size,
-            key_size,
-            value_size,
-        })
+        GroveOperation(GroveDbOp::insert_estimated_op(path, key, element))
     }
 }
 
@@ -545,10 +302,6 @@ pub trait DriveCost {
     fn ephemeral_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
     /// Storage cost
     fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
-}
-
-fn get_overflow_error(str: &'static str) -> Error {
-    Error::Fee(FeeError::Overflow(str))
 }
 
 impl DriveCost for OperationCost {

@@ -1,4 +1,4 @@
-const lodashMatches = require('lodash.matches');
+const lodashMatches = require('lodash/matches');
 
 class Match {
   /**

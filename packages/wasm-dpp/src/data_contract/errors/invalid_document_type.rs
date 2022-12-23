@@ -6,17 +6,17 @@ use crate::DataContractWasm;
 #[wasm_bindgen]
 #[derive(Error, Debug)]
 #[error("Invalid Document Type")]
-pub struct InvalidDocumentTypeError {
+pub struct InvalidDocumentTypeInDataContractError {
     // we have to store it as JsValue as the errors of 'class' Consensus are of different types
     doc_type: String,
     data_contract: DataContractWasm,
 }
 
 #[wasm_bindgen]
-impl InvalidDocumentTypeError {
+impl InvalidDocumentTypeInDataContractError {
     #[wasm_bindgen(constructor)]
     pub fn new(doc_type: String, data_contract: DataContractWasm) -> Self {
-        InvalidDocumentTypeError {
+        InvalidDocumentTypeInDataContractError {
             doc_type,
             data_contract,
         }

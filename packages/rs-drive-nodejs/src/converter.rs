@@ -1,6 +1,5 @@
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
-use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -12,8 +11,10 @@ use std::borrow::Borrow;
 fn element_to_string(element: &Element) -> &'static str {
     match element {
         Element::Item(..) => "item",
+        Element::SumItem(..) => "sumItem",
         Element::Reference(..) => "reference",
         Element::Tree(..) => "tree",
+        Element::SumTree(..) => "sumTree",
     }
 }
 
@@ -137,17 +138,19 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
             let js_buffer = JsBuffer::external(cx, item);
             Some(js_buffer.upcast())
         }
+        Element::SumItem(number, _) => {
+            let js_number = cx.number(number as f64).upcast();
+            Some(js_number)
+        }
         Element::Reference(reference, _, _) => {
             let reference = reference_to_dictionary(cx, reference)?;
-
             Some(reference)
         }
-        Element::Tree(Some(tree), _) => {
+        Element::Tree(Some(tree), _) | Element::SumTree(Some(tree), ..) => {
             let js_buffer = JsBuffer::external(cx, tree);
-
             Some(js_buffer.upcast())
         }
-        Element::Tree(None, _) => None,
+        Element::Tree(None, _) | Element::SumTree(None, ..) => None,
     };
 
     if let Some(js_value) = maybe_js_value {
@@ -217,6 +220,13 @@ pub fn reference_to_dictionary<'a, C: Context<'a>>(
 
             js_object.set(cx, "type", js_type_name)?;
             js_object.set(cx, "key", js_key)?;
+        }
+        ReferencePathType::RemovedCousinReference(path) => {
+            let js_type_name = cx.string("removedCousin");
+            let js_path = nested_vecs_to_js(cx, path)?;
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "path", js_path)?;
         }
     }
 
@@ -406,39 +416,4 @@ pub fn js_object_to_block_info<'a, C: Context<'a>>(
     };
 
     Ok(block_info)
-}
-
-pub fn fee_result_to_js_object<'a, C: Context<'a>>(
-    cx: &mut C,
-    fee_result: FeeResult,
-) -> NeonResult<Handle<'a, JsObject>> {
-    // TODO: We can't go with f64 because we can lose costs
-    let js_processing_fee = cx.number(fee_result.processing_fee as f64);
-    let js_storage_fee = cx.number(fee_result.storage_fee as f64);
-
-    let js_removed_from_identities: Handle<JsObject> = cx.empty_object();
-
-    for (identifier, epoch_index_map) in fee_result.removed_bytes_from_identities.into_iter() {
-        let js_epoch_index_map = cx.empty_object();
-        for (epoch, bytes) in epoch_index_map {
-            let js_bytes = cx.number(bytes);
-
-            js_epoch_index_map.set(cx, epoch.to_string().as_str(), js_bytes)?;
-        }
-
-        let js_identity_to_epochs = cx.empty_object();
-
-        let js_identifier = JsBuffer::external(cx, identifier);
-
-        js_identity_to_epochs.set(cx, "identifier", js_identifier)?;
-        js_identity_to_epochs.set(cx, "epochsToBytes", js_epoch_index_map)?;
-    }
-
-    let js_fee_results: Handle<JsObject> = cx.empty_object();
-
-    js_fee_results.set(cx, "processingFee", js_processing_fee)?;
-    js_fee_results.set(cx, "storageFee", js_storage_fee)?;
-    js_fee_results.set(cx, "removedFromIdentities", js_removed_from_identities)?;
-
-    Ok(js_fee_results)
 }

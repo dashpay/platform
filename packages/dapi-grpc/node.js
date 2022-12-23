@@ -1,3 +1,4 @@
+const { Metadata } = require('@grpc/grpc-js/build/src/metadata');
 const CorePromiseClient = require('./clients/core/v0/nodejs/CorePromiseClient');
 const PlatformPromiseClient = require('./clients/platform/v0/nodejs/PlatformPromiseClient');
 
@@ -6,6 +7,7 @@ const protocPlatformMessages = require('./clients/platform/v0/nodejs/platform_pr
 
 const getCoreDefinition = require('./lib/getCoreDefinition');
 const getPlatformDefinition = require('./lib/getPlatformDefinition');
+const parseMetadata = require('./lib/utils/parseMetadata');
 
 const {
   org: {
@@ -45,4 +47,6 @@ module.exports = {
     ...protocCoreMessages,
     ...protocPlatformMessages,
   },
+  parseMetadata,
+  Metadata,
 };

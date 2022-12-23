@@ -74,7 +74,7 @@ function obtainZeroSSLCertificateTaskFactory(
           config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.response.id);
           config.set('platform.dapi.envoy.ssl.provider', 'zerossl');
 
-          await saveCertificateTask(config);
+          return saveCertificateTask(config);
         },
       },
       {

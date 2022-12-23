@@ -1,11 +1,9 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
-const logger = require('../../../logger');
 const EVENTS = require('../../../EVENTS');
 
 const { Output } = Transaction;
 
 function considerTransaction(transactionHash) {
-  logger.silly(`ChainStore - Considering transaction ${transactionHash}`);
   const { transaction, metadata } = this.getTransaction(transactionHash);
 
   const { inputs, outputs } = transaction;

@@ -103,14 +103,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23.0-alpha',
+          image: 'dashpay/dapi:0.24.0-dev',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23.0-alpha',
+          image: 'dashpay/drive:0.24.0-dev',
         },
         log: {
           stdout: {
@@ -131,7 +131,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.10.0-dev.3',
+          image: 'dashpay/tenderdash:0.10.0-dev.6',
         },
         p2p: {
           port: 26656,

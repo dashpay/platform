@@ -6,7 +6,7 @@ use crate::{
     validation::ValidationResult,
 };
 
-type SubValidator = fn(
+pub type SubValidator = fn(
     path: &str,
     key: &str,
     parent: &JsonValue,
