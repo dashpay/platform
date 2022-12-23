@@ -33,19 +33,22 @@
 //! epoch changes.
 //!
 
+use std::option::Option::None;
+
+use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
+use drive::fee_pools::epochs::Epoch;
+use drive::grovedb::TransactionArg;
+
+use crate::abci::messages::BlockFees;
 use crate::block::BlockInfo;
 use crate::error::Error;
-use crate::execution::fee_pools::constants::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
-use crate::execution::fee_pools::distribute_storage_pool::StorageDistributionLeftoverCredits;
+use crate::execution::fee_pools::distribute_storage_pool::DistributionStorageFeeResult;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
-use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::epochs::constants::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
-use drive::fee::FeeResult;
-use drive::fee_pools::epochs::Epoch;
-use drive::grovedb::TransactionArg;
-use std::option::Option::None;
+use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 
 /// From the Dash Improvement Proposal:
 
@@ -66,6 +69,8 @@ pub struct ProcessedBlockFeesResult {
     pub fees_in_pools: FeesInPools,
     /// A struct with the number of proposers to be paid out and the last paid epoch index
     pub payouts: Option<ProposersPayouts>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<usize>,
 }
 
 impl Platform {
@@ -73,14 +78,15 @@ impl Platform {
     /// as well as the current+1000 epoch, then distributes storage fees accumulated
     /// during the previous epoch.
     ///
-    /// `StorageDistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
+    /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
     fn add_process_epoch_change_operations(
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
+        block_fees: &BlockFees,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<Option<StorageDistributionLeftoverCredits>, Error> {
+    ) -> Result<Option<DistributionStorageFeeResult>, Error> {
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
             .previous_epoch_index
@@ -108,10 +114,17 @@ impl Platform {
 
         // Distribute storage fees accumulated during previous epoch
         let storage_distribution_leftover_credits = self
-            .add_distribute_storage_fee_distribution_pool_to_epochs_operations(
+            .add_distribute_storage_fee_to_epochs_operations(
                 current_epoch.index,
                 transaction,
                 batch,
+            )?;
+
+        self.drive
+            .add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
+                batch,
+                &block_fees.fee_refunds,
+                transaction,
             )?;
 
         Ok(Some(storage_distribution_leftover_credits))
@@ -125,17 +138,18 @@ impl Platform {
         &self,
         block_info: &BlockInfo,
         epoch_info: &EpochInfo,
-        block_fees: &FeeResult,
+        block_fees: BlockFees,
         transaction: TransactionArg,
     ) -> Result<ProcessedBlockFeesResult, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index);
 
         let mut batch = GroveDbOpBatch::new();
 
-        let storage_distribution_leftover_credits = if epoch_info.is_epoch_change {
+        let storage_fee_distribution_result = if epoch_info.is_epoch_change {
             self.add_process_epoch_change_operations(
                 block_info,
                 epoch_info,
+                &block_fees,
                 transaction,
                 &mut batch,
             )?
@@ -178,11 +192,28 @@ impl Platform {
 
         let fees_in_pools = self.add_distribute_block_fees_into_pools_operations(
             &current_epoch,
-            block_fees,
+            &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
-            storage_distribution_leftover_credits,
+            storage_fee_distribution_result
+                .as_ref()
+                .map(|result| result.leftovers),
             transaction,
             &mut batch,
+        )?;
+
+        let pending_epoch_pool_updates = if !epoch_info.is_epoch_change {
+            self.drive
+                .fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
+                    block_fees.fee_refunds,
+                    transaction,
+                )?
+        } else {
+            block_fees.fee_refunds
+        };
+
+        add_update_pending_epoch_storage_pool_update_operations(
+            &mut batch,
+            pending_epoch_pool_updates,
         )?;
 
         self.drive.grove_apply_batch(batch, false, transaction)?;
@@ -190,27 +221,27 @@ impl Platform {
         Ok(ProcessedBlockFeesResult {
             fees_in_pools,
             payouts,
+            refunded_epochs_count: storage_fee_distribution_result
+                .map(|result| result.refunded_epochs_count),
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use crate::execution::fee_pools::epoch::EPOCH_CHANGE_TIME_MS;
+    use chrono::Utc;
+    use rust_decimal::prelude::ToPrimitive;
+
     mod add_process_epoch_change_operations {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use chrono::Utc;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use rust_decimal::prelude::ToPrimitive;
+        use super::*;
 
         mod helpers {
-            use crate::block::BlockInfo;
-            use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-            use crate::platform::Platform;
-            use drive::drive::batch::GroveDbOpBatch;
-            use drive::drive::fee_pools::epochs::constants::PERPETUAL_STORAGE_EPOCHS;
-            use drive::fee::FeeResult;
-            use drive::fee_pools::epochs::Epoch;
-            use drive::grovedb::TransactionArg;
+            use super::*;
+            use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate an epoch change
             pub fn process_and_validate_epoch_change(
@@ -226,7 +257,7 @@ mod tests {
 
                 // Add some storage fees to distribute next time
                 if should_distribute {
-                    let block_fees = FeeResult::from_fees(1000000000, 1000);
+                    let block_fees = BlockFees::from_fees(1000000000, 1000);
 
                     let mut batch = GroveDbOpBatch::new();
 
@@ -264,12 +295,19 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
+                let block_fees = BlockFees {
+                    storage_fee: 1000000000,
+                    processing_fee: 10000,
+                    fee_refunds: CreditsPerEpoch::from_iter([(0, 10000)]),
+                };
+
                 let mut batch = GroveDbOpBatch::new();
 
                 let distribute_storage_pool_result = platform
                     .add_process_epoch_change_operations(
                         &block_info,
                         &epoch_info,
+                        &block_fees,
                         transaction,
                         &mut batch,
                     )
@@ -388,20 +426,13 @@ mod tests {
     }
 
     mod process_block_fees {
-        use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-        use chrono::Utc;
+        use super::*;
+
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-        use rust_decimal::prelude::ToPrimitive;
 
         mod helpers {
-            use crate::block::BlockInfo;
-            use crate::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-            use crate::platform::Platform;
-            use drive::drive::fee_pools::epochs::constants::GENESIS_EPOCH_INDEX;
-            use drive::fee::FeeResult;
-            use drive::fee_pools::epochs::Epoch;
-            use drive::grovedb::TransactionArg;
+            use super::*;
+            use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate block fees
             pub fn process_and_validate_block_fees(
@@ -429,10 +460,14 @@ mod tests {
                     EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
                         .expect("should calculate epoch info");
 
-                let block_fees = FeeResult::from_fees(1000, 10000);
+                let block_fees = BlockFees {
+                    storage_fee: 1000,
+                    processing_fee: 10000,
+                    fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
+                };
 
                 let distribute_storage_pool_result = platform
-                    .process_block_fees(&block_info, &epoch_info, &block_fees, transaction)
+                    .process_block_fees(&block_info, &epoch_info, block_fees.clone(), transaction)
                     .expect("should process block fees");
 
                 // Should process epoch change

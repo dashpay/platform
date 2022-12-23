@@ -643,7 +643,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = {};
 
-      stateRepositoryMock.fetchLatestPlatformBlockTime.returns(response);
+      stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(response);
 
       await loggedStateRepositoryDecorator.fetchLatestPlatformBlockTime();
 

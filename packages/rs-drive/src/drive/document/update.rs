@@ -57,8 +57,8 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, Path
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -68,6 +68,7 @@ use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
+use crate::fee::result::FeeResult;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
@@ -643,6 +644,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
+    use crate::fee::credits::Creditable;
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::query::DriveQuery;
     use crate::{
@@ -1514,13 +1516,18 @@ mod tests {
                 &person_0_original,
                 transaction.as_ref(),
             );
-            let removed_bytes = deletion_fees
-                .removed_bytes_from_epochs_by_identities
+
+            let removed_credits = deletion_fees
+                .fee_refunds
                 .get(&owner_id)
                 .unwrap()
-                .get(0)
+                .get(&0)
                 .unwrap();
-            assert_eq!(original_bytes, *removed_bytes as u64);
+
+            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+            assert_eq!(original_bytes, removed_bytes);
+
             // let's re-add it again
             let original_fees = apply_person(
                 &drive,
@@ -1530,7 +1537,9 @@ mod tests {
                 true,
                 transaction.as_ref(),
             );
+
             let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
             assert_eq!(original_bytes, expected_added_bytes);
         }
 
@@ -1626,13 +1635,18 @@ mod tests {
                 &person_0_original,
                 transaction.as_ref(),
             );
-            let removed_bytes = deletion_fees
-                .removed_bytes_from_epochs_by_identities
+
+            let removed_credits = deletion_fees
+                .fee_refunds
                 .get(&owner_id)
                 .unwrap()
-                .get(0)
+                .get(&0)
                 .unwrap();
-            assert_eq!(original_bytes, *removed_bytes as u64);
+
+            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+            assert_eq!(original_bytes, removed_bytes);
+
             // let's re-add it again
             let original_fees = apply_person(
                 &drive,
@@ -1642,11 +1656,13 @@ mod tests {
                 true,
                 transaction.as_ref(),
             );
+
             let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
             assert_eq!(original_bytes, expected_added_bytes);
         }
-        // now let's update it
 
+        // now let's update it
         let update_fees = apply_person(
             &drive,
             &contract,
@@ -1658,20 +1674,22 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let removed_bytes = update_fees
-            .removed_bytes_from_epochs_by_identities
+
+        let removed_credits = update_fees
+            .fee_refunds
             .get(&owner_id)
             .unwrap()
-            .get(0)
+            .get(&0)
             .unwrap();
+
+        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
         let expected_added_bytes = if using_history { 607 } else { 605 };
         assert_eq!(added_bytes, expected_added_bytes);
 
         let expected_removed_bytes = if using_history { 604 } else { 602 };
-
-        assert_eq!(*removed_bytes, expected_removed_bytes);
+        assert_eq!(removed_bytes, expected_removed_bytes);
     }
 
     #[test]

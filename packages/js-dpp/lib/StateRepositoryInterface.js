@@ -150,6 +150,17 @@
  */
 
 /**
+ * Fetch identity ids by public keys hashes
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
+ * @param {Buffer[]} publicKeyHashes
+ * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @returns {Promise<Array<Identifier|null>>}
+ */
+
+/**
  * Fetch the latest platform block height
  *
  * @async
@@ -212,7 +223,19 @@
 /**
  * Returns current block time in milliseconds
  *
+ * @async
  * @method
  * @name StateRepository#fetchLatestPlatformBlockTime
- * @returns {number}
+ * @returns {Promise<number>}
+ */
+
+/**
+ * Calculates storage fee to epochs distribution amount and leftovers
+ *
+ * @async
+ * @method
+ * @name StateRepository#calculateStorageFeeDistributionAmountAndLeftovers
+ * @param {number} storageFee
+ * @param {number} startEpochIndex
+ * @returns {Promise<[number, number]>}
  */

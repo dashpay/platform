@@ -1,7 +1,6 @@
 use drive::dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
-use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -140,7 +139,7 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
             let js_buffer = JsBuffer::external(cx, item);
             Some(js_buffer.upcast())
         }
-        Element::SumItem(item, ..) => {
+        Element::SumItem(item, _) => {
             let js_number = JsNumber::new(cx, item as f64);
             Some(js_number.upcast())
         }

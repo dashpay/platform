@@ -574,7 +574,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#0cbff5edc5b2ea5d740e3f76c0e618c3242e200e"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -907,8 +907,11 @@ dependencies = [
  "intmap",
  "itertools",
  "moka",
+ "nohash-hasher",
  "rand",
  "rand_distr",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "sqlparser",
@@ -1252,7 +1255,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "0.8.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#0cbff5edc5b2ea5d740e3f76c0e618c3242e200e"
 dependencies = [
  "bincode",
  "costs",
@@ -1263,7 +1266,6 @@ dependencies = [
  "itertools",
  "merk",
  "nohash-hasher",
- "rs_merkle",
  "serde",
  "storage",
  "tempfile",
@@ -1687,7 +1689,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "0.8.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#0cbff5edc5b2ea5d740e3f76c0e618c3242e200e"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1706,12 +1708,6 @@ dependencies = [
  "time 0.3.17",
  "visualize",
 ]
-
-[[package]]
-name = "micromath"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39617bc909d64b068dcffd0e3e31679195b5576d0c83fadc52690268cc2b2b55"
 
 [[package]]
 name = "minimal-lexical"
@@ -2438,16 +2434,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rs_merkle"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a632a43487c1332be8e183588079f89b6820fab24e04db49521eacd536837372"
-dependencies = [
- "micromath",
- "sha2 0.10.6",
-]
-
-[[package]]
 name = "rust_decimal"
 version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2744,7 +2730,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#0cbff5edc5b2ea5d740e3f76c0e618c3242e200e"
 dependencies = [
  "blake3",
  "costs",
@@ -3131,7 +3117,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/advancedQueriesForOptionalNonExistantValues#5fda06fee8f9f69118e124cc0695cb2380ac108f"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#0cbff5edc5b2ea5d740e3f76c0e618c3242e200e"
 dependencies = [
  "hex",
  "itertools",

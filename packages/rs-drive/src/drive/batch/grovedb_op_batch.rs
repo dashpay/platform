@@ -83,6 +83,12 @@ impl GroveDbOpBatch {
             .push(GroveDbOp::insert_op(path, key, Element::empty_tree()))
     }
 
+    /// Adds an `Insert` operation with an empty sum tree at the specified path and key to a list of GroveDB ops.
+    pub fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
+        self.operations
+            .push(GroveDbOp::insert_op(path, key, Element::empty_sum_tree()))
+    }
+
     /// Adds an `Insert` operation with an empty tree with storage flags to a list of GroveDB ops.
     pub fn add_insert_empty_tree_with_flags(
         &mut self,
@@ -139,5 +145,14 @@ impl GroveDbOpBatch {
     /// Verify consistency of operations
     pub fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
         GroveDbOp::verify_consistency_of_operations(&self.operations)
+    }
+}
+
+impl IntoIterator for GroveDbOpBatch {
+    type Item = GroveDbOp;
+    type IntoIter = std::vec::IntoIter<GroveDbOp>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.operations.into_iter()
     }
 }
