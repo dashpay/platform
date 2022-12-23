@@ -948,9 +948,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
-    expect(result.createdEntities).to.have.lengthOf(0);
-    expect(result.updatedEntities).to.have.lengthOf(3);
-    expect(result.removedEntities).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(2);
+    expect(result.updatedEntities).to.have.lengthOf(1);
+    expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('ba35e7bc3c3e347c7724da0e9ff3fcf7798abf8b32735bde8f9e5e534483f593');
 

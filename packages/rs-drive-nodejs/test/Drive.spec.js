@@ -599,6 +599,7 @@ describe('Drive', function main() {
         await drive.createContract(withdrawalsDataContract, blockInfo);
 
         await drive.getAbci().initChain({});
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
@@ -611,7 +612,14 @@ describe('Drive', function main() {
 
       it('should process a block', async () => {
         const request = {
-          fees: FeeResult.create(100, 10),
+          fees: {
+            storageFee: 100,
+            processingFee: 100,
+            feeRefunds: {
+              1: 15,
+              2: 16,
+            },
+          },
         };
 
         const response = await drive.getAbci().blockEnd(request);
@@ -626,10 +634,12 @@ describe('Drive', function main() {
         this.timeout(10000);
 
         await drive.createInitialStateStructure();
+
         await drive.createContract(dataContract, blockInfo);
         await drive.createContract(withdrawalsDataContract, blockInfo);
 
         await drive.getAbci().initChain({});
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
@@ -638,8 +648,13 @@ describe('Drive', function main() {
           lastSyncedCoreHeight: 1,
           coreChainLockedHeight: 1,
         });
+
         await drive.getAbci().blockEnd({
-          fees: FeeResult.create(100, 10),
+          fees: {
+            storageFee: 100,
+            processingFee: 100,
+            feeRefunds: {},
+          },
         });
       });
 
@@ -654,6 +669,20 @@ describe('Drive', function main() {
 
         expect(response).to.be.empty();
       });
+    });
+  });
+
+  describe('.calculateStorageFeeDistributionAmountAndLeftovers', () => {
+    it('should calculate amount and leftovers', () => {
+      const result = Drive.calculateStorageFeeDistributionAmountAndLeftovers(1000, 1, 2);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.be.lengthOf(2);
+
+      const [amount, leftovers] = result;
+
+      expect(amount).to.equals(558);
+      expect(leftovers).to.equals(440);
     });
   });
 });

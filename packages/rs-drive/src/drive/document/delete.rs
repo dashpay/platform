@@ -70,8 +70,9 @@ use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::result::FeeResult;
 use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
 
 impl Drive {
@@ -732,6 +733,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
+    use crate::fee::credits::Creditable;
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
@@ -1448,13 +1450,16 @@ mod tests {
             )
             .expect("expected to be able to delete the document");
 
-        let removed_bytes = fee_result
-            .removed_bytes_from_epochs_by_identities
+        let removed_credits = fee_result
+            .fee_refunds
             .get(&random_owner_id)
             .unwrap()
-            .get(0)
+            .get(&0)
             .unwrap();
-        assert_eq!(added_bytes, *removed_bytes as u64);
+
+        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+        assert_eq!(added_bytes, removed_bytes);
     }
 
     #[test]
@@ -1520,10 +1525,7 @@ mod tests {
             )
             .expect("expected to be able to delete the document");
 
-        assert!(fee_result
-            .removed_bytes_from_epochs_by_identities
-            .0
-            .is_empty());
+        assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
         assert_eq!(fee_result.processing_fee, 148212400);
     }

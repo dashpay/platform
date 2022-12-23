@@ -73,7 +73,7 @@ mod test_utils;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
-use crate::fee::FeeResult;
+use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::extra::DriveContractExt;
 
