@@ -205,6 +205,11 @@ impl Document {
     pub fn set_data(&mut self, data: JsonValue) {
         self.data = data;
     }
+
+    /// Increment document's revision
+    pub fn increment_revision(&mut self) {
+        self.revision += 1;
+    }
 }
 
 #[cfg(test)]

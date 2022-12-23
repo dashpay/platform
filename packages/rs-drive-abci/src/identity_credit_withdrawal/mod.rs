@@ -126,11 +126,7 @@ impl Platform {
                     transaction,
                     |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                         document
-                            .data
-                            .insert(
-                                "status".to_string(),
-                                JsonValue::Number(Number::from(status)),
-                            )
+                            .set("status", JsonValue::Number(Number::from(status)))
                             .map_err(|_| {
                                 drive::error::Error::Drive(
                                     drive::error::drive::DriveError::CorruptedCodeExecution(
@@ -138,8 +134,6 @@ impl Platform {
                                     ),
                                 )
                             })?;
-
-                        document.revision += 1;
 
                         Ok(document)
                     },
@@ -250,9 +244,8 @@ impl Platform {
                 transaction,
                 |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                     document
-                        .data
-                        .insert(
-                            "transactionId".to_string(),
+                        .set(
+                            "transactionId",
                             JsonValue::Array(
                                 transaction_id
                                     .clone()
@@ -270,9 +263,8 @@ impl Platform {
                         })?;
 
                     document
-                        .data
-                        .insert(
-                            "status".to_string(),
+                        .set(
+                            "status",
                             JsonValue::Number(Number::from(withdrawals_contract::statuses::POOLED)),
                         )
                         .map_err(|_| {
@@ -282,8 +274,6 @@ impl Platform {
                                 ),
                             )
                         })?;
-
-                    document.revision += 1;
 
                     Ok(document)
                 },

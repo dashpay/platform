@@ -30,6 +30,13 @@ impl Drive {
     {
         let document = update_fn(document)?;
 
+        document.updated_at = Some(block_time_ms.try_into().map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution(
+                "Can't convert u64 block time to i64 updated_at",
+            ))
+        })?);
+        document.increment_revision();
+
         self.update_document_for_contract_cbor(
             &document.to_cbor().map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
@@ -125,9 +132,8 @@ impl Drive {
                 transaction,
                 |document: &mut Document| -> Result<&mut Document, Error> {
                     document
-                        .data
-                        .insert(
-                            "transactionId".to_string(),
+                        .set(
+                            "transactionId",
                             JsonValue::Array(
                                 update_transaction_id
                                     .iter()
@@ -137,11 +143,9 @@ impl Drive {
                         )
                         .map_err(|_| {
                             Error::Drive(DriveError::CorruptedCodeExecution(
-                                "Can't update document field: transactionId",
+                                "Can't set document field: transactionId",
                             ))
                         })?;
-
-                    document.revision += 1;
 
                     Ok(document)
                 },
