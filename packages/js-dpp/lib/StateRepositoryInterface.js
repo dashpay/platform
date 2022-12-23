@@ -141,17 +141,6 @@
  */
 
 /**
- * Fetch identity ids by public keys hashes
- *
- * @async
- * @method
- * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
- * @param {Buffer[]} publicKeyHashes
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
- * @returns {Promise<Array<Identifier|null>>}
- */
-
-/**
  * Fetch the latest platform block time
  *
  * @async

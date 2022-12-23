@@ -155,24 +155,6 @@ class DriveClient {
   }
 
   /**
-   * Fetch serialized identity ids by it's public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {boolean} prove - include proofs into the response
-   *
-   * @return {Promise<Buffer[]>}
-   */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, prove) {
-    return this.request(
-      '/identities/by-public-key-hash/id',
-      {
-        publicKeyHashes,
-      },
-      prove,
-    );
-  }
-
-  /**
    *  Fetch proofs by ids
    *
    * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} [documents]

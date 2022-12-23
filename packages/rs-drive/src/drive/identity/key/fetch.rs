@@ -36,6 +36,8 @@ use grovedb::Element::{Item, SumItem};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
+use grovedb::batch::Op;
+use dpp::document::state_transition::documents_batch_transition::apply_documents_batch_transition_factory::apply_documents_batch_transition;
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -87,13 +89,35 @@ pub trait IdentityPublicKeyResult {
 }
 
 fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey, Error> {
-    if let Item(value, _) = element {
-        IdentityPublicKey::deserialize(value.as_slice()).map_err(Error::Protocol)
-    } else {
-        Err(Error::Drive(DriveError::CorruptedElementType(
+    let Item(value, _) = element else {
+        return Err(Error::Drive(DriveError::CorruptedElementType(
             "expected item for identity public key",
         )))
+    };
+
+    IdentityPublicKey::deserialize(value.as_slice()).map_err(Error::Protocol)
+}
+
+// fn element_to_identity_public_key_id_and_object_pair(element: Element) -> Result<IdentityPublicKey, Error> {
+//     let public_key = element_to_identity_public_key(element)?;
+//
+//     (public_key.idю public_key)
+// }
+//
+fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
+    key: Key,
+    maybe_element: Option<Element>,
+) -> Result<(KeyID, Option<IdentityPublicKey>), Error> {
+    if let Some(element) = maybe_element {
+        let public_key = element_to_identity_public_key(element)?;
+
+        return Ok((public_key.id, Some(public_key)));
     }
+
+    let (key_id, _) = KeyID::decode_var(key.as_slice())
+        .ok_or_else(|| Error::Drive(DriveError::CorruptedSerialization("can't decode key id")))?;
+
+    Ok((key_id, None))
 }
 
 impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
@@ -101,8 +125,11 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
         // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(_, key, maybe_element)| {
-                maybe_element.map(|e| (key, element_to_identity_public_key(e)?))
+            .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| element))
+            .map(|element| {
+                let public_key = element_to_identity_public_key(element)?;
+
+                Ok((public_key.id, public_key))
             })
             .collect()
     }
@@ -119,7 +146,9 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
                 )),
                 QueryResultElement::KeyElementPairResultItem((key, element))
                 | QueryResultElement::PathKeyElementTrioResultItem((_, key, element)) => {
-                    (key, element_to_identity_public_key(element))
+                    let public_key = element_to_identity_public_key(element)?;
+
+                    Ok((public_key.id, public_key))
                 }
             })
             .collect()
@@ -131,9 +160,9 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
         value
             .into_iter()
             .map(|(_, key, maybe_element)| {
-                (
+                key_and_optional_element_to_identity_public_key_id_and_object_pair(
                     key,
-                    maybe_element.map(|e| element_to_identity_public_key(e)?),
+                    maybe_element,
                 )
             })
             .collect()
@@ -148,11 +177,16 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
 
 impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
     fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
-        // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(path, key, maybe_element)| {
-                maybe_element.map(|e| (path, key, element_to_identity_public_key(e)?))
+            .map(|(path, key, maybe_element)| {
+                let maybe_public_key = if let Some(element) = maybe_element {
+                    Some(element_to_identity_public_key(element)?)
+                } else {
+                    None
+                };
+
+                Ok((path, key, maybe_public_key))
             })
             .collect()
     }
@@ -169,8 +203,11 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
         // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(_, key, maybe_element)| {
-                maybe_element.map(|e| (key, element_to_identity_public_key(e)?))
+            .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| (key, element)))
+            .map(|(key, element)| {
+                let public_key = element_to_identity_public_key(element)?;
+
+                Ok((public_key.id, public_key))
             })
             .collect()
     }
@@ -187,7 +224,9 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
                 )),
                 QueryResultElement::KeyElementPairResultItem((key, element))
                 | QueryResultElement::PathKeyElementTrioResultItem((_, key, element)) => {
-                    (key, element_to_identity_public_key(element))
+                    let public_key = element_to_identity_public_key(element)?;
+
+                    Ok((public_key.id, public_key))
                 }
             })
             .collect()
@@ -199,9 +238,9 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
         value
             .into_iter()
             .map(|(_, key, maybe_element)| {
-                (
+                key_and_optional_element_to_identity_public_key_id_and_object_pair(
                     key,
-                    maybe_element.map(|e| element_to_identity_public_key(e)?),
+                    maybe_element,
                 )
             })
             .collect()
@@ -216,11 +255,16 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
 
 impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeMap {
     fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
-        // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(path, key, maybe_element)| {
-                maybe_element.map(|e| (path, key, element_to_identity_public_key(e)?))
+            .map(|(path, key, maybe_element)| {
+                let maybe_public_key = if let Some(element) = maybe_element {
+                    Some(element_to_identity_public_key(element)?)
+                } else {
+                    None
+                };
+
+                Ok(((path, key), maybe_public_key))
             })
             .collect()
     }
@@ -445,43 +489,42 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<T, Error> {
-        let path_query = key_request.to_path_query();
-
-        let serialized_keys = match key_request.key_request {
+        match &key_request.key_request {
             AllKeysRequest => {
+                let path_query = key_request.to_path_query();
+
                 let (result, _) = self.grove_get_raw_path_query(
                     &path_query,
                     transaction,
                     QueryPathKeyElementTrioResultType,
                     drive_operations,
                 )?;
-                result.into_iter().map(Some).collect()
+
+                T::try_from_query_results(result)
             }
             SpecificKeysRequest(_) => {
+                let path_query = key_request.to_path_query();
+
                 let result = self.grove_get_raw_path_query_with_optional(
                     &path_query,
                     transaction,
                     drive_operations,
                 )?;
-                result.into_iter().map(Some).collect()
+
+                T::try_from_path_key_optional(result)
             }
             SearchKeyRequest(_) => {
+                let path_query = key_request.to_path_query();
+
                 let result = self.grove_get_path_query_with_optional(
                     &path_query,
                     transaction,
                     drive_operations,
                 )?;
-                result.into_iter().map(Some).collect()
-            }
-        };
 
-        serialized_keys
-            .into_iter()
-            .map(|serialized_key| {
-                let key = IdentityPublicKey::deserialize(serialized_key.as_slice())?;
-                Ok((key.id, key))
-            })
-            .collect()
+                T::try_from_path_key_optional(result)
+            }
+        }
     }
 }
 

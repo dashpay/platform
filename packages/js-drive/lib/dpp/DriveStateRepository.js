@@ -173,35 +173,6 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch identity ids by related public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<Array<Identifier[]>>}
-   */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
-    // Keep await here.
-    // noinspection UnnecessaryLocalVariableJS
-    const results = await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => (
-        this.publicKeyToIdentitiesRepository.fetch(
-          publicKeyHash,
-          this.#createRepositoryOptions(executionContext),
-        )
-      )),
-    );
-
-    return results.map((result) => {
-      if (executionContext) {
-        executionContext.addOperation(...result.getOperations());
-      }
-
-      return result.getValue();
-    });
-  }
-
-  /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id

@@ -230,66 +230,6 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    it('should fetch map of previously stored public key hash and identity id pairs', async () => {
-      const publicKeyHashes = [
-        identity.getPublicKeyById(0).hash(),
-        identity.getPublicKeyById(1).hash(),
-      ];
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[0])
-        .resolves(new StorageResult(identity.getId(), operations));
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[1])
-        .resolves(new StorageResult(identity.getId(), operations));
-
-      const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeyHashes,
-        executionContext,
-      );
-
-      expect(result).to.have.deep.members([
-        identity.getId(),
-        identity.getId(),
-      ]);
-
-      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
-    });
-
-    it('should have null as value if pair was not found', async () => {
-      const publicKeyHashes = [
-        identity.getPublicKeyById(0).hash(),
-        identity.getPublicKeyById(1).hash(),
-      ];
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[0])
-        .resolves(new StorageResult(identity.getId(), operations));
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[1])
-        .resolves(new StorageResult(null, operations));
-
-      const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeyHashes,
-        executionContext,
-      );
-
-      expect(result).to.have.deep.members([
-        identity.getId(),
-        null,
-      ]);
-
-      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
-    });
-  });
-
   describe('#fetchDataContract', () => {
     it('should fetch data contract from repository', async () => {
       dataContractRepositoryMock.fetch.resolves(

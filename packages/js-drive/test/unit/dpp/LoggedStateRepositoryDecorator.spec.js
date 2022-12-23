@@ -221,56 +221,6 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    let publicKeyHashes;
-
-    beforeEach(() => {
-      publicKeyHashes = [Buffer.alloc(36), Buffer.alloc(36)];
-    });
-
-    it('should call logger with proper params', async () => {
-      const response = [null, generateRandomIdentifier()];
-
-      stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves(response);
-
-      await loggedStateRepositoryDecorator.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
-
-      expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        stateRepository: {
-          method: 'fetchIdentityIdsByPublicKeyHashes',
-          parameters: {
-            publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-          },
-          response,
-        },
-      }, 'StateRepository#fetchIdentityIdsByPublicKeyHashes');
-    });
-
-    it('should call logger in case of error', async () => {
-      const error = new Error('unknown error');
-
-      stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.throws(error);
-
-      try {
-        await loggedStateRepositoryDecorator.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
-
-        expect.fail('should throw an error');
-      } catch (e) {
-        expect(e).equals(error);
-      }
-
-      expect(loggerMock.trace).to.be.calledOnceWithExactly({
-        stateRepository: {
-          method: 'fetchIdentityIdsByPublicKeyHashes',
-          parameters: {
-            publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-          },
-          response: undefined,
-        },
-      }, 'StateRepository#fetchIdentityIdsByPublicKeyHashes');
-    });
-  });
-
   describe('#fetchDataContract', () => {
     let id;
 

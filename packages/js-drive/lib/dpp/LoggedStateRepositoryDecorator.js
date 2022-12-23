@@ -140,36 +140,6 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch identity ids mapped by related public keys
-   * using public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<Array<Identifier[]>>}
-   */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
-    let response;
-
-    try {
-      response = await this.stateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeyHashes,
-        executionContext,
-      );
-    } finally {
-      this.log(
-        'fetchIdentityIdsByPublicKeyHashes',
-        {
-          publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-        },
-        response,
-      );
-    }
-
-    return response;
-  }
-
-  /**
    * Store spent asset lock transaction
    *
    * @param {Buffer} outPointBuffer

@@ -65,22 +65,6 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch identity ids mapped by related public keys
-   * using public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<Array<Identifier[]>>}
-   */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
-    return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(
-      publicKeyHashes,
-      executionContext,
-    );
-  }
-
-  /**
    * Store spent asset lock transaction
    *
    * @param {Buffer} outPointBuffer
