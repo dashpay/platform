@@ -220,7 +220,7 @@ module.exports = {
         },
         minimumDifficultyBlocks: {
           type: 'integer',
-          minimum: 1,
+          minimum: 0,
         },
         powTargetSpacing: {
           type: 'integer',
