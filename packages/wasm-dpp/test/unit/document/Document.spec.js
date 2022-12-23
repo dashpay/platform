@@ -11,8 +11,10 @@ const cloneDeepWith = require('lodash.clonedeep');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../../dist');
+const { DocumentFactory } = require('../../../dist/wasm/wasm_dpp');
 
 let DataContractFactory;
+let DataContractValidator;
 let Identifier;
 let Document;
 
@@ -25,7 +27,7 @@ describe('Document', () => {
 
   beforeEach(async () => {
     ({
-      Identifier, Document, DataContractFactory,
+      Identifier, Document, DataContractFactory, DataContractValidator,
     } = await loadWasmDpp());
   });
 
@@ -38,7 +40,9 @@ describe('Document', () => {
     const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
 
     const jsDataContractFactory = new JsDataContractFactory(createDPPMock(), () => { });
-    const dataContractFactory = new DataContractFactory(1);
+    const dataContractValidator = new DataContractValidator();
+    const dataContractFactory = new DataContractFactory(1, dataContractValidator);
+
     const rawDataContract = {
       test: {
         properties: {

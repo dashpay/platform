@@ -12,4 +12,7 @@ extern "C" {
 
     #[wasm_bindgen(constructor, js_name = "from")]
     pub fn from_string(js_sys: String) -> Buffer;
+
+    // #[wasm_bindgen(method, getter, js_name = "buffer")]
+    // pub fn to_vec(this: &Buffer) -> Array
 }

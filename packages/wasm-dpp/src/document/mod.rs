@@ -21,7 +21,7 @@ use crate::{DataContractWasm, MetadataWasm};
 pub mod errors;
 pub use state_transition::*;
 mod factory;
-mod state_transition;
+pub mod state_transition;
 mod validator;
 
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
@@ -33,7 +33,6 @@ pub(super) enum BinaryType {
     Buffer,
     None,
 }
-pub mod state_transition;
 
 #[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -26,7 +26,8 @@ struct DefaultEntropyGenerator;
 
 impl EntropyGenerator for DefaultEntropyGenerator {
     fn generate(&self) -> [u8; 32] {
-        entropy_generator::generate()
+        // TODO
+        entropy_generator::generate().unwrap()
     }
 }
 

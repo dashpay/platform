@@ -1,10 +1,16 @@
 use dpp::prelude::Identifier;
+use dpp::util::string_encoding::Encoding;
+use itertools::Itertools;
 pub use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
+use crate::bail_js;
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
+use crate::utils::ToSerdeJSONExt;
+use crate::utils::WithJsError;
 use dpp::identifier;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
@@ -114,4 +120,29 @@ impl IdentifierWrapper {
     pub fn inner(self) -> Identifier {
         self.wrapped
     }
+}
+
+/// tries to create identifier from
+pub fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+    let value = js_value.with_serde_to_json_value()?;
+    match value {
+        Value::Array(arr) => {
+            let bytes: Vec<u8> = arr.into_iter().map(value_to_u8).try_collect()?;
+            Identifier::from_bytes(&bytes).with_js_error()
+        }
+        Value::String(string) => Identifier::from_string(&string, Encoding::Base58).with_js_error(),
+        _ => {
+            bail_js!("Invalid ID. Expected array or string")
+        }
+    }
+}
+
+fn value_to_u8(v: Value) -> Result<u8, JsValue> {
+    let number = v
+        .as_u64()
+        .ok_or_else(|| format!("failed converting {} into u64", v))?;
+    if number > u8::MAX as u64 {
+        bail_js!("the integer in the array isn't a byte: {}", number);
+    }
+    Ok(number as u8)
 }

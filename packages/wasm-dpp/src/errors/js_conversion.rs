@@ -50,16 +50,16 @@ macro_rules! with_js_error {
 #[macro_export]
 macro_rules! bail_js {
     ($msg:literal) => ({
-        return Err(RustConversionError::from(String::from($msg)).to_js_value())
+        return Err($crate::errors::RustConversionError::from(String::from($msg)).to_js_value())
     });
 
     ($err:expr $(,)?) => ({
         use $crate::private::kind::*;
-        return Err(RustConversionError::from($err).to_js_value())
+        return Err($crate::errors::RustConversionError::from($err).to_js_value())
     });
 
     ($fmt:expr, $($arg:tt)*) => {
-        return Err(RustConversionError::from(format!($fmt, $($arg)*)).to_js_value())
+        return Err($crate::errors::RustConversionError::from(format!($fmt, $($arg)*)).to_js_value())
     };
 
 }

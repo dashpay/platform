@@ -125,7 +125,7 @@ impl DocumentsBatchTransitionWASM {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let value = self.0.to_json().with_js_error()?;
+        let value = self.0.to_json(false).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
         let is_null_signature = value.get(property_names::SIGNATURE).is_none();

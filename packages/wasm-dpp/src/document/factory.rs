@@ -2,7 +2,7 @@ use dpp::document::{document_factory::DocumentFactory, document_transition::Acti
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    identifier::IdentifierWrapper,
+    identifier::identifier_from_js_value,
     utils::{ToSerdeJSONExt, WithJsError},
     DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM, DocumentsContainer,
 };
@@ -66,16 +66,17 @@ impl DocumentFactoryWASM {
     pub fn create(
         &self,
         data_contract: DataContractWasm,
-        owner_id: IdentifierWrapper,
+        js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
     ) -> Result<DocumentWasm, JsValue> {
+        let owner_id = identifier_from_js_value(js_owner_id)?;
         let dynamic_data = data.with_serde_to_json_value()?;
         let document = self
             .0
             .create(
                 data_contract.into(),
-                owner_id.inner(),
+                owner_id,
                 document_type.to_string(),
                 dynamic_data,
             )

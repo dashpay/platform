@@ -154,7 +154,6 @@ describe('DocumentFactory', () => {
   });
 
 
-
   describe('create', () => {
     it('should return new Document with specified type and data', () => {
       // NiceDocument is used instead of IndexedDocument, because the NiceDocument should be valid for this test
@@ -164,9 +163,9 @@ describe('DocumentFactory', () => {
 
       let rawDocument = niceDocument.toObject();
 
-
       const contractId = bs58.decode('FQco85WbwNgb5ix8QQAH6wurMcgEC5ENSCv5ixG9cj12');
       const name = 'Cutie';
+
 
       ownerIdJs = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
       ownerId = Identifier.from(ownerIdJs);
@@ -183,7 +182,7 @@ describe('DocumentFactory', () => {
 
       const newDocument = factory.create(
         dataContract,
-        ownerId,
+        ownerIdJs,
         rawDocument.$type,
         { name },
       );
@@ -207,8 +206,6 @@ describe('DocumentFactory', () => {
 
       expect(generateEntropyMock).to.have.been.calledOnce();
       expect(newDocumentJs.getEntropy()).to.deep.equal(entropy);
-      // we only verify that entropy isn't empty
-      expect(newDocument.getEntropy()).not.to.deep.be.equal(Buffer.alloc(32))
 
       expect(newDocumentJs.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);

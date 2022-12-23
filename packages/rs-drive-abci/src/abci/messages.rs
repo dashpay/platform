@@ -38,7 +38,7 @@ use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
 use drive::fee::epoch::CreditsPerEpoch;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]

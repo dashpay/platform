@@ -9,7 +9,6 @@ use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::{DataContract, SCHEMA_URI};
 use dpp::util::string_encoding::Encoding;
-use web_sys::console::log_1;
 
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::metadata::MetadataWasm;
