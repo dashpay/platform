@@ -1,12 +1,11 @@
-use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+
+
+
+
+
+
 use crate::drive::identity::{
-    balance_path, identity_key_tree_path_vec, identity_path, identity_query_keys_tree_path_vec,
-    IDENTITY_KEY,
+    identity_key_tree_path_vec, identity_query_keys_tree_path_vec,
 };
 
 use crate::drive::identity::key::fetch::KeyKindRequestType::{
@@ -15,29 +14,29 @@ use crate::drive::identity::key::fetch::KeyKindRequestType::{
 use crate::drive::identity::key::fetch::KeyRequestType::{
     AllKeysRequest, SearchKeyRequest, SpecificKeysRequest,
 };
-use crate::drive::{Drive, RootTree};
+use crate::drive::{Drive};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee};
+
 use crate::query::{Query, QueryItem};
-use dpp::identifier::Identifier;
-use dpp::identity::{Identity, KeyID, Purpose, SecurityLevel};
+
+use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::prelude::IdentityPublicKey;
 use grovedb::query_result_type::QueryResultType::{
-    QueryElementResultType, QueryKeyElementPairResultType, QueryPathKeyElementTrioResultType,
+    QueryPathKeyElementTrioResultType,
 };
 use grovedb::query_result_type::{
-    Key, Path, PathKeyElementTrio, PathKeyOptionalElementTrio, QueryResultElement,
+    Key, Path, PathKeyOptionalElementTrio, QueryResultElement,
     QueryResultElements,
 };
-use grovedb::Element::{Item, SumItem};
+use grovedb::Element::{Item};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
-use grovedb::batch::Op;
-use dpp::document::state_transition::documents_batch_transition::apply_documents_batch_transition_factory::apply_documents_batch_transition;
+
+
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -125,7 +124,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
         // We do not care about non existence
         value
             .into_iter()
-            .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| element))
+            .filter_map(|(_, _key, maybe_element)| maybe_element.map(|element| element))
             .map(|element| {
                 let public_key = element_to_identity_public_key(element)?;
 
@@ -139,13 +138,13 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
             .elements
             .into_iter()
             .map(|query_result_element| match query_result_element {
-                QueryResultElement::ElementResultItem(element) => Err(Error::Identity(
+                QueryResultElement::ElementResultItem(_element) => Err(Error::Identity(
                     IdentityError::IdentityKeyIncorrectQueryMissingInformation(
                         "no key present in return information",
                     ),
                 )),
-                QueryResultElement::KeyElementPairResultItem((key, element))
-                | QueryResultElement::PathKeyElementTrioResultItem((_, key, element)) => {
+                QueryResultElement::KeyElementPairResultItem((_key, element))
+                | QueryResultElement::PathKeyElementTrioResultItem((_, _key, element)) => {
                     let public_key = element_to_identity_public_key(element)?;
 
                     Ok((public_key.id, public_key))
@@ -168,7 +167,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
         )))
@@ -191,7 +190,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
         )))
@@ -204,7 +203,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
         value
             .into_iter()
             .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| (key, element)))
-            .map(|(key, element)| {
+            .map(|(_key, element)| {
                 let public_key = element_to_identity_public_key(element)?;
 
                 Ok((public_key.id, public_key))
@@ -217,13 +216,13 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
             .elements
             .into_iter()
             .map(|query_result_element| match query_result_element {
-                QueryResultElement::ElementResultItem(element) => Err(Error::Identity(
+                QueryResultElement::ElementResultItem(_element) => Err(Error::Identity(
                     IdentityError::IdentityKeyIncorrectQueryMissingInformation(
                         "no key present in return information",
                     ),
                 )),
-                QueryResultElement::KeyElementPairResultItem((key, element))
-                | QueryResultElement::PathKeyElementTrioResultItem((_, key, element)) => {
+                QueryResultElement::KeyElementPairResultItem((_key, element))
+                | QueryResultElement::PathKeyElementTrioResultItem((_, _key, element)) => {
                     let public_key = element_to_identity_public_key(element)?;
 
                     Ok((public_key.id, public_key))
@@ -246,7 +245,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
         )))
@@ -269,7 +268,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeM
             .collect()
     }
 
-    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+    fn try_from_query_results(_value: QueryResultElements) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
         )))
@@ -534,13 +533,13 @@ mod tests {
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
 
-    use tempfile::TempDir;
+    
 
     use crate::drive::identity::key::fetch::KeyRequestType::SpecificKeysRequest;
     use crate::drive::identity::key::fetch::{
         IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
     };
-    use crate::drive::Drive;
+    
 
     #[test]
     fn test_fetch_all_keys_on_identity() {

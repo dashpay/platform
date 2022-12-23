@@ -60,7 +60,7 @@ use crate::fee::op::DriveOperation::CalculatedCostOperation;
 use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{
-    KeyOptionalElementPair, PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
+    PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
 };
 use grovedb::Error as GroveError;
 use intmap::IntMap;
