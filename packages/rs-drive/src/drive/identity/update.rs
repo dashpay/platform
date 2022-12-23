@@ -6,16 +6,16 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee};
 use grovedb::batch::KeyInfoPath;
 
+use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identity::IdentityPublicKey;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use crate::fee::result::FeeResult;
 
 impl Drive {
     /// We can set an identities balance

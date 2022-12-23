@@ -4,23 +4,21 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::identity::{
-    balance_path, identity_path,
-};
+use crate::drive::identity::{balance_path, identity_path};
 
-use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
-};
+use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee};
 use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity};
+use dpp::identity::Identity;
 
+use crate::fee::result::FeeResult;
+use crate::fee_pools::epochs::Epoch;
 use grovedb::query_result_type::QueryResultType::{
     QueryElementResultType, QueryKeyElementPairResultType,
 };
@@ -28,8 +26,6 @@ use grovedb::Element::{Item, SumItem};
 use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
-use crate::fee::result::FeeResult;
-use crate::fee_pools::epochs::Epoch;
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store
@@ -239,11 +235,10 @@ impl Drive {
         identity_id: [u8; 32],
         epoch: &Epoch,
         transaction: TransactionArg,
-    ) -> Result<(Option<Identity>,FeeResult), Error> {
+    ) -> Result<(Option<Identity>, FeeResult), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let maybe_identity = self.fetch_full_identity_operations(
-            identity_id, transaction, &mut drive_operations,
-        )?;
+        let maybe_identity =
+            self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)?;
         let fee = calculate_fee(None, Some(drive_operations), epoch)?;
         Ok((maybe_identity, fee))
     }
@@ -255,9 +250,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_full_identity_operations(
-            identity_id, transaction, &mut drive_operations,
-        )
+        self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -268,7 +261,12 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
-        let balance = self.fetch_identity_balance_operations(identity_id, true, transaction, drive_operations)?;
+        let balance = self.fetch_identity_balance_operations(
+            identity_id,
+            true,
+            transaction,
+            drive_operations,
+        )?;
         if balance.is_none() {
             return Ok(None);
         }
@@ -279,7 +277,8 @@ impl Drive {
                 "revision not found on identity".to_string(),
             )))?;
 
-        let public_keys = self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations)?;
+        let public_keys =
+            self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations)?;
         Ok(Some(Identity {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
