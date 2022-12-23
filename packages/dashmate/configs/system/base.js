@@ -66,10 +66,10 @@ module.exports = {
       },
     },
     debug: 0,
-    listen: 1,
+    logIps: 0,
     indexes: true,
-    powTargetSpacing: null,
     minimumDifficultyBlocks: 1000,
+    powTargetSpacing: null,
     reindex: {
       enable: false,
       containerId: null,
