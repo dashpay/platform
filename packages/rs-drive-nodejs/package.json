@@ -5,7 +5,7 @@
   "main": "Drive.js",
   "scripts": {
     "build": "yarn exec scripts/build.sh",
-    "test": "ultra --build && mocha test",
+    "test": "CARGO_BUILD_PROFILE=test ultra --build && mocha test",
     "lint": "eslint ."
   },
   "files": [

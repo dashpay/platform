@@ -158,7 +158,7 @@ impl TenderdashAbci for Platform {
             ),
         ))?;
 
-        self.pool_withdrawals_into_transactions(&block_execution_context, transaction)?;
+        self.pool_withdrawals_into_transactions(block_execution_context, transaction)?;
 
         // Process fees
         let process_block_fees_result = self.process_block_fees(
@@ -294,7 +294,7 @@ mod tests {
                 // .times(total_days)
                 .returning(|_| Ok(json!({})));
 
-            platform.drive.core_rpc = Some(Box::new(core_rpc_mock));
+            platform.core_rpc = Box::new(core_rpc_mock);
 
             // process blocks
             for day in 0..total_days {
@@ -464,7 +464,7 @@ mod tests {
                 // .times(1) // TODO: investigate why it always n + 1
                 .returning(|_| Ok(json!({})));
 
-            platform.drive.core_rpc = Some(Box::new(core_rpc_mock));
+            platform.core_rpc = Box::new(core_rpc_mock);
 
             let transaction = platform.drive.grove.start_transaction();
 

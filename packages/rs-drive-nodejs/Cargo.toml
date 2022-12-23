@@ -10,10 +10,9 @@ private = true
 crate-type = ["cdylib"]
 
 [dependencies]
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks"]}
-drive-abci = { path = "../rs-drive-abci" }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+drive-abci = { path = "../rs-drive-abci", features = ["fixtures-and-mocks"] }
 num = "0.4.0"
-serde_json = { version="1.0", features=["preserve_order"] }
 
 [dependencies.neon]
 version = "0.10.1"

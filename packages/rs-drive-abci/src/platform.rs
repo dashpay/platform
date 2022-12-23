@@ -39,6 +39,15 @@ use drive::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use std::cell::RefCell;
 use std::path::Path;
 
+#[cfg(feature = "fixtures-and-mocks")]
+use dashcore::hashes::hex::FromHex;
+#[cfg(feature = "fixtures-and-mocks")]
+use dashcore::BlockHash;
+#[cfg(feature = "fixtures-and-mocks")]
+use drive::rpc::core::MockCoreRPCLike;
+#[cfg(feature = "fixtures-and-mocks")]
+use serde_json::json;
+
 /// Platform
 pub struct Platform {
     /// Drive
@@ -72,5 +81,27 @@ impl Platform {
             block_execution_context: RefCell::new(None),
             core_rpc,
         })
+    }
+
+    /// Helper function to be able
+    /// to quickly mock core rpc for tests
+    #[cfg(feature = "fixtures-and-mocks")]
+    pub fn mock_core_rpc_client(&mut self) {
+        let mut core_rpc_mock = MockCoreRPCLike::new();
+
+        core_rpc_mock.expect_get_block_hash().returning(|_| {
+            Ok(BlockHash::from_hex(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap())
+        });
+
+        core_rpc_mock.expect_get_block_json().returning(|_| {
+            Ok(json!({
+                "tx": [],
+            }))
+        });
+
+        self.core_rpc = Box::new(core_rpc_mock);
     }
 }

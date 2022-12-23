@@ -39,8 +39,15 @@ describe('Drive', function main() {
 
   beforeEach(async () => {
     drive = new Drive(TEST_DATA_PATH, {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsBlockCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpcUrl: '',
+        rpcUsername: '',
+        rpcPassword: '',
+      },
     });
 
     const dpp = new DashPlatformProtocol({

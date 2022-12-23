@@ -120,7 +120,11 @@ impl PlatformWrapper {
             };
 
             // TODO: think how to pass this error to JS
-            let platform: Platform = Platform::open(path, platform_config).unwrap();
+            let mut platform: Platform = Platform::open(path, platform_config).unwrap();
+
+            if cfg!(test) {
+                platform.mock_core_rpc_client();
+            }
 
             let mut maybe_transaction: Option<Transaction> = None;
 
