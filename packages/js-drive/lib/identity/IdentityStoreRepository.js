@@ -100,7 +100,7 @@ class IdentityStoreRepository {
         options,
       );
     } catch (e) {
-      if (!e.message.startsWith('path parent layer not found')) {
+      if (!e.message.startsWith('grovedb: path parent layer not found')) {
         throw e;
       }
 

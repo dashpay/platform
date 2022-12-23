@@ -1,4 +1,4 @@
-const lodashCloneDeep = require('lodash.clonedeep');
+const lodashCloneDeep = require('lodash/cloneDeep');
 const ValidationResult = require('../../validation/ValidationResult');
 const DataContractMaxDepthExceedError = require('../../errors/consensus/basic/dataContract/DataContractMaxDepthExceedError');
 const InvalidJsonSchemaRefError = require('../../errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');

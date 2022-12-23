@@ -1,4 +1,4 @@
-const lodashMerge = require('lodash.merge');
+const lodashMerge = require('lodash/merge');
 const path = require('path');
 
 const {
@@ -72,7 +72,21 @@ module.exports = lodashMerge({}, baseConfig, {
                 'bls12381',
               ],
             },
-            version: {},
+            version: {
+              app_version: '1',
+            },
+            synchrony: {
+              precision: '505000000',
+              message_delay: '12000000000',
+            },
+            timeout: {
+              propose: '3000000000',
+              propose_delta: '500000000',
+              vote: '1000000000',
+              vote_delta: '500000000',
+              commit: '1000000000',
+              bypass_commit_timeout: false,
+            },
           },
           validators: [
             {
@@ -80,7 +94,7 @@ module.exports = lodashMerge({}, baseConfig, {
                 type: 'tendermint/PubKeyBLS12381',
                 value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
               },
-              power: '100',
+              power: 100,
               name: '',
               pro_tx_hash: 'F3D506822A24E7E4BE318A6ED7371CC1E1527880A594FE04629F50A1618DB8E7',
             },
@@ -89,8 +103,8 @@ module.exports = lodashMerge({}, baseConfig, {
             type: 'tendermint/PubKeyBLS12381',
             value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
           },
-          quorum_type: '4',
-          quorum_hash: '0000000000000000000000000000000000000000',
+          validator_quorum_type: 4,
+          validator_quorum_hash: '0000000000000000000000000000000000000000000000000000000000000000',
           app_hash: '',
         },
       },

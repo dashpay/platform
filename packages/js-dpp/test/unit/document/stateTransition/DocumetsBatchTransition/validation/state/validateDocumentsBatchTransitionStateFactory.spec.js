@@ -68,7 +68,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     blockTime = Date.now();
 
-    stateRepositoryMock.getTimeMs.returns(blockTime);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
 

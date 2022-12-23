@@ -3,13 +3,15 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 
 /**
  *
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
+ * @param {IdentityStoreRepository} identityRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
-  transactionalStateRepository,
+  identityRepository,
+  publicKeyToIdentitiesRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -19,7 +21,11 @@ function handleUpdatedScriptPayoutFactory(
    * @param {Script} newPayoutScript
    * @param {BlockInfo} blockInfo
    * @param {Script} [previousPayoutScript]
-   * @returns {Promise<void>}
+   * @return {Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
+   * }>}
    */
   async function handleUpdatedScriptPayout(
     identityId,
@@ -27,14 +33,24 @@ function handleUpdatedScriptPayoutFactory(
     blockInfo,
     previousPayoutScript,
   ) {
-    const identity = await transactionalStateRepository.fetchIdentity(identityId);
+    const result = {
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+    };
+
+    const identityResult = await identityRepository.fetch(identityId, { useTransaction: true });
+
+    const identity = identityResult.getValue();
+
     identity.setRevision(identity.getRevision() + 1);
+
     let identityPublicKeys = identity
       .getPublicKeys();
 
     if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
       // do not add new public key
-      return;
+      return result;
     }
 
     // disable previous
@@ -73,14 +89,19 @@ function handleUpdatedScriptPayoutFactory(
 
     identity.setPublicKeys(identityPublicKeys);
 
-    await transactionalStateRepository.updateIdentity(identity);
+    await identityRepository.update(identity, { useTransaction: true });
 
     const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
 
-    await transactionalStateRepository.storeIdentityPublicKeyHashes(
+    await publicKeyToIdentitiesRepository.store(
+      publicKeyHash,
       identity.getId(),
-      [publicKeyHash],
+      { useTransaction: true },
     );
+
+    result.updatedEntities.push(identity);
+
+    return result;
   }
 
   return handleUpdatedScriptPayout;

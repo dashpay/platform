@@ -80,7 +80,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.22-latest',
+          image: 'dashpay/envoy:0.24-dev',
         },
         http: {
           port: 3000,
@@ -94,17 +94,27 @@ module.exports = {
           fillInterval: '60s',
           enabled: true,
         },
+        ssl: {
+          enabled: false,
+          provider: 'zerossl',
+          providerConfigs: {
+            zerossl: {
+              apiKey: null,
+              id: null,
+            },
+          },
+        },
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23.0',
+          image: 'dashpay/dapi:0.24.0-dev',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23.0',
+          image: 'dashpay/drive:0.24.0-dev',
         },
         log: {
           stdout: {
@@ -125,7 +135,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.8.0-dev.10',
+          image: 'dashpay/tenderdash:0.10.0-dev.6',
         },
         p2p: {
           port: 26656,
@@ -187,6 +197,13 @@ module.exports = {
       },
       masterPublicKey: null,
       secondPublicKey: null,
+    },
+  },
+  dashmate: {
+    helper: {
+      docker: {
+        image: 'dashpay/dashmate-helper:0.24-dev',
+      },
     },
   },
   externalIp: null,

@@ -30,12 +30,10 @@ class BlockInfo {
    * @returns {BlockInfo}
    */
   static createFromBlockExecutionContext(blockExecutionContext) {
-    const { height } = blockExecutionContext.getHeader();
-
     const epochInfo = blockExecutionContext.getEpochInfo();
 
     return new BlockInfo(
-      height.toNumber(),
+      blockExecutionContext.getHeight().toNumber(),
       epochInfo.currentEpochIndex,
       blockExecutionContext.getTimeMs(),
     );

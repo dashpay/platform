@@ -3,11 +3,11 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
+const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {createRewardShareDocument} createRewardShareDocument
  * @param {fetchTransaction} fetchTransaction
@@ -15,7 +15,6 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  */
 function handleNewMasternodeFactory(
   transactionalDpp,
-  transactionalStateRepository,
   createMasternodeIdentity,
   createRewardShareDocument,
   fetchTransaction,
@@ -25,10 +24,14 @@ function handleNewMasternodeFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
-   * @return Promise<Array<Identity|Document>>
+   * @return {Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
+   * }>}
    */
   async function handleNewMasternode(masternodeEntry, dataContract, blockInfo) {
-    const result = [];
+    const createdEntities = [];
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
@@ -46,12 +49,12 @@ function handleNewMasternodeFactory(
       proRegTxHash,
     );
 
-    const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
+    const ownerPublicKeyHash = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
-    result.push(
+    createdEntities.push(
       await createMasternodeIdentity(
         masternodeIdentifier,
-        publicKey,
+        ownerPublicKeyHash,
         IdentityPublicKey.TYPES.ECDSA_HASH160,
         payoutScript,
       ),
@@ -70,7 +73,7 @@ function handleNewMasternodeFactory(
 
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
-      result.push(
+      createdEntities.push(
         await createMasternodeIdentity(
           operatorIdentifier,
           operatorPubKey,
@@ -89,11 +92,31 @@ function handleNewMasternodeFactory(
       );
 
       if (rewardShareDocument) {
-        result.push(rewardShareDocument);
+        createdEntities.push(rewardShareDocument);
       }
     }
 
-    return result;
+    const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
+
+    // don't need to create a separate Identity in case we don't have
+    // voting public key (keyIDVoting === keyIDOwner)
+    if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
+      const votingIdentifier = createVotingIdentifier(masternodeEntry);
+
+      createdEntities.push(
+        await createMasternodeIdentity(
+          votingIdentifier,
+          votingPubKeyHash,
+          IdentityPublicKey.TYPES.ECDSA_HASH160,
+        ),
+      );
+    }
+
+    return {
+      createdEntities,
+      updatedEntities: [],
+      removedEntities: [],
+    };
   }
 
   return handleNewMasternode;

@@ -11,20 +11,17 @@ const Long = require('long');
 const { version: driveVersion } = require('../../../package.json');
 
 /**
- * @param {BlockExecutionContextStack} blockExecutionContextStack
- * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {Long} latestProtocolVersion
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
  * @param {GroveDBStore} groveDBStore
- * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @return {infoHandler}
  */
 function infoHandlerFactory(
-  blockExecutionContextStack,
-  blockExecutionContextStackRepository,
-  blockExecutionContext,
+  latestBlockExecutionContext,
+  blockExecutionContextRepository,
   latestProtocolVersion,
   updateSimplifiedMasternodeList,
   logger,
@@ -48,16 +45,9 @@ function infoHandlerFactory(
 
     // Initialize Block Execution Contexts
 
-    const persistedBlockExecutionContextStack = await blockExecutionContextStackRepository.fetch();
-
-    blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
-
-    const previousContext = blockExecutionContextStack.getFirst();
-
-    // Populate current execution context with previous context
-    // until block begin called with a new block.
-    if (previousContext) {
-      blockExecutionContext.populate(previousContext);
+    const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch();
+    if (persistedBlockExecutionContext) {
+      latestBlockExecutionContext.populate(persistedBlockExecutionContext);
     }
 
     // Initialize current heights
@@ -65,11 +55,9 @@ function infoHandlerFactory(
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
 
-    if (previousContext) {
-      const lastHeader = blockExecutionContext.getHeader();
-
-      lastHeight = lastHeader.height;
-      lastCoreChainLockedHeight = lastHeader.coreChainLockedHeight;
+    if (!latestBlockExecutionContext.isEmpty()) {
+      lastHeight = latestBlockExecutionContext.getHeight();
+      lastCoreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
     }
 
     contextLogger = contextLogger.child({
@@ -78,7 +66,7 @@ function infoHandlerFactory(
 
     // Update SML store to latest saved core chain lock to make sure
     // that verify chain lock handler has updated SML Store to verify signatures
-    if (previousContext) {
+    if (!latestBlockExecutionContext.isEmpty()) {
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });

@@ -1,3 +1,5 @@
+const { calculateStorageFeeDistributionAmountAndLeftovers } = require('@dashevo/rs-drive');
+
 const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
@@ -20,6 +22,7 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
+   * @param {RSDrive} rsDrive
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -33,6 +36,7 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
+    rsDrive,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -44,6 +48,7 @@ class DriveStateRepository {
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
+    this.rsDrive = rsDrive;
     this.#options = options;
   }
 
@@ -218,6 +223,7 @@ class DriveStateRepository {
         dryRun: false,
         // Transaction is not using since Data Contract
         // should be always committed to use
+        // TODO: We don't need this anymore
         useTransaction: false,
       },
     );
@@ -420,12 +426,36 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch latest platform block header
+   * Fetch the latest platform block height
    *
-   * @return {Promise<IHeader>}
+   * @return {Promise<Long>}
    */
-  async fetchLatestPlatformBlockHeader() {
-    return this.blockExecutionContext.getHeader();
+  async fetchLatestPlatformBlockHeight() {
+    return this.blockExecutionContext.getHeight();
+  }
+
+  /**
+   * Fetch the latest platform block time
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformBlockTime() {
+    const timeMs = this.blockExecutionContext.getTimeMs();
+
+    if (!timeMs) {
+      throw new Error('Time is not set');
+    }
+
+    return timeMs;
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    return this.blockExecutionContext.getCoreChainLockedHeight();
   }
 
   /**
@@ -438,9 +468,9 @@ class DriveStateRepository {
    */
   // eslint-disable-next-line no-unused-vars
   async verifyInstantLock(instantLock, executionContext = undefined) {
-    const header = this.blockExecutionContext.getHeader();
+    const coreChainLockedHeight = this.blockExecutionContext.getCoreChainLockedHeight();
 
-    if (header === null) {
+    if (coreChainLockedHeight === null) {
       return false;
     }
 
@@ -453,10 +483,6 @@ class DriveStateRepository {
         return true;
       }
     }
-
-    const {
-      coreChainLockedHeight,
-    } = header;
 
     try {
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
@@ -489,6 +515,56 @@ class DriveStateRepository {
   }
 
   /**
+   * Fetch latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    // TODO: handle dry run via passing state transition execution context
+    return this.rsDrive.fetchLatestWithdrawalTransactionIndex(
+      this.#options.useTransaction,
+    );
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    // TODO: handle dry run via passing state transition execution context
+    return this.rsDrive.enqueueWithdrawalTransaction(
+      index,
+      transactionBytes,
+      this.#options.useTransaction,
+    );
+  }
+
+  /**
+   * Calculates storage fee to epochs distribution amount and leftovers
+   *
+   * @param {number} storageFee
+   * @param {number} startEpochIndex
+   * @returns {Promise<[number, number]>}
+   */
+  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
+    const epochInfo = this.blockExecutionContext.getEpochInfo();
+
+    if (!epochInfo) {
+      throw new Error('epoch info is not set');
+    }
+
+    return calculateStorageFeeDistributionAmountAndLeftovers(
+      storageFee,
+      startEpochIndex,
+      epochInfo.currentEpochIndex,
+    );
+  }
+
+  /**
    * @private
    * @param {StateTransitionExecutionContext} [executionContext]
    * @return {{dryRun: boolean, useTransaction: boolean}}
@@ -498,21 +574,6 @@ class DriveStateRepository {
       useTransaction: this.#options.useTransaction || false,
       dryRun: executionContext ? executionContext.isDryRun() : false,
     };
-  }
-
-  /**
-   * Returns block time
-   *
-   * @returns {number}
-   */
-  getTimeMs() {
-    const timeMs = this.blockExecutionContext.getTimeMs();
-
-    if (!timeMs) {
-      throw new Error('Time is not set');
-    }
-
-    return timeMs;
   }
 }
 

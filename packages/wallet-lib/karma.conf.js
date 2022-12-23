@@ -47,7 +47,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['ChromeHeadless'],
+    browsers: ['chromeWithoutSecurity'],
     singleRun: false,
     concurrency: Infinity,
     browserNoActivityTimeout: 10 * 60 * 1000,
@@ -59,5 +59,12 @@ module.exports = (config) => {
       karmaSourcemapLoader,
       karmaWebpack,
     ],
+    customLaunchers: {
+      chromeWithoutSecurity: {
+        base: 'ChromeHeadless',
+        flags: ['--allow-insecure-localhost'],
+        displayName: 'Chrome w/o security',
+      },
+    },
   });
 };

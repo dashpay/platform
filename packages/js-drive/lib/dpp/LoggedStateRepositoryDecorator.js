@@ -442,17 +442,34 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch latest platform block header
+   * Fetch the latest platform block height
    *
-   * @return {Promise<IHeader>}
+   * @return {Promise<Long>}
    */
-  async fetchLatestPlatformBlockHeader() {
+  async fetchLatestPlatformBlockHeight() {
     let response;
 
     try {
-      response = await this.stateRepository.fetchLatestPlatformBlockHeader();
+      response = await this.stateRepository.fetchLatestPlatformBlockHeight();
     } finally {
-      this.log('fetchLatestPlatformBlockHeader', { }, response);
+      this.log('fetchLatestPlatformBlockHeight', {}, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestPlatformCoreChainLockedHeight();
+    } finally {
+      this.log('fetchLatestPlatformCoreChainLockedHeight', {}, response);
     }
 
     return response;
@@ -481,18 +498,76 @@ class LoggedStateRepositoryDecorator {
   /**
    * Returns block time
    *
-   * @returns {number}
+   * @returns {Promise<number>}
    */
-  getTimeMs() {
+  async fetchLatestPlatformBlockTime() {
     let response;
 
     try {
-      response = this.blockExecutionContext.getTimeMs();
+      response = await this.stateRepository.fetchLatestPlatformBlockTime();
     } finally {
-      this.log('getTimeMs', { }, response);
+      this.log('fetchLatestPlatformBlockTime', { }, response);
     }
 
     return response;
+  }
+
+  /**
+   * Fetch latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestWithdrawalTransactionIndex();
+    } finally {
+      this.log('fetchLatestWithdrawalTransactionIndex', {}, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    let response;
+
+    try {
+      response = await this.stateRepository.enqueueWithdrawalTransaction(
+        index,
+        transactionBytes,
+      );
+    } finally {
+      this.log('enqueueWithdrawalTransaction', { index, transactionBytes }, response);
+    }
+  }
+
+  /**
+   * Calculates storage fee to epochs distribution amount and leftovers
+   *
+   * @param {number} storageFee
+   * @param {number} startEpochIndex
+   * @returns {Promise<[number, number]>}
+   */
+  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
+    let response;
+
+    try {
+      response = await this.stateRepository.calculateStorageFeeDistributionAmountAndLeftovers(
+        storageFee,
+        startEpochIndex,
+      );
+    } finally {
+      this.log('calculateStorageFeeDistributionAmountAndLeftovers', { storageFee, startEpochIndex }, response);
+    }
   }
 }
 

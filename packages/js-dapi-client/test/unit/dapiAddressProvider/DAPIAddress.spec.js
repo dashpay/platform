@@ -16,7 +16,7 @@ describe('DAPIAddress', () => {
 
   describe('#constructor', () => {
     it('should construct DAPIAddress from string with host and both ports', () => {
-      const dapiAddress = new DAPIAddress(`${host}:${httpPort}:${grpcPort}`);
+      const dapiAddress = new DAPIAddress(`${host}:${httpPort}:${grpcPort}:no-ssl`);
 
       expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
       expect(dapiAddress.host).to.equal(host);
@@ -25,6 +25,7 @@ describe('DAPIAddress', () => {
       expect(dapiAddress.proRegTxHash).to.be.undefined();
       expect(dapiAddress.banCount).to.equal(0);
       expect(dapiAddress.banStartTime).to.be.undefined();
+      expect(dapiAddress.protocol).to.equal('http');
     });
 
     it('should construct DAPIAddress from string with host and HTTP port', () => {
@@ -80,6 +81,8 @@ describe('DAPIAddress', () => {
         host,
         httpPort,
         proRegTxHash,
+        protocol: DAPIAddress.DEFAULT_PROTOCOL,
+        allowSelfSignedCertificate: false,
       });
     });
 
@@ -191,6 +194,17 @@ describe('DAPIAddress', () => {
     });
   });
 
+  describe('#getProtocol', () => {
+    it('should get protocol', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.protocol = 'http';
+
+      const protocol = dapiAddress.getProtocol();
+      expect(protocol).to.equal('http');
+    });
+  });
+
   describe('#getBanCount', () => {
     it('should get ban count', () => {
       const dapiAddress = new DAPIAddress(host);
@@ -242,6 +256,26 @@ describe('DAPIAddress', () => {
     });
   });
 
+  describe('#isSelfSigned', () => {
+    it('should return true if address uses self signed certificate', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.allowSelfSignedCertificate = true;
+
+      const isSelfSigned = dapiAddress.isSelfSignedCertificateAllowed();
+      expect(isSelfSigned).to.be.true();
+    });
+
+    it('should return true if address doesn\'t use self signed certificate', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.allowSelfSignedCertificate = false;
+
+      const isSelfSigned = dapiAddress.isSelfSignedCertificateAllowed();
+      expect(isSelfSigned).to.be.false();
+    });
+  });
+
   describe('#toJSON', () => {
     it('should return RawDAPIAddress', () => {
       const dapiAddress = new DAPIAddress(host);
@@ -251,6 +285,8 @@ describe('DAPIAddress', () => {
         httpPort: dapiAddress.getHttpPort(),
         grpcPort: dapiAddress.getGrpcPort(),
         proRegTxHash: dapiAddress.getProRegTxHash(),
+        protocol: DAPIAddress.DEFAULT_PROTOCOL,
+        allowSelfSignedCertificate: false,
       });
     });
   });
@@ -259,7 +295,7 @@ describe('DAPIAddress', () => {
     it('should return a string representation', () => {
       const dapiAddress = new DAPIAddress(host);
 
-      const dapiAddressString = `${dapiAddress.getHost()}:`
+      const dapiAddressString = `${dapiAddress.getProtocol()}://${dapiAddress.getHost()}:`
         + `${dapiAddress.getHttpPort()}:${dapiAddress.getGrpcPort()}`;
 
       expect(`${dapiAddress}`).to.equal(dapiAddressString);

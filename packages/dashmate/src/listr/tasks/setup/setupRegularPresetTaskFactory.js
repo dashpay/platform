@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const fs = require('fs');
 
 const publicIp = require('public-ip');
 
@@ -7,6 +8,7 @@ const BlsSignatures = require('bls-signatures');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const {
+  SSL_PROVIDERS,
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
@@ -19,6 +21,9 @@ const {
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
+ * @param {saveCertificateTask} saveCertificateTask
+ * @param {listCertificates} listCertificates
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -27,6 +32,9 @@ function setupRegularPresetTaskFactory(
   registerMasternodeTask,
   renderServiceTemplates,
   writeServiceConfigs,
+  obtainZeroSSLCertificateTask,
+  saveCertificateTask,
+  listCertificates,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -150,6 +158,82 @@ function setupRegularPresetTaskFactory(
 
           // eslint-disable-next-line no-param-reassign
           task.output = `${ctx.config.getName()} set as default config\n`;
+        },
+      },
+      {
+        title: 'Set SSL certificate',
+        task: async (ctx, task) => {
+          const sslProviders = [...SSL_PROVIDERS].filter((item) => item !== 'selfSigned');
+
+          ctx.certificateProvider = await task.prompt({
+            type: 'select',
+            message: 'Select SSL certificate provider',
+            choices: sslProviders,
+            initial: sslProviders[0],
+          });
+
+          ctx.config.set('platform.dapi.envoy.ssl.provider', ctx.certificateProvider);
+        },
+      },
+      {
+        title: 'Obtain ZeroSSL certificate',
+        enabled: (ctx) => ctx.certificateProvider === 'zerossl',
+        task: async (ctx, task) => {
+          const apiKey = await task.prompt({
+            type: 'input',
+            message: 'Enter ZeroSSL API key',
+            validate: async (state) => {
+              try {
+                await listCertificates(state);
+
+                return true;
+              } catch (e) {
+                // do nothing
+              }
+
+              return 'Please enter a valid ZeroSSL API key';
+            },
+          });
+
+          ctx.config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', apiKey);
+
+          return obtainZeroSSLCertificateTask(ctx.config);
+        },
+      },
+      {
+        title: 'Set SSL certificate',
+        enabled: (ctx) => ctx.certificateProvider === 'manual',
+        task: async (ctx, task) => {
+          const bundleFilePath = await task.prompt({
+            type: 'input',
+            message: 'Enter the path to your certificate chain file',
+            validate: (state) => {
+              if (fs.existsSync(state)) {
+                return true;
+              }
+
+              return 'Please enter a valid path to your certificate chain file';
+            },
+          });
+
+          const privateKeyFilePath = await task.prompt({
+            type: 'input',
+            message: 'Enter the path to your private key file',
+            validate: (state) => {
+              if (fs.existsSync(state)) {
+                return true;
+              }
+
+              return 'Please enter a valid path to your private key file';
+            },
+          });
+
+          ctx.certificate = fs.readFileSync(bundleFilePath, 'utf8');
+          ctx.keyPair = {
+            privateKey: fs.readFileSync(privateKeyFilePath, 'utf8'),
+          };
+
+          return saveCertificateTask(ctx.config);
         },
       },
     ]);

@@ -5,6 +5,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {LRUCache} dataContractCache
  *
  * @return {registerSystemDataContract}
  */

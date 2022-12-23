@@ -18,7 +18,7 @@ async function createFeatureFlagDataTrigger(documentTransition, context, topLeve
 
   const stateRepository = context.getStateRepository();
 
-  const { height: blockHeight } = await stateRepository.fetchLatestPlatformBlockHeader();
+  const blockHeight = await stateRepository.fetchLatestPlatformBlockHeight();
 
   if (Long.fromNumber(documentTransition.get('enableAtHeight')).lt(blockHeight)) {
     const error = new DataTriggerConditionError(

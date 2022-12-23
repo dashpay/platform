@@ -1,4 +1,4 @@
-const sample = require('lodash.sample');
+const sample = require('lodash/sample');
 const networks = require('@dashevo/dashcore-lib/lib/networks');
 
 class ListDAPIAddressProvider {
@@ -36,7 +36,9 @@ class ListDAPIAddressProvider {
     if (network && network.regtestEnabled) {
       const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
 
+      liveAddress.protocol = 'https';
       liveAddress.host = '127.0.0.1';
+      liveAddress.allowSelfSignedCertificate = true;
       liveAddress.httpPort = 3000 + randomNodeIndex * 100;
       liveAddress.grpcPort = 3010 + randomNodeIndex * 100;
     }

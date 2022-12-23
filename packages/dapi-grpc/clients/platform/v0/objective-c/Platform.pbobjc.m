@@ -35,8 +35,8 @@ GPBObjCClassDeclaration(StateTransitionBroadcastError);
 
 @implementation PlatformRoot
 
-// No extensions in the file and no imports, so no need to generate
-// +extensionRegistry.
+// No extensions in the file and none of the imports (direct or indirect)
+// defined extensions, so no need to generate +extensionRegistry.
 
 @end
 
@@ -59,13 +59,15 @@ static GPBFileDescriptor *PlatformRoot_FileDescriptor(void) {
 @implementation Proof
 
 @dynamic merkleProof;
-@dynamic signatureLlmqHash;
+@dynamic quorumHash;
 @dynamic signature;
+@dynamic round;
 
 typedef struct Proof__storage_ {
   uint32_t _has_storage_[1];
+  uint32_t round;
   NSData *merkleProof;
-  NSData *signatureLlmqHash;
+  NSData *quorumHash;
   NSData *signature;
 } Proof__storage_;
 
@@ -85,11 +87,11 @@ typedef struct Proof__storage_ {
         .dataType = GPBDataTypeBytes,
       },
       {
-        .name = "signatureLlmqHash",
+        .name = "quorumHash",
         .dataTypeSpecific.clazz = Nil,
-        .number = Proof_FieldNumber_SignatureLlmqHash,
+        .number = Proof_FieldNumber_QuorumHash,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(Proof__storage_, signatureLlmqHash),
+        .offset = (uint32_t)offsetof(Proof__storage_, quorumHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
@@ -101,6 +103,15 @@ typedef struct Proof__storage_ {
         .offset = (uint32_t)offsetof(Proof__storage_, signature),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "round",
+        .dataTypeSpecific.clazz = Nil,
+        .number = Proof_FieldNumber_Round,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(Proof__storage_, round),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -127,11 +138,15 @@ typedef struct Proof__storage_ {
 
 @dynamic height;
 @dynamic coreChainLockedHeight;
+@dynamic timeMs;
+@dynamic protocolVersion;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
+  uint32_t protocolVersion;
   int64_t height;
+  uint64_t timeMs;
 } ResponseMetadata__storage_;
 
 // This method is threadsafe because it is initially called
@@ -155,6 +170,24 @@ typedef struct ResponseMetadata__storage_ {
         .number = ResponseMetadata_FieldNumber_CoreChainLockedHeight,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, coreChainLockedHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "timeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_TimeMs,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, timeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "protocolVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_ProtocolVersion,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, protocolVersion),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },

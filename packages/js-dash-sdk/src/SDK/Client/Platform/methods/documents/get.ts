@@ -153,6 +153,8 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
                 metadata = new Metadata({
                     blockHeight: responseMetadata.getHeight(),
                     coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
+                    timeMs: responseMetadata.getTimeMs(),
+                    protocolVersion: responseMetadata.getProtocolVersion(),
                 });
             }
             document.setMetadata(metadata);

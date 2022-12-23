@@ -8,13 +8,18 @@ on:
       - v[0-9]+\.[0-9]+-dev
     paths:
       - .github/workflows/dash-spv.yml
-      - .github/workflows/test.yml
+      - .github/workflows/js-checks.yml
       - packages/dash-spv/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  dash-spv-tests:
-    name: Run Dash SPV tests
-    uses: ./.github/workflows/test.yml
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dash-spv'
-      start-local-network: false

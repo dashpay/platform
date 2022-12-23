@@ -1,4 +1,4 @@
-FROM node:16-alpine as builder
+FROM node:16-alpine3.16 as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM node:16-alpine
+FROM node:16-alpine3.16
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}

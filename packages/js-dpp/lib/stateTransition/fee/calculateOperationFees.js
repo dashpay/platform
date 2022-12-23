@@ -5,25 +5,48 @@ const {
 /**
  * Calculate processing and storage fees based on operations
  *
+ *
+ * @typedef {calculateOperationFees}
  * @param {AbstractOperation[]} operations
  *
- * @returns {{ storageFee: number, processingFee: number }}
+ * @returns {{
+ *   storageFee: number,
+ *   processingFee: number,
+ *   feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[]
+ * }}
  */
 function calculateOperationFees(operations) {
-  const fees = {
-    storageFee: 0,
-    processingFee: 0,
-  };
+  let storageFee = 0;
+  let processingFee = 0;
+
+  let feeResult;
 
   operations.forEach((operation) => {
-    fees.storageFee += operation.getProcessingCost();
-    fees.processingFee += operation.getStorageCost();
+    // TODO should use checked add when moved to Rust
+
+    storageFee += operation.getStorageCost();
+    processingFee += operation.getProcessingCost();
+
+    // Combine refunds which are currently present only in RS Drive's Fee Result
+    if (operation.feeResult && operation.feeResult.inner) {
+      if (!feeResult) {
+        feeResult = operation.feeResult;
+      } else {
+        feeResult.add(operation.feeResult);
+      }
+    }
   });
 
-  fees.storageFee *= FEE_MULTIPLIER;
-  fees.processingFee *= FEE_MULTIPLIER;
+  // TODO: Do we need to multiply pre calculated fees?
 
-  return fees;
+  storageFee *= FEE_MULTIPLIER;
+  processingFee *= FEE_MULTIPLIER;
+
+  return {
+    storageFee,
+    processingFee,
+    feeRefunds: feeResult ? feeResult.feeRefunds : [],
+  };
 }
 
 module.exports = calculateOperationFees;

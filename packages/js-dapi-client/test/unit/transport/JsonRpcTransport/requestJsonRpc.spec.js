@@ -4,27 +4,32 @@ const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
 
 describe('requestJsonRpc', () => {
+  let protocol;
   let host;
   let port;
   let timeout;
   let params;
+  let selfSigned;
+  let axiosStub;
 
   beforeEach(function beforeEach() {
+    protocol = 'http';
     host = 'localhost';
     port = 80;
     params = { data: 'test' };
     timeout = 1000;
+    selfSigned = false;
 
     const options = { timeout };
 
-    const url = `http://${host}:${port}`;
+    const url = `${protocol}://${host}:${port}`;
     const payload = {
       jsonrpc: '2.0',
       params,
       id: 1,
     };
 
-    const axiosStub = this.sinon.stub(axios, 'post');
+    axiosStub = this.sinon.stub(axios, 'post');
 
     axiosStub
       .withArgs(
@@ -36,7 +41,7 @@ describe('requestJsonRpc', () => {
 
     axiosStub
       .withArgs(
-        `https://${host}`,
+        `https://${host}:${port}`,
         { ...payload, method: 'httpsRequest' },
         options,
       )
@@ -73,8 +78,10 @@ describe('requestJsonRpc', () => {
 
   it('should make rpc request and return result', async () => {
     const result = await requestJsonRpc(
+      protocol,
       host,
       port,
+      selfSigned,
       'shouldPass',
       params,
       { timeout },
@@ -84,11 +91,33 @@ describe('requestJsonRpc', () => {
   });
 
   it('should make https rpc request and return result', async () => {
-    port = 443;
+    protocol = 'https';
 
     const result = await requestJsonRpc(
+      protocol,
       host,
       port,
+      selfSigned,
+      'httpsRequest',
+      params,
+      { timeout },
+    );
+
+    expect(result).to.equal('passed');
+  });
+
+  it('should make https rpc request with self-signed certificate and return result', async () => {
+    protocol = 'https';
+    selfSigned = true;
+
+    axiosStub
+      .resolves({ status: 200, data: { result: 'passed', error: null } });
+
+    const result = await requestJsonRpc(
+      protocol,
+      host,
+      port,
+      selfSigned,
       'httpsRequest',
       params,
       { timeout },
@@ -103,8 +132,10 @@ describe('requestJsonRpc', () => {
 
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options,
@@ -116,8 +147,10 @@ describe('requestJsonRpc', () => {
       expect(e.message).to.equal('DAPI JSON RPC wrong http code: Status message');
       expect(e.getCode()).to.equal(400);
       expect(e.getRequestInfo()).to.deep.equal({
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options,
@@ -128,8 +161,10 @@ describe('requestJsonRpc', () => {
   it('should throw error if there is an error object in the response body', async () => {
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
+        selfSigned,
         'invalidData',
         params,
         { timeout },
@@ -146,8 +181,10 @@ describe('requestJsonRpc', () => {
 
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
       );
@@ -157,8 +194,10 @@ describe('requestJsonRpc', () => {
       expect(e).to.be.an.instanceof(JsonRpcError);
       expect(e.message).to.equal('Invalid data for error.data');
       expect(e.getRequestInfo()).to.deep.equal({
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options: {},

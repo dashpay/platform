@@ -214,12 +214,21 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch the latest platform block header
+   * Fetch the latest platform block height
    *
-   * @return {Promise<IHeader>}
+   * @return {Promise<Long>}
    */
-  async fetchLatestPlatformBlockHeader() {
-    return this.stateRepository.fetchLatestPlatformBlockHeader();
+  async fetchLatestPlatformBlockHeight() {
+    return this.stateRepository.fetchLatestPlatformBlockHeight();
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    return this.stateRepository.fetchLatestPlatformCoreChainLockedHeight();
   }
 
   /**
@@ -244,12 +253,50 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    return this.stateRepository.fetchLatestWithdrawalTransactionIndex();
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    return this.stateRepository.enqueueWithdrawalTransaction(
+      index,
+      transactionBytes,
+    );
+  }
+
+  /**
    * Returns block time
    *
-   * @returns {number}
+   * @returns {Promise<number>}
    */
-  getTimeMs() {
-    return this.stateRepository.getTimeMs();
+  async fetchLatestPlatformBlockTime() {
+    return this.stateRepository.fetchLatestPlatformBlockTime();
+  }
+
+  /**
+   * Calculates storage fee to epochs distribution amount and leftovers
+   *
+   * @param {number} storageFee
+   * @param {number} startEpochIndex
+   * @returns {Promise<[number, number]>}
+   */
+  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
+    return this.stateRepository.calculateStorageFeeDistributionAmountAndLeftovers(
+      storageFee,
+      startEpochIndex,
+    );
   }
 }
 

@@ -315,8 +315,42 @@ module.exports = {
                   required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
                   additionalProperties: false,
                 },
+                ssl: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    provider: {
+                      type: 'string',
+                      enum: ['zerossl', 'selfSigned', 'manual'],
+                    },
+                    providerConfigs: {
+                      type: 'object',
+                      properties: {
+                        zerossl: {
+                          type: ['object'],
+                          properties: {
+                            apiKey: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
+                            id: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
+                          },
+                          required: ['apiKey'],
+                          additionalProperties: false,
+                        },
+                      },
+                    },
+                  },
+                  required: ['provider', 'providerConfigs', 'enabled'],
+                  additionalProperties: false,
+                },
               },
-              required: ['docker', 'http', 'grpc', 'rateLimiter'],
+              required: ['docker', 'http', 'grpc', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
@@ -617,6 +651,21 @@ module.exports = {
       },
       required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
       additionalProperties: false,
+    },
+    dashmate: {
+      type: 'object',
+      properties: {
+        helper: {
+          type: 'object',
+          properties: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+          },
+          required: ['docker'],
+          additionalProperties: false,
+        },
+      },
     },
     externalIp: {
       type: ['string', 'null'],

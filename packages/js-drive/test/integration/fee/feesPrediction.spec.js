@@ -17,7 +17,6 @@ const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDataContractDocuments = require('../../../lib/test/fixtures/createDataContractDocuments');
 const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
-const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -113,20 +112,16 @@ describe('feesPrediction', () => {
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
 
-    const blockExecutionContext = container.resolve('blockExecutionContext');
+    const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
-    blockExecutionContext.getHeader = this.sinon.stub().returns({
-      time: millisToProtoTimestamp(blockInfo.timeMs),
-      height: Long.fromNumber(blockInfo.height),
-    });
-
-    blockExecutionContext.getEpochInfo = this.sinon.stub().returns({
+    latestBlockExecutionContext.getEpochInfo = this.sinon.stub().returns({
       currentEpochIndex: blockInfo.epoch,
     });
 
-    blockExecutionContext.getTimeMs = this.sinon.stub().returns(blockInfo.timeMs);
+    latestBlockExecutionContext.getTimeMs = this.sinon.stub().returns(blockInfo.timeMs);
+    latestBlockExecutionContext.getHeight = this.sinon.stub().returns(Long.fromNumber(0));
 
     dpp = container.resolve('dpp');
 

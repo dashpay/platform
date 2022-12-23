@@ -28,9 +28,12 @@ describe('createDIContainer', function describeContainer() {
 
       expect(abciHandlers).to.have.property('info');
       expect(abciHandlers).to.have.property('checkTx');
-      expect(abciHandlers).to.have.property('beginBlock');
-      expect(abciHandlers).to.have.property('deliverTx');
-      expect(abciHandlers).to.have.property('commit');
+      expect(abciHandlers).to.have.property('finalizeBlock');
+      expect(abciHandlers).to.have.property('extendVote');
+      expect(abciHandlers).to.have.property('initChain');
+      expect(abciHandlers).to.have.property('prepareProposal');
+      expect(abciHandlers).to.have.property('processProposal');
+      expect(abciHandlers).to.have.property('verifyVoteExtension');
       expect(abciHandlers).to.have.property('query');
     });
   });

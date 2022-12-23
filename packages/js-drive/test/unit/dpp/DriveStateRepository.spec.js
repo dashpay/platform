@@ -11,7 +11,6 @@ const Long = require('long');
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
-const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('DriveStateRepository', () => {
@@ -34,6 +33,9 @@ describe('DriveStateRepository', () => {
   let executionContext;
   let operations;
   let blockInfo;
+  let rsDriveMock;
+  let blockHeight;
+  let timeMs;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -80,19 +82,16 @@ describe('DriveStateRepository', () => {
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
-    const timeMs = Date.now();
+    timeMs = Date.now();
 
-    blockInfo = new BlockInfo(1, 0, timeMs);
+    blockHeight = Long.fromNumber(1);
 
-    blockExecutionContextMock.getHeader.returns({
-      time: millisToProtoTimestamp(blockInfo.timeMs),
-      height: Long.fromNumber(blockInfo.height),
-    });
+    blockInfo = new BlockInfo(blockHeight.toNumber(), 0, timeMs);
 
     blockExecutionContextMock.getEpochInfo.returns({
       currentEpochIndex: blockInfo.epoch,
     });
-
+    blockExecutionContextMock.getHeight.returns(blockHeight);
     blockExecutionContextMock.getTimeMs.returns(timeMs);
 
     simplifiedMasternodeListMock = {
@@ -100,6 +99,13 @@ describe('DriveStateRepository', () => {
     };
 
     repositoryOptions = { useTransaction: true };
+
+    rsDriveMock = {
+      fetchLatestWithdrawalTransactionIndex: this.sinon.stub(),
+      enqueueWithdrawalTransaction: this.sinon.stub(),
+    };
+
+    rsDriveMock.fetchLatestWithdrawalTransactionIndex.resolves(42);
 
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
@@ -111,6 +117,7 @@ describe('DriveStateRepository', () => {
       coreRpcClientMock,
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
+      rsDriveMock,
       repositoryOptions,
     );
 
@@ -516,21 +523,34 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#fetchLatestPlatformBlockHeader', () => {
-    it('should fetch latest platform block header', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
-      };
+  describe('#fetchLatestPlatformBlockHeight', () => {
+    it('should fetch latest platform block height', async () => {
+      blockExecutionContextMock.getHeight.resolves(10);
 
-      blockExecutionContextMock.getHeader.resolves(header);
+      const result = await stateRepository.fetchLatestPlatformBlockHeight();
 
-      const result = await stateRepository.fetchLatestPlatformBlockHeader();
+      expect(result).to.equal(10);
+      expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
+    });
+  });
 
-      expect(result).to.deep.equal(header);
-      expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+  describe('#fetchLatestPlatformBlockTime', () => {
+    it('should fetch latest platform block time', async () => {
+      const result = await stateRepository.fetchLatestPlatformBlockTime();
+
+      expect(result).to.deep.equal(timeMs);
+      expect(blockExecutionContextMock.getTimeMs).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
+    it('should fetch latest platform core chainlocked height', async () => {
+      blockExecutionContextMock.getCoreChainLockedHeight.returns(10);
+
+      const result = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
+
+      expect(result).to.equal(10);
+      expect(blockExecutionContextMock.getCoreChainLockedHeight).to.be.calledOnce();
     });
   });
 
@@ -538,10 +558,8 @@ describe('DriveStateRepository', () => {
     let smlStore;
 
     beforeEach(() => {
-      blockExecutionContextMock.getHeader.returns({
-        header: 41,
-        coreChainLockedHeight: 42,
-      });
+      blockExecutionContextMock.getHeight.returns(41);
+      blockExecutionContextMock.getCoreChainLockedHeight.returns(42);
 
       smlStore = {};
 
@@ -599,8 +617,8 @@ describe('DriveStateRepository', () => {
       expect(instantLockMock.verify).to.have.not.been.called();
     });
 
-    it('should return false if header is null', async () => {
-      blockExecutionContextMock.getHeader.returns(null);
+    it('should return false if coreChainLockedHeight is null', async () => {
+      blockExecutionContextMock.getCoreChainLockedHeight.returns(null);
 
       const result = await stateRepository.verifyInstantLock(instantLockMock);
 
@@ -633,6 +651,38 @@ describe('DriveStateRepository', () => {
 
       expect(result).to.equal('store');
       expect(simplifiedMasternodeListMock.getStore).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    it('should call fetchLatestWithdrawalTransactionIndex', async () => {
+      const result = await stateRepository.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(42);
+      expect(
+        rsDriveMock.fetchLatestWithdrawalTransactionIndex,
+      ).to.have.been.calledOnceWithExactly(
+        repositoryOptions.useTransaction,
+      );
+    });
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    it('should call enqueueWithdrawalTransaction', async () => {
+      const index = 42;
+      const transactionBytes = Buffer.alloc(32, 1);
+
+      await stateRepository.enqueueWithdrawalTransaction(
+        index, transactionBytes,
+      );
+
+      expect(
+        rsDriveMock.enqueueWithdrawalTransaction,
+      ).to.have.been.calledOnceWithExactly(
+        index,
+        transactionBytes,
+        repositoryOptions.useTransaction,
+      );
     });
   });
 });

@@ -158,21 +158,71 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#fetchLatestPlatformBlockHeader', () => {
-    it('should fetch latest platform block header from state repository', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
-      };
+  describe('#fetchLatestPlatformBlockHeight', () => {
+    it('should fetch latest platform height from state repository', async () => {
+      stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(10);
 
-      stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(header);
+      const result = await cachedStateRepository.fetchLatestPlatformBlockHeight(id);
 
-      const result = await cachedStateRepository.fetchLatestPlatformBlockHeader(id);
+      expect(result).to.equal(10);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockHeight).to.be.calledOnce();
+    });
+  });
 
-      expect(result).to.deep.equal(header);
-      expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+  describe('#fetchLatestPlatformBlockTime', () => {
+    it('should fetch latest platform block time from state repository', async () => {
+      const timeMs = Date.now();
+
+      stateRepositoryMock.fetchLatestPlatformBlockTime.returns(timeMs);
+
+      const result = await cachedStateRepository.fetchLatestPlatformBlockTime();
+
+      expect(result).to.deep.equal(timeMs);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
+    it('should fetch latest platform core chain locked height from state repository', async () => {
+      const height = 42;
+
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(height);
+
+      const result = await cachedStateRepository.fetchLatestPlatformCoreChainLockedHeight(id);
+
+      expect(result).to.deep.equal(height);
+      expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    it('should call fetchLatestWithdrawalTransactionIndex', async () => {
+      stateRepositoryMock.fetchLatestWithdrawalTransactionIndex.resolves(42);
+
+      const result = await cachedStateRepository.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(42);
+      expect(
+        stateRepositoryMock.fetchLatestWithdrawalTransactionIndex,
+      ).to.have.been.calledOnce();
+    });
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    it('should call enqueueWithdrawalTransaction', async () => {
+      const index = 42;
+      const transactionBytes = Buffer.alloc(32, 1);
+
+      await cachedStateRepository.enqueueWithdrawalTransaction(
+        index, transactionBytes,
+      );
+
+      expect(
+        stateRepositoryMock.enqueueWithdrawalTransaction,
+      ).to.have.been.calledOnceWithExactly(
+        index,
+        transactionBytes,
+      );
     });
   });
 });

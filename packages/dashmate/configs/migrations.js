@@ -1,6 +1,6 @@
 /* eslint-disable no-param-reassign */
-const lodashSet = require('lodash.set');
-const lodashGet = require('lodash.get');
+const lodashSet = require('lodash/set');
+const lodashGet = require('lodash/get');
 
 const systemConfigs = require('./system');
 

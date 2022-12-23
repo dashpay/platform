@@ -1,0 +1,58 @@
+name: WASM DPP
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+    paths:
+      - .github/workflows/wasm-dpp.yml
+      - .github/workflows/js-dpp.yml
+      - .github/workflows/js-checks.yml
+      - .github/workflows/rs-checks.yml
+      - packages/js-dpp/**
+      - packages/feature-flags-contract/**
+      - packages/masternode-reward-shares-contract/**
+      - packages/dpns-contract/**
+      - packages/dashpay-contract/**
+      - packages/wasm-dpp/**
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js-checks:
+    name: JS
+    uses: ./.github/workflows/js-checks.yml
+    with:
+      package: '@dashevo/wasm-dpp'
+      install-browsers: true
+
+  rs-checks:
+    name: Rust
+    uses: ./.github/workflows/rs-checks.yml
+    with:
+      package: 'wasm-dpp'
+
+  wasm-errors:
+    name: WASM compilation
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile WASM
+        run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp

@@ -1,7 +1,5 @@
 const moment = require('moment');
 
-const Long = require('long');
-
 const masternodeRewardSharesSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const getMasternodeRewardSharesContractFixture = require('@dashevo/dpp/lib/test/fixtures/getMasternodeRewardSharesContractFixture');
@@ -13,7 +11,6 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
-const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 
 describe('Fee Pools', () => {
   let container;
@@ -22,21 +19,10 @@ describe('Fee Pools', () => {
   let identityRepository;
   let blockInfo;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     container = await createTestDIContainer();
 
-    const blockExecutionContext = container.resolve('blockExecutionContext');
-
     blockInfo = new BlockInfo(1, 0, Date.now());
-
-    blockExecutionContext.getHeader = this.sinon.stub().returns({
-      time: millisToProtoTimestamp(blockInfo.timeMs),
-      height: Long.fromNumber(blockInfo.height),
-    });
-
-    blockExecutionContext.getEpochInfo = this.sinon.stub().returns({
-      currentEpochIndex: blockInfo.epoch,
-    });
 
     const dataContractRepository = container.resolve('dataContractRepository');
     const documentRepository = container.resolve('documentRepository');
@@ -118,8 +104,12 @@ describe('Fee Pools', () => {
 
       const blockEndRequest = {
         fees: {
-          processingFees: 10000,
-          storageFees: 10000,
+          processingFee: 1000,
+          storageFee: 10000 - 15,
+          feeRefunds: {
+            1: 15,
+          },
+          feeRefundsSum: 15,
         },
       };
 
@@ -132,7 +122,7 @@ describe('Fee Pools', () => {
     const fetchedMnIdentity = fetchedMnIdentityResult.getValue();
     const fetchedShareIdentity = fetchedShareIdentityResult.getValue();
 
-    expect(fetchedMnIdentity.getBalance()).to.equal(180510);
-    expect(fetchedShareIdentity.getBalance()).to.equal(9510);
+    expect(fetchedMnIdentity.getBalance()).to.equal(18060);
+    expect(fetchedShareIdentity.getBalance()).to.equal(960);
   });
 });

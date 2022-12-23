@@ -10,13 +10,15 @@ class DAPIAddress {
     }
 
     if (typeof address === 'string') {
-      const [host, httpPort, grpcPort] = address.split(':');
+      const [host, httpPort, grpcPort, ssl] = address.split(':');
 
       // eslint-disable-next-line no-param-reassign
       address = {
         host,
         httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
+        protocol: ssl === 'no-ssl' ? 'http' : DAPIAddress.DEFAULT_PROTOCOL,
+        allowSelfSignedCertificate: ssl === 'self-signed',
       };
     }
 
@@ -24,13 +26,24 @@ class DAPIAddress {
       throw new DAPIAddressHostMissingError();
     }
 
+    this.protocol = address.protocol || DAPIAddress.DEFAULT_PROTOCOL;
     this.host = address.host;
     this.httpPort = address.httpPort || DAPIAddress.DEFAULT_HTTP_PORT;
     this.grpcPort = address.grpcPort || DAPIAddress.DEFAULT_GRPC_PORT;
     this.proRegTxHash = address.proRegTxHash;
+    this.allowSelfSignedCertificate = address.allowSelfSignedCertificate || false;
 
     this.banCount = 0;
     this.banStartTime = undefined;
+  }
+
+  /**
+   * Get protocol
+   *
+   * @returns {string}
+   */
+  getProtocol() {
+    return this.protocol;
   }
 
   /**
@@ -151,33 +164,45 @@ class DAPIAddress {
   }
 
   /**
+   * @returns {boolean}
+   */
+  isSelfSignedCertificateAllowed() {
+    return this.allowSelfSignedCertificate;
+  }
+
+  /**
    * Return DAPIAddress as plain object
    *
    * @returns {RawDAPIAddress}
    */
   toJSON() {
     return {
+      protocol: this.getProtocol(),
       host: this.getHost(),
       httpPort: this.getHttpPort(),
       grpcPort: this.getGrpcPort(),
       proRegTxHash: this.getProRegTxHash(),
+      allowSelfSignedCertificate: this.isSelfSignedCertificateAllowed(),
     };
   }
 
   toString() {
-    return `${this.getHost()}:${this.getHttpPort()}:${this.getGrpcPort()}`;
+    return `${this.getProtocol()}://${this.getHost()}:${this.getHttpPort()}:${this.getGrpcPort()}`;
   }
 }
 
 DAPIAddress.DEFAULT_HTTP_PORT = 3000;
 DAPIAddress.DEFAULT_GRPC_PORT = 3010;
+DAPIAddress.DEFAULT_PROTOCOL = 'http';
 
 /**
  * @typedef {object} RawDAPIAddress
+ * @property {string} protocol
  * @property {string} host
  * @property {number} [httpPort=3000]
  * @property {number} [grpcPort=3010]
  * @property {string} [proRegTxHash]
+ * @property {bool} [selfSigned]
  */
 
 module.exports = DAPIAddress;

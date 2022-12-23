@@ -20,6 +20,14 @@ class AbstractOperation {
 
   /**
    * @abstract
+   * @return {{identifier: Buffer, creditsPerEpoch: Object<string, number>}[]}
+   */
+  getRefunds() {
+    throw new Error('Not implemented');
+  }
+
+  /**
+   * @abstract
    * @returns {Object}
    */
   toJSON() {

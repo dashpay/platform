@@ -14,7 +14,7 @@ describe('LastSyncedSmlHeightRepository', () => {
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -32,9 +32,7 @@ describe('LastSyncedSmlHeightRepository', () => {
 
   describe('#store', () => {
     it('should store last synced height', async () => {
-      const result = await repository.store(1, {
-        useTransaction: true,
-      });
+      const result = await repository.store(1);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.equal(0);

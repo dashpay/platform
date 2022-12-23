@@ -152,12 +152,21 @@
  */
 
 /**
- * Fetch latest platform block header
+ * Fetch the latest platform block height
  *
  * @async
  * @method
- * @name StateRepository#fetchLatestPlatformBlockHeader
- * @returns {Promise<abci.IHeader>}
+ * @name StateRepository#fetchLatestPlatformBlockHeight
+ * @returns {Promise<Long>}
+ */
+
+/**
+ * Fetch the latest platform core chainlocked height
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchLatestPlatformCoreChainLockedHeight
+ * @returns {Promise<number>}
  */
 
 /**
@@ -205,7 +214,19 @@
 /**
  * Returns current block time in milliseconds
  *
+ * @async
  * @method
- * @name StateRepository#getTimeMs
- * @returns {number}
+ * @name StateRepository#fetchLatestPlatformBlockTime
+ * @returns {Promise<number>}
+ */
+
+/**
+ * Calculates storage fee to epochs distribution amount and leftovers
+ *
+ * @async
+ * @method
+ * @name StateRepository#calculateStorageFeeDistributionAmountAndLeftovers
+ * @param {number} storageFee
+ * @param {number} startEpochIndex
+ * @returns {Promise<[number, number]>}
  */

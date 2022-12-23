@@ -28,11 +28,11 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
     };
 
     /**
-     * @param request
+     * @param {*[]} args
      */
-    async function methodErrorHandler(request) {
+    async function methodErrorHandler(...args) {
       try {
-        return await method(request);
+        return await method(...args);
       } catch (e) {
         let error = e;
 

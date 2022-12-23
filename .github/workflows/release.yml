@@ -10,19 +10,34 @@ on:
         description: 'Version (i.e. v0.22.3-pre.2)'
         required: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release-npm:
     name: Release NPM packages
     runs-on: ubuntu-22.04
     if: github.event_name != 'workflow_dispatch'
+    needs:
+      - build-rs-drive-nodejs
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Check package version matches tag
         uses: geritol/match-tag-to-package-version@0.2.0
         env:
           TAG_PREFIX: v
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -48,6 +63,14 @@ jobs:
 
       - name: Build packages
         run: yarn build
+        env:
+          CARGO_BUILD_PROFILE: release
+
+      - name: Download prebuild artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: prebuilds
+          path: packages/rs-drive-nodejs/prebuilds
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -85,7 +108,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -196,7 +219,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -307,7 +330,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -412,6 +435,338 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+
+  release-envoy-docker-image:
+    name: Release Envoy to Docker Hub
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU to run multi-arch builds
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          version: v0.9.1
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
+
+      - name: Enable buildkit cache
+        uses: actions/cache@v3
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
+        with:
+          result-encoding: string
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
+
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: docker/metadata-action@v4
+        with:
+          images: dashpay/envoy
+          tags: |
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
+      - name: Build and push Docker image for Envoy
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./packages/dashmate/docker/envoy/Dockerfile
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            CARGO_BUILD_PROFILE=release
+
+  release-dashmate-helper-docker-image:
+    name: Release Dashmate helper to Docker Hub
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn build --filter "+dashmate"
+
+      - name: Set up QEMU to run multi-arch builds
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          version: v0.9.1
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
+
+      - name: Enable buildkit cache
+        uses: actions/cache@v3
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
+        with:
+          result-encoding: string
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
+
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: docker/metadata-action@v4
+        with:
+          images: dashpay/dashmate-helper
+          tags: |
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
+      - name: Build and push Docker image for Dashmate helper
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./packages/dashmate/Dockerfile
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+
+  build-rs-drive-nodejs:
+    name: Build Drive Node.JS binding
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            node_arch: x64
+            compiler: gnu
+            platform: unknown-linux
+          - os: ubuntu-22.04
+            arch: x86_64
+            node_arch: x64
+            compiler: musl
+            platform: unknown-linux
+          - os: ubuntu-22.04
+            arch: aarch64
+            node_arch: arm64
+            compiler: gnu
+            platform: unknown-linux
+          - os: ubuntu-22.04
+            arch: aarch64
+            node_arch: arm64
+            compiler: musl
+            platform: unknown-linux
+          - os: macos-11
+            arch: x86_64
+            platform: apple-darwin
+          - os: macos-11
+            arch: aarch64
+            node_arch: arm64
+            platform: apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Set target name
+        uses: actions/github-script@v6
+        id: set-target
+        with:
+          script: |
+            let target = '${{ matrix.arch }}-${{ matrix.platform }}';
+
+            if ('${{ matrix.compiler }}') {
+              target += '-${{ matrix.compiler }}';
+            }
+
+            core.info(`Set target ${target}`);
+
+            return target;
+          result-encoding: string
+
+      - name: Setup Rust toolchain and target
+        if: ${{ runner.os == 'macOS' }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: ${{ steps.set-target.outputs.result }}
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set LIBC argument
+        uses: actions/github-script@v6
+        id: set-libc-arg
+        with:
+          script: |
+            let env = '';
+
+            if (${{ matrix.compiler == 'musl' }}) {
+              env = '-l musl'
+            }
+
+            core.info(`Set LIBC env to "${env}"`);
+
+            return env;
+          result-encoding: string
+
+      - name: Build for Linux (x86)
+        if: ${{ runner.os == 'Linux' && matrix.arch == 'x86_64' }}
+        uses: docker://messense/rust-musl-cross:x86_64-musl
+        with:
+          workdir: /github/workspace/
+          entrypoint: packages/rs-drive-nodejs/docker/build.sh
+          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
+
+      - name: Build for Linux (aarch64)
+        if: ${{ runner.os == 'Linux' && matrix.arch == 'aarch64' }}
+        uses: docker://messense/rust-musl-cross:aarch64-musl
+        with:
+          workdir: /github/workspace/
+          entrypoint: packages/rs-drive-nodejs/docker/build.sh
+          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
+
+      - name: Build for Mac OS
+        if: ${{ runner.os == 'macOS' }}
+        run: yarn workspace @dashevo/rs-drive run build
+        env:
+          ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
+          CARGO_BUILD_TARGET: ${{ steps.set-target.outputs.result }}
+          CARGO_BUILD_PROFILE: release
+
+      - name: Upload prebuild artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: prebuilds
+          path: packages/rs-drive-nodejs/prebuilds/
 
   release-dashmate:
     name: Release Dashmate packages

@@ -1,11 +1,11 @@
 /**
  * Add consensus logger to an error (factory)
  *
- * @param {blockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
  *
  * @return {enrichErrorWithConsensusLogger}
  */
-function enrichErrorWithConsensusLoggerFactory(blockExecutionContext) {
+function enrichErrorWithConsensusLoggerFactory(latestBlockExecutionContext) {
   /**
    * Add consensus logger to an error
    *
@@ -17,13 +17,13 @@ function enrichErrorWithConsensusLoggerFactory(blockExecutionContext) {
    */
   function enrichErrorWithConsensusLogger(method) {
     /**
-     * @param {*} request
+     * @param {*[]} args
      */
-    async function methodHandler(request) {
+    async function methodHandler(...args) {
       try {
-        return await method(request);
+        return await method(...args);
       } catch (e) {
-        const { consensusLogger } = blockExecutionContext;
+        const { consensusLogger } = latestBlockExecutionContext;
 
         if (consensusLogger) {
           e.consensusLogger = consensusLogger;

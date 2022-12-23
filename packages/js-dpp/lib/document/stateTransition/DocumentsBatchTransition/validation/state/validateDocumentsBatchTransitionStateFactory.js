@@ -70,16 +70,12 @@ function validateDocumentsBatchTransitionStateFactory(
       throw new DataContractNotPresentError(dataContractId);
     }
 
-    if (!result.isValid()) {
-      return result;
-    }
-
     const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
 
     if (!executionContext.isDryRun()) {
       // Calculate time window for timestamps
 
-      const lastBlockHeaderTime = await stateRepository.getTimeMs();
+      const lastBlockHeaderTime = await stateRepository.fetchLatestPlatformBlockTime();
 
       // Validate document action, ownerId, revision and timestamps
       documentTransitions

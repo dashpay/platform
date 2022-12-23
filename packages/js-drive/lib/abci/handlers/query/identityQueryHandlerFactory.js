@@ -20,12 +20,12 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {IdentityStoreRepository} signedIdentityRepository
+ * @param {IdentityStoreRepository} identityRepository
  * @param {createQueryResponse} createQueryResponse
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
-  signedIdentityRepository,
+  identityRepository,
   createQueryResponse,
 ) {
   /**
@@ -51,11 +51,11 @@ function identityQueryHandlerFactory(
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
     if (request.prove) {
-      const proof = await signedIdentityRepository.prove(identifier);
+      const proof = await identityRepository.prove(identifier);
 
       response.getProof().setMerkleProof(proof.getValue());
     } else {
-      const identityResult = await signedIdentityRepository.fetch(identifier);
+      const identityResult = await identityRepository.fetch(identifier);
 
       if (identityResult.isNull()) {
         throw new NotFoundAbciError('Identity not found');

@@ -20,12 +20,12 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     store = new GroveDBStore(rsDrive, logger, {
       dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      dataContractsBlockCacheSize: 500,
     });
 
     await rsDrive.createInitialStateStructure();

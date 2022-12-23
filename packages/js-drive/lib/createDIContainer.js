@@ -79,18 +79,25 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/
 
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
-const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
-
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
-const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
-const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
 const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
-const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
+const extendVoteHandlerFactory = require('./abci/handlers/extendVoteHandlerFactory');
+const finalizeBlockHandlerFactory = require('./abci/handlers/finalizeBlockHandlerFactory');
+const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHandlerFactory');
+const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
+const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
 
-const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
+const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
+const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
+const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
+const rotateAndCreateValidatorSetUpdateFactory = require('./abci/handlers/proposal/rotateAndCreateValidatorSetUpdateFactory');
+const createConsensusParamUpdateFactory = require('./abci/handlers/proposal/createConsensusParamUpdateFactory');
+const createCoreChainLockUpdateFactory = require('./abci/handlers/proposal/createCoreChainLockUpdateFactory');
+const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
+
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
@@ -98,7 +105,6 @@ const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMa
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
-const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
@@ -109,9 +115,7 @@ const createValidatorSetUpdate = require('./abci/handlers/validator/createValida
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
-const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
-const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
-const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
+const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -119,6 +123,7 @@ const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/sy
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
+const handleUpdatedVotingAddressFactory = require('./identity/masternode/handleUpdatedVotingAddressFactory');
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
@@ -132,6 +137,7 @@ const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
+const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
 
 /**
  *
@@ -343,7 +349,6 @@ function createDIContainer(options) {
   container.register({
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
-    decodeChainLock: asValue(decodeChainLock),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     getRandomQuorum: asValue(getRandomQuorum),
     fetchSimplifiedMNList: asFunction(fetchSimplifiedMNListFactory),
@@ -443,7 +448,7 @@ function createDIContainer(options) {
       dataContractsBlockCacheSize,
     ) => new RSDrive(groveDBLatestFile, {
       dataContractsGlobalCacheSize,
-      dataContractsTransactionalCacheSize: dataContractsBlockCacheSize,
+      dataContractsBlockCacheSize,
     }))
       // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
@@ -462,10 +467,6 @@ function createDIContainer(options) {
     rsAbci: asFunction((rsDrive) => rsDrive.getAbci()).singleton(),
 
     groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
-
-    signedGroveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
-
-    rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
   });
 
   /**
@@ -474,19 +475,7 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
-    signedIdentityRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
-
     publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
-
-    signedPublicKeyToIdentitiesRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (
-      new PublicKeyToIdentitiesStoreRepository(signedGroveDBStore, decodeProtocolEntity)
-    )).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
@@ -499,6 +488,8 @@ function createDIContainer(options) {
     handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
 
     handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
+
+    handleUpdatedVotingAddress: asFunction(handleUpdatedVotingAddressFactory).singleton(),
 
     handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
 
@@ -515,12 +506,6 @@ function createDIContainer(options) {
    */
   container.register({
     spentAssetLockTransactionsRepository: asClass(SpentAssetLockTransactionsRepository).singleton(),
-
-    signedSpentAssetLockTransactionsRepository: asFunction((
-      signedGroveDBStore,
-    ) => (
-      new SpentAssetLockTransactionsRepository(signedGroveDBStore)
-    )).singleton(),
   });
 
   /**
@@ -531,11 +516,6 @@ function createDIContainer(options) {
       groveDBStore,
       decodeProtocolEntity,
     ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
-
-    signedDataContractRepository: asFunction((
-      signedGroveDBStore,
-      decodeProtocolEntity,
-    ) => (new DataContractStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
   });
 
   /**
@@ -546,49 +526,18 @@ function createDIContainer(options) {
       groveDBStore,
     ) => new DocumentRepository(groveDBStore)).singleton(),
 
-    signedDocumentRepository: asFunction((
-      signedGroveDBStore,
-    ) => (new DocumentRepository(
-      signedGroveDBStore,
-    ))).singleton(),
-
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
     fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
     proveDocuments: asFunction(proveDocumentsFactory).singleton(),
-    fetchSignedDataContract: asFunction((
-      signedDataContractRepository,
-    ) => (
-      fetchDataContractFactory(
-        signedDataContractRepository,
-      )
-    )).singleton(),
-    fetchSignedDocuments: asFunction((
-      signedDocumentRepository,
-      fetchSignedDataContract,
-    ) => (
-      fetchDocumentsFactory(
-        signedDocumentRepository,
-        fetchSignedDataContract,
-      )
-    )).singleton(),
-    proveSignedDocuments: asFunction((
-      signedDocumentRepository,
-      fetchSignedDataContract,
-    ) => (
-      proveDocumentsFactory(
-        signedDocumentRepository,
-        fetchSignedDataContract,
-      )
-    )).singleton(),
   });
 
   /**
    * Register block execution context
    */
   container.register({
-    blockExecutionContext: asClass(BlockExecutionContext).singleton(),
-    blockExecutionContextStack: asClass(BlockExecutionContextStack).singleton(),
-    blockExecutionContextStackRepository: asClass(BlockExecutionContextStackRepository).singleton(),
+    latestBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
+    proposalBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
+    blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
   });
 
   /**
@@ -605,8 +554,9 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      blockExecutionContext,
+      latestBlockExecutionContext,
       simplifiedMasternodeList,
+      rsDrive,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -616,8 +566,9 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        blockExecutionContext,
+        latestBlockExecutionContext,
         simplifiedMasternodeList,
+        rsDrive,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -633,9 +584,10 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      blockExecutionContext,
+      proposalBlockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
+      rsDrive,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -645,8 +597,9 @@ function createDIContainer(options) {
         documentRepository,
         spentAssetLockTransactionsRepository,
         coreRpcClient,
-        blockExecutionContext,
+        proposalBlockExecutionContext,
         simplifiedMasternodeList,
+        rsDrive,
         {
           useTransaction: true,
         },
@@ -662,7 +615,7 @@ function createDIContainer(options) {
 
       return new LoggedStateRepositoryDecorator(
         cachedRepository,
-        blockExecutionContext,
+        proposalBlockExecutionContext,
       );
     }).singleton(),
 
@@ -748,14 +701,12 @@ function createDIContainer(options) {
     getProofsQueryHandler: asFunction(getProofsQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
-    verifyChainLockQueryHandler: asFunction(verifyChainLockQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
       identityQueryHandler,
       dataContractQueryHandler,
       documentQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
-      verifyChainLockQueryHandler,
       getProofsQueryHandler,
     ) => {
       const router = findMyWay({
@@ -767,19 +718,54 @@ function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/proofs', getProofsQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
-      router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
 
       return router;
     }).singleton(),
 
+    beginBlock: asFunction(beginBlockFactory).singleton(),
+
+    processProposal: asFunction(processProposalFactory),
+
+    deliverTx: asFunction(deliverTxFactory).singleton(),
+
+    wrappedDeliverTx: asFunction((
+      wrapInErrorHandler,
+      enrichErrorWithConsensusError,
+      deliverTx,
+    ) => wrapInErrorHandler(
+      enrichErrorWithConsensusError(deliverTx),
+      { respondWithInternalError: true },
+    )).singleton(),
+
+    endBlock: asFunction(endBlockFactory).singleton(),
+
+    verifyChainLock: asFunction(verifyChainLockFactory).singleton(),
+
+    rotateAndCreateValidatorSetUpdate: asFunction(
+      rotateAndCreateValidatorSetUpdateFactory,
+    ).singleton(),
+
+    createConsensusParamUpdate: asFunction(createConsensusParamUpdateFactory).singleton(),
+
+    createCoreChainLockUpdate: asFunction(createCoreChainLockUpdateFactory).singleton(),
+
     infoHandler: asFunction(infoHandlerFactory).singleton(),
+
     checkTxHandler: asFunction(checkTxHandlerFactory).singleton(),
-    beginBlockHandler: asFunction(beginBlockHandlerFactory).singleton(),
-    deliverTxHandler: asFunction(deliverTxHandlerFactory).singleton(),
+
     initChainHandler: asFunction(initChainHandlerFactory).singleton(),
-    endBlockHandler: asFunction(endBlockHandlerFactory).singleton(),
-    commitHandler: asFunction(commitHandlerFactory).singleton(),
+
     queryHandler: asFunction(queryHandlerFactory).singleton(),
+
+    extendVoteHandler: asFunction(extendVoteHandlerFactory).singleton(),
+
+    finalizeBlockHandler: asFunction(finalizeBlockHandlerFactory).singleton(),
+
+    prepareProposalHandler: asFunction(prepareProposalHandlerFactory).singleton(),
+
+    processProposalHandler: asFunction(processProposalHandlerFactory).singleton(),
+
+    verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
     enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
@@ -788,23 +774,25 @@ function createDIContainer(options) {
     abciHandlers: asFunction((
       infoHandler,
       checkTxHandler,
-      beginBlockHandler,
-      deliverTxHandler,
       initChainHandler,
-      endBlockHandler,
-      commitHandler,
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
       queryHandler,
+      extendVoteHandler,
+      finalizeBlockHandler,
+      prepareProposalHandler,
+      processProposalHandler,
+      verifyVoteExtensionHandler,
     ) => ({
       info: infoHandler,
       checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
-      beginBlock: enrichErrorWithConsensusError(beginBlockHandler),
-      deliverTx: wrapInErrorHandler(enrichErrorWithConsensusError(deliverTxHandler)),
       initChain: initChainHandler,
-      endBlock: enrichErrorWithConsensusError(endBlockHandler),
-      commit: enrichErrorWithConsensusError(commitHandler),
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
+      extendVote: enrichErrorWithConsensusError(extendVoteHandler),
+      finalizeBlock: enrichErrorWithConsensusError(finalizeBlockHandler),
+      prepareProposal: enrichErrorWithConsensusError(prepareProposalHandler),
+      processProposal: enrichErrorWithConsensusError(processProposalHandler),
+      verifyVoteExtension: enrichErrorWithConsensusError(verifyVoteExtensionHandler),
     })).singleton(),
 
     closeAbciServer: asFunction(closeAbciServerFactory).singleton(),

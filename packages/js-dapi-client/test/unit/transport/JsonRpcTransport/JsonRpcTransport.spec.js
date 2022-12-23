@@ -86,8 +86,10 @@ describe('JsonRpcTransport', () => {
       expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
       expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
       expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+        dapiAddress.getProtocol(),
         dapiAddress.getHost(),
         dapiAddress.getHttpPort(),
+        dapiAddress.isSelfSignedCertificateAllowed(),
         method,
         params,
         { timeout: options.timeout },
@@ -111,8 +113,10 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
+          dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           params,
           {},
@@ -164,8 +168,10 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
+          dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           params,
           {},
@@ -204,8 +210,10 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
+          dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           {},
           {},
@@ -246,8 +254,10 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
+          dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           params,
           { timeout: options.timeout },
