@@ -165,6 +165,8 @@ mod tests {
     };
 
     mod update_document_transaction_id {
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+
         use super::*;
 
         #[test]
@@ -192,7 +194,7 @@ mod tests {
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
-                    "pooling": 0,
+                    "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
                     "status": withdrawals_contract::statuses::POOLED,
                     "transactionIndex": 1,

@@ -9,7 +9,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         data_contract::DataContract,
         identity::state_transition::identity_credit_withdrawal_transition::{
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
-            IdentityCreditWithdrawalTransition,
+            IdentityCreditWithdrawalTransition, Pooling,
         },
         prelude::{Identifier, Identity},
         state_repository::MockStateRepositoryLike,
@@ -76,7 +76,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
                     == json!({
                         "amount": 10,
                         "coreFeePerByte": 0,
-                        "pooling": 0,
+                        "pooling": Pooling::Never,
                         "outputScript": [],
                         "status": withdrawals_contract::statuses::QUEUED,
                     });

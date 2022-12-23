@@ -12,7 +12,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionConvert,
     state_transition::StateTransitionLike,
-    util::{entropy_generator::generate, json_value::JsonValueExt, string_encoding::Encoding},
+    util::{entropy_generator::generate, json_value::JsonValueExt, string_encoding::Encoding}, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
 };
 
 use super::IdentityCreditWithdrawalTransition;
@@ -75,7 +75,7 @@ where
         let document_data = json!({
             "amount": state_transition.amount,
             "coreFeePerByte": state_transition.core_fee_per_byte,
-            "pooling": 0,
+            "pooling": Pooling::Never,
             "outputScript": state_transition.output_script.as_bytes(),
             "status": withdrawals_contract::statuses::QUEUED,
         });
