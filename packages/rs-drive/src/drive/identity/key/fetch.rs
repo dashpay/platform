@@ -89,7 +89,7 @@ fn element_to_identity_public_key_id_and_object_pair(
 }
 
 fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
-    (_, key, maybe_element): (Path, Key, Option<Element>),
+    (_path, key, maybe_element): (Path, Key, Option<Element>),
 ) -> Result<(KeyID, Option<IdentityPublicKey>), Error> {
     if let Some(element) = maybe_element {
         let public_key = element_to_identity_public_key(element)?;
@@ -112,8 +112,8 @@ fn supported_query_result_element_to_identity_public_key_id_and_object_pair(
                 "no key present in return information",
             ),
         )),
-        QueryResultElement::KeyElementPairResultItem((_, element))
-        | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
+        QueryResultElement::KeyElementPairResultItem((_key, element))
+        | QueryResultElement::PathKeyElementTrioResultItem((_, _key, element)) => {
             element_to_identity_public_key_id_and_object_pair(element)
         }
     }
@@ -282,6 +282,7 @@ impl IdentityKeysRequest {
             limit,
             offset,
         } = self;
+
         match key_request {
             AllKeys => {
                 let query_keys_path = identity_key_tree_path_vec(identity_id.as_slice());
@@ -299,18 +300,18 @@ impl IdentityKeysRequest {
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Self::specific_keys_query(key_ids.clone()),
+                        query: Self::specific_keys_query(key_ids),
                         limit,
                         offset,
                     },
                 }
             }
             SearchKey(map) => {
-                let query_keys_path = identity_query_keys_tree_path_vec(*identity_id);
+                let query_keys_path = identity_query_keys_tree_path_vec(identity_id);
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Self::construct_search_query(map.clone()),
+                        query: Self::construct_search_query(map),
                         limit,
                         offset,
                     },
