@@ -65,6 +65,7 @@ impl Drive {
         Ok((value, fees))
     }
 
+    /// The query for the identity balance
     pub fn identity_balance_query(identity_id: [u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
         let mut query = Query::new();
@@ -79,6 +80,7 @@ impl Drive {
         }
     }
 
+    /// The query for the identity revision
     pub fn identity_revision_query(identity_id: [u8; 32]) -> PathQuery {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let mut query = Query::new();
@@ -271,12 +273,13 @@ impl Drive {
         Ok((maybe_identity, fee))
     }
 
+    /// The query getting all keys and balance and revision
     pub fn full_identity_query(identity_id: [u8; 32]) -> Result<PathQuery, Error> {
         let balance_query = Self::identity_balance_query(identity_id);
         let revision_query = Self::identity_revision_query(identity_id);
-        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
-        let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
+        // let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
+        // let all_keys_query = key_request.into_path_query();
+        PathQuery::merge(vec![&balance_query, &revision_query])
             .map_err(Error::GroveDB)
     }
 
@@ -461,4 +464,49 @@ impl Drive {
     //         })
     //         .collect()
     // }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use grovedb::GroveDb;
+    use crate::common::helpers::setup::setup_drive;
+    use crate::drive::block_info::BlockInfo;
+    use dpp::identity::Identity;
+
+    use tempfile::TempDir;
+
+    use crate::drive::Drive;
+
+    #[test]
+    fn test_proved_full_identity_query() {
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction))
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345));
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+            )
+            .expect("expected to insert identity");
+
+        let query = Drive::full_identity_query(identity.id.to_buffer()).expect("expected to make the query");
+
+        let fetched_identity = drive
+            .fetch_proved_full_identity(identity.id.buffer, None)
+            .expect("should fetch an identity")
+            .expect("should have an identity");
+
+        let (hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &query).expect("expected to verify query");
+        assert_eq!(proof.len(), 5);
+    }
 }
