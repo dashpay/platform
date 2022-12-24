@@ -59,7 +59,7 @@ class StatusCommand extends ConfigBaseCommand {
 
         if (masternode.state === MasternodeStateEnum.READY) {
           const {
-            PoSePenalty,
+            poSePenalty,
             lastPaidHeight,
             lastPaidTime,
             paymentQueuePosition,
@@ -67,15 +67,17 @@ class StatusCommand extends ConfigBaseCommand {
           } = masternode.nodeState;
 
           plain['Masternode ProTX'] = masternode.proTxHash;
-          plain['PoSe Penalty'] = PoSePenalty;
+          plain['PoSe Penalty'] = poSePenalty;
           plain['Last paid block'] = lastPaidHeight;
           plain['Last paid time'] = lastPaidTime;
           plain['Payment queue position'] = paymentQueuePosition;
           plain['Next payment time'] = nextPaymentTime;
         }
 
-        plain['Sentinel Version'] = version;
-        plain['Sentinel State'] = masternode;
+        if (masternode.sentinel.version) {
+          plain['Sentinel Version'] = masternode.sentinel.version;
+          plain['Sentinel Status'] = colors.sentinel(masternode.sentinel.state)(masternode.sentinel.state);
+        }
       }
 
       plain['Platform Enabled'] = platform.enabled;
@@ -85,7 +87,7 @@ class StatusCommand extends ConfigBaseCommand {
 
         if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
           plain['Platform Version'] = platform.tenderdash.version;
-          plain['Platform Block Height'] = platform.tenderdash.blockHeight;
+          plain['Platform Block Height'] = platform.tenderdash.lastBlockHeight;
           plain['Platform Peers'] = platform.tenderdash.peers;
           plain['Platform Network'] = platform.tenderdash.network;
         }

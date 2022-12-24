@@ -77,4 +77,14 @@ describe('colors.js', () => {
       expect(colors.poSePenalty(20, 2)).to.be.equal(chalk.red);
     });
   });
+
+  describe('#sentinel', () => {
+    it('should color green', async () => {
+      expect(colors.sentinel('ok')).to.be.equal(chalk.green);
+    });
+
+    it('should color red', async () => {
+      expect(colors.sentinel('fake')).to.be.equal(chalk.red);
+    });
+  });
 });

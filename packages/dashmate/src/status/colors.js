@@ -28,7 +28,8 @@ module.exports = {
   version: (version, latestVersion) => {
     if (version === latestVersion) {
       return chalk.green;
-    } if (!latestVersion || version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
+    }
+    if (!latestVersion || version.match(/\d+.\d+/)[0] === latestVersion.match(/\d+.\d+/)[0]) {
       return chalk.yellow;
     }
     return chalk.red;
@@ -37,7 +38,8 @@ module.exports = {
     if ((!remoteBlockHeight && blockHeight === headerHeight)
       || blockHeight >= remoteBlockHeight) {
       return chalk.green;
-    } if ((!remoteBlockHeight && (headerHeight - blockHeight < 3))
+    }
+    if ((!remoteBlockHeight && (headerHeight - blockHeight < 3))
       || (remoteBlockHeight - blockHeight) < 3) {
       return chalk.yellow;
     }
@@ -46,8 +48,15 @@ module.exports = {
   poSePenalty: (poSePenalty, enabledCount) => {
     if (poSePenalty === 0) {
       return chalk.green;
-    } if (poSePenalty < enabledCount) {
+    }
+    if (poSePenalty < enabledCount) {
       return chalk.yellow;
+    }
+    return chalk.red;
+  },
+  sentinel: (state) => {
+    if (state === 'ok') {
+      return chalk.green;
     }
     return chalk.red;
   },

@@ -54,8 +54,9 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient) {
 
       const [state] = sentinelStateResponse.out.split(/\r?\n/);
 
-      masternode.sentinel.state = state;
-      masternode.sentinel.version = sentinelVersionResponse.out.replace(/Dash Sentinel v/, '');
+      masternode.sentinel.state = state === '' ? 'ok' : state;
+      masternode.sentinel.version = sentinelVersionResponse.out
+        .replace(/Dash Sentinel v/, '').trim();
       // eslint-disable-next-line no-empty
     } catch (e) {
     }

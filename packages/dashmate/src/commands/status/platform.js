@@ -48,7 +48,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     }
 
     const {
-      status,
       httpService,
       httpPort,
       httpPortState,
@@ -63,7 +62,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     } = scope;
 
     const plain = {
-      Status: status,
       'HTTP service': httpService,
       'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
       'GRPC service': gRPCService,
@@ -75,6 +73,8 @@ class PlatformStatusCommand extends ConfigBaseCommand {
 
     if (tenderdash.version) {
       const {
+        dockerStatus,
+        serviceStatus,
         version: tenderdashVersion,
         lastBlockHeight: platformBlockHeight,
         latestAppHash: platformLatestAppHash,
@@ -82,6 +82,8 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         network: tenderdashNetwork,
       } = tenderdash;
 
+      plain['Docker Status'] = dockerStatus;
+      plain['Service Status'] = colors.status(serviceStatus)(serviceStatus);
       plain['Network'] = tenderdashNetwork;
       plain['Tenderdash Version'] = tenderdashVersion;
       plain['Block height'] = platformBlockHeight;

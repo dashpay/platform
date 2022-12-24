@@ -24,6 +24,14 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
       pass: config.get('core.rpc.password'),
     });
 
+    const httpPort = config.get('platform.dapi.envoy.http.port');
+    const httpService = `${config.get('externalIp')}:${httpPort}`;
+    const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
+    const gRPCService = `${config.get('externalIp')}:${gRPCPort}`;
+    const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+    const p2pService = `${config.get('externalIp')}:${p2pPort}`;
+    const rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
+
     const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
 
     if (dockerStatus !== DockerStatusEnum.running) {
@@ -40,10 +48,13 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
 
     const platform = {
       coreIsSynced,
-      httpService: null,
-      p2pService: null,
-      gRPCService: null,
-      rpcService: null,
+      httpPort,
+      httpService,
+      p2pPort,
+      p2pService,
+      gRPCPort,
+      gRPCService,
+      rpcService,
       httpPortState: null,
       gRPCPortState: null,
       p2pPortState: null,
@@ -59,18 +70,9 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
       },
     };
 
-    platform.httpService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.http.port')}`;
-    platform.gRPCService = `${config.get('externalIp')}:${config.get('platform.dapi.envoy.grpc.port')}`;
-    platform.p2pService = `${config.get('externalIp')}:${config.get('platform.drive.tenderdash.p2p.port')}`;
-    platform.rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
-
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (serviceStatus === ServiceStatusEnum.up) {
       try {
-        const httpPort = config.get('platform.dapi.envoy.http.port');
-        const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
-        const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
-
         const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
           fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
           fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),

@@ -34,32 +34,30 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
 
     const scope = await getMasternodeScope(config);
 
-    const { core, masternode } = scope;
-    const { verificationProgress } = core;
-
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const plain = {};
 
-      plain['Masternode State'] = (masternode.state === MasternodeStateEnum.READY
-        ? chalk.green : chalk.red)(masternode.state);
-      plain['Verification Progress'] = `${verificationProgress * 100}%`;
-      plain['Sentinel Version'] = masternode.sentinel.version;
-      plain['Sentinel Status'] = (masternode.sentinel.state !== ''
-        ? chalk.red(masternode.sentinel.state) : chalk.green('No errors'));
+      plain['Masternode State'] = (scope.state === MasternodeStateEnum.READY
+        ? chalk.green : chalk.red)(scope.state);
 
-      if (masternode.state === MasternodeStateEnum.READY) {
+      if (scope.sentinel.version) {
+        plain['Sentinel Version'] = scope.sentinel.version;
+        plain['Sentinel Status'] = colors.sentinel(scope.sentinel.state)(scope.sentinel.state);
+      }
+
+      if (scope.state === MasternodeStateEnum.READY) {
         const {
-          proTxHash, lastPaidBlock, lastPaidTime,
-          paymentQueuePosition, nexPaymentTime,
+          lastPaidHeight, lastPaidTime,
+          paymentQueuePosition, nextPaymentTime,
           poSePenalty, enabledCount,
-        } = masternode.nodeState;
+        } = scope.nodeState;
 
-        plain['ProTx Hash'] = proTxHash;
-        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(poSePenalty);
-        plain['Last paid block'] = lastPaidBlock;
-        plain['Last paid time'] = lastPaidBlock === 0 ? 'Never' : lastPaidTime;
+        plain['ProTx Hash'] = scope.proTxHash;
+        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(`${poSePenalty}`);
+        plain['Last paid block'] = lastPaidHeight;
+        plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : lastPaidTime;
         plain['Payment queue position'] = paymentQueuePosition;
-        plain['Next payment time'] = `in ${nexPaymentTime}`;
+        plain['Next payment time'] = `in ${nextPaymentTime}`;
       }
 
       return printObject(plain, flags.format);

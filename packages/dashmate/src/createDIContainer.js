@@ -48,7 +48,7 @@ const getCoreScopeFactory = require('./status/scopes/core');
 const getMasternodeScopeFactory = require('./status/scopes/masternode');
 const getPlatformScopeFactory = require('./status/scopes/platform');
 const getOverviewScopeFactory = require('./status/scopes/overview');
-const getServiceScopeFactory = require('./status/scopes/services');
+const getServicesScopeFactory = require('./status/scopes/services');
 const getHostScopeFactory = require('./status/scopes/host');
 
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
@@ -222,7 +222,7 @@ async function createDIContainer() {
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
     getPlatformScope: asFunction(getPlatformScopeFactory).singleton(),
     getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
-    getServiceScope: asFunction(getServiceScopeFactory).singleton(),
+    getServicesScope: asFunction(getServicesScopeFactory).singleton(),
     getHostScope: asFunction(getHostScopeFactory).singleton(),
   });
 

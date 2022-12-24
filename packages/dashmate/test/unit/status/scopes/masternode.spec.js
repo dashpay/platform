@@ -68,7 +68,7 @@ describe('getMasternodeScopeFactory', () => {
       expect(scope.state).to.be.equal(MasternodeStateEnum.READY);
       expect(scope.status).to.be.equal('Ready');
 
-      expect(scope.sentinel.state).to.be.equal('');
+      expect(scope.sentinel.state).to.be.equal('ok');
       expect(scope.sentinel.version).to.be.equal('1.7.1');
       expect(scope.nodeState.dmnState).to.be.equal(mockDmnState);
       expect(scope.nodeState.poSePenalty).to.be.equal(mockDmnState.PoSePenalty);
