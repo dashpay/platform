@@ -331,7 +331,7 @@ describe('validatePublicKeysFactory', () => {
     expect(error.getCode()).to.equal(1040);
     expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[1].id);
     expect(error.getValidationError()).to.be.instanceOf(PublicKeyValidationError);
-    expect(error.getValidationError().message).to.equal('Key secp256k1 error: secp: malformed public key');
+    expect(error.getValidationError().message).to.equal('Key secp256k1 error: malformed public key');
   });
 
   it('should return invalid result if key has an invalid combination of purpose and security level', async () => {
