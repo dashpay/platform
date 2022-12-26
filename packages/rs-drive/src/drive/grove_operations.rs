@@ -194,7 +194,7 @@ pub enum DirectQueryType {
 }
 
 impl DirectQueryType {
-    pub(crate) fn to_query_type(self) -> QueryType {
+    pub(crate) fn into_query_type(self) -> QueryType {
         match self {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
@@ -311,7 +311,7 @@ impl Drive {
         self.grove_get(
             path,
             key,
-            direct_query_type.to_query_type(),
+            direct_query_type.into_query_type(),
             transaction,
             drive_operations,
         )

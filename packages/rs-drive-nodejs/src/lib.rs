@@ -5,7 +5,6 @@ use std::num::ParseIntError;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::fee::result::FeeResultWrapper;
-use drive::dpp::identity::Identity;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
@@ -878,7 +877,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -900,28 +899,14 @@ impl PlatformWrapper {
 
     fn js_fetch_identity(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
-        let js_maybe_epoch_index = cx.argument::<JsValue>(1)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
-        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
         let drive = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
-
-        let maybe_epoch: Option<Epoch> = if !js_maybe_epoch_index.is_a::<JsUndefined, _>(&mut cx) {
-            let js_epoch_index = js_maybe_epoch_index.downcast_or_throw::<JsNumber, _>(&mut cx)?;
-
-            let epoch_index = u16::try_from(js_epoch_index.value(&mut cx) as i64)
-                .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
-
-            let epoch = Epoch::new(epoch_index);
-
-            Some(epoch)
-        } else {
-            None
-        };
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -940,11 +925,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .fetch_full_identity(
-                            contract_id,
-                            maybe_epoch.as_ref(),
-                            transaction_arg,
-                        )
+                        .fetch_full_identity(identity_id, transaction_arg)
                         .map_err(|err| err.to_string())
                 });
 
@@ -953,30 +934,111 @@ impl PlatformWrapper {
                     let this = task_context.undefined();
 
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((maybe_fee_result, maybe_contract_fetch_info)) => {
+                        Ok(maybe_identity) => {
+                            if let Some(identity) = maybe_identity {
+                                match identity.to_buffer() {
+                                    Ok(serialized_identity) => {
+                                        let js_serialized_identity = JsBuffer::external(
+                                            &mut task_context,
+                                            serialized_identity,
+                                        );
+
+                                        vec![
+                                            task_context.null().upcast(),
+                                            js_serialized_identity.upcast(),
+                                        ]
+                                    }
+                                    Err(e) => {
+                                        let err_message =
+                                            format!("can't serialise identities: {}", e);
+
+                                        vec![task_context.error(err_message)?.upcast()]
+                                    }
+                                }
+                            } else {
+                                vec![task_context.null().upcast(), task_context.null().upcast()]
+                            }
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identity_with_costs(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_epoch_index = cx.argument::<JsNumber>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let epoch_index = u16::try_from(js_epoch_index.value(&mut cx) as i64)
+            .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
+
+        let epoch = Epoch::new(epoch_index);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .fetch_full_identity_with_costs(identity_id, &epoch, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok((maybe_identity, fee_result)) => {
                             let js_result = task_context.empty_array();
 
-                            let js_contract: Handle<JsValue> = if let Some(contract_fetch_info) =
-                                maybe_contract_fetch_info
+                            let js_identity: Handle<JsValue> = if let Some(identity) =
+                                maybe_identity
                             {
-                                let contract_cbor =
-                                    contract_fetch_info.contract.to_buffer().or_else(|_| {
-                                        task_context.throw_range_error("can't serialize contract")
-                                    })?;
+                                let serialized_identity = identity.to_buffer().or_else(|e| {
+                                    task_context
+                                        .throw_error(format!("can't serialize identity: {}", e))
+                                })?;
 
-                                JsBuffer::external(&mut task_context, contract_cbor).upcast()
+                                JsBuffer::external(&mut task_context, serialized_identity).upcast()
                             } else {
                                 task_context.null().upcast()
                             };
 
-                            js_result.set(&mut task_context, 0, js_contract)?;
+                            js_result.set(&mut task_context, 0, js_identity)?;
 
-                            if let Some(fee_result) = maybe_fee_result {
-                                let js_fee_result =
-                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
-                                js_result.set(&mut task_context, 1, js_fee_result)?;
-                            }
+                            js_result.set(&mut task_context, 1, js_fee_result)?;
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_result.upcast()]
@@ -1046,7 +1108,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -1119,7 +1181,7 @@ impl PlatformWrapper {
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
                         Ok(fee_result) => {
                             let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result.clone()));
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -1905,7 +1967,7 @@ impl PlatformWrapper {
 
             let result = transaction_result.and_then(|transaction_arg| {
                 grove_db
-                    .query(&path_query, transaction_arg)
+                    .query_item_value(&path_query, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
                     .map_err(|err| err.to_string())
@@ -1915,10 +1977,11 @@ impl PlatformWrapper {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
                 let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok((value, skipped)) => {
+                    Ok((values, skipped)) => {
                         let js_array: Handle<JsArray> = task_context.empty_array();
-                        let js_vecs = converter::nested_vecs_to_js(&mut task_context, value)?;
+                        let js_vecs = converter::nested_vecs_to_js(&mut task_context, values)?;
                         let js_num = task_context.number(skipped).upcast::<JsValue>();
+
                         js_array.set(&mut task_context, 0, js_vecs)?;
                         js_array.set(&mut task_context, 1, js_num)?;
 
@@ -2607,6 +2670,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         PlatformWrapper::js_insert_identity_cbor,
     )?;
     cx.export_function("driveFetchIdentity", PlatformWrapper::js_fetch_identity)?;
+    cx.export_function(
+        "driveFetchIdentityWithCosts",
+        PlatformWrapper::js_fetch_identity_with_costs,
+    )?;
     cx.export_function(
         "driveAddToIdentityBalance",
         PlatformWrapper::js_add_to_identity_balance,

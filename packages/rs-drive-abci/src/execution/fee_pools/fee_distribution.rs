@@ -41,6 +41,7 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
+use drive::fee::op::DriveOperation;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
@@ -49,7 +50,6 @@ use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use drive::fee::op::DriveOperation;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -781,13 +781,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, proposers_count);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: p,
+                    paid_epoch_index: 0,
+                }) if p == proposers_count
+            ));
 
             let next_unpaid_epoch_index = platform
                 .drive
@@ -877,9 +877,9 @@ mod tests {
             assert!(matches!(
                 proposer_payouts,
                 Some(ProposersPayouts {
-                    proposers_paid_count: proposers_count,
+                    proposers_paid_count: p,
                     paid_epoch_index: 0
-                })
+                }) if p == proposers_count
             ));
 
             // The Epoch 0 should still not marked as paid because proposers count == proposers limit
@@ -1187,9 +1187,7 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::common::helpers::fee_pools::{
-            create_test_masternode_share_identities_and_documents, refetch_identities,
-        };
+        use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
 
         #[test]
         fn test_payout_to_proposers() {

@@ -465,6 +465,70 @@ describe('Drive', () => {
     });
   });
 
+  describe('#fetchIdentity', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentity(Buffer.alloc(32));
+
+      expect(result).to.be.null();
+    });
+
+    it('should return contract if contract is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentity(identity.getId());
+
+      expect(result.toBuffer()).to.deep.equal(identity.toBuffer());
+    });
+  });
+
+  describe('#fetchIdentityWithCosts', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if contract not exists', async () => {
+      const result = await drive.fetchIdentityWithCosts(Buffer.alloc(32), blockInfo.epoch);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [fetchedIdentity, feeResult] = result;
+
+      expect(fetchedIdentity).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+
+    it('should return contract if contract is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentityWithCosts(identity.getId(), blockInfo.epoch);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [fetchedIdentity, feeResult] = result;
+
+      expect(fetchedIdentity.toBuffer()).to.deep.equal(identity.toBuffer());
+
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+  });
+
   describe('#fetchLatestWithdrawalTransactionIndex', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();

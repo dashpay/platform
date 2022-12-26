@@ -2,6 +2,7 @@ const { promisify } = require('util');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -20,6 +21,7 @@ const {
   driveProveDocumentsQuery,
   driveInsertIdentity,
   driveFetchIdentity,
+  driveFetchIdentityWithCosts,
   driveAddToIdentityBalance,
   driveAddKeysToIdentity,
   driveRemoveFromIdentityBalance,
@@ -62,6 +64,7 @@ const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
 const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
+const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityWithCosts));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
 const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
@@ -350,13 +353,39 @@ class Drive {
 
   /**
    * @param {Buffer|Identifier} id
-   * @param {number} [epochIndex]
    * @param {boolean} [useTransaction=false]
    *
-   * @returns {Promise<[DataContract|null, FeeResult]>}
+   * @returns {Promise<Identity|null>}
    */
-  async fetchIdentity(id, epochIndex = undefined, useTransaction = false) {
+  async fetchIdentity(id, useTransaction = false) {
     return driveFetchIdentityAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    ).then((encodedIdentity) => {
+      if (encodedIdentity === null) {
+        return null;
+      }
+
+      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        encodedIdentity,
+      );
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      return new Identity(rawIdentity);
+    });
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {number} epochIndex
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<[Identity|null, FeeResult]>}
+   */
+  async fetchIdentityWithCosts(id, epochIndex, useTransaction = false) {
+    return driveFetchIdentityWithCostsAsync.call(
       this.drive,
       Buffer.from(id),
       epochIndex,
@@ -374,13 +403,7 @@ class Drive {
         identity = new Identity(rawIdentity);
       }
 
-      const result = [identity];
-
-      if (innerFeeResult) {
-        result.push(new FeeResult(innerFeeResult));
-      }
-
-      return result;
+      return [identity, new FeeResult(innerFeeResult)];
     });
   }
 

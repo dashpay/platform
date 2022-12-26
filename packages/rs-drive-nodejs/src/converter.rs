@@ -432,10 +432,18 @@ pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
     let js_disabled_at: Handle<JsValue> = js_object.get(cx, "disabledAt")?;
 
     let id = js_id.value(cx) as KeyID;
-    let purpose = Purpose::try_from(js_purpose.value(cx) as u8)?;
-    let security_level = SecurityLevel::try_from(js_security_level.value(cx) as u8)?;
-    let key_type = KeyType::try_from(js_key_type.value(cx) as u8)?;
+
+    let purpose = Purpose::try_from(js_purpose.value(cx) as u8)
+        .or_else(|_| cx.throw_range_error("`purpose` value is incorrect"))?;
+
+    let security_level = SecurityLevel::try_from(js_security_level.value(cx) as u8)
+        .or_else(|_| cx.throw_range_error("`securityLevel` value is incorrect"))?;
+
+    let key_type = KeyType::try_from(js_key_type.value(cx) as u8)
+        .or_else(|_| cx.throw_range_error("`keyType` value is incorrect"))?;
+
     let read_only = js_read_only.value(cx);
+
     let data = js_buffer_to_vec_u8(js_data, cx);
 
     let disabled_at: Option<u64> = js_value_to_option::<JsNumber, _>(js_disabled_at, cx)?
@@ -466,9 +474,10 @@ pub fn js_array_to_keys<'a, C: Context<'a>>(
         .map(|js_value| {
             let js_key = js_value.downcast_or_throw::<JsObject, _>(cx)?;
             let key = js_object_to_identity_public_key(js_key, cx)?;
-            key
+
+            Ok(key)
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     Ok(keys)
 }

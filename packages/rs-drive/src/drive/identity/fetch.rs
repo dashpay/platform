@@ -17,6 +17,7 @@ use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
 
+use crate::fee::credits::Credits;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use grovedb::query_result_type::QueryResultType::{
@@ -113,35 +114,33 @@ impl Drive {
                 query_target: QueryTargetValue(8),
             }
         };
+
         let balance_path = balance_path();
-        let identity_balance_element = self.grove_get_direct(
+
+        match self.grove_get_direct(
             balance_path,
             identity_id.as_slice(),
             direct_query_type,
             transaction,
             drive_operations,
-        )?;
-        if apply {
-            if let Some(identity_balance_element) = identity_balance_element {
-                if let SumItem(identity_balance_element, _element_flags) = identity_balance_element
-                {
-                    if identity_balance_element < 0 {
-                        Err(Error::Drive(DriveError::CorruptedElementType(
-                            "identity balance was present but was negative",
-                        )))
-                    } else {
-                        Ok(Some(identity_balance_element as u64))
-                    }
-                } else {
-                    Err(Error::Drive(DriveError::CorruptedElementType(
+        ) {
+            Ok(Some(identity_balance_element)) => {
+                let SumItem(identity_balance, _element_flags) = identity_balance_element else {
+                    return Err(Error::Drive(DriveError::CorruptedElementType(
                         "identity balance was present but was not identified as a sum item",
                     )))
+                };
+
+                if identity_balance < 0 {
+                    return Err(Error::Drive(DriveError::CorruptedElementType(
+                        "identity balance was present but was negative",
+                    )));
                 }
-            } else {
-                Ok(None)
+
+                Ok(Some(identity_balance as Credits))
             }
-        } else {
-            Ok(None)
+            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+            Err(e) => Err(e),
         }
     }
 
@@ -279,8 +278,7 @@ impl Drive {
         let revision_query = Self::identity_revision_query(identity_id);
         // let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
         // let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&balance_query, &revision_query])
-            .map_err(Error::GroveDB)
+        PathQuery::merge(vec![&balance_query, &revision_query]).map_err(Error::GroveDB)
     }
 
     /// Fetches an identity with all its information from storage.
@@ -466,47 +464,66 @@ impl Drive {
     // }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+
     use grovedb::GroveDb;
-    use crate::common::helpers::setup::setup_drive;
-    use crate::drive::block_info::BlockInfo;
-    use dpp::identity::Identity;
 
-    use tempfile::TempDir;
+    mod fetch_full_identity {
+        use super::*;
 
-    use crate::drive::Drive;
+        #[test]
+        fn should_return_none_if_identity_is_not_present() {
+            let drive = setup_drive_with_initial_state_structure();
 
-    #[test]
-    fn test_proved_full_identity_query() {
-        let drive = setup_drive(None);
+            let identity = drive
+                .fetch_full_identity(
+                    [
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    None,
+                )
+                .expect("should return none");
 
-        let transaction = drive.grove.start_transaction();
+            assert!(identity.is_none());
+        }
+    }
 
-        drive
-            .create_initial_state_structure(Some(&transaction))
-            .expect("expected to create root tree successfully");
+    mod fetch_proved_full_identity {
+        use super::*;
 
-        let identity = Identity::random_identity(5, Some(12345));
+        #[test]
+        fn test_proved_full_identity_query() {
+            let drive = setup_drive_with_initial_state_structure();
 
-        drive
-            .add_new_identity(
-                identity.clone(),
-                &BlockInfo::default(),
-                true,
-                Some(&transaction),
-            )
-            .expect("expected to insert identity");
+            let transaction = drive.grove.start_transaction();
 
-        let query = Drive::full_identity_query(identity.id.to_buffer()).expect("expected to make the query");
+            let identity = Identity::random_identity(5, Some(12345));
 
-        let fetched_identity = drive
-            .fetch_proved_full_identity(identity.id.buffer, None)
-            .expect("should fetch an identity")
-            .expect("should have an identity");
+            drive
+                .add_new_identity(
+                    identity.clone(),
+                    &BlockInfo::default(),
+                    true,
+                    Some(&transaction),
+                )
+                .expect("expected to insert identity");
 
-        let (hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &query).expect("expected to verify query");
-        assert_eq!(proof.len(), 5);
+            let query = Drive::full_identity_query(identity.id.to_buffer())
+                .expect("expected to make the query");
+
+            let fetched_identity = drive
+                .fetch_proved_full_identity(identity.id.to_buffer(), None)
+                .expect("should fetch an identity")
+                .expect("should have an identity");
+
+            let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &query)
+                .expect("expected to verify query");
+
+            assert_eq!(proof.len(), 5);
+        }
     }
 }
