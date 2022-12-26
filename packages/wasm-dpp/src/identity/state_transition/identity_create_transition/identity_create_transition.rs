@@ -202,11 +202,13 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         if let Some(signature) = object.signature {
-            js_sys::Reflect::set(
-                &js_object,
-                &"signature".to_owned().into(),
-                &Buffer::from_bytes(signature.as_slice()),
-            )?;
+            let signature_value: JsValue = if signature.len() == 0 {
+                JsValue::undefined()
+            } else {
+                Buffer::from_bytes(signature.as_slice()).into()
+            };
+
+            js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
         }
 
         js_sys::Reflect::set(
@@ -260,12 +262,13 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         if let Some(signature) = object.signature {
-            let signature_base64 = string_encoding::encode(signature.as_slice(), Encoding::Base64);
-            js_sys::Reflect::set(
-                &js_object,
-                &"signature".to_owned().into(),
-                &signature_base64.into(),
-            )?;
+            let signature_value: JsValue = if signature.len() == 0 {
+                JsValue::undefined()
+            } else {
+                string_encoding::encode(signature.as_slice(), Encoding::Base64).into()
+            };
+
+            js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
         }
 
         js_sys::Reflect::set(

@@ -32,12 +32,9 @@ describe('IdentityCreateTransition', () => {
 
   beforeEach(() => {
     stateTransitionJS = getIdentityCreateTransitionFixture();
-    // TODO: revisit?
-    // Provide publicKeys that have mocked signature, because in case of absence,
-    // JS returns signature as undefined and wasm binding returns empty buffer
-    // and we can not do deep.equal directly
+    // Fill public keys with signatures (to test skipSignature later)
     stateTransitionJS.publicKeys = [new IdentityPublicKeyJS(mockRawPublicKey())];
-    // For the same reason we need to mock signature
+    // Fill signature (to test skipSignature later)
     stateTransitionJS.signature = Buffer.alloc(32).fill(1);
     stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
   });
@@ -169,6 +166,7 @@ describe('IdentityCreateTransition', () => {
     it('should return raw state transition', () => {
       const stObject = stateTransition.toObject();
       const stObjectJS = stateTransitionJS.toObject();
+
       // TODO: fix? stObjectJS missing identityId.
       delete stObject.identityId;
 
