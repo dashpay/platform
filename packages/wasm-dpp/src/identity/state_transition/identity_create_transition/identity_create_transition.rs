@@ -32,6 +32,7 @@ use dpp::{
 };
 
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
+#[derive(Clone)]
 pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
 
 #[derive(Deserialize, Serialize)]
