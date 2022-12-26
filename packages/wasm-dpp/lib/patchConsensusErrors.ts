@@ -80,9 +80,6 @@ const {
     InvalidIdentityPublicKeyIdError,
     InvalidIdentityRevisionError,
     MaxIdentityPublicKeyLimitReachedError,
-    // TODO: those are
-    // DuplicatedIdentityPublicKeyError,
-    // DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityKeySignatureError,
     InvalidSignaturePublicKeySecurityLevelError,
     PublicKeyIsDisabledError,
@@ -169,8 +166,6 @@ export function patchConsensusErrors() {
     extend(InvalidIdentityPublicKeyIdError, AbstractConsensusError);
     extend(InvalidIdentityRevisionError, AbstractConsensusError);
     extend(MaxIdentityPublicKeyLimitReachedError, AbstractConsensusError);
-    // extend(DuplicatedIdentityPublicKeyStateError, AbstractConsensusError);
-    // extend(DuplicatedIdentityPublicKeyIdStateError, AbstractConsensusError);
     extend(InvalidIdentityKeySignatureError, AbstractConsensusError);
     extend(InvalidSignaturePublicKeySecurityLevelError, AbstractConsensusError);
     extend(PublicKeyIsDisabledError, AbstractConsensusError);
