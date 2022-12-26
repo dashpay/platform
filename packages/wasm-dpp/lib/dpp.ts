@@ -1,5 +1,5 @@
 import * as dpp_module from '../wasm/wasm_dpp';
-import { patchConsensusErrors } from './patchConsensusErrors';
+import { patchConsensusErrors } from './errors/patchConsensusErrors';
 
 patchConsensusErrors();
 
@@ -13,8 +13,8 @@ dpp_module.IdentityPublicKey.PURPOSES = dpp_module.KeyPurpose;
 dpp_module.IdentityPublicKey.SECURITY_LEVELS = dpp_module.KeySecurityLevel;
 
 export * from '../wasm/wasm_dpp';
-export * from './AbstractConsensusError';
-export * from './DPPError';
+export * from './errors/AbstractConsensusError';
+export * from './errors/DPPError';
 
 // Declarations written prior to "export *" will overwrite exports
 export declare class IdentityPublicKey extends dpp_module.IdentityPublicKey {

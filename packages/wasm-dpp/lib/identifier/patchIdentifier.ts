@@ -1,4 +1,4 @@
-import * as dpp_module from "./dpp";
+import * as dpp_module from "../dpp";
 // import { inspect } from 'util';
 
 export default function (dppModule: typeof dpp_module) {

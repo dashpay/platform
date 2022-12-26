@@ -1,5 +1,5 @@
-import * as dpp_module from '../wasm/wasm_dpp';
-import { extend } from "./extend";
+import * as dpp_module from '../../wasm/wasm_dpp';
+import { extend } from "../utils/extend";
 import { AbstractConsensusError } from "./AbstractConsensusError";
 
 const {
