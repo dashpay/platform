@@ -1,7 +1,6 @@
 const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
-const calculateStateTransitionFee = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFee');
 
 const StateTransitionMock = require('@dashevo/dpp/lib/test/mocks/StateTransitionMock');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
@@ -492,16 +491,6 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       expect(stateTransition.signaturePublicKeyId).to.equal(signaturePublicKeyId);
-    });
-  });
-
-  describe('#calculateFee', () => {
-    it('should calculate fee', () => {
-      const result = stateTransition.calculateFee();
-
-      const fee = calculateStateTransitionFee(stateTransition);
-
-      expect(result).to.equal(fee);
     });
   });
 });

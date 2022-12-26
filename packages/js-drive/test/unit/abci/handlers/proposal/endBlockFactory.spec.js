@@ -1,7 +1,5 @@
 const Long = require('long');
 
-const FeeResult = require('@dashevo/rs-drive/FeeResult');
-
 const endBlockFactory = require('../../../../../lib/abci/handlers/proposal/endBlockFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
@@ -34,7 +32,14 @@ describe('endBlockFactory', () => {
     round = 42;
     coreChainLockedHeight = 41;
     time = Date.now();
-    fees = FeeResult.create(1, 2);
+    fees = {
+      processingFee: 10,
+      storageFee: 100,
+      feeRefunds: {
+        1: 15,
+      },
+      feeRefundsSum: 15,
+    };
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -123,11 +128,6 @@ describe('endBlockFactory', () => {
     expect(groveDBStoreMock.getRootHash).to.be.calledOnceWithExactly({ useTransaction: true });
 
     expect(rsAbciMock.blockEnd).to.be.calledOnceWithExactly({ fees }, true);
-
-    const { fees: actualFees } = rsAbciMock.blockEnd.getCall(0).args[0];
-
-    expect(actualFees.storageFee).to.equal(1);
-    expect(actualFees.processingFee).to.equal(2);
 
     expect(executionTimerMock.stopTimer).to.be.calledOnceWithExactly('roundExecution', true);
   });
