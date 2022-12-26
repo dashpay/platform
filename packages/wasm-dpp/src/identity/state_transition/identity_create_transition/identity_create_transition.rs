@@ -33,39 +33,6 @@ use dpp::{
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
 pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct SerializationOptions {
-    pub skip_signature: Option<bool>,
-    pub skip_identifiers_conversion: Option<bool>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawInstantAssetLockProof {
-    #[serde(rename = "type")]
-    lock_type: u8,
-    instant_lock: Vec<u8>,
-    transaction: Vec<u8>,
-    output_index: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawChainAssetLockProof {
-    #[serde(rename = "type")]
-    lock_type: u8,
-    core_chain_locked_height: u32,
-    out_point: Vec<u8>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum RawAssetLockProof {
-    Instant(RawInstantAssetLockProof),
-    Chain(RawChainAssetLockProof),
-}
-
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreateTransitionParams {
@@ -192,7 +159,7 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
-        IdentityCreateTransition::get_type() as u8
+        self.0.get_type() as u8
     }
 
     #[wasm_bindgen(getter, js_name=identityId)]
@@ -212,78 +179,65 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        let opts: SerializationOptions = if options.is_object() {
+        let opts: super::to_object::ToObjectOptions = if options.is_object() {
             with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };
 
+        let skip_signature = opts.skip_signature.clone();
+        let object = super::to_object::to_object_struct(&self.0, opts);
         let js_object = js_sys::Object::new();
 
-        // Add signature
-        if !opts.skip_signature.unwrap_or(false) {
-            let signature = self.0.get_signature();
-            let signature_buffer = Buffer::from_bytes(signature.as_slice());
-
-            js_sys::Reflect::set(
-                &js_object,
-                &"signature".to_owned().into(),
-                &signature_buffer.into(),
-            )?;
-        }
-
-        // Add identityId (following to_json_object example if rs-dpp IdentityCreateTransition)
-        if !opts.skip_identifiers_conversion.unwrap_or(false) {
-            let signature = self.0.get_signature();
-            let signature_buffer = Buffer::from_bytes(signature.as_slice());
-            js_sys::Reflect::set(
-                &js_object,
-                &"identityId".to_owned().into(),
-                &signature_buffer.into(),
-            )?;
-        } else {
-            js_sys::Reflect::set(
-                &js_object,
-                &"identityId".to_owned().into(),
-                &self.get_identity_id().into(),
-            )?;
-        }
-
-        // Write asset lock proof wasm object
-        let asset_lock_proof = self.get_asset_lock_proof();
-        js_sys::Reflect::set(
-            &js_object,
-            &"assetLockProof".to_owned().into(),
-            &asset_lock_proof.into(),
-        )?;
-
-        // Write array of public keys
-        let public_keys = self.get_public_keys();
-        let js_public_keys = js_sys::Array::new();
-
-        for pk in public_keys {
-            js_public_keys.push(&pk);
-        }
-        js_sys::Reflect::set(
-            &js_object,
-            &"publicKeys".to_owned().into(),
-            &JsValue::from(&js_public_keys),
-        )?;
-
-        // Write ST type
-        let transition_type = self.get_type();
         js_sys::Reflect::set(
             &js_object,
             &"type".to_owned().into(),
-            &JsValue::from(transition_type),
+            &object.transition_type.into(),
         )?;
 
-        let protocol_version = self.0.get_protocol_version();
         js_sys::Reflect::set(
             &js_object,
             &"protocolVersion".to_owned().into(),
-            &protocol_version.into(),
+            &object.protocol_version.into(),
         )?;
+
+        if let Some(signature) = object.signature {
+            js_sys::Reflect::set(
+                &js_object,
+                &"signature".to_owned().into(),
+                &Buffer::from_bytes(signature.as_slice()),
+            )?;
+        }
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"identityId".to_owned().into(),
+            &Buffer::from_bytes(object.identity_id.buffer.as_slice()),
+        )?;
+
+        let asset_lock_proof_object = match object.asset_lock_proof {
+            AssetLockProof::Instant(instant_asset_lock_proof) => {
+                InstantAssetLockProofWasm::from(instant_asset_lock_proof).to_object()?
+            }
+            AssetLockProof::Chain(chain_asset_lock_proof) => {
+                ChainAssetLockProofWasm::from(chain_asset_lock_proof).to_object()?
+            }
+        };
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"assetLockProof".to_owned().into(),
+            &asset_lock_proof_object,
+        )?;
+
+        let keys_objects = object
+            .public_keys
+            .into_iter()
+            .map(IdentityPublicKeyWasm::from)
+            .map(|key| key.to_object(skip_signature))
+            .collect::<Result<js_sys::Array, _>>()?;
+
+        js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
 
         Ok(js_object.into())
     }
