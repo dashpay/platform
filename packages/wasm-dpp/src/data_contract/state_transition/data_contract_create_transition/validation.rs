@@ -1,10 +1,10 @@
 use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_state::validate_data_contract_create_transition_state as dpp_validate_data_contract_create_transition_state;
 use wasm_bindgen::prelude::*;
 
+use crate::validation::ValidationResultWasm;
 use crate::{
     errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    validation_result::ValidationResultWasm,
     DataContractCreateTransitionWasm,
 };
 
@@ -19,6 +19,6 @@ pub async fn validate_data_contract_create_transition_state(
         &state_transition.into(),
     )
     .await
-    .map(Into::into)
+    .map(Into::<ValidationResultWasm>::into)
     .map_err(from_dpp_err)
 }

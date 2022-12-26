@@ -2,20 +2,20 @@ use crate::buffer::Buffer;
 use std::iter::FromIterator;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name=DuplicateDocumentTransitionsWithIdsError)]
-pub struct DuplicateDocumentTransitionsWithIdsErrorWasm {
+#[wasm_bindgen(js_name=DuplicateDocumentTransitionsWithIndicesError)]
+pub struct DuplicateDocumentTransitionsWithIndicesErrorWasm {
     references: Vec<(String, Vec<u8>)>,
     code: u32,
 }
 
-impl DuplicateDocumentTransitionsWithIdsErrorWasm {
+impl DuplicateDocumentTransitionsWithIndicesErrorWasm {
     pub fn new(references: Vec<(String, Vec<u8>)>, code: u32) -> Self {
-        DuplicateDocumentTransitionsWithIdsErrorWasm { references, code }
+        DuplicateDocumentTransitionsWithIndicesErrorWasm { references, code }
     }
 }
 
-#[wasm_bindgen(js_class=DuplicateDocumentTransitionsWithIdsError)]
-impl DuplicateDocumentTransitionsWithIdsErrorWasm {
+#[wasm_bindgen(js_class=DuplicateDocumentTransitionsWithIndicesError)]
+impl DuplicateDocumentTransitionsWithIndicesErrorWasm {
     #[wasm_bindgen(js_name=getReferences)]
     pub fn get_references(&self) -> js_sys::Array {
         self.references
