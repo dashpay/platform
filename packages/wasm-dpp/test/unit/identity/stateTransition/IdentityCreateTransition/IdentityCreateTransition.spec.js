@@ -99,15 +99,14 @@ describe('IdentityCreateTransition', () => {
 
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
-      const publicKeys = [
-        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
-        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
-      ];
+      const rawKeyOne = mockRawPublicKey({ id: 0 });
+      const rawKeyTwo = mockRawPublicKey({ id: 1 });
 
-      // TODO: method accepts JS value and errors if we pass instances of IdentityPublicKey
-      // Should it be fixed?
-      stateTransition.setPublicKeys(publicKeys.map((key) => key.toObject()));
-      stateTransitionJS.setPublicKeys(publicKeys);
+      const publicKeys = [new IdentityPublicKey(rawKeyOne), new IdentityPublicKey(rawKeyTwo)];
+      const publicKeysJS = [new IdentityPublicKeyJS(rawKeyOne), new IdentityPublicKeyJS(rawKeyTwo)];
+
+      stateTransition.setPublicKeys(publicKeys);
+      stateTransitionJS.setPublicKeys(publicKeysJS);
 
       expect(stateTransition.publicKeys.map((key) => key.toObject()))
         .to.deep.equal(stateTransitionJS.publicKeys.map((key) => key.toObject()));
@@ -116,27 +115,24 @@ describe('IdentityCreateTransition', () => {
 
   describe('#getPublicKeys', () => {
     it('should return set public keys', () => {
-      expect(stateTransition.getPublicKeys().map((key) => key.toJSON()))
-        .to.deep.equal(
-          stateTransitionJS.getPublicKeys().map((key) => key.toJSON()),
-        );
+      expect(stateTransition.getPublicKeys().map((key) => key.toObject()))
+        .to.deep.equal(stateTransitionJS.getPublicKeys().map((key) => key.toObject()));
     });
   });
 
   describe('#addPublicKeys', () => {
     it('should add more public keys', () => {
-      const publicKeys = [
-        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
-        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
-      ];
+      const rawKeyOne = mockRawPublicKey({ id: 0 });
+      const rawKeyTwo = mockRawPublicKey({ id: 1 });
+
+      const publicKeys = [new IdentityPublicKey(rawKeyOne), new IdentityPublicKey(rawKeyTwo)];
+      const publicKeysJS = [new IdentityPublicKeyJS(rawKeyOne), new IdentityPublicKeyJS(rawKeyTwo)];
 
       stateTransitionJS.publicKeys = [];
-      stateTransitionJS.addPublicKeys(publicKeys);
+      stateTransitionJS.addPublicKeys(publicKeysJS);
 
       stateTransition.setPublicKeys([]);
-      // TODO: method accepts JS value and errors if we pass instances of wasm IdentityPublicKey
-      // Should it be fixed?
-      stateTransition.addPublicKeys(publicKeys.map((key) => key.toObject()));
+      stateTransition.addPublicKeys(publicKeys);
 
       expect(stateTransition.getPublicKeys().map((key) => key.toObject()))
         .to.deep.equal(stateTransitionJS.getPublicKeys().map((key) => key.toObject()));

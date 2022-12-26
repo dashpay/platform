@@ -103,29 +103,27 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
+    pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<(), JsValue> {
         let public_keys = public_keys
+            .to_vec()
             .into_iter()
-            .map(|key| IdentityPublicKeyWasm::new(key))
-            .collect::<Result<Vec<IdentityPublicKeyWasm>, _>>()?;
+            .map(|key| key.to_serde_json_value().unwrap())
+            .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
+            .collect::<Vec<IdentityPublicKey>>();
 
-        self.0
-            .set_public_keys(public_keys.into_iter().map(|key| key.into()).collect());
+        self.0.set_public_keys(public_keys);
 
         // TODO: consider returning self as it's done in the internal set_public_keys method
         Ok(())
     }
 
     #[wasm_bindgen(js_name=addPublicKeys)]
-    pub fn add_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
-        let public_keys_wasm: Vec<IdentityPublicKeyWasm> = public_keys
+    pub fn add_public_keys(&mut self, public_keys: js_sys::Array) -> Result<(), JsValue> {
+        let mut public_keys = public_keys
+            .to_vec()
             .into_iter()
-            .map(|key| IdentityPublicKeyWasm::new(key))
-            .collect::<Result<Vec<IdentityPublicKeyWasm>, _>>()?;
-
-        let mut public_keys = public_keys_wasm
-            .into_iter()
-            .map(|key| key.into())
+            .map(|key| key.to_serde_json_value().unwrap())
+            .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
             .collect::<Vec<IdentityPublicKey>>();
 
         self.0.add_public_keys(&mut public_keys);
