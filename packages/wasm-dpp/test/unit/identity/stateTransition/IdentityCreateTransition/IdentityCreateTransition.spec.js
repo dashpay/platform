@@ -165,7 +165,7 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe.only('#toObject', () => {
+  describe('#toObject', () => {
     it('should return raw state transition', () => {
       const stObject = stateTransition.toObject();
       const stObjectJS = stateTransitionJS.toObject();
@@ -192,16 +192,10 @@ describe('IdentityCreateTransition', () => {
       const stJson = stateTransition.toJSON();
       const stJsonJS = stateTransitionJS.toJSON();
 
-      expect(stJson.signature).to.deep.equal(stJsonJS.signature);
+      // TODO: fix? stObjectJS missing identityId.
+      delete stJson.identityId;
 
-      // TODO: identityId is missing in JS object. Fix?
-      // Instead compare to `signature` option because it's returned as identityId
-      // in case skipIdentifiersConversion is true
-      expect(stJson.identityId).to.deep.equal(stJsonJS.signature);
-      expect(stJson.assetLockProof).to.deep.equal(stJsonJS.assetLockProof);
-      expect(stJson.publicKeys).to.deep.equal(stJsonJS.publicKeys);
-      expect(stJson.type).to.equal(stJsonJS.type);
-      expect(stJson.protocolVersion).to.equal(stJsonJS.protocolVersion);
+      expect(stJson).to.deep.equal(stJsonJS);
     });
   });
 

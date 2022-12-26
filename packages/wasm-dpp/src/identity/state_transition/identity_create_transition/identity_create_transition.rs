@@ -244,35 +244,44 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let object = super::to_object::to_object_struct(&self.0, Default::default());
         let js_object = js_sys::Object::new();
-
-        // Write signature
-        let signature = self.0.get_signature();
-        let signature_base64 = string_encoding::encode(signature.as_slice(), Encoding::Base64);
 
         js_sys::Reflect::set(
             &js_object,
-            &"signature".to_owned().into(),
-            &JsValue::from(&signature_base64),
+            &"type".to_owned().into(),
+            &object.transition_type.into(),
         )?;
 
-        // Write identityId (following to_json_object example if rs-dpp IdentityCreateTransition)
+        js_sys::Reflect::set(
+            &js_object,
+            &"protocolVersion".to_owned().into(),
+            &object.protocol_version.into(),
+        )?;
+
+        if let Some(signature) = object.signature {
+            let signature_base64 = string_encoding::encode(signature.as_slice(), Encoding::Base64);
+            js_sys::Reflect::set(
+                &js_object,
+                &"signature".to_owned().into(),
+                &signature_base64.into(),
+            )?;
+        }
+
         js_sys::Reflect::set(
             &js_object,
             &"identityId".to_owned().into(),
-            &JsValue::from(&signature_base64),
+            &object.identity_id.to_string(Encoding::Base58).into(),
         )?;
 
-        // Write asset lock proof JSON
-        let asset_lock_proof = self.0.get_asset_lock_proof().to_owned();
-        let asset_lock_proof_json = match asset_lock_proof {
+        let asset_lock_proof_json = match object.asset_lock_proof {
             AssetLockProof::Instant(instant_asset_lock_proof) => {
-                InstantAssetLockProofWasm::from(instant_asset_lock_proof).to_json()
+                InstantAssetLockProofWasm::from(instant_asset_lock_proof).to_json()?
             }
             AssetLockProof::Chain(chain_asset_lock_proof) => {
-                ChainAssetLockProofWasm::from(chain_asset_lock_proof).to_json()
+                ChainAssetLockProofWasm::from(chain_asset_lock_proof).to_json()?
             }
-        }?;
+        };
 
         js_sys::Reflect::set(
             &js_object,
@@ -280,41 +289,14 @@ impl IdentityCreateTransitionWasm {
             &asset_lock_proof_json,
         )?;
 
-        // Write public keys JSON values
-        let public_keys: Vec<JsValue> = self
-            .0
-            .get_public_keys()
-            .iter()
-            .map(IdentityPublicKey::to_owned)
-            .map(|key| IdentityPublicKeyWasm::from(key).to_json().ok())
-            .map(JsValue::from)
-            .collect();
+        let keys_objects = object
+            .public_keys
+            .into_iter()
+            .map(IdentityPublicKeyWasm::from)
+            .map(|key| key.to_json())
+            .collect::<Result<js_sys::Array, _>>()?;
 
-        let js_public_keys = js_sys::Array::new();
-
-        for pk in public_keys {
-            js_public_keys.push(&pk);
-        }
-        js_sys::Reflect::set(
-            &js_object,
-            &"publicKeys".to_owned().into(),
-            &JsValue::from(&js_public_keys),
-        )?;
-
-        // Write type value
-        let transition_type = self.get_type();
-        js_sys::Reflect::set(
-            &js_object,
-            &"type".to_owned().into(),
-            &JsValue::from(transition_type),
-        )?;
-
-        let protocol_version = self.0.get_protocol_version();
-        js_sys::Reflect::set(
-            &js_object,
-            &"protocolVersion".to_owned().into(),
-            &protocol_version.into(),
-        )?;
+        js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
 
         Ok(js_object.into())
     }

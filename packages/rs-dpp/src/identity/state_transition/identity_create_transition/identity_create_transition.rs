@@ -296,7 +296,7 @@ impl StateTransitionLike for IdentityCreateTransition {
     }
     /// returns the type of State Transition
     fn get_type(&self) -> StateTransitionType {
-        StateTransitionType::IdentityTopUp
+        StateTransitionType::IdentityCreate
     }
     /// returns the signature as a byte-array
     fn get_signature(&self) -> &Vec<u8> {
