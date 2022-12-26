@@ -44,7 +44,7 @@ impl DocumentValidator {
 
         let maybe_document_type = raw_document.get(PROPERTY_DOCUMENT_TYPE);
         if maybe_document_type.is_none() {
-            result.add_error(BasicError::MissingDocumentTransitionTypeError);
+            result.add_error(BasicError::MissingDocumentTypeError);
             return Ok(result);
         }
 

@@ -1,6 +1,8 @@
 import * as dpp_module from '../wasm/wasm_dpp';
 import { patchConsensusErrors } from './patchConsensusErrors';
 
+patchConsensusErrors();
+
 // While we declared it above, those fields do not hold any values - let's assign them.
 // We need to suppress the compiler here, as he won't be happy about those reassignments.
 // @ts-ignore
@@ -11,6 +13,8 @@ dpp_module.IdentityPublicKey.PURPOSES = dpp_module.KeyPurpose;
 dpp_module.IdentityPublicKey.SECURITY_LEVELS = dpp_module.KeySecurityLevel;
 
 export * from '../wasm/wasm_dpp';
+export * from './AbstractConsensusError';
+export * from './DPPError';
 
 // Declarations written prior to "export *" will overwrite exports
 export declare class IdentityPublicKey extends dpp_module.IdentityPublicKey {

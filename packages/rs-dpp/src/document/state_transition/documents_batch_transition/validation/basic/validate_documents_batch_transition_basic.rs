@@ -3,6 +3,7 @@ use std::{
     convert::{TryFrom, TryInto},
 };
 
+use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -23,7 +24,6 @@ use crate::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
-use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,

@@ -1,8 +1,8 @@
 export class DPPError extends Error {
-    /**
-     * @param {string} message
-     */
-    constructor(message) {
+    name: string;
+    message: string;
+
+    constructor(message: string) {
         super();
 
         this.name = this.constructor.name;

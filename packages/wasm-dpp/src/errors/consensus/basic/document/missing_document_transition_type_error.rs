@@ -11,7 +11,7 @@ impl MissingDocumentTransitionTypeErrorWasm {
     }
 }
 
-#[wasm_bindgen(js_class=MissingDocumentTypeError)]
+#[wasm_bindgen(js_class=MissingDocumentTransitionTypeError)]
 impl MissingDocumentTransitionTypeErrorWasm {
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {

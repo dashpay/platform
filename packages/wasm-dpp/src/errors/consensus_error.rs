@@ -35,7 +35,11 @@ use crate::errors::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
-use crate::errors::consensus::basic::document::{DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm, InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm};
+use crate::errors::consensus::basic::document::{
+    DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
+    InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm,
+    MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm,
+};
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
     StateTransitionMaxSizeExceededErrorWasm,
@@ -96,7 +100,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IncompatibleProtocolVersionError(e) => {
             IncompatibleProtocolVersionErrorWasm::from(e).into()
         }
-        DPPConsensusError::DuplicatedIdentityPublicKeyIdError(e) => {
+        DPPConsensusError::DuplicatedIdentityPublicKeyBasicIdError(e) => {
             DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()
         }
         DPPConsensusError::InvalidIdentityPublicKeyDataError(e) => {
@@ -105,7 +109,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::InvalidIdentityPublicKeySecurityLevelError(e) => {
             InvalidIdentityPublicKeySecurityLevelErrorWasm::from(e).into()
         }
-        DPPConsensusError::DuplicatedIdentityPublicKeyError(e) => {
+        DPPConsensusError::DuplicatedIdentityPublicKeyBasicError(e) => {
             DuplicatedIdentityPublicKeyErrorWasm::from(e).into()
         }
         DPPConsensusError::MissingMasterPublicKeyError(e) => {
@@ -454,7 +458,10 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             code,
         )
         .into(),
-        BasicError::MissingDocumentTransitionTypeError => MissingDocumentTransitionTypeErrorWasm::new(code).into(),
+        BasicError::MissingDocumentTransitionTypeError => {
+            MissingDocumentTransitionTypeErrorWasm::new(code).into()
+        }
+        BasicError::MissingDocumentTypeError => MissingDocumentTypeErrorWasm::new(code).into(),
         BasicError::MissingDocumentTransitionActionError => {
             MissingDocumentTransitionActionErrorWasm::new(code).into()
         }

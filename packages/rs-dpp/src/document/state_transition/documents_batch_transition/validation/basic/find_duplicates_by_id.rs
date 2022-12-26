@@ -1,9 +1,11 @@
-use std::collections::{hash_map::Entry, HashMap};
 use anyhow::anyhow;
-use sha2::digest::generic_array::functional::FunctionalSequence;
 use serde_json::Value as JsonValue;
+use sha2::digest::generic_array::functional::FunctionalSequence;
+use std::collections::{hash_map::Entry, HashMap};
 
-use crate::document::document_transition::{DocumentBaseTransition, DocumentTransition, DocumentTransitionObjectLike};
+use crate::document::document_transition::{
+    DocumentBaseTransition, DocumentTransition, DocumentTransitionObjectLike,
+};
 use crate::util::string_encoding::Encoding;
 
 /// Find the duplicates in the collection of Document Transitions
@@ -14,7 +16,9 @@ pub fn find_duplicates_by_id<'a>(
     let mut duplicates: Vec<JsonValue> = vec![];
 
     for transition in document_transitions {
-        let fingerprint = create_fingerprint(&transition).ok_or(anyhow!("Can't create fingerprint from a document transition"))?;
+        let fingerprint = create_fingerprint(&transition).ok_or(anyhow!(
+            "Can't create fingerprint from a document transition"
+        ))?;
         match fingerprints.entry(fingerprint.clone()) {
             Entry::Occupied(val) => {
                 duplicates.push(val.get().clone());

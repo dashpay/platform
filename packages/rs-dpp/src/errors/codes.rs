@@ -25,8 +25,8 @@ impl ErrorWithCode for ConsensusError {
             Self::IncompatibleProtocolVersionError(_) => 1003,
 
             // Identity
-            Self::DuplicatedIdentityPublicKeyError(_) => 1029,
-            Self::DuplicatedIdentityPublicKeyIdError(_) => 1030,
+            Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
+            Self::DuplicatedIdentityPublicKeyBasicIdError(_) => 1030,
             Self::IdentityAssetLockProofLockedTransactionMismatchError(_) => 1031,
             Self::IdentityAssetLockTransactionIsNotFoundError(_) => 1032,
             Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 1033,
@@ -105,6 +105,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDocumentTypeError { .. } => 1024,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTransitionActionError { .. } => 1026,
+            Self::MissingDocumentTypeError => 1028,
             Self::InvalidDocumentTransitionIdError { .. } => 1023,
             Self::InvalidDocumentTransitionActionError { .. } => 1022,
 

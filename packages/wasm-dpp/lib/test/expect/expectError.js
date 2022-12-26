@@ -12,7 +12,7 @@ const expectError = {
     const wasmDpp = await loadWasmDpp();
     if (!errorClass) {
       // eslint-disable-next-line no-param-reassign
-      errorClass = TypeError;
+      errorClass = wasmDpp.AbstractConsensusError;
     }
     expect(result).to.be.an.instanceOf(wasmDpp.ValidationResult);
     expect(result.getErrors()).to.have.lengthOf(count);
