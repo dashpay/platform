@@ -27,9 +27,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     getMasternodeScope,
   ) {
     if (config.get('core.masternode.enable') === false) {
-      // eslint-disable-next-line no-console
-      console.log('This is not a masternode!');
-      this.exit();
+      throw new Error('This is not a masternode!');
     }
 
     const scope = await getMasternodeScope(config);

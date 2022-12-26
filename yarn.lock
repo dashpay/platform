@@ -5784,7 +5784,6 @@ __metadata:
     semver: ^7.3.2
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
-    strip-ansi: ^6.0.1
     table: ^5.4.6
   bin:
     dashmate: bin/dashmate

@@ -1,4 +1,3 @@
-const stripAnsi = require('strip-ansi');
 const { table } = require('table');
 
 const { OUTPUT_FORMATS } = require('../constants');
@@ -31,7 +30,7 @@ function printArrayofObjects(array, format) {
       array.forEach((outputRow, i) => {
         const cleanRow = {};
         Object.keys(outputRow).forEach((key) => {
-          cleanRow[key] = stripAnsi(outputRow[key]);
+          cleanRow[key] = outputRow[key];
         });
         cleanArray[i] = cleanRow;
       });

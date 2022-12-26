@@ -1,4 +1,4 @@
-function getPaymentQueuePosition(dmnState, masternodeEnabledCount, coreBlocks) {
+function calculatePaymentQueuePosition(dmnState, masternodeEnabledCount, coreBlocks) {
   let paymentQueuePosition;
   // Masternode has been unbanned recently
   if (dmnState.PoSeRevivedHeight > dmnState.lastPaidHeight) {
@@ -19,4 +19,4 @@ function getPaymentQueuePosition(dmnState, masternodeEnabledCount, coreBlocks) {
   return paymentQueuePosition;
 }
 
-module.exports = getPaymentQueuePosition;
+module.exports = calculatePaymentQueuePosition;

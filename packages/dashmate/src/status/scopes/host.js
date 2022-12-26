@@ -20,7 +20,6 @@ function getHostScopeFactory() {
       platform: os.platform(),
       arch: os.arch(),
       username: os.userInfo().username,
-      diskFree: 0, // Waiting for feature: https://github.com/nodejs/node/pull/31351
       memory: `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`,
       cpus: os.cpus().length,
       ip: await publicIp.v4(),

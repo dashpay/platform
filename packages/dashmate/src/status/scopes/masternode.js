@@ -1,4 +1,4 @@
-const getPaymentQueuePosition = require('../../core/getPaymentQueuePosition');
+const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueuePosition');
 const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
@@ -84,7 +84,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient) {
 
         const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
-        const position = getPaymentQueuePosition(dmnState, enabled, coreBlocks);
+        const position = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
         const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
         const paymentQueuePosition = position / enabled;
         const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;

@@ -24,9 +24,7 @@ class StatusCommand extends ConfigBaseCommand {
     config,
   ) {
     if (!(await dockerCompose.isServiceRunning(config.toEnvs()))) {
-      // eslint-disable-next-line no-console
-      console.log('Regular node is not running! Start it with `dashmate start`');
-      this.exit();
+      throw new Error('Node is not running, start it with `dashmate start`');
     }
 
     const scope = await getOverviewScope(config);

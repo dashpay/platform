@@ -28,9 +28,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     getPlatformScope,
   ) {
     if (config.get('network') === 'mainnet') {
-      // eslint-disable-next-line no-console
-      console.log('Platform is not supported on mainnet yet!');
-      this.exit();
+      throw new Error('Platform is not supported on mainnet yet!');
     }
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
@@ -42,9 +40,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (!scope.coreIsSynced) {
-      // eslint-disable-next-line no-console
-      console.log('Platform status is not available until core sync is complete!');
-      this.exit();
+      throw new Error('Platform status is not available until core sync is complete!');
     }
 
     const {

@@ -7729,7 +7729,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["semver", "npm:7.3.8"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
-            ["strip-ansi", "npm:6.0.1"],\
             ["table", "npm:5.4.6"]\
           ],\
           "linkType": "SOFT"\

@@ -8,7 +8,8 @@
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": "mocha --recursive test/",
+    "test": "yarn run test:unit",
+    "test:unit": "mocha --recursive test/unit",
     "helper": "node scripts/helper.js"
   },
   "repository": {
@@ -85,7 +86,6 @@
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
     "semver": "^7.3.2",
-    "strip-ansi": "^6.0.1",
     "table": "^5.4.6"
   },
   "devDependencies": {
