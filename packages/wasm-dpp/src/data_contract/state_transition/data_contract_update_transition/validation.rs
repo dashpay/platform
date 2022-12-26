@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 use crate::{
     errors::{from_dpp_err, protocol_error::from_protocol_error},
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    validation_result::ValidationResultWasm,
+    validation::ValidationResultWasm,
     DataContractUpdateTransitionWasm,
 };
 
