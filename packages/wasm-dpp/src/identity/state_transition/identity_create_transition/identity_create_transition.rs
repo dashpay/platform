@@ -17,6 +17,7 @@ use crate::{
     with_js_error,
 };
 
+use crate::utils::ToSerdeJSONExt;
 use dpp::{
     identifier::Identifier,
     identity::{
