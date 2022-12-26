@@ -7,10 +7,11 @@ pub use instant::*;
 use crate::errors::RustConversionError;
 use wasm_bindgen::prelude::*;
 
+use crate::identifier::IdentifierWrapper;
 use crate::Deserialize;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[wasm_bindgen(js_name=AssetLockProof)]
 pub struct AssetLockProofWasm(AssetLockProof);
 
@@ -26,6 +27,22 @@ impl From<AssetLockProofWasm> for AssetLockProof {
     }
 }
 
+impl From<InstantAssetLockProofWasm> for AssetLockProofWasm {
+    fn from(f: InstantAssetLockProofWasm) -> Self {
+        AssetLockProof::Instant(f.into()).into()
+    }
+}
+
+impl From<ChainAssetLockProofWasm> for AssetLockProofWasm {
+    fn from(f: ChainAssetLockProofWasm) -> Self {
+        AssetLockProof::Chain(f.into()).into()
+    }
+}
+
+pub trait AssetLockProofLike {
+    fn to_object(&self) -> Result<JsValue, JsValue>;
+}
+
 #[wasm_bindgen(js_class = AssetLockProof)]
 impl AssetLockProofWasm {
     #[wasm_bindgen(constructor)]
@@ -33,16 +50,36 @@ impl AssetLockProofWasm {
         let lock_type = get_lock_type(&raw_asset_lock_proof)?;
 
         match lock_type {
-            0 => Ok(Self::from(AssetLockProof::Instant(
-                InstantAssetLockProofWasm::new(raw_asset_lock_proof)?.into(),
-            ))),
-            1 => Ok(Self::from(AssetLockProof::Chain(
-                ChainAssetLockProofWasm::new(raw_asset_lock_proof)?.into(),
-            ))),
+            0 => Ok(InstantAssetLockProofWasm::new(raw_asset_lock_proof)?.into()),
+            1 => Ok(ChainAssetLockProofWasm::new(raw_asset_lock_proof)?.into()),
             _ => Err(
                 RustConversionError::Error(String::from("unrecognized asset lock type"))
                     .to_js_value(),
             ),
+        }
+    }
+
+    #[wasm_bindgen(js_name=createIdentifier)]
+    pub fn create_identifier(&self) -> Result<IdentifierWrapper, JsValue> {
+        match &self.0 {
+            AssetLockProof::Instant(instant) => {
+                InstantAssetLockProofWasm::from(instant.to_owned().clone()).create_identifier()
+            }
+            AssetLockProof::Chain(chain) => {
+                ChainAssetLockProofWasm::from(chain.to_owned().clone()).create_identifier()
+            }
+        }
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        match &self.0 {
+            AssetLockProof::Instant(instant) => {
+                InstantAssetLockProofWasm::from(instant.to_owned().clone()).to_object()
+            }
+            AssetLockProof::Chain(chain) => {
+                ChainAssetLockProofWasm::from(chain.to_owned().clone()).to_object()
+            }
         }
     }
 }

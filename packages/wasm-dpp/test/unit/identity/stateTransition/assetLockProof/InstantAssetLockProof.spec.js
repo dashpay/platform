@@ -45,7 +45,6 @@ describe('InstantAssetLockProof', () => {
   });
 
   describe('#getOutPoint', () => {
-    // Buffers mismatch
     it('should return correct outPoint', () => {
       expect(instantAssetLockProof.getOutPoint())
         .to.deep.equal(instantAssetLockProofJS.getOutPoint());

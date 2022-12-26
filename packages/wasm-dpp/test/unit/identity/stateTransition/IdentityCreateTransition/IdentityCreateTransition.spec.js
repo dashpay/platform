@@ -12,6 +12,7 @@ describe('IdentityCreateTransition', () => {
   let KeyPurpose;
   let KeySecurityLevel;
   let IdentityPublicKey;
+  let AssetLockProof;
 
   const mockRawPublicKey = (params = {}) => ({
     id: 0,
@@ -27,6 +28,7 @@ describe('IdentityCreateTransition', () => {
   before(async () => {
     ({
       IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
+      AssetLockProof,
     } = await loadWasmDpp());
   });
 
@@ -64,20 +66,21 @@ describe('IdentityCreateTransition', () => {
   });
 
   describe('#setAssetLockProof', () => {
-    it('should set asset lock proof', () => {
-      stateTransition.setAssetLockProof(
-        stateTransitionJS.assetLockProof.toObject(),
-      );
+    let assetLockProofObject;
+    beforeEach(() => {
+      const assetLockProof = new AssetLockProof(getChainAssetLockProofFixture().toObject());
+      assetLockProofObject = assetLockProof.toObject();
+      stateTransition.setAssetLockProof(assetLockProof);
+    });
 
+    it('should set asset lock proof', () => {
       expect(stateTransition.assetLockProof.toObject())
-        .to.deep.equal(stateTransitionJS.assetLockProof.toObject());
+        .to.deep.equal(assetLockProofObject);
     });
 
     it('should set `identityId`', () => {
       stateTransition.setAssetLockProof(
-        // TODO: method accepts JS value and errors if we pass instances of wasm's AssetLockProof
-        // Should it be fixed?
-        stateTransition.assetLockProof.toObject(),
+        stateTransition.assetLockProof,
       );
 
       expect(stateTransition.identityId.toBuffer()).to.deep.equal(
@@ -87,7 +90,7 @@ describe('IdentityCreateTransition', () => {
   });
 
   describe('#getAssetLockProof', () => {
-    it('should return currently set locked OutPoint', () => {
+    it('should return currently set locked asset lock proof', () => {
       expect(stateTransition.getAssetLockProof().toObject()).to.deep.equal(
         stateTransitionJS.assetLockProof.toObject(),
       );
