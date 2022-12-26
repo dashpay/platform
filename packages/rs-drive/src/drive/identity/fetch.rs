@@ -124,19 +124,14 @@ impl Drive {
             transaction,
             drive_operations,
         ) {
-            Ok(Some(SumItem(identity_balance, _element_flags))) => {
-                if identity_balance < 0 {
-                    return Err(Error::Drive(DriveError::CorruptedElementType(
-                        "identity balance was present but was negative",
-                    )));
-                }
-
-                Ok(Some(identity_balance as Credits))
-            }
+            Ok(Some(SumItem(balance, _))) if balance >= 0 => Ok(Some(balance as Credits)),
+            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+            Ok(Some(SumItem(..))) => Err(Error::Drive(DriveError::CorruptedElementType(
+                "identity balance was present but was negative",
+            ))),
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "identity balance was present but was not identified as a sum item",
             ))),
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
             Err(e) => Err(e),
         }
     }
