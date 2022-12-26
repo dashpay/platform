@@ -124,13 +124,7 @@ impl Drive {
             transaction,
             drive_operations,
         ) {
-            Ok(Some(identity_balance_element)) => {
-                let SumItem(identity_balance, _element_flags) = identity_balance_element else {
-                    return Err(Error::Drive(DriveError::CorruptedElementType(
-                        "identity balance was present but was not identified as a sum item",
-                    )))
-                };
-
+            Ok(Some(SumItem(identity_balance, _element_flags))) => {
                 if identity_balance < 0 {
                     return Err(Error::Drive(DriveError::CorruptedElementType(
                         "identity balance was present but was negative",
@@ -139,6 +133,9 @@ impl Drive {
 
                 Ok(Some(identity_balance as Credits))
             }
+            Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
+                "identity balance was present but was not identified as a sum item",
+            ))),
             Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
             Err(e) => Err(e),
         }
