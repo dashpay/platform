@@ -21,7 +21,7 @@ const MAX_DOCUMENTS: usize = 16;
 pub async fn create_masternode_reward_shares_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
-    _top_level_identity: Option<&Identifier>,
+    _top_level_identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
     SR: StateRepositoryLike,
@@ -70,7 +70,7 @@ where
 
     // payToId identity exists
     let pay_to_identifier = Identifier::from_string(pay_to_id, Encoding::Base58)?;
-    let maybe_identifier = context
+    let maybe_identity = context
         .state_repository
         .fetch_identity(
             &pay_to_identifier,
@@ -78,7 +78,7 @@ where
         )
         .await?;
 
-    if !is_dry_run && maybe_identifier.is_none() {
+    if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
             dt_create,
@@ -139,6 +139,7 @@ mod test {
     use itertools::Itertools;
     use serde_json::json;
 
+    use crate::identity::Identity;
     use crate::{
         data_contract::DataContract,
         data_trigger::DataTriggerExecutionContext,
@@ -160,22 +161,23 @@ mod test {
     };
 
     struct TestData {
-        top_level_identity: Identifier,
+        top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
         documents: Vec<Document>,
         document_transition: DocumentTransition,
+        identity: Identity,
     }
 
     fn setup_test() -> TestData {
-        let top_level_identity_hex =
+        let top_level_identifier_hex =
             "c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562";
-        let top_level_identity =
-            Identifier::from_bytes(&hex::decode(top_level_identity_hex).unwrap()).unwrap();
+        let top_level_identifier =
+            Identifier::from_bytes(&hex::decode(top_level_identifier_hex).unwrap()).unwrap();
 
         let sml_entries: Vec<SMLEntry> = vec![
             SMLEntry {
-          pro_reg_tx_hash: top_level_identity_hex.to_string(),
+          pro_reg_tx_hash: top_level_identifier_hex.to_string(),
           confirmed_hash: "4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119".to_string(),
           service: "192.168.65.2:20101".to_string(),
           pub_key_operator: "809519c5f6f3be1c08782ac42ae9a83b6c7205eba43f9a96a4f032ec7a73f1a7c25fa78cce0d6d9c135f7e2c28527179".to_string(),
@@ -208,9 +210,10 @@ mod test {
         TestData {
             documents,
             data_contract,
-            top_level_identity,
+            top_level_identifier,
             sml_store,
             document_transition: document_transitions[0].clone(),
+            identity: Identity::default(),
         }
     }
 
@@ -238,7 +241,7 @@ mod test {
             documents,
             sml_store,
             data_contract,
-            top_level_identity,
+            top_level_identifier,
             ..
         } = setup_test();
 
@@ -247,7 +250,7 @@ mod test {
             .expect_fetch_sml_store()
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
-            .expect_fetch_identity::<Vec<u8>>()
+            .expect_fetch_identity()
             .returning(|_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents()
@@ -259,7 +262,7 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &top_level_identity,
+            owner_id: &top_level_identifier,
             state_repository: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
@@ -281,7 +284,7 @@ mod test {
             document_transition,
             sml_store,
             data_contract,
-            top_level_identity,
+            top_level_identifier,
             ..
         } = setup_test();
 
@@ -290,7 +293,7 @@ mod test {
             .expect_fetch_sml_store()
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
-            .expect_fetch_identity::<Vec<u8>>()
+            .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents::<Document>()
@@ -299,7 +302,7 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &top_level_identity,
+            owner_id: &top_level_identifier,
             state_repository: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
@@ -338,7 +341,7 @@ mod test {
             .expect_fetch_sml_store()
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
-            .expect_fetch_identity::<Vec<u8>>()
+            .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents::<Document>()
@@ -368,18 +371,18 @@ mod test {
             document_transition,
             sml_store,
             data_contract,
-            top_level_identity,
+            top_level_identifier,
+            identity,
             ..
         } = setup_test();
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
-        let identity_to_return = top_level_identity.as_bytes().to_vec();
         state_repository_mock
             .expect_fetch_sml_store()
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
-            .expect_fetch_identity::<Vec<u8>>()
-            .returning(move |_, _| Ok(Some(identity_to_return.clone())));
+            .expect_fetch_identity()
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_repository_mock
             .expect_fetch_documents::<Document>()
             .returning(move |_, _, _, _| Ok(vec![]));
@@ -387,7 +390,7 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &top_level_identity,
+            owner_id: &top_level_identifier,
             state_repository: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
@@ -404,18 +407,18 @@ mod test {
             document_transition,
             sml_store,
             data_contract,
-            top_level_identity,
+            top_level_identifier,
+            identity,
             ..
         } = setup_test();
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
-        let identity_to_return = top_level_identity.as_bytes().to_vec();
         state_repository_mock
             .expect_fetch_sml_store()
             .returning(move || Ok(sml_store.clone()));
         state_repository_mock
-            .expect_fetch_identity::<Vec<u8>>()
-            .returning(move |_, _| Ok(Some(identity_to_return.clone())));
+            .expect_fetch_identity()
+            .returning(move |_, _| Ok(Some(identity.clone())));
         let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
         state_repository_mock
             .expect_fetch_documents::<Document>()
@@ -424,7 +427,7 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &top_level_identity,
+            owner_id: &top_level_identifier,
             state_repository: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
@@ -445,13 +448,13 @@ mod test {
         let TestData {
             document_transition,
             data_contract,
-            top_level_identity,
+            top_level_identifier,
             ..
         } = setup_test();
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_identity::<Vec<u8>>()
+            .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
             .expect_fetch_documents::<Document>()
@@ -462,7 +465,7 @@ mod test {
 
         let context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &top_level_identity,
+            owner_id: &top_level_identifier,
             state_repository: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };

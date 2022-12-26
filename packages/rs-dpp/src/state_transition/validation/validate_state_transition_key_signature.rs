@@ -145,7 +145,6 @@ mod test {
             },
             KeyType,
         },
-        prelude::Identity,
         state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionConvert, StateTransitionLike},
         tests::{
@@ -301,7 +300,7 @@ mod test {
                 .into();
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .return_once(|_, _| Ok(None));
 
         let result = validate_state_transition_key_signature(

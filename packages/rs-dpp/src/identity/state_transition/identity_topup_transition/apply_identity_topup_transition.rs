@@ -89,7 +89,6 @@ mod test {
             asset_lock_proof::AssetLockTransactionOutputFetcher,
             identity_topup_transition::IdentityTopUpTransition,
         },
-        prelude::Identity,
         state_repository::MockStateRepositoryLike,
         state_transition::StateTransitionLike,
         tests::fixtures::identity_topup_transition_fixture_json,
@@ -106,7 +105,7 @@ mod test {
         let state_repository_for_fetcher = MockStateRepositoryLike::new();
 
         state_repository_for_apply
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .return_once(|_, _| Ok(None));
         state_repository_for_apply
             .expect_update_identity()

@@ -329,7 +329,7 @@ mod test {
 
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
 
         let result = validate_state_transition_identity_signature(
