@@ -283,8 +283,13 @@ fn should_return_invalid_result_if_non_unique_index_added_for_non_indexed_proper
     assert_eq!(result.errors()[0].code(), 0);
 
     let basic_error = get_basic_error(&result, 0);
-    matches!(basic_error, BasicError::DataContractInvalidIndexDefinitionUpdateError { document_type, index_name }if {
+    assert!(matches!(
+        basic_error,
+        BasicError::DataContractInvalidIndexDefinitionUpdateError {
+            document_type,
+            index_name,
+        } if {
         document_type == "indexedDocument" &&
         index_name == "index1337"
-    });
+    }));
 }

@@ -29,9 +29,9 @@ impl From<DataContractUpdateTransition> for DataContractUpdateTransitionWasm {
     }
 }
 
-impl Into<DataContractUpdateTransition> for DataContractUpdateTransitionWasm {
-    fn into(self) -> DataContractUpdateTransition {
-        self.0
+impl From<DataContractUpdateTransitionWasm> for DataContractUpdateTransition {
+    fn from(val: DataContractUpdateTransitionWasm) -> Self {
+        val.0
     }
 }
 
@@ -69,7 +69,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.protocol_version.into()
+        self.0.protocol_version
     }
 
     #[wasm_bindgen(js_name=getEntropy)]

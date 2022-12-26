@@ -1,14 +1,8 @@
 use std::collections::BTreeMap;
 
-use dpp::{
-    data_contract::{
-        state_transition::data_contract_update_transition::validation::{
-            basic::validate_indices_are_backward_compatible as dpp_validate_indices_are_backward_compatible,
-            state::validate_data_contract_update_transition_state::validate_data_contract_update_transition_state as dpp_validate_data_contract_update_transition_state,
-        },
-        DataContract,
-    },
-    document::Document,
+use dpp::data_contract::state_transition::data_contract_update_transition::validation::{
+    basic::validate_indices_are_backward_compatible as dpp_validate_indices_are_backward_compatible,
+    state::validate_data_contract_update_transition_state::validate_data_contract_update_transition_state as dpp_validate_data_contract_update_transition_state,
 };
 use wasm_bindgen::prelude::*;
 
@@ -16,7 +10,7 @@ use crate::{
     errors::{from_dpp_err, protocol_error::from_protocol_error},
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation_result::ValidationResultWasm,
-    DataContractUpdateTransitionWasm, DataContractWasm,
+    DataContractUpdateTransitionWasm,
 };
 
 #[wasm_bindgen(js_name=validateDataContractUpdateTransitionState)]
