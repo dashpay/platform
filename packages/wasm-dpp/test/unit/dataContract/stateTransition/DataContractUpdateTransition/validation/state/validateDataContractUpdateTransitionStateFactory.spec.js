@@ -7,7 +7,6 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   let validateDataContractUpdateTransitionState;
   let dataContract;
   let stateTransition;
-  let stateRepositoryMock;
   let executionContext;
   let DataContractUpdateTransition;
   let StateTransitionExecutionContext;
@@ -16,6 +15,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   let factory;
   let DataContractNotPresentError;
   let InvalidDataContractVersionError;
+  let ValidationResult;
 
   before(async () => {
     ({
@@ -62,8 +62,12 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       fetchDataContract: () => undefined,
     };
 
-    const factory = (t) => validateDataContractUpdateTransitionState(stateRepositoryLikeNoDataContract, t);
-    const result = await factory(stateTransition);
+    const factoryNoDataContract = (t) => validateDataContractUpdateTransitionState(
+      stateRepositoryLikeNoDataContract,
+      t,
+    );
+
+    const result = await factoryNoDataContract(stateTransition);
 
     expect(result.isValid()).to.be.false();
 
@@ -77,12 +81,12 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   it('should return invalid result if Data Contract version is not larger by 1', async () => {
     const badlyUpdatedRawDataContract = dataContract.toObject();
     badlyUpdatedRawDataContract.version += 2;
-    
-    badStateTransition = new DataContractUpdateTransition({
+
+    const badStateTransition = new DataContractUpdateTransition({
       dataContract: badlyUpdatedRawDataContract,
       protocolVersion: protocolVersion.latestVersion,
     });
-    
+
     const result = await factory(badStateTransition);
 
     expect(result.isValid()).to.be.false();
@@ -99,21 +103,23 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  // it('should return valid result on dry run', async () => {
-  //   stateRepositoryMock.fetchDataContract.resolves(undefined);
+  it('should return valid result on dry run', async () => {
+    const stateRepositoryLikeNoDataContract = {
+      fetchDataContract: () => undefined,
+    };
 
-  //   executionContext.enableDryRun();
+    const factoryNoDataContract = (t) => validateDataContractUpdateTransitionState(
+      stateRepositoryLikeNoDataContract,
+      t,
+    );
 
-  //   const result = await validateDataContractUpdateTransitionState(stateTransition);
+    executionContext.enableDryRun();
 
-  //   executionContext.disableDryRun();
+    const result = await factoryNoDataContract(stateTransition);
 
-  //   expect(result).to.be.an.instanceOf(ValidationResult);
-  //   expect(result.isValid()).to.be.true();
+    executionContext.disableDryRun();
 
-  //   expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
-  //     dataContract.getId(),
-  //     executionContext,
-  //   );
-  // });
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+  });
 });

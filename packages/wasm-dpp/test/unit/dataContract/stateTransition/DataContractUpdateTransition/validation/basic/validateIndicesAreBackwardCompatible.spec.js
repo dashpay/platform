@@ -8,7 +8,6 @@ describe('validateIndicesAreBackwardCompatible', () => {
   let validateIndicesAreBackwardCompatible;
   let DataContractUniqueIndicesChangedError;
   let DataContractInvalidIndexDefinitionUpdateError;
-  let DataContractHaveNewIndexWithOldPropertiesError;
   let DataContractHaveNewUniqueIndexError;
 
   before(async () => {
@@ -74,10 +73,10 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
   it('should return invalid result if non-unique index update failed due old properties used', async () => {
     newDocumentsSchema.indexedDocument.indices.push({
-      name: "oldFieldIndex",
+      name: 'oldFieldIndex',
       properties: [
         {
-          otherProperty: "asc",
+          otherProperty: 'asc',
         },
       ],
     });
@@ -89,7 +88,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     const error = result.getErrors()[0];
 
     expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
-    expect(error.getIndexName()).to.equal("oldFieldIndex");
+    expect(error.getIndexName()).to.equal('oldFieldIndex');
   });
 
   it('should return invalid result if one of new indices contains old properties in the wrong order', async () => {
