@@ -39,6 +39,13 @@ class SignatureVerificationOperation extends AbstractOperation {
   }
 
   /**
+   * @return {{identifier: Buffer, creditsPerEpoch: Object<string, number>}[]}
+   */
+  getRefunds() {
+    return [];
+  }
+
+  /**
    * @return {{signatureType: number, type: string}}
    */
   toJSON() {

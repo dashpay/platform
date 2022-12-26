@@ -56,7 +56,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::CalculatedCostOperation;
-use grovedb::operations::delete::DeleteOptions;
+use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::Error as GroveError;
@@ -285,6 +285,7 @@ impl Drive {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
+            validate_tree_at_path_exists: false,
         };
         let cost_context = self.grove.delete(path, key, Some(options), transaction);
         push_drive_operation_result(cost_context, drive_operations)
@@ -742,6 +743,7 @@ impl Drive {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
+            validate_tree_at_path_exists: false,
         };
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
@@ -763,7 +765,6 @@ impl Drive {
                 path,
                 key,
                 &options,
-                true,
                 is_known_to_be_subtree_with_sum,
                 &current_batch_operations.operations,
                 transaction,
@@ -806,17 +807,17 @@ impl Drive {
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
             } => {
-                let options = DeleteOptions {
+                let options = DeleteUpTreeOptions {
                     allow_deleting_non_empty_trees: false,
                     deleting_non_empty_trees_returns_error: true,
                     base_root_storage_is_free: true,
+                    validate_tree_at_path_exists: false,
+                    stop_path_height,
                 };
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
                     path.to_path_refs(),
                     key,
-                    stop_path_height,
                     &options,
-                    true,
                     is_known_to_be_subtree_with_sum,
                     current_batch_operations.operations,
                     transaction,
@@ -870,7 +871,7 @@ impl Drive {
             return Err(Error::Drive(DriveError::BatchIsEmpty()));
         }
         if self.config.batching_enabled {
-            //println!("batch {:#?}", ops);
+            // println!("batch {:#?}", ops);
             if self.config.batching_consistency_verification {
                 let consistency_results =
                     GroveDbOp::verify_consistency_of_operations(&ops.operations);

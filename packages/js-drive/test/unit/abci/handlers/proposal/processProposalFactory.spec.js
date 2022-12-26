@@ -12,8 +12,6 @@ const {
 
 const Long = require('long');
 
-const FeeResult = require('@dashevo/rs-drive/FeeResult');
-
 const processProposalHandlerFactory = require('../../../../../lib/abci/handlers/proposal/processProposalFactory');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
@@ -55,18 +53,29 @@ describe('processProposalFactory', () => {
         appVersion: 1,
       },
     });
+
     validatorSetUpdate = new ValidatorSetUpdate();
 
     beginBlockMock = this.sinon.stub();
+
     endBlockMock = this.sinon.stub().resolves({
       consensusParamUpdates,
       appHash,
       validatorSetUpdate,
     });
+
     deliverTxMock = this.sinon.stub().resolves({
       code: 0,
-      fees: FeeResult.create(1, 2),
+      fees: {
+        processingFee: 10,
+        storageFee: 100,
+        feeRefunds: {
+          1: 15,
+        },
+        feeRefundsSum: 15,
+      },
     });
+
     beginBlockMock = this.sinon.stub();
 
     executionTimerMock = {
@@ -142,14 +151,16 @@ describe('processProposalFactory', () => {
     expect(endBlockMock).to.be.calledOnceWithExactly({
       height: request.height,
       round,
-      fees: FeeResult.create(),
+      fees: {
+        processingFee: 10 * 3,
+        storageFee: 100 * 3,
+        feeRefunds: {
+          1: 15 * 3,
+        },
+        feeRefundsSum: 15 * 3,
+      },
       coreChainLockedHeight: request.coreChainLockedHeight,
     },
     loggerMock);
-
-    const { fees } = endBlockMock.getCall(0).args[0];
-
-    expect(fees.storageFee).to.equal(3);
-    expect(fees.processingFee).to.equal(6);
   });
 });

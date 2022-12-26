@@ -1256,7 +1256,8 @@ impl<'a> DriveQuery<'a> {
         for (_, value, _) in key_value_elements.iter_mut() {
             let element = Element::deserialize(value).unwrap();
             match element {
-                Element::Item(val, _) | Element::SumItem(val, _) => values.push(val),
+                Element::Item(val, _) => values.push(val),
+                Element::SumItem(val, _) => values.push(val.to_be_bytes().to_vec()),
                 Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
                     return Err(Error::GroveDB(GroveError::InvalidQuery(
                         "path query should only point to items: got trees",

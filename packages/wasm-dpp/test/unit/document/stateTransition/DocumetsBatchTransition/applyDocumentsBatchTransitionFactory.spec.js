@@ -66,7 +66,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTimeMs);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
 
     fetchDocumentsMock = this.sinonSandbox.stub();
     fetchDocumentsMock.resolves([

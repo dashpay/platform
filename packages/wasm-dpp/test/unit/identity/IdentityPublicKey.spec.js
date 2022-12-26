@@ -4,24 +4,18 @@ describe('IdentityPublicKey', () => {
   let rawPublicKey;
   let publicKey;
   let IdentityPublicKey;
-  let KeyPurpose;
-  let KeyType;
-  let KeySecurityLevel;
 
   beforeEach(async () => {
-    ({
-      IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
-    } = await loadWasmDpp());
+    ({ IdentityPublicKey } = await loadWasmDpp());
 
     rawPublicKey = {
       id: 0,
-      type: KeyType.ECDSA_SECP256K1,
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
-      purpose: KeyPurpose.AUTHENTICATION,
-      securityLevel: KeySecurityLevel.MASTER,
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
     };
-
     publicKey = new IdentityPublicKey(rawPublicKey);
   });
 
@@ -89,9 +83,9 @@ describe('IdentityPublicKey', () => {
 
   describe('#setPurpose', () => {
     it('should set data', () => {
-      publicKey.setPurpose(KeyPurpose.DECRYPTION);
+      publicKey.setPurpose(IdentityPublicKey.PURPOSES.DECRYPTION);
 
-      expect(publicKey.getPurpose()).to.equal(KeyPurpose.DECRYPTION);
+      expect(publicKey.getPurpose()).to.equal(IdentityPublicKey.PURPOSES.DECRYPTION);
     });
   });
 
@@ -103,9 +97,9 @@ describe('IdentityPublicKey', () => {
 
   describe('#setSecurityLevel', () => {
     it('should set data', () => {
-      publicKey.setSecurityLevel(KeySecurityLevel.MEDIUM);
+      publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
-      expect(publicKey.getSecurityLevel()).to.equal(KeySecurityLevel.MEDIUM);
+      expect(publicKey.getSecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
     });
   });
 
@@ -151,10 +145,10 @@ describe('IdentityPublicKey', () => {
     it('should return data in case ECDSA_HASH160', () => {
       rawPublicKey = {
         id: 0,
-        type: KeyType.ECDSA_HASH160,
+        type: IdentityPublicKey.TYPES.ECDSA_HASH160,
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
         disabledAt: 123,
       };
@@ -171,10 +165,10 @@ describe('IdentityPublicKey', () => {
     it('should return original public key hash in case BLS12_381', () => {
       rawPublicKey = {
         id: 0,
-        type: KeyType.BLS12_381,
+        type: IdentityPublicKey.TYPES.BLS12_381,
         data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
         disabledAt: 123,
       };
@@ -191,10 +185,10 @@ describe('IdentityPublicKey', () => {
     it('should return data in case BIP13_SCRIPT_HASH', () => {
       rawPublicKey = {
         id: 0,
-        type: KeyType.BIP13_SCRIPT_HASH,
+        type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
         data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
         disabledAt: 123,
       };
@@ -215,10 +209,10 @@ describe('IdentityPublicKey', () => {
 
       expect(jsonPublicKey).to.deep.equal({
         id: 0,
-        type: KeyType.ECDSA_SECP256K1,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
       });
     });
@@ -230,10 +224,10 @@ describe('IdentityPublicKey', () => {
 
       expect(jsonPublicKey).to.deep.equal({
         id: 0,
-        type: KeyType.ECDSA_SECP256K1,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
         disabledAt: 42,
       });
@@ -242,7 +236,7 @@ describe('IdentityPublicKey', () => {
 
   describe('#isMaster', () => {
     it('should return true when public key has MASTER security level', () => {
-      publicKey.setSecurityLevel(KeySecurityLevel.MASTER);
+      publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
       const result = publicKey.isMaster();
 
@@ -250,7 +244,7 @@ describe('IdentityPublicKey', () => {
     });
 
     it('should return false when public key doesn\'t have MASTER security level', () => {
-      publicKey.setSecurityLevel(KeySecurityLevel.HIGH);
+      publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
 
       const result = publicKey.isMaster();
 

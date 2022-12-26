@@ -27,7 +27,7 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
-use dpp::StateError;
+use dpp::{ProtocolError, StateError};
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
@@ -36,8 +36,9 @@ use crate::errors::consensus::basic::data_contract::{
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
-    DuplicateDocumentTransitionsWithIdsError, InvalidDocumentTransitionActionErrorWasm,
-    InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm,
+    DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
+    InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm,
+    MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm,
 };
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -62,7 +63,7 @@ use crate::errors::consensus::state::identity::{
 use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
-    DataContractMaxDepthErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
+    DataContractMaxDepthExceedErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
     IncompatibleRe2PatternErrorWasm, InvalidCompoundIndexErrorWasm,
     InvalidDataContractVersionErrorWasm, InvalidIndexPropertyTypeErrorWasm,
     InvalidIndexedPropertyConstraintErrorWasm, InvalidJsonSchemaRefErrorWasm,
@@ -75,7 +76,7 @@ use super::consensus::basic::decode::{
 use super::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
     InvalidDocumentTypeErrorWasm, MissingDocumentTransitionActionErrorWasm,
-    MissingDocumentTypeErrorWasm,
+    MissingDocumentTransitionTypeErrorWasm,
 };
 use super::consensus::basic::identity::{
     InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
@@ -99,7 +100,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::IncompatibleProtocolVersionError(e) => {
             IncompatibleProtocolVersionErrorWasm::from(e).into()
         }
-        DPPConsensusError::DuplicatedIdentityPublicKeyIdError(e) => {
+        DPPConsensusError::DuplicatedIdentityPublicKeyBasicIdError(e) => {
             DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()
         }
         DPPConsensusError::InvalidIdentityPublicKeyDataError(e) => {
@@ -108,7 +109,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::InvalidIdentityPublicKeySecurityLevelError(e) => {
             InvalidIdentityPublicKeySecurityLevelErrorWasm::from(e).into()
         }
-        DPPConsensusError::DuplicatedIdentityPublicKeyError(e) => {
+        DPPConsensusError::DuplicatedIdentityPublicKeyBasicError(e) => {
             DuplicatedIdentityPublicKeyErrorWasm::from(e).into()
         }
         DPPConsensusError::MissingMasterPublicKeyError(e) => {
@@ -351,7 +352,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             version,
         } => InvalidDataContractVersionErrorWasm::new(*expected_version, *version, code).into(),
         BasicError::DataContractMaxDepthExceedError(depth) => {
-            DataContractMaxDepthErrorWasm::new(*depth, code).into()
+            DataContractMaxDepthExceedErrorWasm::new(*depth, code).into()
         }
         BasicError::InvalidDocumentTypeError {
             document_type,
@@ -457,6 +458,9 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             code,
         )
         .into(),
+        BasicError::MissingDocumentTransitionTypeError => {
+            MissingDocumentTransitionTypeErrorWasm::new(code).into()
+        }
         BasicError::MissingDocumentTypeError => MissingDocumentTypeErrorWasm::new(code).into(),
         BasicError::MissingDocumentTransitionActionError => {
             MissingDocumentTransitionActionErrorWasm::new(code).into()
@@ -472,8 +476,11 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             InvalidDocumentTransitionIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code)
                 .into()
         }
+        BasicError::DuplicateDocumentTransitionsWithIndicesError { references } => {
+            DuplicateDocumentTransitionsWithIndicesErrorWasm::new(references.clone(), code).into()
+        }
         BasicError::DuplicateDocumentTransitionsWithIdsError { references } => {
-            DuplicateDocumentTransitionsWithIdsError::new(references.clone(), code).into()
+            DuplicateDocumentTransitionsWithIdsErrorWasm::new(references.clone(), code).into()
         }
         BasicError::MissingDataContractIdError => MissingDataContractIdErrorWasm::new(code).into(),
         BasicError::InvalidIdentifierError {

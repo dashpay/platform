@@ -16,7 +16,7 @@ use crate::{
         consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
         RustConversionError,
     },
-    validation_result::ValidationResultWasm,
+    validation::ValidationResultWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
 

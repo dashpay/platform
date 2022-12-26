@@ -25,8 +25,8 @@ impl ErrorWithCode for ConsensusError {
             Self::IncompatibleProtocolVersionError(_) => 1003,
 
             // Identity
-            Self::DuplicatedIdentityPublicKeyError(_) => 1029,
-            Self::DuplicatedIdentityPublicKeyIdError(_) => 1030,
+            Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
+            Self::DuplicatedIdentityPublicKeyBasicIdError(_) => 1030,
             Self::IdentityAssetLockProofLockedTransactionMismatchError(_) => 1031,
             Self::IdentityAssetLockTransactionIsNotFoundError(_) => 1032,
             Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 1033,
@@ -103,12 +103,14 @@ impl ErrorWithCode for BasicError {
             // Document
             Self::DataContractNotPresent { .. } => 1018,
             Self::InvalidDocumentTypeError { .. } => 1024,
-            Self::MissingDocumentTypeError { .. } => 1027,
+            Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTransitionActionError { .. } => 1026,
+            Self::MissingDocumentTypeError => 1028,
             Self::InvalidDocumentTransitionIdError { .. } => 1023,
             Self::InvalidDocumentTransitionActionError { .. } => 1022,
 
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
+            Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
             Self::MissingDataContractIdError => 1025,
             Self::InvalidIdentifierError { .. } => 1006,
 
@@ -122,7 +124,7 @@ impl ErrorWithCode for BasicError {
             Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
             Self::IncompatibleDataContractSchemaError { .. } => 1051,
 
-            Self::DataContractUniqueIndicesChangedError { .. } => 4016,
+            Self::DataContractUniqueIndicesChangedError { .. } => 1053,
             // TODO  -  they don't have error codes in  https://github.com/dashevo/platform/blob/25ab6d8a38880eaff6ac119126b2ee5991b2a5aa/packages/js-dpp/lib/errors/consensus/codes.js
             Self::DataContractHaveNewUniqueIndexError { .. } => 0,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
