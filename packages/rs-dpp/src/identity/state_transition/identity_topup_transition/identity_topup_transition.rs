@@ -143,7 +143,11 @@ impl IdentityTopUpTransition {
         }
 
         if !options.skip_identifiers_conversion {
-            let bytes = self.identity_id.iter().map(|num| JsonValue::from(*num));
+            let bytes = self
+                .identity_id
+                .buffer
+                .iter()
+                .map(|num| JsonValue::from(*num));
             json_map.insert(
                 property_names::IDENTITY_ID.to_string(),
                 JsonValue::Array(bytes.collect()),
