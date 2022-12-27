@@ -3,7 +3,7 @@
   "version": "0.24.0-dev.11",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/lib/index.d.ts",
   "scripts": {
     "build": "yarn exec scripts/build.sh && webpack",
     "test": "yarn run test:node && yarn run test:browsers",

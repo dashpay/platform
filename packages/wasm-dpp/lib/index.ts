@@ -1,7 +1,8 @@
-import init, * as dpp_module from './wasm/wasm_dpp';
+import init from '../wasm/wasm_dpp';
+import * as dpp_module from './dpp';
 // @ts-ignore
-import wasmBase from './wasm/wasm_dpp_bg.js';
-import patchIdentifier from "./lib/patchIdentifier";
+import wasmBase from '../wasm/wasm_dpp_bg.js';
+import patchIdentifier from "./identifier/patchIdentifier";
 
 
 

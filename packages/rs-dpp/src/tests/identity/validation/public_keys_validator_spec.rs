@@ -340,7 +340,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 
     let errors = assert_consensus_errors!(
         result,
-        ConsensusError::DuplicatedIdentityPublicKeyIdError,
+        ConsensusError::DuplicatedIdentityPublicKeyBasicIdError,
         1
     );
     let consensus_error = result.errors().first().unwrap();
@@ -372,8 +372,11 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     );
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
-    let errors =
-        assert_consensus_errors!(&result, ConsensusError::DuplicatedIdentityPublicKeyError, 1);
+    let errors = assert_consensus_errors!(
+        &result,
+        ConsensusError::DuplicatedIdentityPublicKeyBasicError,
+        1
+    );
 
     let consensus_error = result.errors().first().unwrap();
     let error = errors.get(0).unwrap();
