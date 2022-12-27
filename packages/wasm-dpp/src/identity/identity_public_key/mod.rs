@@ -108,11 +108,13 @@ impl IdentityPublicKeyWasm {
         self.0.get_readonly()
     }
 
+    // TODO: fix - make timestamp js_sys::Date
     #[wasm_bindgen(js_name=setDisabledAt)]
     pub fn set_disabled_at(&mut self, timestamp: u32) {
         self.0.set_disabled_at(timestamp as u64);
     }
 
+    // TODO: fix - return js_sys::Date
     #[wasm_bindgen(js_name=getDisabledAt)]
     pub fn get_disabled_at(&self) -> Option<u32> {
         self.0.get_disabled_at().map(|timestamp| timestamp as u32)
@@ -136,14 +138,13 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, some_option: Option<bool>) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, skip_signatures: Option<bool>) -> Result<JsValue, JsValue> {
         let val = self
             .0
-            .to_raw_json_object(some_option.unwrap_or(false))
+            .to_raw_json_object(skip_signatures.unwrap_or(false))
             .map_err(|e| from_dpp_err(e.into()))?;
 
         let data_buffer = Buffer::from_bytes(self.0.get_data());
-        let signature_buffer = Buffer::from_bytes(self.0.get_signature());
 
         let json = val.to_string();
         let js_object = js_sys::JSON::parse(&json)?;
@@ -160,11 +161,16 @@ impl IdentityPublicKeyWasm {
             &JsValue::from(data_buffer),
         )?;
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"signature".to_owned().into(),
-            &JsValue::from(signature_buffer),
-        )?;
+        if skip_signatures.unwrap_or(false) != true {
+            let signature = self.0.get_signature();
+            if signature.len() != 0 {
+                js_sys::Reflect::set(
+                    &js_object,
+                    &"signature".to_owned().into(),
+                    &JsValue::from(Buffer::from_bytes(signature)),
+                )?;
+            }
+        }
 
         Ok(js_object)
     }
