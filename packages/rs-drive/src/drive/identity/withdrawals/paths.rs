@@ -33,6 +33,16 @@ pub fn add_initial_withdrawal_state_structure_operations(batch: &mut GroveDbOpBa
     );
 }
 
+/// Helper function to get root path
+pub fn get_withdrawal_root_path() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::WithdrawalTransactions as u8]]
+}
+
+/// Helper function to get root path as u8
+pub fn get_withdrawal_root_path_as_u8() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions)]
+}
+
 /// Helper function to get queue path as Vec
 pub fn get_withdrawal_transactions_queue_path() -> Vec<Vec<u8>> {
     vec![
