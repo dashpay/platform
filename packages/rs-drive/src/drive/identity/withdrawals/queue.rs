@@ -6,7 +6,15 @@ use grovedb::{
 };
 
 use crate::{
-    drive::{batch::GroveDbOpBatch, grove_operations::BatchDeleteApplyType, Drive},
+    drive::{
+        batch::{
+            drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
+            GroveDbOpBatch,
+        },
+        block_info::BlockInfo,
+        grove_operations::BatchDeleteApplyType,
+        Drive,
+    },
     error::{drive::DriveError, Error},
     fee::op::DriveOperation,
 };
@@ -20,16 +28,26 @@ impl Drive {
     /// Add insert operations for withdrawal transactions to the batch
     pub fn add_enqueue_withdrawal_transaction_operations(
         &self,
-        batch: &mut GroveDbOpBatch,
-        withdrawals: Vec<WithdrawalTransaction>,
-    ) {
-        for (id, bytes) in withdrawals {
-            batch.add_insert(
-                get_withdrawal_transactions_queue_path(),
-                id,
-                Element::Item(bytes, None),
-            );
-        }
+        withdrawals: &Vec<WithdrawalTransaction>,
+        block_info: &BlockInfo,
+        drive_operations: &mut Vec<DriveOperation>,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        drive_operations.extend(
+            WithdrawalOperationType::InsertTransactions {
+                transactions: withdrawals,
+            }
+            .to_drive_operations(self, &mut None, block_info, transaction)?,
+        );
+
+        Ok(())
+        // for (id, bytes) in withdrawals {
+        //     batch.add_insert(
+        //         get_withdrawal_transactions_queue_path(),
+        //         id,
+        //         Element::Item(bytes, None),
+        //     );
+        // }
     }
 
     /// Get specified amount of withdrawal transactions from the DB
@@ -108,7 +126,9 @@ impl Drive {
 mod tests {
     use crate::{
         common::helpers::setup::setup_drive_with_initial_state_structure,
-        drive::batch::GroveDbOpBatch,
+        drive::{batch::GroveDbOpBatch, block_info::BlockInfo},
+        fee::op::DriveOperation,
+        fee_pools::epochs::Epoch,
     };
 
     #[test]
@@ -121,13 +141,26 @@ mod tests {
             .map(|i: u8| (i.to_be_bytes().to_vec(), vec![i; 32]))
             .collect();
 
-        let mut batch = GroveDbOpBatch::new();
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            epoch: Epoch::new(1),
+        };
 
-        drive.add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
+        let mut batch: Vec<DriveOperation> = vec![];
 
         drive
-            .grove_apply_batch(batch, true, Some(&transaction))
-            .expect("to apply ops");
+            .add_enqueue_withdrawal_transaction_operations(
+                &withdrawals,
+                &block_info,
+                &mut batch,
+                Some(&transaction),
+            )
+            .expect("to add operations");
+
+        // drive
+        //     .apply_drive_operations(batch, true, &block_info, Some(&transaction))
+        //     .expect("to apply batch");
 
         let withdrawals = drive
             .dequeue_withdrawal_transactions(16, Some(&transaction))

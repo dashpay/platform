@@ -240,15 +240,27 @@ mod tests {
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
+            let mut result_operations = vec![];
 
             platform
                 .drive
-                .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
+                .add_enqueue_withdrawal_transaction_operations(
+                    &withdrawals,
+                    &block_info,
+                    &mut batch,
+                    Some(&transaction),
+                )
+                .expect("to add enqueue operations");
 
             platform
                 .drive
-                .grove_apply_batch(batch, true, Some(&transaction))
+                .apply_batch_drive_operations(
+                    None,
+                    Some(&transaction),
+                    batch,
+                    &mut result_operations,
+                )
                 .expect("to apply batch");
 
             // setup the contract

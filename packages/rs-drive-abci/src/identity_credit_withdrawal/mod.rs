@@ -65,6 +65,12 @@ impl Platform {
             transaction,
         )?;
 
+        let block_info = BlockInfo {
+            time_ms: block_execution_context.block_info.block_time_ms,
+            height: block_execution_context.block_info.block_height,
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+        };
+
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         for mut document in broadcasted_documents {
@@ -102,13 +108,7 @@ impl Platform {
                 } else {
                     self.drive.add_insert_expired_index_operation(
                         transaction_index,
-                        BlockInfo {
-                            time_ms: block_execution_context.block_info.block_time_ms,
-                            height: block_execution_context.block_info.block_height,
-                            epoch: Epoch::new(
-                                block_execution_context.epoch_info.current_epoch_index,
-                            ),
-                        },
+                        &block_info,
                         &mut drive_operations,
                         transaction,
                     )?;
@@ -119,11 +119,7 @@ impl Platform {
                 self.drive.add_update_document_data_operations(
                     &contract_fetch_info.contract,
                     &mut document,
-                    BlockInfo {
-                        time_ms: block_execution_context.block_info.block_time_ms,
-                        height: block_execution_context.block_info.block_height,
-                        epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
-                    },
+                    &block_info,
                     transaction,
                     &mut drive_operations,
                     |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
@@ -143,8 +139,16 @@ impl Platform {
             }
         }
 
-        self.drive
-            .apply_drive_operations(drive_operations, true, block_info, transaction)?;
+        if !drive_operations.is_empty() {
+            let mut result_operations = vec![];
+
+            self.drive.apply_batch_drive_operations(
+                None,
+                transaction,
+                drive_operations,
+                &mut result_operations,
+            )?;
+        }
 
         Ok(())
     }
@@ -156,6 +160,14 @@ impl Platform {
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
+        let block_info = BlockInfo {
+            time_ms: block_execution_context.block_info.block_time_ms,
+            height: block_execution_context.block_info.block_height,
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+        };
+
+        let mut drive_operations = vec![];
+
         // Get 16 latest withdrawal transactions from the queue
         let withdrawal_transactions = self
             .drive
@@ -163,7 +175,7 @@ impl Platform {
 
         // Appending request_height and quorum_hash to withdrwal transaction
         // and pass it to JS Drive for singing and broadcasting
-        withdrawal_transactions
+        let result = withdrawal_transactions
             .into_iter()
             .map(|(_, bytes)| {
                 let request_info = AssetUnlockRequestInfo {
@@ -188,17 +200,27 @@ impl Platform {
                 self.drive.update_document_transaction_id(
                     &original_transaction_id,
                     &update_transaction_id,
-                    BlockInfo {
-                        time_ms: block_execution_context.block_info.block_time_ms,
-                        height: block_execution_context.block_info.block_height,
-                        epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
-                    },
+                    &block_info,
+                    &mut drive_operations,
                     transaction,
                 )?;
 
                 Ok(bytes_buffer)
             })
-            .collect::<Result<Vec<Vec<u8>>, Error>>()
+            .collect::<Result<Vec<Vec<u8>>, Error>>();
+
+        if !drive_operations.is_empty() {
+            let mut result_operations = vec![];
+
+            self.drive.apply_batch_drive_operations(
+                None,
+                transaction,
+                &mut drive_operations,
+                &mut result_operations,
+            )?;
+        }
+
+        Ok(result)
     }
 
     /// Pool withdrawal documents into transactions
@@ -237,6 +259,12 @@ impl Platform {
             .drive
             .build_withdrawal_transactions_from_documents(&documents, transaction)?;
 
+        let block_info = BlockInfo {
+            time_ms: block_execution_context.block_info.block_time_ms,
+            height: block_execution_context.block_info.block_height,
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+        };
+
         let mut drive_operations = vec![];
 
         for document in documents.iter_mut() {
@@ -246,11 +274,7 @@ impl Platform {
             self.drive.add_update_document_data_operations(
                 &contract_fetch_info.contract,
                 document,
-                BlockInfo {
-                    time_ms: block_execution_context.block_info.block_time_ms,
-                    height: block_execution_context.block_info.block_height,
-                    epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
-                },
+                &block_info,
                 transaction,
                 &mut drive_operations,
                 |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
@@ -291,19 +315,28 @@ impl Platform {
             )?;
         }
 
-        let mut batch = GroveDbOpBatch::new();
-
         let withdrawal_transactions = withdrawal_transactions
             .values()
             .into_iter()
             .cloned()
             .collect();
 
-        self.drive
-            .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawal_transactions);
+        self.drive.add_enqueue_withdrawal_transaction_operations(
+            &withdrawal_transactions,
+            &block_info,
+            &mut drive_operations,
+            transaction,
+        )?;
 
-        if !batch.is_empty() {
-            self.drive.grove_apply_batch(batch, true, transaction)?;
+        if !drive_operations.is_empty() {
+            let mut result_operations = vec![];
+
+            self.drive.apply_batch_drive_operations(
+                None,
+                transaction,
+                drive_operations,
+                &mut result_operations,
+            )?;
         }
 
         Ok(())

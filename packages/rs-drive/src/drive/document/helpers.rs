@@ -23,7 +23,7 @@ impl Drive {
         &self,
         contract: &DataContract,
         document: &mut Document,
-        block_info: BlockInfo,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
         update_fn: F,
@@ -58,7 +58,7 @@ impl Drive {
                 owner_id: Some(document.owner_id.to_buffer()),
             },
             true,
-            &block_info,
+            block_info,
             &mut None,
             transaction,
         )?;
@@ -74,7 +74,8 @@ impl Drive {
         &self,
         original_transaction_id: &[u8],
         update_transaction_id: &[u8],
-        block_info: BlockInfo,
+        block_info: &BlockInfo,
+        drive_operations: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let data_contract_id = Identifier::from_string(
@@ -129,8 +130,9 @@ impl Drive {
             self.add_update_document_data_operations(
                 &contract_fetch_info.contract,
                 &mut document,
-                block_info.clone(),
+                block_info,
                 transaction,
+                drive_operations,
                 |document: &mut Document| -> Result<&mut Document, Error> {
                     document
                         .set(
@@ -212,18 +214,33 @@ mod tests {
 
             setup_document(&drive, &document, &data_contract, Some(&transaction));
 
+            let block_info = BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            };
+
+            let mut drive_operations = vec![];
+            let mut result_operations = vec![];
+
             drive
                 .update_document_transaction_id(
                     &original_transaction_id,
                     &updated_transaction_id,
-                    BlockInfo {
-                        time_ms: 1,
-                        height: 1,
-                        epoch: Epoch::new(1),
-                    },
+                    &block_info,
+                    &mut drive_operations,
                     Some(&transaction),
                 )
                 .expect("to update transactionId");
+
+            drive
+                .apply_batch_drive_operations(
+                    None,
+                    Some(&transaction),
+                    drive_operations,
+                    &mut result_operations,
+                )
+                .expect("to apply batch drive operations");
 
             let updated_documents = drive
                 .fetch_withdrawal_documents_by_status(

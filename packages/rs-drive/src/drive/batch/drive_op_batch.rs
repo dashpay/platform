@@ -483,7 +483,7 @@ pub enum WithdrawalOperationType<'a> {
     /// Insert Core Transaction into queue
     InsertTransactions {
         /// transaction id bytes
-        transactions: Vec<WithdrawalTransaction>,
+        transactions: &'a [WithdrawalTransaction],
     },
 }
 
@@ -557,7 +557,7 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
                 for (id, bytes) in transactions {
                     drive.batch_insert(
                         crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement::<'_, 1>(
-                            (path.clone(), &id, Element::Item(bytes, None)),
+                            (path.clone(), &id, Element::Item(bytes.clone(), None)),
                         ),
                         &mut drive_operations,
                     )?;
