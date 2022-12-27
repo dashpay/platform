@@ -23,9 +23,5 @@ mod utils;
 
 mod bls_adapter;
 mod buffer;
-<<<<<<< HEAD
 mod lodash;
-pub mod validation_result;
-=======
 mod validation;
->>>>>>> v0.24-dev

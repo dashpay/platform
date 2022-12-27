@@ -42,10 +42,12 @@ fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
 
 #[cfg(test)]
 mod test {
+    use serde_json::Value;
+
     use crate::{
         document::document_transition::{
             DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-            DocumentTransition,
+            DocumentTransition, DocumentTransitionObjectLike,
         },
         tests::utils::generate_random_identifier_struct,
     };
@@ -68,14 +70,17 @@ mod test {
         dt_delete.base.id = generate_random_identifier_struct();
         dt_delete.base.document_type = String::from("c");
 
-        let input: Vec<DocumentTransition> = vec![
+        let input: Vec<Value> = [
             DocumentTransition::Create(dt_create),
             DocumentTransition::Create(dt_create_duplicate),
             DocumentTransition::Replace(dt_replace),
             DocumentTransition::Delete(dt_delete),
-        ];
+        ]
+        .iter()
+        .map(|t| t.to_object().unwrap())
+        .collect();
 
-        let duplicates = find_duplicates_by_id(input.iter());
+        let duplicates = find_duplicates_by_id(&input).unwrap();
         assert_eq!(duplicates.len(), 1);
     }
 }
