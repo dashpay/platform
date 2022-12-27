@@ -20,6 +20,8 @@ const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusErr
 const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
+const newDocumentsContainer = require('../../../lib/test/utils/newDocumentsContainer');
+
 const { default: loadWasmDpp } = require('../../../dist');
 
 let Identifier;
@@ -28,34 +30,6 @@ let DataContract;
 let Document;
 let DocumentValidator;
 let ProtocolVersionValidator;
-let DocumentsContainer;
-
-function newDocumentsContainer(documents) {
-  const {
-    // use constants
-    create: createDocuments,
-    replace: replaceDocuments,
-    delete: deleteDocuments,
-  } = documents;
-  const documentsContainer = new DocumentsContainer();
-  if (createDocuments != null) {
-    for (const d of createDocuments) {
-      documentsContainer.pushDocumentCreate(d);
-    }
-  }
-  if (replaceDocuments != null) {
-    for (const d of replaceDocuments) {
-      documentsContainer.pushDocumentReplace(d);
-    }
-  }
-  if (deleteDocuments != null) {
-    for (const d of deleteDocuments) {
-      documentsContainer.pushDeleteDocument(d);
-    }
-  }
-
-  return documentsContainer;
-}
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
@@ -80,7 +54,7 @@ describe('DocumentFactory', () => {
   beforeEach(async () => {
     ({
       Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory,
-      DataContract, Document, DocumentsContainer,
+      DataContract, Document,
     } = await loadWasmDpp());
   });
 
@@ -425,9 +399,9 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should throw and error if documents have unknown action - Rust', () => {
+    it('should throw and error if documents have unknown action - Rust', async () => {
       try {
-        factory.createStateTransition(newDocumentsContainer({
+        factory.createStateTransition(await newDocumentsContainer({
           unknown: documentsJs,
         }));
 
@@ -447,9 +421,9 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should throw and error if no documents were supplied - Rust', () => {
+    it('should throw and error if no documents were supplied - Rust', async () => {
       try {
-        factory.createStateTransition(newDocumentsContainer({}));
+        factory.createStateTransition(await newDocumentsContainer({}));
         expect.fail('Error was not thrown');
       } catch (e) {
         // TODO - change when errors merged
@@ -470,12 +444,12 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should throw and error if documents have mixed owner ids - Rust', () => {
+    it('should throw and error if documents have mixed owner ids - Rust', async () => {
       const newId = generateRandomIdentifier().toBuffer();
       documents[0].setOwnerId(new Identifier(newId));
 
       try {
-        factory.createStateTransition(newDocumentsContainer({
+        factory.createStateTransition(await newDocumentsContainer({
           create: documents,
         }));
         expect.fail('Error was not thrown');
@@ -498,10 +472,10 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should throw and error if create documents have invalid initial version - Rust', () => {
+    it('should throw and error if create documents have invalid initial version - Rust', async () => {
       documents[0].setRevision(3);
       try {
-        factory.createStateTransition(newDocumentsContainer({
+        factory.createStateTransition(await newDocumentsContainer({
           create: documents,
         }));
         expect.fail('Error was not thrown');
@@ -533,7 +507,7 @@ describe('DocumentFactory', () => {
       );
     });
 
-    it('should create DocumentsBatchTransition with passed documents - Rust', () => {
+    it('should create DocumentsBatchTransition with passed documents - Rust', async () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
       const newDocument = new Document(newDocumentJs.toObject(), dataContract);
 
@@ -542,7 +516,7 @@ describe('DocumentFactory', () => {
         replace: [newDocumentJs],
       });
 
-      const stateTransition = factory.createStateTransition(newDocumentsContainer({
+      const stateTransition = factory.createStateTransition(await newDocumentsContainer({
         create: documents,
         replace: [newDocument],
       }));

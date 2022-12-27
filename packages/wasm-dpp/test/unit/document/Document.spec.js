@@ -7,6 +7,7 @@ const DocumentCreateTransition = require(
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const lodash = require('lodash');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../../dist');
@@ -89,7 +90,7 @@ describe('Document', () => {
     };
 
     document = new Document(rawDocument, dataContract);
-    const jsRawDocument = cloneDeepWith(rawDocument);
+    const jsRawDocument = lodash.cloneDeepWith(rawDocument);
     jsRawDocument.$id = jsId;
     jsRawDocument.$ownerId = jsOwnerId;
 
