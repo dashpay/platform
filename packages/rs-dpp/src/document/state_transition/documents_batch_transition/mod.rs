@@ -409,11 +409,17 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use serde_json::json;
 
     use crate::{
-        document::document_factory::DocumentFactory,
+        document::{
+            document_factory::DocumentFactory,
+            fetch_and_validate_data_contract::DataContractFetcherAndValidator,
+        },
         mocks,
+        state_repository::MockStateRepositoryLike,
         tests::fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
             get_document_validator_fixture, get_documents_fixture,
@@ -455,7 +461,7 @@ mod test {
         let document_factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         let batch_transition = document_factory

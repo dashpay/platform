@@ -74,7 +74,7 @@ impl DocumentValidator {
             .to_owned();
 
         let json_schema_validator = if let Some(defs) = &data_contract.defs {
-            JsonSchemaValidator::new_with_definitions(document_schema, defs)
+            JsonSchemaValidator::new_with_definitions(document_schema, defs.iter())
         } else {
             JsonSchemaValidator::new(document_schema)
         }

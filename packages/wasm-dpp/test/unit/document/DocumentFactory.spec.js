@@ -6,13 +6,14 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
-const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/InvalidDocumentTypeError');
-const InvalidDocumentError = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
-const InvalidActionNameError = require('@dashevo/dpp/lib/document/errors/InvalidActionNameError');
-const NoDocumentsSuppliedError = require('@dashevo/dpp/lib/document/errors/NoDocumentsSuppliedError');
-const MismatchOwnerIdsError = require('@dashevo/dpp/lib/document/errors/MismatchOwnerIdsError');
-const InvalidInitialRevisionError = require('@dashevo/dpp/lib/document/errors/InvalidInitialRevisionError');
-const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
+
+const InvalidDocumentTypeErrorJs = require('@dashevo/dpp/lib/errors/InvalidDocumentTypeError');
+const InvalidDocumentErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
+const InvalidActionNameErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidActionNameError');
+const NoDocumentsSuppliedErrorJs = require('@dashevo/dpp/lib/document/errors/NoDocumentsSuppliedError');
+const MismatchOwnerIdsErrorJs = require('@dashevo/dpp/lib/document/errors/MismatchOwnerIdsError');
+const InvalidInitialRevisionErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidInitialRevisionError');
+const SerializedObjectParsingErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
@@ -30,6 +31,7 @@ let DataContract;
 let Document;
 let DocumentValidator;
 let ProtocolVersionValidator;
+
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
@@ -88,6 +90,13 @@ describe('DocumentFactory', () => {
 
     const fetchContractResult = new ValidationResult();
     fetchContractResult.setData(dataContractJs);
+
+    const stateRepositoryLike = {
+      fetchDataContract: () => {
+        dataContractFetched = true;
+      },
+    };
+
 
     fetchAndValidateDataContractMock = this.sinonSandbox.stub().returns(fetchContractResult);
     dppMock = createDPPMock();
@@ -181,7 +190,7 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentTypeError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentTypeError);
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeErrorJs);
         expect(e.getType()).to.equal(type);
         expect(e.getDataContract()).to.equal(dataContractJs);
       }
@@ -212,7 +221,7 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
       }
     });
 
@@ -281,7 +290,7 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
 
         expect(e.getErrors()).to.have.length(1);
         expect(e.getRawDocument()).to.equal(rawDocument);
@@ -307,7 +316,7 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
 
         expect(e.getErrors()).to.have.length(1);
         expect(e.getRawDocument()).to.equal(rawDocument);
@@ -351,8 +360,24 @@ describe('DocumentFactory', () => {
       );
     });
 
+    // it('should return new Document from serialized one - Rust', async () => {
+
+    //   decodeProtocolEntityMock.returns([rawDocument.$protocolVersion, rawDocument]);
+
+    //   factoryJs.createFromObject.returns(documentJs);
+
+    //   const result = await factoryJs.createFromBuffer(serializedDocument);
+
+    //   expect(result).to.equal(documentJs);
+    //   expect(factoryJs.createFromObject).to.have.been.calledOnceWith(rawDocument);
+    //   expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
+    //     serializedDocument,
+    //   );
+    // });
+
+
     it('should throw InvalidDocumentError if the decoding fails with consensus error', async () => {
-      const parsingError = new SerializedObjectParsingError(
+      const parsingError = new SerializedObjectParsingErrorJs(
         serializedDocument,
         new Error(),
       );
@@ -364,7 +389,7 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw InvalidDocumentError');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
 
         const [innerError] = e.getErrors();
         expect(innerError).to.equal(parsingError);
@@ -394,7 +419,7 @@ describe('DocumentFactory', () => {
         });
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidActionNameError);
+        expect(e).to.be.an.instanceOf(InvalidActionNameErrorJs);
         expect(e.getActions()).to.have.deep.members(['unknown']);
       }
     });
@@ -417,7 +442,7 @@ describe('DocumentFactory', () => {
         factoryJs.createStateTransition({});
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
+        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedErrorJs);
       }
     });
 
@@ -439,7 +464,7 @@ describe('DocumentFactory', () => {
         });
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(MismatchOwnerIdsError);
+        expect(e).to.be.an.instanceOf(MismatchOwnerIdsErrorJs);
         expect(e.getDocuments()).to.have.deep.members(documentsJs);
       }
     });
@@ -467,7 +492,7 @@ describe('DocumentFactory', () => {
         });
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidInitialRevisionError);
+        expect(e).to.be.an.instanceOf(InvalidInitialRevisionErrorJs);
         expect(e.getDocument()).to.deep.equal(documentsJs[0]);
       }
     });

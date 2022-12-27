@@ -1,8 +1,14 @@
-use dpp::document::{document_factory::DocumentFactory, document_transition::Action};
+use std::sync::Arc;
+
+use dpp::document::{
+    document_factory::DocumentFactory, document_transition::Action,
+    fetch_and_validate_data_contract::DataContractFetcherAndValidator,
+};
 use wasm_bindgen::prelude::*;
 
 use crate::{
     identifier::identifier_from_js_value,
+    state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{ToSerdeJSONExt, WithJsError},
     DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM, DocumentsContainer,
 };
@@ -41,7 +47,7 @@ impl DocumentTransitions {
 }
 
 #[wasm_bindgen(js_name = DocumentFactory)]
-pub struct DocumentFactoryWASM(DocumentFactory);
+pub struct DocumentFactoryWASM(DocumentFactory<ExternalStateRepositoryLikeWrapper>);
 
 #[wasm_bindgen(js_class=DocumentFactory)]
 impl DocumentFactoryWASM {
@@ -49,14 +55,15 @@ impl DocumentFactoryWASM {
     pub fn new(
         protocol_version: u32,
         document_validator: DocumentValidatorWasm,
-        fetch_and_validate_data_contract: JsValue, // TODO
+        state_repository: ExternalStateRepositoryLike,
     ) -> DocumentFactoryWASM {
         console_error_panic_hook::set_once();
         let factory = DocumentFactory::new(
             protocol_version,
             document_validator.into(),
-            // TODO
-            dpp::mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(
+                ExternalStateRepositoryLikeWrapper::new(state_repository),
+            )),
         );
 
         DocumentFactoryWASM(factory)
@@ -109,7 +116,7 @@ impl DocumentFactoryWASM {
 }
 
 impl DocumentFactoryWASM {
-    pub fn inner(self) -> DocumentFactory {
+    pub(crate) fn into_inner(self) -> DocumentFactory<ExternalStateRepositoryLikeWrapper> {
         self.0
     }
 }

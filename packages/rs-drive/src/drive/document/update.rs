@@ -620,6 +620,8 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use dpp::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
+    use dpp::state_repository::MockStateRepositoryLike;
     use grovedb::TransactionArg;
     use std::default::Default;
     use std::option::Option::None;
@@ -2325,7 +2327,7 @@ mod tests {
         let document_factory = DocumentFactory::new(
             1,
             document_validator,
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         // Create a document

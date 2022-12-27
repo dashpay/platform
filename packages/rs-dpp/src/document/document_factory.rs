@@ -1,21 +1,28 @@
+use anyhow::Context;
 use chrono::Utc;
+use ciborium::value::Value as CborValue;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
+    consensus::ConsensusError,
     data_contract::DataContract,
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     mocks,
     prelude::Identifier,
+    state_repository::StateRepositoryLike,
     util::entropy_generator,
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
+    validation::{SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
 use super::{
     document_transition::{self, Action},
     document_validator::DocumentValidator,
+    fetch_and_validate_data_contract::{self, DataContractFetcherAndValidator},
     generate_document_id::generate_document_id,
-    Document, DocumentsBatchTransition,
+    property_names, Document, DocumentsBatchTransition,
 };
 
 const PROPERTY_DOCUMENT_PROTOCOL_VERSION: &str = "$protocolVersion";
@@ -50,23 +57,31 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 ];
 
 /// Factory for creating documents
-pub struct DocumentFactory {
+pub struct DocumentFactory<ST> {
     protocol_version: u32,
     document_validator: DocumentValidator,
-    // fetch and validate data contract should be also implemented
-    fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
+    data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
 }
 
-impl DocumentFactory {
+#[derive(Debug, Copy, Clone)]
+pub struct FactoryOptions {
+    pub skip_validation: bool,
+    pub action: Action,
+}
+
+impl<ST> DocumentFactory<ST>
+where
+    ST: StateRepositoryLike,
+{
     pub fn new(
         protocol_version: u32,
         validate_document: DocumentValidator,
-        fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
+        data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
     ) -> Self {
         DocumentFactory {
             protocol_version,
             document_validator: validate_document,
-            fetch_and_validate_data_contract,
+            data_contract_fetcher_and_validator,
         }
     }
 
@@ -265,8 +280,78 @@ impl DocumentFactory {
             .collect())
     }
 
+    pub async fn create_from_buffer(
+        &self,
+        buffer: impl AsRef<[u8]>,
+        options: FactoryOptions,
+    ) -> Result<Document, ProtocolError> {
+        let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
+
+        match result {
+            Err(ProtocolError::AbstractConsensusError(err)) => {
+                Err(ProtocolError::InvalidDocumentError {
+                    errors: vec![*err],
+                    raw_document: JsonValue::Null,
+                })
+            }
+            Err(err) => Err(err),
+            Ok((version, mut raw_document)) => {
+                raw_document
+                    .insert(property_names::PROTOCOL_VERSION.to_string(), json!(version))?;
+                self.create_from_object(raw_document, options).await
+            }
+        }
+    }
+
+    pub async fn create_from_object(
+        &self,
+        raw_document: JsonValue,
+        options: FactoryOptions,
+    ) -> Result<Document, ProtocolError> {
+        let data_contract = self
+            .validate_data_contract_for_document(&raw_document, options)
+            .await?;
+
+        Document::from_raw_document(raw_document, data_contract)
+    }
+
+    async fn validate_data_contract_for_document(
+        &self,
+        raw_document: &JsonValue,
+        options: FactoryOptions,
+    ) -> Result<DataContract, ProtocolError> {
+        let mut result = self
+            .data_contract_fetcher_and_validator
+            .validate(raw_document)
+            .await?;
+
+        if !result.is_valid() {
+            return Err(ProtocolError::InvalidDocumentError {
+                errors: result.errors,
+                raw_document: raw_document.clone(),
+            });
+        }
+        let data_contract = result
+            .take_data()
+            .context("Validator didn't return Data Contract. This shouldn't happen")?;
+
+        if !options.skip_validation {
+            let result = self
+                .document_validator
+                .validate(raw_document, &data_contract)?;
+            if !result.is_valid() {
+                return Err(ProtocolError::InvalidDocumentError {
+                    errors: result.errors,
+                    raw_document: raw_document.clone(),
+                });
+            }
+        }
+
+        Ok(data_contract)
+    }
+
     // TODO implement rest methods
-    //   async createFromObject(rawDocument, options = {}) {
+    // async createFromObject(rawDocument, options = {}) { todo!() }
     //   async createFromBuffer(buffer, options = {}) {
 
     fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
@@ -280,8 +365,11 @@ impl DocumentFactory {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use crate::{
         assert_error_contains,
+        state_repository::MockStateRepositoryLike,
         tests::{
             fixtures::{
                 get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
@@ -301,7 +389,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         let name = "Cutie";
         let contract_id = Identifier::from_string(
@@ -342,7 +430,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         let result = factory.create_state_transition(vec![]);
@@ -357,7 +445,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         documents[0].owner_id = generate_random_identifier_struct();
 
@@ -374,7 +462,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Invalid Document initial revision 3")
@@ -387,7 +475,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         let new_document = documents[0].clone();
