@@ -143,6 +143,7 @@ describe('DocumentsBatchTransition', () => {
     it('should return State Transition as plain object -  Rust', () => {
       const rawObject = stateTransition.toObject();
       const rawObjectJs = stateTransitionJs.toObject();
+      /* eslint-disable */
       const rawObjectWithBuffers = lodash.cloneDeepWith(rawObject, (value) => {
         if (value instanceof Identifier) {
           return value.toBuffer();

@@ -4,8 +4,6 @@ import * as dpp_module from './dpp';
 import wasmBase from '../wasm/wasm_dpp_bg.js';
 import patchIdentifier from "./identifier/patchIdentifier";
 
-
-
 let isInitialized = false;
 
 export default async function loadDpp() {
@@ -24,8 +22,6 @@ export default async function loadDpp() {
       dpp_module.initSync(bytes);
       isInitialized = true;
     }
-
-
 
     patchIdentifier(dpp_module);
 

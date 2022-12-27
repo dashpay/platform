@@ -369,7 +369,6 @@ describe('Document', () => {
         const jsBuffer = jsDocument.toBuffer();
         const buffer = document.toBuffer();
         expect(jsBuffer).to.deep.equal(buffer);
-
       });
 
       it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {

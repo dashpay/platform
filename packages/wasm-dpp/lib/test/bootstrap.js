@@ -13,6 +13,8 @@ use(dirtyChai);
 use(chaiString);
 use(chaiExclude);
 
+/* eslint-disable */
+// TODO this should be loaded with library - not with tests.
 globalThis.crypto = crypto.webcrypto;
 
 beforeEach(function beforeEach() {
