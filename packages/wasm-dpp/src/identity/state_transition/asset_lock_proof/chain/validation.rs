@@ -42,10 +42,6 @@ pub async fn validate_chain_asset_lock_proof_structure(
     let validation_result = validator
         .validate(&asset_lock_proof_json, &execution_context.into())
         .await
-        .map(|value| {
-            let test: ValidationResultWasm = value.into();
-            test
-        })
         .map_err(|e| from_dpp_err(e.into()))?;
-    Ok(validation_result.into())
+    Ok(validation_result.map(|_| JsValue::undefined()).into())
 }
