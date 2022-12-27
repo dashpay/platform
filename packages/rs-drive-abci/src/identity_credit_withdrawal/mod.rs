@@ -12,6 +12,7 @@ use drive::{
         batch::GroveDbOpBatch, block_info::BlockInfo,
         identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path_as_u8,
     },
+    fee::op::DriveOperation,
     fee_pools::epochs::Epoch,
     query::{Element, TransactionArg},
 };
@@ -64,6 +65,8 @@ impl Platform {
             transaction,
         )?;
 
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+
         for mut document in broadcasted_documents {
             let transaction_sign_height =
                 document
@@ -97,24 +100,23 @@ impl Platform {
                 let status = if core_transactions.contains(&transaction_id) {
                     withdrawals_contract::statuses::COMPLETE
                 } else {
-                    let bytes = transaction_index.to_be_bytes();
-
-                    let path = get_withdrawal_transactions_expired_ids_path_as_u8();
-
-                    self.drive
-                        .grove
-                        .insert(path, &bytes, Element::Item(vec![], None), None, transaction)
-                        .unwrap()
-                        .map_err(|_| {
-                            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                                "Can't update transaction_index in GroveDB",
-                            ))
-                        })?;
+                    self.drive.add_insert_expired_index_operation(
+                        transaction_index,
+                        BlockInfo {
+                            time_ms: block_execution_context.block_info.block_time_ms,
+                            height: block_execution_context.block_info.block_height,
+                            epoch: Epoch::new(
+                                block_execution_context.epoch_info.current_epoch_index,
+                            ),
+                        },
+                        &mut drive_operations,
+                        transaction,
+                    )?;
 
                     withdrawals_contract::statuses::EXPIRED
                 };
 
-                self.drive.update_document_data(
+                self.drive.add_update_document_data_operations(
                     &contract_fetch_info.contract,
                     &mut document,
                     BlockInfo {
@@ -123,6 +125,7 @@ impl Platform {
                         epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
                     },
                     transaction,
+                    &mut drive_operations,
                     |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                         document
                             .set("status", JsonValue::Number(Number::from(status)))
@@ -139,6 +142,9 @@ impl Platform {
                 )?;
             }
         }
+
+        self.drive
+            .apply_drive_operations(drive_operations, true, block_info, transaction)?;
 
         Ok(())
     }
@@ -231,11 +237,13 @@ impl Platform {
             .drive
             .build_withdrawal_transactions_from_documents(&documents, transaction)?;
 
+        let mut drive_operations = vec![];
+
         for document in documents.iter_mut() {
             let transaction_id =
                 hash::hash(withdrawal_transactions.get(&document.id).unwrap().1.clone());
 
-            self.drive.update_document_data(
+            self.drive.add_update_document_data_operations(
                 &contract_fetch_info.contract,
                 document,
                 BlockInfo {
@@ -244,6 +252,7 @@ impl Platform {
                     epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
                 },
                 transaction,
+                &mut drive_operations,
                 |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                     document
                         .set(

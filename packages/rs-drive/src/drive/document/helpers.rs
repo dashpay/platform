@@ -1,6 +1,6 @@
 use dpp::{
     contracts::withdrawals_contract,
-    data_contract::extra::common,
+    data_contract::extra::{common, DocumentType, DriveContractExt},
     prelude::{DataContract, Document, Identifier},
     util::string_encoding::Encoding,
 };
@@ -8,18 +8,24 @@ use grovedb::TransactionArg;
 use serde_json::{json, Number, Value as JsonValue};
 
 use crate::{
-    drive::{block_info::BlockInfo, Drive},
+    drive::{
+        block_info::BlockInfo,
+        object_size_info::{DocumentAndContractInfo, DocumentInfo},
+        Drive,
+    },
     error::{drive::DriveError, Error},
+    fee::op::DriveOperation,
 };
 
 impl Drive {
     /// Helper function to avoid boilerplate of calling an update
-    pub fn update_document_data<F>(
+    pub fn add_update_document_data_operations<F>(
         &self,
         contract: &DataContract,
         document: &mut Document,
         block_info: BlockInfo,
         transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
         update_fn: F,
     ) -> Result<(), Error>
     where
@@ -34,24 +40,30 @@ impl Drive {
         })?);
         document.increment_revision();
 
-        self.update_document_for_contract_cbor(
-            &document.to_cbor().map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "Can't cbor withdrawal document",
-                ))
-            })?,
-            &contract.to_cbor().map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "Can't cbor withdrawal data contract",
-                ))
-            })?,
-            withdrawals_contract::types::WITHDRAWAL,
-            Some(document.owner_id.to_buffer()),
-            block_info,
+        let document_cbor = document.to_cbor().map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution(
+                "Can't cbor withdrawal document",
+            ))
+        })?;
+
+        let operations = self.add_document_for_contract_operations(
+            DocumentAndContractInfo {
+                document_info: DocumentInfo::DocumentWithoutSerialization((
+                    crate::drive::document::Document::from_cbor(&document_cbor, None, None)?,
+                    None,
+                )),
+                contract: &contract,
+                document_type: contract
+                    .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?,
+                owner_id: Some(document.owner_id.to_buffer()),
+            },
             true,
-            None,
+            &block_info,
+            &mut None,
             transaction,
         )?;
+
+        drive_operations.extend(operations);
 
         Ok(())
     }
@@ -114,7 +126,7 @@ impl Drive {
             .collect::<Result<Vec<Document>, Error>>()?;
 
         for mut document in documents {
-            self.update_document_data(
+            self.add_update_document_data_operations(
                 &contract_fetch_info.contract,
                 &mut document,
                 block_info.clone(),

@@ -4,8 +4,16 @@ use grovedb::{
 };
 
 use crate::{
-    drive::{batch::GroveDbOpBatch, Drive, RootTree},
+    drive::{
+        batch::{
+            drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
+            GroveDbOpBatch,
+        },
+        block_info::BlockInfo,
+        Drive, RootTree,
+    },
     error::{drive::DriveError, Error},
+    fee::op::DriveOperation,
 };
 
 use super::paths::{
@@ -101,6 +109,24 @@ impl Drive {
             WITHDRAWAL_TRANSACTIONS_COUNTER_ID.to_vec(),
             Element::Item(value, None),
         );
+    }
+
+    /// Add insert expired counter operations
+    pub fn add_insert_expired_index_operation(
+        &self,
+        transaction_index: u64,
+        block_info: BlockInfo,
+        drive_operations: &mut Vec<DriveOperation>,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        let operations = WithdrawalOperationType::InsertExpiredIndex {
+            index: transaction_index,
+        }
+        .to_drive_operations(self, &mut None, &block_info, transaction)?;
+
+        drive_operations.extend(operations);
+
+        Ok(())
     }
 }
 
