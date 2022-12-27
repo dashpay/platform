@@ -7,10 +7,7 @@ use grovedb::{
 
 use crate::{
     drive::{
-        batch::{
-            drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
-            GroveDbOpBatch,
-        },
+        batch::drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
         block_info::BlockInfo,
         grove_operations::BatchDeleteApplyType,
         Drive,
@@ -41,13 +38,6 @@ impl Drive {
         );
 
         Ok(())
-        // for (id, bytes) in withdrawals {
-        //     batch.add_insert(
-        //         get_withdrawal_transactions_queue_path(),
-        //         id,
-        //         Element::Item(bytes, None),
-        //     );
-        // }
     }
 
     /// Get specified amount of withdrawal transactions from the DB
@@ -126,9 +116,7 @@ impl Drive {
 mod tests {
     use crate::{
         common::helpers::setup::setup_drive_with_initial_state_structure,
-        drive::{batch::GroveDbOpBatch, block_info::BlockInfo},
-        fee::op::DriveOperation,
-        fee_pools::epochs::Epoch,
+        drive::block_info::BlockInfo, fee::op::DriveOperation, fee_pools::epochs::Epoch,
     };
 
     #[test]

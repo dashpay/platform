@@ -1,6 +1,6 @@
 use dpp::{
     contracts::withdrawals_contract,
-    data_contract::extra::{common, DocumentType, DriveContractExt},
+    data_contract::extra::{common, DriveContractExt},
     prelude::{DataContract, Document, Identifier},
     util::string_encoding::Encoding,
 };
@@ -52,7 +52,7 @@ impl Drive {
                     crate::drive::document::Document::from_cbor(&document_cbor, None, None)?,
                     None,
                 )),
-                contract: &contract,
+                contract,
                 document_type: contract
                     .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?,
                 owner_id: Some(document.owner_id.to_buffer()),

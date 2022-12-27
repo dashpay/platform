@@ -5,10 +5,7 @@ use grovedb::{
 
 use crate::{
     drive::{
-        batch::{
-            drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
-            GroveDbOpBatch,
-        },
+        batch::drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
         block_info::BlockInfo,
         Drive, RootTree,
     },
@@ -101,28 +98,41 @@ impl Drive {
     /// Add counter update operations to the batch
     pub fn add_update_withdrawal_index_counter_operation(
         &self,
-        batch: &mut GroveDbOpBatch,
-        value: Vec<u8>,
-    ) {
-        batch.add_insert(
-            vec![vec![RootTree::WithdrawalTransactions as u8]],
-            WITHDRAWAL_TRANSACTIONS_COUNTER_ID.to_vec(),
-            Element::Item(value, None),
+        value: u64,
+        block_info: &BlockInfo,
+        drive_operations: &mut Vec<DriveOperation>,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        drive_operations.extend(
+            WithdrawalOperationType::UpdateIndexCounter { index: value }.to_drive_operations(
+                self,
+                &mut None,
+                block_info,
+                transaction,
+            )?,
         );
+
+        Ok(())
+
+        // batch.add_insert(
+        //     vec![vec![RootTree::WithdrawalTransactions as u8]],
+        //     WITHDRAWAL_TRANSACTIONS_COUNTER_ID.to_vec(),
+        //     Element::Item(value, None),
+        // );
     }
 
     /// Add insert expired counter operations
     pub fn add_insert_expired_index_operation(
         &self,
         transaction_index: u64,
-        block_info: BlockInfo,
+        block_info: &BlockInfo,
         drive_operations: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let operations = WithdrawalOperationType::InsertExpiredIndex {
             index: transaction_index,
         }
-        .to_drive_operations(self, &mut None, &block_info, transaction)?;
+        .to_drive_operations(self, &mut None, block_info, transaction)?;
 
         drive_operations.extend(operations);
 
@@ -137,9 +147,10 @@ mod tests {
     use crate::{
         common::helpers::setup::setup_drive_with_initial_state_structure,
         drive::{
-            batch::GroveDbOpBatch,
+            block_info::BlockInfo,
             identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path_as_u8,
         },
+        fee_pools::epochs::Epoch,
     };
 
     #[test]
@@ -148,17 +159,28 @@ mod tests {
 
         let transaction = drive.grove.start_transaction();
 
-        let mut batch = GroveDbOpBatch::new();
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            epoch: Epoch::new(1),
+        };
+
+        let mut batch = vec![];
+        let mut result_operations = vec![];
 
         let counter: u64 = 42;
 
-        drive.add_update_withdrawal_index_counter_operation(
-            &mut batch,
-            counter.to_be_bytes().to_vec(),
-        );
+        drive
+            .add_update_withdrawal_index_counter_operation(
+                counter,
+                &block_info,
+                &mut batch,
+                Some(&transaction),
+            )
+            .expect("to add update operations");
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction))
+            .apply_batch_drive_operations(None, Some(&transaction), batch, &mut result_operations)
             .expect("to apply ops");
 
         let stored_counter = drive

@@ -2268,26 +2268,48 @@ impl PlatformWrapper {
                 Ok(None)
             };
 
-            let mut batch = GroveDbOpBatch::new();
+            let block_info = drive::drive::block_info::BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            };
+
+            let mut batch = vec![];
 
             let index_bytes = (index as u64).to_be_bytes().to_vec();
 
-            let withdrawals = vec![(index_bytes.clone(), transaction_bytes)];
+            let withdrawals = vec![(index_bytes, transaction_bytes)];
 
-            platform
-                .drive
-                .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
-
-            platform
-                .drive
-                .add_update_withdrawal_index_counter_operation(&mut batch, index_bytes);
-
-            let result = transaction_result.and_then(|transaction_arg| {
+            let execution_function = |transaction: TransactionArg| -> Result<(), String> {
                 platform
                     .drive
-                    .grove_apply_batch(batch, false, transaction_arg)
+                    .add_enqueue_withdrawal_transaction_operations(
+                        &withdrawals,
+                        &block_info,
+                        &mut batch,
+                        transaction,
+                    )
+                    .map_err(|err| err.to_string())?;
+
+                platform
+                    .drive
+                    .add_update_withdrawal_index_counter_operation(
+                        index as u64,
+                        &block_info,
+                        &mut batch,
+                        transaction,
+                    )
+                    .map_err(|err| err.to_string())?;
+
+                let mut result_operations = vec![];
+
+                platform
+                    .drive
+                    .apply_batch_drive_operations(None, transaction, batch, &mut result_operations)
                     .map_err(|err| err.to_string())
-            });
+            };
+
+            let result = transaction_result.and_then(execution_function);
 
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);

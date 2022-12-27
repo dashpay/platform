@@ -201,8 +201,9 @@ mod tests {
         use dashcore::BlockHash;
         use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::drive::batch::GroveDbOpBatch;
+        use drive::drive::block_info::BlockInfo;
         use drive::fee::epoch::CreditsPerEpoch;
+        use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
@@ -239,6 +240,12 @@ mod tests {
             let withdrawals = (0..16)
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
+
+            let block_info = BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            };
 
             let mut batch = vec![];
             let mut result_operations = vec![];

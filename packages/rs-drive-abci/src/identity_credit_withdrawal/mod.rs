@@ -8,13 +8,8 @@ use dpp::{
     util::{hash, json_value::JsonValueExt, string_encoding::Encoding},
 };
 use drive::{
-    drive::{
-        batch::GroveDbOpBatch, block_info::BlockInfo,
-        identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path_as_u8,
-    },
-    fee::op::DriveOperation,
-    fee_pools::epochs::Epoch,
-    query::{Element, TransactionArg},
+    drive::block_info::BlockInfo, fee::op::DriveOperation, fee_pools::epochs::Epoch,
+    query::TransactionArg,
 };
 use serde_json::{Number, Value as JsonValue};
 
@@ -207,7 +202,7 @@ impl Platform {
 
                 Ok(bytes_buffer)
             })
-            .collect::<Result<Vec<Vec<u8>>, Error>>();
+            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
         if !drive_operations.is_empty() {
             let mut result_operations = vec![];
@@ -215,7 +210,7 @@ impl Platform {
             self.drive.apply_batch_drive_operations(
                 None,
                 transaction,
-                &mut drive_operations,
+                drive_operations,
                 &mut result_operations,
             )?;
         }
