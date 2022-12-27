@@ -1,19 +1,16 @@
 use anyhow::Context;
 use chrono::Utc;
-use ciborium::value::Value as CborValue;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
-    consensus::ConsensusError,
     data_contract::DataContract,
     decode_protocol_entity_factory::DecodeProtocolEntity,
-    mocks,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::entropy_generator,
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
-    validation::{SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
@@ -25,6 +22,7 @@ use super::{
     property_names, Document, DocumentsBatchTransition,
 };
 
+// TODO remove these const and use ones from super::document::property_names
 const PROPERTY_DOCUMENT_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -63,9 +61,12 @@ pub struct DocumentFactory<ST> {
     data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FactoryOptions {
+    #[serde(default)]
     pub skip_validation: bool,
+    #[serde(default)]
     pub action: Action,
 }
 
@@ -205,6 +206,76 @@ where
         DocumentsBatchTransition::from_raw_object(raw_batch_transition, data_contracts)
     }
 
+    pub async fn create_from_buffer(
+        &self,
+        buffer: impl AsRef<[u8]>,
+        options: FactoryOptions,
+    ) -> Result<Document, ProtocolError> {
+        let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
+
+        match result {
+            Err(ProtocolError::AbstractConsensusError(err)) => {
+                Err(ProtocolError::InvalidDocumentError {
+                    errors: vec![*err],
+                    raw_document: JsonValue::Null,
+                })
+            }
+            Err(err) => Err(err),
+            Ok((version, mut raw_document)) => {
+                raw_document
+                    .insert(property_names::PROTOCOL_VERSION.to_string(), json!(version))?;
+                self.create_from_object(raw_document, options).await
+            }
+        }
+    }
+
+    pub async fn create_from_object(
+        &self,
+        raw_document: JsonValue,
+        options: FactoryOptions,
+    ) -> Result<Document, ProtocolError> {
+        let data_contract = self
+            .validate_data_contract_for_document(&raw_document, options)
+            .await?;
+
+        Document::from_raw_document(raw_document, data_contract)
+    }
+
+    async fn validate_data_contract_for_document(
+        &self,
+        raw_document: &JsonValue,
+        options: FactoryOptions,
+    ) -> Result<DataContract, ProtocolError> {
+        let mut result = self
+            .data_contract_fetcher_and_validator
+            .validate(raw_document)
+            .await?;
+
+        if !result.is_valid() {
+            return Err(ProtocolError::InvalidDocumentError {
+                errors: result.errors,
+                raw_document: raw_document.clone(),
+            });
+        }
+        let data_contract = result
+            .take_data()
+            .context("Validator didn't return Data Contract. This shouldn't happen")?;
+
+        if !options.skip_validation {
+            let result = self
+                .document_validator
+                .validate(raw_document, &data_contract)?;
+            if !result.is_valid() {
+                return Err(ProtocolError::InvalidDocumentError {
+                    errors: result.errors,
+                    raw_document: raw_document.clone(),
+                });
+            }
+        }
+
+        Ok(data_contract)
+    }
+
     fn raw_document_create_transitions(
         documents: Vec<Document>,
     ) -> Result<Vec<JsonValue>, ProtocolError> {
@@ -279,80 +350,6 @@ where
             })
             .collect())
     }
-
-    pub async fn create_from_buffer(
-        &self,
-        buffer: impl AsRef<[u8]>,
-        options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
-        let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
-
-        match result {
-            Err(ProtocolError::AbstractConsensusError(err)) => {
-                Err(ProtocolError::InvalidDocumentError {
-                    errors: vec![*err],
-                    raw_document: JsonValue::Null,
-                })
-            }
-            Err(err) => Err(err),
-            Ok((version, mut raw_document)) => {
-                raw_document
-                    .insert(property_names::PROTOCOL_VERSION.to_string(), json!(version))?;
-                self.create_from_object(raw_document, options).await
-            }
-        }
-    }
-
-    pub async fn create_from_object(
-        &self,
-        raw_document: JsonValue,
-        options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
-        let data_contract = self
-            .validate_data_contract_for_document(&raw_document, options)
-            .await?;
-
-        Document::from_raw_document(raw_document, data_contract)
-    }
-
-    async fn validate_data_contract_for_document(
-        &self,
-        raw_document: &JsonValue,
-        options: FactoryOptions,
-    ) -> Result<DataContract, ProtocolError> {
-        let mut result = self
-            .data_contract_fetcher_and_validator
-            .validate(raw_document)
-            .await?;
-
-        if !result.is_valid() {
-            return Err(ProtocolError::InvalidDocumentError {
-                errors: result.errors,
-                raw_document: raw_document.clone(),
-            });
-        }
-        let data_contract = result
-            .take_data()
-            .context("Validator didn't return Data Contract. This shouldn't happen")?;
-
-        if !options.skip_validation {
-            let result = self
-                .document_validator
-                .validate(raw_document, &data_contract)?;
-            if !result.is_valid() {
-                return Err(ProtocolError::InvalidDocumentError {
-                    errors: result.errors,
-                    raw_document: raw_document.clone(),
-                });
-            }
-        }
-
-        Ok(data_contract)
-    }
-
-    // TODO implement rest methods
-    // async createFromObject(rawDocument, options = {}) { todo!() }
-    //   async createFromBuffer(buffer, options = {}) {
 
     fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
         data.into_iter().next().is_none()
