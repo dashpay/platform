@@ -28,7 +28,7 @@ describe('waitForCoreSyncFactory', function main() {
 
   it('should wait until Dash Core in regtest mode with peers is synced', async () => {
     firstDashCore = await startDashCore();
-    const { result: randomAddress } = await firstDashCore.getApi().getNewAddress();
+    const { result: randomAddress } = await firstDashCore.getApi().getNewAddress('/wallet/main');
     await firstDashCore.getApi().generateToAddress(1000, randomAddress);
 
     secondDashCore = await startDashCore();

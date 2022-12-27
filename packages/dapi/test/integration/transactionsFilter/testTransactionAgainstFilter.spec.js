@@ -20,7 +20,7 @@ describe('testTransactionAgainstFilter', () => {
 
   it('should match the same transaction as Core', async () => {
     // Create a transactions
-    const { result: addressBase58 } = await coreApi.getnewaddress();
+    const { result: addressBase58 } = await coreApi.getnewaddress('/wallet/main');
     const { result: privateKeyString } = await coreApi.dumpprivkey(addressBase58);
 
     const address = Address.fromString(addressBase58, Networks.testnet);

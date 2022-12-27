@@ -7,7 +7,7 @@
  * @return {Promise<void>}
  */
 async function importPrivateKey(coreService, privateKey) {
-  return coreService.getRpcClient().importPrivKey(privateKey);
+  return coreService.getRpcClient().importPrivKey('/wallet/main', privateKey);
 }
 
 module.exports = importPrivateKey;

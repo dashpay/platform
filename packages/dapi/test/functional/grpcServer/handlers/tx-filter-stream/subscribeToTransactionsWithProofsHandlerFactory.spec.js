@@ -58,7 +58,7 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     coreAPI = dashCore.getApi();
     dapiClient = dapiTxFilterStream.getApi();
 
-    ({ result: addressString } = await coreAPI.getNewAddress());
+    ({ result: addressString } = await coreAPI.getNewAddress('/wallet/main'));
     const { result: privateKeyString } = await coreAPI.dumpPrivKey(addressString);
 
     address = Address.fromString(addressString, Networks.testnet);
@@ -346,7 +346,7 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
 
     await coreAPI.sendRawTransaction(transaction.serialize());
 
-    const { result: randomAddress } = await coreAPI.getNewAddress();
+    const { result: randomAddress } = await coreAPI.getNewAddress('/wallet/main');
     await coreAPI.generateToAddress(1, randomAddress);
 
     await wait(20000);
@@ -383,7 +383,7 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     const { result: hashToInvalidate } = await coreAPI.getBestBlockHash();
     await coreAPI.invalidateBlock(hashToInvalidate);
 
-    const { result: anotherRandomAddress } = await coreAPI.getNewAddress();
+    const { result: anotherRandomAddress } = await coreAPI.getNewAddress('/wallet/main');
     await coreAPI.generateToAddress(1, anotherRandomAddress);
 
     await wait(20000);
@@ -422,7 +422,7 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
     const bloomFilterObject = bloomFilter.toObject();
 
     // Generate one other block without matching txs
-    const { result: randomAddress } = await coreAPI.getNewAddress();
+    const { result: randomAddress } = await coreAPI.getNewAddress('/wallet/main');
     await coreAPI.generateToAddress(1, randomAddress);
     const { result: bestBlockHash } = await coreAPI.getBestBlockHash();
 

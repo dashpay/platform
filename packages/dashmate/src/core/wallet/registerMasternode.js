@@ -1,3 +1,5 @@
+const wait = require('../../util/wait');
+
 /**
  * Get balance of the address
  *
@@ -21,7 +23,7 @@ async function registerMasternode(
   config,
 ) {
   // get collateral index
-  const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('outputs');
+  const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('/wallet/main', 'outputs');
 
   const collateralOutputIndex = masternodeOutputs
     .find((outpoint) => outpoint.startsWith(collateralHash))
@@ -30,6 +32,7 @@ async function registerMasternode(
   const ipAndPort = `${config.get('externalIp', true)}:${config.get('core.p2p.port')}`;
 
   const { result: proRegTxId } = await coreService.getRpcClient().protx(
+    '/wallet/main',
     'register',
     collateralHash, // The txid of the 1000 Dash collateral funding transaction
     parseInt(collateralOutputIndex, 10), // The output index of the 1000 Dash funding transaction
