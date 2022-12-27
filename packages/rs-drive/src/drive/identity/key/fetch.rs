@@ -238,7 +238,7 @@ pub struct IdentityKeysRequest {
     /// The request identity id
     pub identity_id: [u8; 32],
     /// The type of key request
-    pub key_request: KeyRequestType,
+    pub request_type: KeyRequestType,
     /// The limit of the amount of keys you wish to get back
     pub limit: Option<u16>,
     /// The offset of the start of the amount of keys you wish to get back
@@ -258,7 +258,7 @@ impl IdentityKeysRequest {
         }
         IdentityKeysRequest {
             identity_id,
-            key_request: SearchKey(purpose_btree_map),
+            request_type: SearchKey(purpose_btree_map),
             limit: None,
             offset: None,
         }
@@ -268,7 +268,7 @@ impl IdentityKeysRequest {
     pub fn new_all_keys_query(identity_id: [u8; 32]) -> Self {
         IdentityKeysRequest {
             identity_id,
-            key_request: AllKeys,
+            request_type: AllKeys,
             limit: None,
             offset: None,
         }
@@ -278,7 +278,7 @@ impl IdentityKeysRequest {
     pub fn into_path_query(self) -> PathQuery {
         let IdentityKeysRequest {
             identity_id,
-            key_request,
+            request_type: key_request,
             limit,
             offset,
         } = self;
@@ -447,7 +447,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<T, Error> {
-        match &key_request.key_request {
+        match &key_request.request_type {
             AllKeys => {
                 let path_query = key_request.into_path_query();
 
@@ -545,7 +545,7 @@ mod tests {
 
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
-            key_request: SpecificKeys(vec![0]),
+            request_type: SpecificKeys(vec![0]),
             limit: Some(1),
             offset: None,
         };
@@ -580,7 +580,7 @@ mod tests {
 
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
-            key_request: SpecificKeys(vec![0, 4]),
+            request_type: SpecificKeys(vec![0, 4]),
             limit: Some(2),
             offset: None,
         };
@@ -615,7 +615,7 @@ mod tests {
 
         let key_request = IdentityKeysRequest {
             identity_id: identity.id.to_buffer(),
-            key_request: SpecificKeys(vec![0, 6]),
+            request_type: SpecificKeys(vec![0, 6]),
             limit: Some(2),
             offset: None,
         };

@@ -51,7 +51,6 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
-use crate::error::Error;
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
 fn create_test_mn_share_document(

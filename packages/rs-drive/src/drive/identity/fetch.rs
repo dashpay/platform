@@ -125,13 +125,17 @@ impl Drive {
             drive_operations,
         ) {
             Ok(Some(SumItem(balance, _))) if balance >= 0 => Ok(Some(balance as Credits)),
+
             Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+
             Ok(Some(SumItem(..))) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "identity balance was present but was negative",
             ))),
+
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "identity balance was present but was not identified as a sum item",
             ))),
+
             Err(e) => Err(e),
         }
     }
@@ -191,31 +195,29 @@ impl Drive {
             }
         };
         let identity_path = identity_path(identity_id.as_slice());
-        let identity_revision_element = self.grove_get_direct(
+        match self.grove_get_direct(
             identity_path,
             &[IdentityTreeRevision as u8],
             direct_query_type,
             transaction,
             drive_operations,
-        )?;
-        if apply {
-            if let Some(identity_revision_element) = identity_revision_element {
-                if let Item(identity_revision_element, _) = identity_revision_element {
-                    let (revision, _) = u64::decode_var(identity_revision_element.as_slice())
-                        .ok_or(Error::Drive(DriveError::CorruptedElementType(
-                            "identity revision could not be decoded",
-                        )))?;
-                    Ok(Some(revision))
-                } else {
-                    Err(Error::Drive(DriveError::CorruptedElementType(
-                        "identity revision was present but was not identified as an item",
-                    )))
-                }
-            } else {
-                Ok(None)
+        ) {
+            Ok(Some(Item(encoded_revision, _))) => {
+                let (revision, _) =
+                    u64::decode_var(encoded_revision.as_slice()).ok_or(Error::Drive(
+                        DriveError::CorruptedElementType("identity revision could not be decoded"),
+                    ))?;
+
+                Ok(Some(revision))
             }
-        } else {
-            Ok(None)
+
+            Ok(None) => Ok(None),
+
+            Ok(Some(..)) => Err(Error::Drive(DriveError::CorruptedElementType(
+                "identity revision was present but was not identified as an item",
+            ))),
+
+            Err(e) => Err(e),
         }
     }
 

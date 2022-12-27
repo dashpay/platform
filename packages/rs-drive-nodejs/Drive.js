@@ -24,6 +24,7 @@ const {
   driveFetchIdentityWithCosts,
   driveAddToIdentityBalance,
   driveAddKeysToIdentity,
+  driveDisableIdentityKeys,
   driveRemoveFromIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
   driveEnqueueWithdrawalTransaction,
@@ -67,6 +68,7 @@ const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
 const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityWithCosts));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
+const driveDisableIdentityKeysAsync = appendStackAsync(promisify(driveDisableIdentityKeys));
 const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
   promisify(driveRemoveFromIdentityBalance),
 );
@@ -464,7 +466,7 @@ class Drive {
 
   /**
    * @param {Identifier} identityId
-   * @param {Array} keysToAdd
+   * @param {IdentityPublicKey[]} keys
    * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
@@ -473,7 +475,7 @@ class Drive {
    */
   async addKeysToIdentity(
     identityId,
-    keysToAdd,
+    keys,
     blockInfo,
     useTransaction = false,
     dryRun = false,
@@ -481,7 +483,36 @@ class Drive {
     return driveAddKeysToIdentityAsync.call(
       this.drive,
       identityId.toBuffer(),
-      keysToAdd,
+      keys,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async disableIdentityKeys(
+    identityId,
+    keyIds,
+    disableAt,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveDisableIdentityKeysAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      keyIds,
+      disableAt,
       blockInfo,
       !dryRun,
       useTransaction,

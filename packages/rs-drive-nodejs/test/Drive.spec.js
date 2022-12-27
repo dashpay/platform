@@ -529,6 +529,100 @@ describe('Drive', () => {
     });
   });
 
+  describe('#addKeysToIdentity', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should add keys to identity', async () => {
+      const keysToAdd = [identity.getPublicKeys().pop()];
+
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.addKeysToIdentity(
+        identity.getId(),
+        keysToAdd,
+        blockInfo,
+      );
+
+      expectFeeResult(result);
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getPublicKeys()).to.have.lengthOf(
+        identity.getPublicKeys().length + keysToAdd.length,
+      );
+    });
+
+    it('should not update state with dry run', async () => {
+      const keysToAdd = [identity.getPublicKeys().pop()];
+
+      const result = await drive.addKeysToIdentity(
+        identity.getId(),
+        keysToAdd,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expectFeeResult(result);
+
+      expect(await drive.getGroveDB().getRootHash()).to.equals(initialRootHash);
+    });
+  });
+
+  describe('#disableIdentityKeys', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should disable specified identity keys', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const keyIds = identity.getPublicKeys().map((key) => key.getId());
+      const disableAt = Date.now();
+
+      const result = await drive.disableIdentityKeys(
+        identity.getId(),
+        keyIds,
+        disableAt,
+        blockInfo,
+      );
+
+      expectFeeResult(result);
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getPublicKeys()).to.have.lengthOf(identity.getPublicKeys().length);
+
+      fetchedIdentity.getPublicKeys().forEach((key) => {
+        expect(key.getDisabledAt()).to.equals(disableAt);
+      });
+    });
+
+    it('should not update state with dry run', async () => {
+      const keyIds = identity.getPublicKeys().map((key) => key.getId());
+      const disableAt = Date.now();
+
+      const result = await drive.disableIdentityKeys(
+        identity.getId(),
+        keyIds,
+        disableAt,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expectFeeResult(result);
+
+      expect(await drive.getGroveDB().getRootHash()).to.equals(initialRootHash);
+    });
+  });
+
   describe('#fetchLatestWithdrawalTransactionIndex', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();

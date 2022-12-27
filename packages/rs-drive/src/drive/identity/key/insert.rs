@@ -104,7 +104,7 @@ impl Drive {
         }
     }
 
-    fn insert_key_to_storage_operations(
+    pub(crate) fn insert_key_to_storage_operations(
         &self,
         identity_id: &[u8],
         identity_key: &IdentityPublicKey,

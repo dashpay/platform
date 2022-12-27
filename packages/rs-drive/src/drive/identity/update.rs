@@ -10,9 +10,13 @@ use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use grovedb::batch::KeyInfoPath;
 
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
+};
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::prelude::TimestampMillis;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
@@ -264,6 +268,109 @@ impl Drive {
         )?;
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)
+    }
+
+    /// Disable identity keys.
+    /// Modification of keys is prohibited on protocol level.
+    /// This method introduced ONLY to disable keys. All references and query data won't be updated.
+    pub fn disable_identity_keys(
+        &self,
+        identity_id: [u8; 32],
+        keys_ids: Vec<KeyID>,
+        disable_at: TimestampMillis,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+
+        self.disable_identity_keys_operations(
+            identity_id,
+            keys_ids,
+            disable_at,
+            &block_info.epoch,
+            &mut estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+        )?;
+
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+        )?;
+
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+
+        Ok(fees)
+    }
+
+    /// Modification of keys is prohibited on protocol level.
+    /// This method introduced ONLY to disable keys. All references and query data won't be updated.
+    pub(crate) fn disable_identity_keys_operations(
+        &self,
+        identity_id: [u8; 32],
+        key_ids: Vec<KeyID>,
+        disable_at: TimestampMillis,
+        epoch: &Epoch,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            // TODO: This probably wrong
+            Self::add_estimation_costs_for_keys_for_identity_id(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
+        }
+
+        let key_ids_len = key_ids.len();
+
+        let key_request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::SpecificKeys(key_ids),
+            limit: Some(key_ids_len as u16),
+            offset: None,
+        };
+
+        // TODO We need to implement dry run for fetch
+        let keys: KeyIDIdentityPublicKeyPairVec =
+            self.fetch_identity_keys_operations(key_request, transaction, drive_operations)?;
+
+        if keys.len() != key_ids_len {
+            // TODO Choose / add an appropriate error
+            return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
+                "key to disable with specified ID is not found",
+            )));
+        }
+
+        for (_, mut key) in keys {
+            key.disabled_at = Some(disable_at);
+
+            let key_id_bytes = key.id.encode_var_vec();
+
+            self.insert_key_to_storage_operations(
+                identity_id.as_slice(),
+                &key,
+                &key_id_bytes,
+                &StorageFlags::SingleEpoch(epoch.index),
+                estimated_costs_only_with_layer_info,
+                drive_operations,
+            )?;
+        }
+
+        Ok(())
     }
 
     /// The operations for adding new keys to an identity
