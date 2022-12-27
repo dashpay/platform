@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use crate::{
     errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    validation_result::ValidationResultWasm,
+    validation::ValidationResultWasm,
     IdentityCreateTransitionWasm,
 };
 
@@ -19,6 +19,6 @@ pub async fn validate_identity_create_transition_state_wasm(
         state_transition.to_owned().clone().into(),
     )
     .await
-    .map(Into::into)
+    .map(Into::<ValidationResultWasm>::into)
     .map_err(|e| from_dpp_err(e.into()))
 }

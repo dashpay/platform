@@ -13,6 +13,7 @@ use dpp::util::string_encoding;
 use dpp::util::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=ChainAssetLockProof)]
+#[derive(Clone)]
 pub struct ChainAssetLockProofWasm(ChainAssetLockProof);
 
 #[derive(Debug, Serialize, Deserialize)]
