@@ -25,6 +25,7 @@ const {
   driveAddToIdentityBalance,
   driveAddKeysToIdentity,
   driveDisableIdentityKeys,
+  driveUpdateIdentityRevision,
   driveRemoveFromIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
   driveEnqueueWithdrawalTransaction,
@@ -69,6 +70,7 @@ const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchId
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
 const driveDisableIdentityKeysAsync = appendStackAsync(promisify(driveDisableIdentityKeys));
+const driveUpdateIdentityRevisionAsync = appendStackAsync(promisify(driveUpdateIdentityRevision));
 const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
   promisify(driveRemoveFromIdentityBalance),
 );
@@ -513,6 +515,32 @@ class Drive {
       identityId.toBuffer(),
       keyIds,
       disableAt,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async updateIdentityRevision(
+    identityId,
+    revision,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveUpdateIdentityRevisionAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      revision,
       blockInfo,
       !dryRun,
       useTransaction,

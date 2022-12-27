@@ -4,7 +4,6 @@
  * @returns {applyIdentityUpdateTransition}
  */
 const IdentityPublicKey = require('../../IdentityPublicKey');
-const getBiggestPossibleIdentity = require('../../getBiggestPossibleIdentity');
 
 function applyIdentityUpdateTransitionFactory(
   stateRepository,
@@ -20,24 +19,15 @@ function applyIdentityUpdateTransitionFactory(
     const identityId = stateTransition.getIdentityId();
     const executionContext = stateTransition.getExecutionContext();
 
-    let identity = await stateRepository.fetchIdentity(identityId, executionContext);
-
-    if (executionContext.isDryRun()) {
-      identity = getBiggestPossibleIdentity();
-    }
-
-    identity.setRevision(stateTransition.getRevision());
+    await stateRepository.updateIdentityRevision(stateTransition.getRevision(), executionContext);
 
     if (stateTransition.getPublicKeyIdsToDisable()) {
-      const identityPublicKeys = identity.getPublicKeys();
-
-      stateTransition.getPublicKeyIdsToDisable()
-        .forEach(
-          (id) => identity.getPublicKeyById(id)
-            .setDisabledAt(stateTransition.getPublicKeysDisabledAt().getTime()),
-        );
-
-      identity.setPublicKeys(identityPublicKeys);
+      await stateRepository.disableIdentityKeys(
+        identityId,
+        stateTransition.getPublicKeyIdsToDisable(),
+        stateTransition.getPublicKeysDisabledAt().getTime(),
+        executionContext,
+      );
     }
 
     if (stateTransition.getPublicKeysToAdd()) {
@@ -48,25 +38,12 @@ function applyIdentityUpdateTransitionFactory(
           return new IdentityPublicKey(rawPublicKey);
         });
 
-      // Add public keys to identity
-      const identityPublicKeys = identity
-        .getPublicKeys()
-        .concat(publicKeysToAdd);
-
-      identity.setPublicKeys(identityPublicKeys);
-
-      const publicKeyHashes = stateTransition
-        .getPublicKeysToAdd()
-        .map((publicKey) => publicKey.hash());
-
-      await stateRepository.storeIdentityPublicKeyHashes(
-        identity.getId(),
-        publicKeyHashes,
+      await stateRepository.addKeysToIdentity(
+        identityId,
+        publicKeysToAdd,
         executionContext,
       );
     }
-
-    await stateRepository.updateIdentity(identity, executionContext);
   }
 
   return applyIdentityUpdateTransition;

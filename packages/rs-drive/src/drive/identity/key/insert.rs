@@ -5,8 +5,8 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
 use crate::drive::identity::{
     identity_key_location_within_identity_vec, identity_key_path_vec, identity_key_tree_path,
-    identity_path, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
-    identity_query_keys_tree_path,
+    identity_key_tree_path_vec, identity_path, identity_query_keys_full_tree_path,
+    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize,
@@ -130,6 +130,35 @@ impl Drive {
             )),
             drive_operations,
         )
+    }
+
+    /// Modification of keys is prohibited on protocol level.
+    /// This method introduced ONLY to disable keys.
+    pub(crate) fn replace_key_in_storage_operations(
+        &self,
+        identity_id: &[u8],
+        identity_key: &IdentityPublicKey,
+        key_id_bytes: &[u8],
+        storage_flags: &StorageFlags,
+        _estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error> {
+        let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
+        // Now lets insert the public key
+        let identity_key_tree = identity_key_tree_path_vec(identity_id);
+
+        drive_operations.push(DriveOperation::replace_for_known_path_key_element(
+            identity_key_tree,
+            key_id_bytes.to_vec(),
+            Element::new_item_with_flags(
+                serialized_identity_key,
+                storage_flags.to_some_element_flags(),
+            ),
+        ));
+
+        Ok(())
     }
 
     fn insert_key_searchable_references_operations(

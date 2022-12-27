@@ -6,6 +6,7 @@ use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::fee::result::FeeResultWrapper;
 use drive::dpp::identity::{KeyID, TimestampMillis};
+use drive::dpp::prelude::Revision;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
@@ -1324,6 +1325,78 @@ impl PlatformWrapper {
                             identity_id,
                             key_ids,
                             disabled_at,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(fee_result) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_update_identity_revision(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_revision = cx.argument::<JsNumber>(1)?;
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let revision = js_revision.value(&mut cx) as Revision;
+
+        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .update_identity_revision(
+                            identity_id,
+                            revision,
                             &block_info,
                             apply,
                             transaction_arg,
@@ -2776,6 +2849,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveDisableIdentityKeys",
         PlatformWrapper::js_disable_identity_keys,
+    )?;
+    cx.export_function(
+        "driveUpdateIdentityRevision",
+        PlatformWrapper::js_update_identity_revision,
     )?;
 
     cx.export_function("driveQueryDocuments", PlatformWrapper::js_query_documents)?;

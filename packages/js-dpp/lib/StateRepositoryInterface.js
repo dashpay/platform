@@ -118,24 +118,38 @@
  */
 
 /**
- * Store identity
+ * Add keys to identity
  *
  * @async
  * @method
- * @name StateRepository#updateIdentity
- * @param {Identity} identity
+ * @name StateRepository#addKeysToIdentity
+ * @param {Identifier} identityId
+ * @param {IdentityPublicKey[]} keys
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
  * @returns {Promise<void>}
  */
 
 /**
- * Store public keys hashes and identity id pair
+ * Disable identity keys
  *
  * @async
  * @method
- * @name StateRepository#storeIdentityPublicKeyHashes
+ * @name StateRepository#disableIdentityKeys
  * @param {Identifier} identityId
- * @param {Buffer[]} publicKeyHashes
+ * @param {number[]} keyIds
+ * @param {number} disableAt
+ * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Update identity revision
+ *
+ * @async
+ * @method
+ * @name StateRepository#updateIdentityRevision
+ * @param {Identifier} identityId
+ * @param {number} revision
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
  * @returns {Promise<void>}
  */
@@ -147,17 +161,6 @@
  * @method
  * @name StateRepository#fetchLatestPlatformBlockTime
  * @returns {Promise<protobuf.Timestamp>}
- */
-
-/**
- * Fetch identity ids by public keys hashes
- *
- * @async
- * @method
- * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
- * @param {Buffer[]} publicKeyHashes
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
- * @returns {Promise<Array<Identifier|null>>}
  */
 
 /**

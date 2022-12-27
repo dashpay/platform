@@ -1,3 +1,4 @@
+use crate::identity::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
@@ -6,7 +7,7 @@ use crate::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::convert::TryFrom;
-use std::ops::{Div, Range, Rem};
+use std::ops::{Div, Rem};
 
 pub type KeyCount = KeyID;
 
@@ -83,6 +84,24 @@ impl IdentityPublicKey {
             disabled_at: None,
             data,
         })
+    }
+
+    pub fn max_possible_size_key(id: KeyID) -> Self {
+        let key_type = *KEY_TYPE_MAX_SIZE_TYPE;
+        let purpose = AUTHENTICATION;
+        let security_level = MASTER;
+        let read_only = false;
+        let data = vec![255; key_type.default_size()];
+
+        IdentityPublicKey {
+            id,
+            key_type,
+            purpose,
+            security_level,
+            read_only,
+            disabled_at: None,
+            data,
+        }
     }
 
     pub fn random_ecdsa_master_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> Self {

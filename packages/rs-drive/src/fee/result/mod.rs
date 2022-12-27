@@ -57,7 +57,7 @@ pub struct FeeResult {
 
 impl FeeResult {
     /// Creates a FeeResult instance with specified storage and processing fees
-    pub fn from_fees(storage_fee: Credits, processing_fee: Credits) -> Self {
+    pub fn default_with_fees(storage_fee: Credits, processing_fee: Credits) -> Self {
         FeeResult {
             storage_fee,
             processing_fee,

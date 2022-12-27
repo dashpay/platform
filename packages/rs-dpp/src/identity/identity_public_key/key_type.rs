@@ -5,9 +5,12 @@ use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 use dashcore::secp256k1::rand::SeedableRng;
 use dashcore::secp256k1::Secp256k1;
 use dashcore::Network;
+use itertools::Itertools;
+use lazy_static::lazy_static;
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 
 #[allow(non_camel_case_types)]
@@ -20,15 +23,28 @@ pub enum KeyType {
     BIP13_SCRIPT_HASH = 3,
 }
 
+lazy_static! {
+    static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = vec![
+        (KeyType::ECDSA_SECP256K1, 33),
+        (KeyType::BIP13_SCRIPT_HASH, 48),
+        (KeyType::ECDSA_HASH160, 32),
+        (KeyType::BIP13_SCRIPT_HASH, 32)
+    ]
+    .iter()
+    .copied()
+    .collect();
+    pub static ref KEY_TYPE_MAX_SIZE_TYPE: KeyType = KEY_TYPE_SIZES
+        .iter()
+        .sorted_by(|a, b| Ord::cmp(&b.1, &a.1))
+        .last()
+        .map(|(key_type, _)| *key_type)
+        .unwrap();
+}
+
 impl KeyType {
     /// Gets the default size of the public key
     pub fn default_size(&self) -> usize {
-        match self {
-            KeyType::ECDSA_SECP256K1 => 33,
-            KeyType::BLS12_381 => 48,
-            KeyType::ECDSA_HASH160 => 32,
-            KeyType::BIP13_SCRIPT_HASH => 32,
-        }
+        KEY_TYPE_SIZES[self]
     }
 
     /// Gets the default size of the public key

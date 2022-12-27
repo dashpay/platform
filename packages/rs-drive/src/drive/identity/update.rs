@@ -13,17 +13,18 @@ use grovedb::batch::KeyInfoPath;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
+use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::prelude::TimestampMillis;
+use dpp::prelude::{Revision, TimestampMillis};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
     /// We can set an identities balance
-    pub(super) fn set_identity_balance_operation(
+    pub(super) fn update_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
         balance: u64,
@@ -31,7 +32,7 @@ impl Drive {
     ) -> Result<DriveOperation, Error> {
         let balance_path = balance_path_vec();
         // while i64::MAX could potentially work, best to avoid it.
-        if balance >= i64::MAX as u64 {
+        if balance >= MAX_CREDITS {
             Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
                 "trying to set balance to over i64::Max",
             )))
@@ -51,7 +52,7 @@ impl Drive {
     }
 
     /// We can set an identities negative credit balance
-    pub(super) fn set_identity_negative_credit_operation(
+    pub(super) fn update_identity_negative_credit_operation(
         &self,
         identity_id: [u8; 32],
         negative_credit: u64,
@@ -65,12 +66,47 @@ impl Drive {
         )
     }
 
-    /// Update the revision of the identity
-    /// Revisions get bumped on all changes except for the balance and negative credit fields
-    pub(super) fn set_revision_operation(
+    /// Update revision for specific identity
+    pub fn update_identity_revision(
         &self,
         identity_id: [u8; 32],
-        revision: u64,
+        revision: Revision,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
+
+        // TODO: In case of dry run we will get less because we replace the same bytes
+
+        let estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+
+        batch_operations.push(self.update_revision_operation(identity_id, revision));
+
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+        )?;
+
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+
+        Ok(fees)
+    }
+
+    /// Update the revision of the identity
+    /// Revisions get bumped on all changes except for the balance and negative credit fields
+    pub(super) fn update_revision_operation(
+        &self,
+        identity_id: [u8; 32],
+        revision: Revision,
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let revision_bytes = revision.encode_var_vec();
@@ -96,6 +132,7 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
+
         self.add_to_identity_balance_operations(
             identity_id,
             added_balance,
@@ -150,7 +187,7 @@ impl Drive {
             (i64::MAX - 1) as u64
         };
 
-        drive_operations.push(self.set_identity_balance_operation(
+        drive_operations.push(self.update_identity_balance_operation(
             identity_id,
             new_balance,
             true,
@@ -158,12 +195,19 @@ impl Drive {
         Ok(())
     }
 
+    // storage_fees = 0
+    // refunds = 200
+    // processing_fees = 100
+    //
+    // we should prepay for balance update
+    // introduce a method to update identity balance
+
     /// Balances are stored in the balance tree under the identity's id
     pub fn remove_from_identity_balance(
         &self,
         identity_id: [u8; 32],
-        required_removed_balance: u64,
-        total_desired_removed_balance: u64,
+        required_removed_balance: u64,      // storage_fee - refunds
+        total_desired_removed_balance: u64, // storage_fee - refunds + processing fees
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -223,14 +267,14 @@ impl Drive {
             (i64::MAX as u64, Some(10000000))
         };
 
-        drive_operations.push(self.set_identity_balance_operation(
+        drive_operations.push(self.update_identity_balance_operation(
             identity_id,
             new_balance,
             true,
         )?);
         if let Some(negative_credit_amount) = negative_credit_amount {
             drive_operations.push(
-                self.set_identity_negative_credit_operation(identity_id, negative_credit_amount),
+                self.update_identity_negative_credit_operation(identity_id, negative_credit_amount),
             );
         }
         Ok(())
@@ -270,9 +314,7 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Disable identity keys.
-    /// Modification of keys is prohibited on protocol level.
-    /// This method introduced ONLY to disable keys. All references and query data won't be updated.
+    /// Disable identity keys
     pub fn disable_identity_keys(
         &self,
         identity_id: [u8; 32],
@@ -295,6 +337,7 @@ impl Drive {
             disable_at,
             &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
+            apply,
             transaction,
             &mut batch_operations,
         )?;
@@ -313,8 +356,6 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Modification of keys is prohibited on protocol level.
-    /// This method introduced ONLY to disable keys. All references and query data won't be updated.
     pub(crate) fn disable_identity_keys_operations(
         &self,
         identity_id: [u8; 32],
@@ -324,11 +365,11 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // TODO: This probably wrong
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
@@ -339,14 +380,19 @@ impl Drive {
 
         let key_request = IdentityKeysRequest {
             identity_id,
-            request_type: KeyRequestType::SpecificKeys(key_ids),
+            request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
             limit: Some(key_ids_len as u16),
             offset: None,
         };
 
-        // TODO We need to implement dry run for fetch
-        let keys: KeyIDIdentityPublicKeyPairVec =
-            self.fetch_identity_keys_operations(key_request, transaction, drive_operations)?;
+        let keys: KeyIDIdentityPublicKeyPairVec = if apply {
+            self.fetch_identity_keys_operations(key_request, transaction, drive_operations)?
+        } else {
+            key_ids
+                .into_iter()
+                .map(|key_id| (key_id, IdentityPublicKey::max_possible_size_key(key_id)))
+                .collect()
+        };
 
         if keys.len() != key_ids_len {
             // TODO Choose / add an appropriate error
@@ -356,11 +402,11 @@ impl Drive {
         }
 
         for (_, mut key) in keys {
-            key.disabled_at = Some(disable_at);
+            key.set_disabled_at(disable_at);
 
             let key_id_bytes = key.id.encode_var_vec();
 
-            self.insert_key_to_storage_operations(
+            self.replace_key_in_storage_operations(
                 identity_id.as_slice(),
                 &key,
                 &key_id_bytes,
@@ -408,184 +454,466 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::block_info::BlockInfo;
-    use dpp::identity::{Identity, IdentityPublicKey};
+    use super::*;
+    use dpp::prelude::*;
 
-    use tempfile::TempDir;
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    use crate::drive::Drive;
-    use crate::fee::result::FeeResult;
-    use crate::fee_pools::epochs::Epoch;
+    mod add_to_identity_balance {
+        use super::*;
 
-    #[test]
-    fn test_update_identity_balance() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        #[test]
+        fn should_add_to_balance() {
+            let drive = setup_drive_with_initial_state_structure();
 
-        drive
-            .create_initial_state_structure(None)
-            .expect("expected to create root tree successfully");
+            let identity = Identity::random_identity(5, Some(12345));
 
-        let identity = Identity::random_identity(5, Some(12345));
+            let old_balance = identity.balance;
 
-        let old_balance = identity.balance;
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
 
-        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            drive
+                .add_new_identity(identity.clone(), &block, true, None)
+                .expect("expected to insert identity");
 
-        drive
-            .add_new_identity(identity.clone(), &block, true, None)
-            .expect("expected to insert identity");
+            let db_transaction = drive.grove.start_transaction();
 
-        let db_transaction = drive.grove.start_transaction();
+            let fee_result = drive
+                .add_to_identity_balance(
+                    identity.id.to_buffer(),
+                    300,
+                    &block,
+                    true,
+                    Some(&db_transaction),
+                )
+                .expect("expected to add to identity balance");
 
-        drive
-            .add_to_identity_balance(
-                identity.id.to_buffer(),
-                300,
-                &block,
-                true,
-                Some(&db_transaction),
-            )
-            .expect("expected to add to identity balance");
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    processing_fee: 623220,
+                    removed_bytes_from_system: 24, // TODO: That's fine?
+                    ..Default::default()
+                }
+            );
 
-        drive
-            .grove
-            .commit_transaction(db_transaction)
-            .unwrap()
-            .expect("expected to be able to commit a transaction");
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
 
-        let (balance, _fee_cost) = drive
-            .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
-            .expect("expected to get balance");
+            let (balance, _fee_cost) = drive
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .expect("expected to get balance");
 
-        assert_eq!(balance.unwrap(), old_balance + 300);
+            assert_eq!(balance.unwrap(), old_balance + 300);
+        }
+
+        #[test]
+        fn should_estimated_costs_without_state() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let app_hash_before = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            let fee_result = drive
+                .add_to_identity_balance(identity.id.to_buffer(), 300, &block, false, None)
+                .expect("expected to get estimated costs to update an identity balance");
+
+            let app_hash_after = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            assert_eq!(app_hash_after, app_hash_before);
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    processing_fee: 5528800,
+                    ..Default::default()
+                }
+            );
+
+            let (balance, _fee_cost) = drive
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .expect("expected to get balance");
+
+            assert!(balance.is_none()); //shouldn't have changed
+        }
     }
 
-    #[test]
-    fn test_update_identity_balance_estimated_costs() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+    mod add_new_keys_to_identity {
+        use super::*;
 
-        drive
-            .create_initial_state_structure(None)
-            .expect("expected to create root tree successfully");
+        #[test]
+        fn should_add_one_new_key_to_identity() {
+            let drive = setup_drive_with_initial_state_structure();
 
-        let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(5, Some(12345));
 
-        let old_balance = identity.balance;
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
 
-        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            drive
+                .add_new_identity(identity.clone(), &block, true, None)
+                .expect("expected to insert identity");
 
-        drive
-            .add_new_identity(identity.clone(), &block, true, None)
-            .expect("expected to insert identity");
+            let new_keys_to_add = IdentityPublicKey::random_keys(5, 1, Some(15));
 
-        let fee_result = drive
-            .add_to_identity_balance(identity.id.to_buffer(), 300, &block, false, None)
-            .expect("expected to get estimated costs to update an identity balance");
+            let db_transaction = drive.grove.start_transaction();
 
-        assert_eq!(
-            fee_result,
-            FeeResult {
-                storage_fee: 0,
-                processing_fee: 5528800,
-                fee_refunds: Default::default(),
-                removed_bytes_from_system: 0,
+            let fee_result = drive
+                .add_new_keys_to_identity(
+                    identity.id.to_buffer(),
+                    new_keys_to_add,
+                    &block,
+                    true,
+                    Some(&db_transaction),
+                )
+                .expect("expected to update identity with new keys");
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 15498000,
+                    processing_fee: 2642980,
+                    ..Default::default()
+                }
+            );
+
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+
+            let identity_keys = drive
+                .fetch_all_identity_keys(identity.id.to_buffer(), None)
+                .expect("expected to get balance");
+
+            assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 1
+        }
+
+        #[test]
+        fn should_add_two_dozen_new_keys_to_identity() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            drive
+                .create_initial_state_structure(None)
+                .expect("expected to create root tree successfully");
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            drive
+                .add_new_identity(identity.clone(), &block, true, None)
+                .expect("expected to insert identity");
+
+            let new_keys_to_add = IdentityPublicKey::random_keys(5, 24, Some(15));
+
+            let db_transaction = drive.grove.start_transaction();
+
+            let fee_result = drive
+                .add_new_keys_to_identity(
+                    identity.id.to_buffer(),
+                    new_keys_to_add,
+                    &block,
+                    true,
+                    Some(&db_transaction),
+                )
+                .expect("expected to update identity with new keys");
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 390636000,
+                    processing_fee: 10289310,
+                    ..Default::default()
+                }
+            );
+
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+
+            let identity_keys = drive
+                .fetch_all_identity_keys(identity.id.to_buffer(), None)
+                .expect("expected to get balance");
+
+            assert_eq!(identity_keys.len(), 29); // we had 5 keys and we added 24
+        }
+
+        #[test]
+        fn should_estimated_costs_without_state() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let new_keys_to_add = IdentityPublicKey::random_keys(5, 1, Some(15));
+
+            let app_hash_before = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            let fee_result = drive
+                .add_new_keys_to_identity(
+                    identity.id.to_buffer(),
+                    new_keys_to_add,
+                    &block,
+                    false,
+                    None,
+                )
+                .expect("expected to update identity with new keys");
+
+            let app_hash_after = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            assert_eq!(app_hash_after, app_hash_before);
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 15498000,
+                    processing_fee: 2642980,
+                    ..Default::default()
+                }
+            );
+        }
+    }
+
+    mod disable_identity_keys {
+        use super::*;
+        use chrono::Utc;
+
+        #[test]
+        fn should_disable_a_few_keys() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            drive
+                .add_new_identity(identity.clone(), &block_info, true, None)
+                .expect("expected to insert identity");
+
+            let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15));
+
+            drive
+                .add_new_keys_to_identity(
+                    identity.id.to_buffer(),
+                    new_keys_to_add.clone(),
+                    &block_info,
+                    true,
+                    None,
+                )
+                .expect("expected to update identity with new keys");
+
+            let db_transaction = drive.grove.start_transaction();
+
+            let key_ids = new_keys_to_add.into_iter().map(|key| key.id).collect();
+
+            let disable_at = Utc::now().timestamp_millis() as u64;
+
+            let fee_result = drive
+                .disable_identity_keys(
+                    identity.id.to_buffer(),
+                    key_ids,
+                    disable_at,
+                    &block_info,
+                    true,
+                    Some(&db_transaction),
+                )
+                .expect("should disable a few keys");
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 513000,
+                    processing_fee: 1787720,
+                    ..Default::default()
+                }
+            );
+
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+
+            let identity_keys = drive
+                .fetch_all_identity_keys(identity.id.to_buffer(), None)
+                .expect("expected to get balance");
+
+            assert_eq!(identity_keys.len(), 7); // we had 5 keys and we added 2
+
+            for (_, key) in identity_keys.into_iter().skip(5) {
+                assert_eq!(key.disabled_at, Some(disable_at));
             }
-        );
+        }
 
-        let (balance, _fee_cost) = drive
-            .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
-            .expect("expected to get balance");
+        #[test]
+        fn should_estimated_costs_without_state() {
+            let drive = setup_drive_with_initial_state_structure();
 
-        assert_eq!(balance.unwrap(), old_balance); //shouldn't have changed
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let disable_at = Utc::now().timestamp_millis() as u64;
+
+            let app_hash_before = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            let fee_result = drive
+                .disable_identity_keys(
+                    identity.id.to_buffer(),
+                    vec![0, 1],
+                    disable_at,
+                    &block_info,
+                    false,
+                    None,
+                )
+                .expect("should estimate the disabling of a few keys");
+
+            let app_hash_after = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            assert_eq!(app_hash_after, app_hash_before);
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 10368000,
+                    processing_fee: 5877330,
+                    ..Default::default()
+                }
+            );
+
+            todo!("fees shouldn't be so big")
+        }
     }
 
-    #[test]
-    fn test_add_one_new_key_to_identity() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+    mod update_revision {
+        use super::*;
 
-        drive
-            .create_initial_state_structure(None)
-            .expect("expected to create root tree successfully");
+        #[test]
+        fn should_update_revision() {
+            let drive = setup_drive_with_initial_state_structure();
 
-        let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(5, Some(12345));
 
-        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
 
-        drive
-            .add_new_identity(identity.clone(), &block, true, None)
-            .expect("expected to insert identity");
+            drive
+                .add_new_identity(identity.clone(), &block_info, true, None)
+                .expect("expected to insert identity");
 
-        let new_keys_to_add = IdentityPublicKey::random_keys(5, 1, Some(15));
+            let revision = 2;
 
-        let db_transaction = drive.grove.start_transaction();
+            let db_transaction = drive.grove.start_transaction();
 
-        drive
-            .add_new_keys_to_identity(
-                identity.id.to_buffer(),
-                new_keys_to_add,
-                &block,
-                true,
-                Some(&db_transaction),
-            )
-            .expect("expected to update identity with new keys");
+            let fee_result = drive
+                .update_identity_revision(
+                    identity.id.to_buffer(),
+                    revision,
+                    &block_info,
+                    true,
+                    Some(&db_transaction),
+                )
+                .expect("should update revision");
 
-        drive
-            .grove
-            .commit_transaction(db_transaction)
-            .unwrap()
-            .expect("expected to be able to commit a transaction");
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 0,
+                    processing_fee: 832780,
+                    removed_bytes_from_system: 8,
+                    ..Default::default()
+                }
+            );
 
-        let identity_keys = drive
-            .fetch_all_identity_keys(identity.id.to_buffer(), None)
-            .expect("expected to get balance");
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
 
-        assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 30
-    }
+            let updated_revision = drive
+                .fetch_identity_revision(identity.id.to_buffer(), true, None)
+                .expect("expected to get revision");
 
-    #[test]
-    fn test_add_two_dozen_new_keys_to_identity() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+            assert_eq!(updated_revision, Some(revision));
+        }
 
-        drive
-            .create_initial_state_structure(None)
-            .expect("expected to create root tree successfully");
+        #[test]
+        fn should_estimated_costs_without_state() {
+            let drive = setup_drive_with_initial_state_structure();
 
-        let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(5, Some(12345));
 
-        let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
 
-        drive
-            .add_new_identity(identity.clone(), &block, true, None)
-            .expect("expected to insert identity");
+            let revision = 2;
 
-        let new_keys_to_add = IdentityPublicKey::random_keys(5, 24, Some(15));
+            let app_hash_before = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
 
-        let db_transaction = drive.grove.start_transaction();
+            let fee_result = drive
+                .update_identity_revision(
+                    identity.id.to_buffer(),
+                    revision,
+                    &block_info,
+                    false,
+                    None,
+                )
+                .expect("should estimate the revision update");
 
-        drive
-            .add_new_keys_to_identity(
-                identity.id.to_buffer(),
-                new_keys_to_add,
-                &block,
-                true,
-                Some(&db_transaction),
-            )
-            .expect("expected to update identity with new keys");
+            let app_hash_after = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
 
-        drive
-            .grove
-            .commit_transaction(db_transaction)
-            .unwrap()
-            .expect("expected to be able to commit a transaction");
+            assert_eq!(app_hash_after, app_hash_before);
 
-        let identity_keys = drive
-            .fetch_all_identity_keys(identity.id.to_buffer(), None)
-            .expect("expected to get balance");
-
-        assert_eq!(identity_keys.len(), 29); // we had 5 keys and we added 24
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 0,
+                    processing_fee: 832780,
+                    removed_bytes_from_system: 8,
+                    ..Default::default()
+                }
+            );
+        }
     }
 }
