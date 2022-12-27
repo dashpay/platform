@@ -1396,7 +1396,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": ^2.4.2
+    "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
@@ -1482,7 +1482,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^2.3.0, @dashevo/dashd-rpc@npm:^2.4.2":
+"@dashevo/dashd-rpc@npm:^18.2.0":
+  version: 18.2.0
+  resolution: "@dashevo/dashd-rpc@npm:18.2.0"
+  dependencies:
+    async: ^3.2.4
+    bluebird: ^3.7.2
+  checksum: 8c07ec10fe24d403f2b82a9cad8f9e45c0261be2660a773def138d4f38ad25358e1848aeda7cc54ad7b517a45bc79cb0ac04a5b12ed64721971066cb6f1cf810
+  languageName: node
+  linkType: hard
+
+"@dashevo/dashd-rpc@npm:^2.3.0":
   version: 2.4.2
   resolution: "@dashevo/dashd-rpc@npm:2.4.2"
   dependencies:
@@ -1663,7 +1673,7 @@ __metadata:
     "@dashevo/abci": ~0.23.0-dev.1
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": ^2.4.2
+    "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpns-contract": "workspace:*"
@@ -3892,7 +3902,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"async@npm:^3.1.0, async@npm:^3.2.0, async@npm:^3.2.3":
+"async@npm:^3.1.0, async@npm:^3.2.0, async@npm:^3.2.3, async@npm:^3.2.4":
   version: 3.2.4
   resolution: "async@npm:3.2.4"
   checksum: 43d07459a4e1d09b84a20772414aa684ff4de085cbcaec6eea3c7a8f8150e8c62aa6cd4e699fe8ee93c3a5b324e777d34642531875a0817a35697522c1b02e89
@@ -5622,7 +5632,7 @@ __metadata:
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.44
-    "@dashevo/dashd-rpc": ^2.4.2
+    "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.1
     "@dashevo/dpns-contract": "workspace:*"
