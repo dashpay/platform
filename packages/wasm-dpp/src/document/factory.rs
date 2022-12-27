@@ -1,13 +1,18 @@
 use std::sync::Arc;
 
-use dpp::document::{
-    document_factory::{DocumentFactory, FactoryOptions},
-    document_transition::Action,
-    fetch_and_validate_data_contract::DataContractFetcherAndValidator,
+use dpp::{
+    document::{
+        self,
+        document_factory::{DocumentFactory, FactoryOptions},
+        document_transition::Action,
+        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
+    },
+    util::json_value::{JsonValueExt, ReplaceWith},
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
+    console_log,
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{ToSerdeJSONExt, WithJsError},
@@ -118,22 +123,37 @@ impl DocumentFactoryWASM {
     #[wasm_bindgen(js_name=createFromObject)]
     pub async fn create_from_object(
         &self,
-        raw_document_js: &JsValue,
+        raw_document_js: JsValue,
         options: &JsValue,
     ) -> Result<DocumentWasm, JsValue> {
-        let raw_document = raw_document_js.with_serde_to_json_value()?;
-        let options: FactoryOptions = if options.is_object() {
+        let mut raw_document = raw_document_js.with_serde_to_json_value()?;
+        let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
             let raw_options = options.with_serde_to_json_value()?;
             serde_json::from_value(raw_options).with_js_error()?
         } else {
             Default::default()
         };
 
-        let document = self
+        // replace static fields with bytes to make Document created
+        raw_document
+            .replace_identifier_paths(document::IDENTIFIER_FIELDS, ReplaceWith::Bytes)
+            .with_js_error()?;
+        let mut document = self
             .0
             .create_from_object(raw_document, options)
             .await
             .with_js_error()?;
+
+        // when data contract is available, replace remaining dynamic paths
+        let mut document_data = document.data.take();
+        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths();
+        document_data
+            .replace_identifier_paths(identifier_paths, ReplaceWith::Bytes)
+            .with_js_error()?;
+        document_data
+            .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
+            .with_js_error()?;
+        document.data = document_data;
 
         Ok(document.into())
     }
@@ -144,7 +164,7 @@ impl DocumentFactoryWASM {
         buffer: Vec<u8>,
         options: &JsValue,
     ) -> Result<DocumentWasm, JsValue> {
-        let options: FactoryOptions = if options.is_object() {
+        let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
             let raw_options = options.with_serde_to_json_value()?;
             serde_json::from_value(raw_options).with_js_error()?
         } else {

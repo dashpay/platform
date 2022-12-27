@@ -15,6 +15,7 @@ const MismatchOwnerIdsErrorJs = require('@dashevo/dpp/lib/document/errors/Mismat
 const InvalidInitialRevisionErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidInitialRevisionError');
 const SerializedObjectParsingErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
@@ -38,6 +39,7 @@ describe('DocumentFactory', () => {
   let generateEntropyMock;
   let validateDocumentMock;
   let fetchAndValidateDataContractMock;
+  let stateRepositoryMock;
   let ownerIdJs;
   let ownerId;
   let dataContract;
@@ -71,6 +73,7 @@ describe('DocumentFactory', () => {
 
     dataContractJs = getDataContractFixture();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
+    const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
@@ -96,14 +99,16 @@ describe('DocumentFactory', () => {
     const fetchContractResult = new ValidationResult();
     fetchContractResult.setData(dataContractJs);
 
-    const stateRepositoryLikeWithContract = {
-      fetchDataContract: () => dataContract,
-    };
+
+
+
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDataContract.returns(dc);
 
     fetchAndValidateDataContractMock = this.sinonSandbox.stub().returns(fetchContractResult);
     dppMock = createDPPMock();
 
-    factory = new DocumentFactory(1, documentValidator, stateRepositoryLikeWithContract);
+    factory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
     factoryJs = new DocumentFactoryJS(
       dppMock,
       validateDocumentMock,
@@ -118,7 +123,7 @@ describe('DocumentFactory', () => {
   afterEach(() => {
     fakeTime.reset();
     generateEntropyMock.restore();
-  });
+  })
 
   describe('create', () => {
     it('should return new Document with specified type and data', () => {
@@ -262,20 +267,12 @@ describe('DocumentFactory', () => {
     });
 
     it('should return new Data Contract with data from passed object - Rust', async () => {
-      console.log("------------------------------")
-      validateDocumentMock.returns(new ValidationResult());
-
-      // const result  = await factory.
       const result = await factory.createFromObject(rawDocument);
 
-      // expect(result).to.be.an.instanceOf(DocumentJs);
-      // expect(result.toObject()).to.deep.equal(documentJs.toObject());
+      expect(result).to.be.an.instanceOf(Document);
+      expect(result.toJSON()).to.deep.equal(document.toJSON());
 
-      // expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(rawDocumentJs);
-
-      // expect(validateDocumentMock).to.have.been.calledOnceWithExactly(
-      //   rawDocumentJs, dataContractJs,
-      // );
+      expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     });
 
     it('should return new Document without validation if "skipValidation" option is passed', async function it() {

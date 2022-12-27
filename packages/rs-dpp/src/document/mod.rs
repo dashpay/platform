@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
@@ -74,44 +75,106 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn from_raw_document(
-        mut raw_document: JsonValue,
+    pub fn from_json_document(
+        raw_document: JsonValue,
         data_contract: DataContract,
     ) -> Result<Document, ProtocolError> {
+        let mut document = Self::from_value::<String>(raw_document, data_contract)?;
+        let mut document_data = document.data.take();
+
+        // replace only the dynamic data
+        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths();
+        document_data.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+        document_data.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
+
+        document.data = document_data;
+        Ok(document)
+    }
+
+    pub fn from_raw_document(
+        raw_document: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Document, ProtocolError> {
+        Self::from_value::<Vec<u8>>(raw_document, data_contract)
+
+        // let mut document = Document {
+        //     data_contract,
+        //     ..Default::default()
+        // };
+
+        // if let Ok(value) = raw_document.remove("$protocolVersion") {
+        //     document.protocol_version = serde_json::from_value(value)?
+        // }
+        // if let Ok(value) = raw_document.remove("$id") {
+        //     let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
+        //     document.id = Identifier::from_bytes(&identifier_bytes)?
+        // }
+        // if let Ok(value) = raw_document.remove("$type") {
+        //     document.document_type = serde_json::from_value(value)?
+        // }
+        // if let Ok(value) = raw_document.remove("$dataContractId") {
+        //     let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
+        //     document.data_contract_id = Identifier::from_bytes(&identifier_bytes)?
+        // }
+        // if let Ok(value) = raw_document.remove("$ownerId") {
+        //     let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
+        //     document.owner_id = Identifier::from_bytes(&identifier_bytes)?
+        // }
+        // if let Ok(value) = raw_document.remove("$revision") {
+        //     document.revision = serde_json::from_value(value)?
+        // }
+        // if let Ok(value) = raw_document.remove("$createdAt") {
+        //     document.created_at = serde_json::from_value(value)?
+        // }
+        // if let Ok(value) = raw_document.remove("$updatedAt") {
+        //     document.updated_at = serde_json::from_value(value)?
+        // }
+
+        // document.data = raw_document;
+        // Ok(document)
+    }
+
+    fn from_value<S>(
+        mut document_value: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Document, ProtocolError>
+    where
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+    {
         let mut document = Document {
             data_contract,
             ..Default::default()
         };
 
-        if let Ok(value) = raw_document.remove("$protocolVersion") {
+        if let Ok(value) = document_value.remove("$protocolVersion") {
             document.protocol_version = serde_json::from_value(value)?
         }
-        if let Ok(value) = raw_document.remove("$id") {
-            let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
-            document.id = Identifier::from_bytes(&identifier_bytes)?
+        if let Ok(value) = document_value.remove("$id") {
+            let data: S = serde_json::from_value(value)?;
+            document.id = data.try_into()?;
         }
-        if let Ok(value) = raw_document.remove("$type") {
+        if let Ok(value) = document_value.remove("$type") {
             document.document_type = serde_json::from_value(value)?
         }
-        if let Ok(value) = raw_document.remove("$dataContractId") {
-            let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
-            document.data_contract_id = Identifier::from_bytes(&identifier_bytes)?
+        if let Ok(value) = document_value.remove("$dataContractId") {
+            let data: S = serde_json::from_value(value)?;
+            document.data_contract_id = data.try_into()?
         }
-        if let Ok(value) = raw_document.remove("$ownerId") {
-            let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
-            document.owner_id = Identifier::from_bytes(&identifier_bytes)?
+        if let Ok(value) = document_value.remove("$ownerId") {
+            let data: S = serde_json::from_value(value)?;
+            document.owner_id = data.try_into()?
         }
-        if let Ok(value) = raw_document.remove("$revision") {
+        if let Ok(value) = document_value.remove("$revision") {
             document.revision = serde_json::from_value(value)?
         }
-        if let Ok(value) = raw_document.remove("$createdAt") {
+        if let Ok(value) = document_value.remove("$createdAt") {
             document.created_at = serde_json::from_value(value)?
         }
-        if let Ok(value) = raw_document.remove("$updatedAt") {
+        if let Ok(value) = document_value.remove("$updatedAt") {
             document.updated_at = serde_json::from_value(value)?
         }
 
-        document.data = raw_document;
+        document.data = document_value;
         Ok(document)
     }
 
