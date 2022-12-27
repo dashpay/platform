@@ -150,12 +150,7 @@ module.exports = {
           createEmptyBlocksInterval: '3m',
         },
         log: {
-          level: {
-            main: 'info',
-            state: 'info',
-            statesync: 'info',
-            '*': 'error',
-          },
+          level: 'debug',
           format: 'plain',
         },
         nodeKey: {
