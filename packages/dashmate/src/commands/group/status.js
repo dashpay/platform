@@ -4,6 +4,7 @@ const { OUTPUT_FORMATS } = require('../../constants');
 
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const printObject = require('../../printers/printObject');
+const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 const colors = require('../../status/colors');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
 
@@ -71,26 +72,12 @@ class GroupStatusCommand extends GroupBaseCommand {
 
         printObject(plain, flags.format);
       } else {
-        json.push({
-          configName: name,
-          network: scope.core.network,
-          core: {
-            status: scope.core.status,
-            blockHeight: scope.core.blockHeight,
-          },
-          platform: {
-            status: scope.platform.tenderdash.serviceStatus,
-            version: scope.platform.tenderdash.version,
-            blockHeight: scope.platform.tenderdash.block,
-            peers: scope.platform.tenderdash.peers,
-            network: scope.platform.tenderdash.network,
-          },
-        });
+        json.push(scope);
       }
     }
 
     if (flags.format === OUTPUT_FORMATS.JSON) {
-      printObject(json, OUTPUT_FORMATS.JSON);
+      printArrayOfObjects(json, OUTPUT_FORMATS.JSON);
     }
   }
 }

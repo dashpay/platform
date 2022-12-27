@@ -19,16 +19,7 @@ function printObject(object, format) {
       break;
     }
     case OUTPUT_FORMATS.JSON: {
-      let cleanObject = {};
-      if (Array.isArray(object)) {
-        cleanObject = [];
-        object.forEach((e) => cleanObject.push(e));
-      } else {
-        Object.keys(object).forEach((key) => {
-          cleanObject[key] = object[key];
-        });
-      }
-      output = JSON.stringify(cleanObject);
+      output = JSON.stringify(object);
       break;
     }
     default: {
