@@ -13,7 +13,7 @@ use grovedb::batch::KeyInfoPath;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
-use crate::fee::credits::{Credits, MAX_CREDITS};
+use crate::fee::credits::MAX_CREDITS;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identity::{IdentityPublicKey, KeyID};
@@ -34,7 +34,7 @@ impl Drive {
         // while i64::MAX could potentially work, best to avoid it.
         if balance >= MAX_CREDITS {
             Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
-                "trying to set balance to over i64::Max",
+                "trying to set balance to over max credits amount (i64::MAX)",
             )))
         } else if is_replace {
             Ok(DriveOperation::replace_for_known_path_key_element(
@@ -140,6 +140,7 @@ impl Drive {
             transaction,
             &mut batch_operations,
         )?;
+
         let mut drive_operations: Vec<DriveOperation> = vec![];
         self.apply_batch_drive_operations(
             estimated_costs_only_with_layer_info,
@@ -147,7 +148,9 @@ impl Drive {
             batch_operations,
             &mut drive_operations,
         )?;
+
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+
         Ok(fees)
     }
 
@@ -184,7 +187,8 @@ impl Drive {
                     "identity overflow error",
                 )))?
         } else {
-            (i64::MAX - 1) as u64
+            // Leave some room for tests
+            MAX_CREDITS - 1000
         };
 
         drive_operations.push(self.update_identity_balance_operation(
@@ -195,32 +199,41 @@ impl Drive {
         Ok(())
     }
 
-    // storage_fees = 0
-    // refunds = 200
-    // processing_fees = 100
-    //
-    // we should prepay for balance update
-    // introduce a method to update identity balance
-
     /// Balances are stored in the balance tree under the identity's id
     pub fn remove_from_identity_balance(
         &self,
         identity_id: [u8; 32],
         required_removed_balance: u64,      // storage_fee - refunds
-        total_desired_removed_balance: u64, // storage_fee - refunds + processing fees
+        total_desired_removed_balance: u64, // storage_fee + processing fees - refunds
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut batch_operations: Vec<DriveOperation> = vec![];
+
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+
         self.remove_from_identity_balance_operations(
             identity_id,
             required_removed_balance,
             total_desired_removed_balance,
-            apply,
+            &mut estimated_costs_only_with_layer_info,
             transaction,
+            &mut batch_operations,
+        )?;
+
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
             &mut drive_operations,
         )?;
+
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)
     }
@@ -232,22 +245,31 @@ impl Drive {
         identity_id: [u8; 32],
         required_removed_balance: u64,
         total_desired_removed_balance: u64,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let previous_balance = self.fetch_identity_balance_operations(
-            identity_id,
-            apply,
-            transaction,
-            drive_operations,
-        )?;
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
+        }
 
-        let (new_balance, negative_credit_amount) = if apply {
-            let previous_balance =
-                previous_balance.ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "there should always be a balance if apply is set to true",
-                )))?;
+        let previous_balance = if estimated_costs_only_with_layer_info.is_none() {
+            self.fetch_identity_balance_operations(
+                identity_id,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                drive_operations,
+            )?
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "there should always be a balance if apply is set to true",
+            )))?
+        } else {
+            MAX_CREDITS
+        };
+
+        let (new_balance, negative_credit_amount) =
             if total_desired_removed_balance > previous_balance {
                 // we do not have enough balance
                 // there is a part we absolutely need to pay for
@@ -260,23 +282,20 @@ impl Drive {
             } else {
                 // we have enough balance
                 (previous_balance - total_desired_removed_balance, None)
-            }
-        } else {
-            // As these are just estimations, let's be conservative and say that they are going
-            // 10M credits in the red
-            (i64::MAX as u64, Some(10000000))
-        };
+            };
 
         drive_operations.push(self.update_identity_balance_operation(
             identity_id,
             new_balance,
             true,
         )?);
+
         if let Some(negative_credit_amount) = negative_credit_amount {
             drive_operations.push(
                 self.update_identity_negative_credit_operation(identity_id, negative_credit_amount),
             );
         }
+
         Ok(())
     }
 
@@ -478,10 +497,12 @@ mod tests {
 
             let db_transaction = drive.grove.start_transaction();
 
+            let amount = 300;
+
             let fee_result = drive
                 .add_to_identity_balance(
                     identity.id.to_buffer(),
-                    300,
+                    amount,
                     &block,
                     true,
                     Some(&db_transaction),
@@ -507,7 +528,7 @@ mod tests {
                 .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
                 .expect("expected to get balance");
 
-            assert_eq!(balance.unwrap(), old_balance + 300);
+            assert_eq!(balance.unwrap(), old_balance + amount);
         }
 
         #[test]
@@ -732,7 +753,7 @@ mod tests {
 
             let key_ids = new_keys_to_add.into_iter().map(|key| key.id).collect();
 
-            let disable_at = Utc::now().timestamp_millis() as u64;
+            let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
             let fee_result = drive
                 .disable_identity_keys(
@@ -779,7 +800,7 @@ mod tests {
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
 
-            let disable_at = Utc::now().timestamp_millis() as u64;
+            let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
             let app_hash_before = drive
                 .grove
@@ -819,7 +840,7 @@ mod tests {
         }
     }
 
-    mod update_revision {
+    mod update_identity_revision {
         use super::*;
 
         #[test]
@@ -914,6 +935,111 @@ mod tests {
                     ..Default::default()
                 }
             );
+        }
+    }
+
+    mod remove_from_identity_balance {
+        use super::*;
+
+        #[test]
+        fn should_remove_from_balance() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let old_balance = identity.balance;
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            drive
+                .add_new_identity(identity.clone(), &block, true, None)
+                .expect("expected to insert identity");
+
+            let db_transaction = drive.grove.start_transaction();
+
+            let amount = 10;
+
+            let fee_result = drive
+                .remove_from_identity_balance(
+                    identity.id.to_buffer(),
+                    amount,
+                    amount,
+                    &block,
+                    true,
+                    Some(&db_transaction),
+                )
+                .expect("expected to add to identity balance");
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    processing_fee: 623220,
+                    removed_bytes_from_system: 24, // TODO: That's fine?
+                    ..Default::default()
+                }
+            );
+
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+
+            let (balance, _fee_cost) = drive
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .expect("expected to get balance");
+
+            assert_eq!(balance.unwrap(), old_balance - amount);
+        }
+
+        #[test]
+        fn should_estimated_costs_without_state() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let app_hash_before = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            let amount = 10;
+
+            let fee_result = drive
+                .remove_from_identity_balance(
+                    identity.id.to_buffer(),
+                    amount,
+                    amount,
+                    &block,
+                    false,
+                    None,
+                )
+                .expect("expected to add to identity balance");
+
+            let app_hash_after = drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            assert_eq!(app_hash_after, app_hash_before);
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    processing_fee: 5430770,
+                    ..Default::default()
+                }
+            );
+
+            let (balance, _fee_cost) = drive
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .expect("expected to get balance");
+
+            assert!(balance.is_none()); //shouldn't have changed
         }
     }
 }

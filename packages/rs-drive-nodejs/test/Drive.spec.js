@@ -529,6 +529,105 @@ describe('Drive', () => {
     });
   });
 
+  describe('#addToIdentityBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should add to balance', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const amount = 100;
+
+      const result = await drive.addToIdentityBalance(
+        identity.getId(),
+        amount,
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getBalance()).to.equals(identity.getBalance() + amount);
+    });
+
+    it('should not update state with dry run', async () => {
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
+      const result = await drive.addToIdentityBalance(
+        identity.getId(),
+        100,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
+  describe('#removeFromIdentitiyBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should remove from balance', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const amount = 2;
+
+      const result = await drive.removeFromIdentityBalance(
+        identity.getId(),
+        amount,
+        amount,
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getBalance()).to.equals(
+        identity.getBalance() - amount,
+      );
+    });
+
+    it('should not update state with dry run', async () => {
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
+      const requiredAmount = 2;
+      const desiredAmount = 2;
+
+      const result = await drive.removeFromIdentityBalance(
+        identity.getId(),
+        requiredAmount,
+        desiredAmount,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
   describe('#addKeysToIdentity', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();
@@ -538,8 +637,6 @@ describe('Drive', () => {
       const keysToAdd = [identity.getPublicKeys().pop()];
 
       await drive.insertIdentity(identity, blockInfo);
-
-      initialRootHash = await drive.getGroveDB().getRootHash();
 
       const result = await drive.addKeysToIdentity(
         identity.getId(),
@@ -557,6 +654,8 @@ describe('Drive', () => {
     });
 
     it('should not update state with dry run', async () => {
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
       const keysToAdd = [identity.getPublicKeys().pop()];
 
       const result = await drive.addKeysToIdentity(

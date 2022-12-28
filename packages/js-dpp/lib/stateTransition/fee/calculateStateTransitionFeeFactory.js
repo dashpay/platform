@@ -45,6 +45,8 @@ function calculateStateTransitionFeeFactory(stateRepository, calculateOperationF
         }, 0);
     }
 
+    // TODO: we should prepay for balance update after ST execution
+
     const total = (storageFee + processingFee - feeRefundsSum) + DEFAULT_USER_TIP;
 
     executionContext.setLastCalculatedFeeDetails({

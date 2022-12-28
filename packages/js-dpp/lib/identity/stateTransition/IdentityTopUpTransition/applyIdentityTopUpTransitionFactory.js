@@ -1,5 +1,4 @@
 const { convertSatoshiToCredits } = require('../../creditsConverter');
-const getBiggestPossibleIdentity = require('../../getBiggestPossibleIdentity');
 
 /**
  * @param {StateRepository} stateRepository
@@ -34,15 +33,7 @@ function applyIdentityTopUpTransitionFactory(
 
     const identityId = stateTransition.getIdentityId();
 
-    let identity = await stateRepository.fetchIdentity(identityId, executionContext);
-
-    if (executionContext.isDryRun()) {
-      identity = getBiggestPossibleIdentity();
-    }
-
-    identity.increaseBalance(creditsAmount);
-
-    await stateRepository.updateIdentity(identity, executionContext);
+    await stateRepository.addToIdentityBalance(identityId, creditsAmount, executionContext);
 
     await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint, executionContext);
   }

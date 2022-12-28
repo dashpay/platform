@@ -107,7 +107,7 @@
  */
 
 /**
- * Store identity
+ * Create identity
  *
  * @async
  * @method
@@ -150,6 +150,18 @@
  * @name StateRepository#updateIdentityRevision
  * @param {Identifier} identityId
  * @param {number} revision
+ * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Add to identity balance
+ *
+ * @async
+ * @method
+ * @name StateRepository#addToIdentityBalance
+ * @param {Identifier} identityId
+ * @param {number} amount
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
  * @returns {Promise<void>}
  */

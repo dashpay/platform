@@ -19,7 +19,11 @@ function applyIdentityUpdateTransitionFactory(
     const identityId = stateTransition.getIdentityId();
     const executionContext = stateTransition.getExecutionContext();
 
-    await stateRepository.updateIdentityRevision(stateTransition.getRevision(), executionContext);
+    await stateRepository.updateIdentityRevision(
+      identityId,
+      stateTransition.getRevision(),
+      executionContext,
+    );
 
     if (stateTransition.getPublicKeyIdsToDisable()) {
       await stateRepository.disableIdentityKeys(

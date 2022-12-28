@@ -65,16 +65,6 @@ describe('applyIdentityCreateTransitionFactory', () => {
       executionContext,
     );
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
-      executionContext,
-    );
-
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         stateTransition.getAssetLockProof().getOutPoint(),
