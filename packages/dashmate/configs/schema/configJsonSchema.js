@@ -150,6 +150,12 @@ module.exports = {
               type: 'string',
               minLength: 1,
             },
+            allowIps: {
+              type: 'array',
+              items: {
+                type: 'string'
+              },
+            },
           },
           required: ['port', 'user', 'password'],
           additionalProperties: false,

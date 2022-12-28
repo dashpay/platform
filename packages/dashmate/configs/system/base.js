@@ -43,6 +43,11 @@ module.exports = {
       port: 20002,
       user: 'dashrpc',
       password: 'rpcpassword',
+      allowIps: [
+        '127.0.0.1',
+        '172.16.0.0/12',
+        '192.168.0.0/16'
+      ]
     },
     spork: {
       address: null,

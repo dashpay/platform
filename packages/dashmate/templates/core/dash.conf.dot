@@ -12,9 +12,8 @@ server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
 
-rpcallowip=127.0.0.1
-rpcallowip=172.16.0.0/12
-rpcallowip=192.168.0.0/16
+{{~it.core.rpc.allowIps :host}}
+rpcallowip={{=host}}{{~}}
 
 rpcworkqueue=64
 rpcthreads=16
