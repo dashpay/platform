@@ -398,7 +398,7 @@ module.exports = {
 
     return configFile;
   },
-  '0.24.0-dev.11': (configFile) => {
+  '0.24.0-dev.12': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         config.core.logIps = 0;
