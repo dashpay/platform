@@ -461,41 +461,8 @@ module.exports = {
                   type: 'object',
                   properties: {
                     level: {
-                      type: 'object',
-                      properties: {
-                        'abci-client': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        blockchain: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        consensus: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        main: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        mempool: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        p2p: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        'rpc-server': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        state: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        statesync: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        '*': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                      },
-                      minProperties: 1,
-                      additionalProperties: false,
+                      type: 'string',
+                      enum: ['trace', 'debug', 'info', 'warn', 'error'],
                     },
                     format: {
                       type: 'string',
