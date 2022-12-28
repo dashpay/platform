@@ -45,24 +45,47 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#updateIdentity', () => {
+  describe('#addKeysToIdentity', () => {
     it('should store identity to repository', async () => {
-      await cachedStateRepository.updateIdentity(identity);
+      await cachedStateRepository.addKeysToIdentity(identity.getId(), identity.getPublicKeys());
 
-      expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
+      expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWith(
+        identity.getId(),
+        identity.getPublicKeys(),
+      );
     });
   });
 
-  describe('#storeIdentityPublicKeyHashes', () => {
-    it('should store identity id and public key hashes to repository', async () => {
-      const publicKeyHashes = identity.getPublicKeys().map((pk) => pk.hash());
+  describe('#addToIdentityBalance', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.addToIdentityBalance(identity.getId(), 100);
 
-      await cachedStateRepository.storeIdentityPublicKeyHashes(
-        identity.getId(), publicKeyHashes,
+      expect(stateRepositoryMock.addToIdentityBalance).to.be.calledOnceWith(
+        identity.getId(),
+        100,
       );
+    });
+  });
 
-      expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-        identity.getId(), publicKeyHashes, undefined,
+  describe('#disableIdentityKeys', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.disableIdentityKeys(identity.getId(), [100], 100);
+
+      expect(stateRepositoryMock.disableIdentityKeys).to.be.calledOnceWith(
+        identity.getId(),
+        [100],
+        100,
+      );
+    });
+  });
+
+  describe('#updateIdentityRevision', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.updateIdentityRevision(identity.getId(), 1);
+
+      expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWith(
+        identity.getId(),
+        1,
       );
     });
   });

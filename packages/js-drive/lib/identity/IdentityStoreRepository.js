@@ -1,5 +1,3 @@
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const StorageResult = require('../storage/StorageResult');
 
@@ -46,13 +44,13 @@ class IdentityStoreRepository {
           identity_id: identity.id.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'createContract');
+        }, 'create');
       }
     }
   }
 
   /**
-   * Remove balance from identity in database
+   * Add to identity balance in database
    *
    * @param {Identifier} identityId
    * @param {number} amount
@@ -63,7 +61,7 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async updateAddToIdentityBalance(identityId, amount, blockInfo, options = {}) {
+  async addToBalance(identityId, amount, blockInfo, options = {}) {
     try {
       const feeResult = await this.storage.getDrive().addToIdentityBalance(
         identityId,
@@ -85,7 +83,7 @@ class IdentityStoreRepository {
           identity_id: identityId.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'updateAddToIdentityBalance');
+        }, 'addToBalance');
       }
     }
   }
@@ -103,7 +101,7 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async updateRemoveFromIdentityBalance(
+  async removeFromBalance(
     identityId,
     requiredAmount,
     desiredAmount,
@@ -132,16 +130,16 @@ class IdentityStoreRepository {
           identity_id: identityId.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'updateRemoveFromIdentityBalance');
+        }, 'removeFromBalance');
       }
     }
   }
 
   /**
-   * Add keys to an already existing Identity
+   * Update identity revision in database
    *
    * @param {Identifier} identityId
-   * @param {Array} keys
+   * @param {number} revision
    * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
@@ -149,16 +147,16 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async updateAddKeys(
+  async updateRevision(
     identityId,
-    keys,
+    revision,
     blockInfo,
     options = {},
   ) {
     try {
-      const feeResult = await this.storage.getDrive().addKeysToIdentity(
+      const feeResult = await this.storage.getDrive().updateIdentityRevision(
         identityId,
-        keys,
+        revision,
         blockInfo,
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
@@ -176,7 +174,7 @@ class IdentityStoreRepository {
           identity_id: identityId.toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, 'updateAddKeysToIdentity');
+        }, 'updateRevision');
       }
     }
   }
@@ -187,11 +185,12 @@ class IdentityStoreRepository {
    * @param {Identifier} id
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {BlockInfo} [options.blockInfo]
    * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<null|Identity>>}
    */
-  async fetchFullIdentity(id, options = { }) {
+  async fetch(id, options = { }) {
     if (options.dryRun) {
       return new StorageResult(
         null,
@@ -199,20 +198,27 @@ class IdentityStoreRepository {
       );
     }
 
-    const [identity, feeResult] = await this.storage.getDrive().fetchIdentity(
+    if (options && options.blockInfo) {
+      const [identity, feeResult] = await this.storage.getDrive().fetchIdentityWithCosts(
+        id,
+        options.blockInfo.epoch,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        identity,
+        [new PreCalculatedOperation(feeResult)],
+      );
+    }
+
+    const identity = await this.storage.getDrive().fetchIdentity(
       id,
-      options && options.blockInfo ? options.blockInfo.epoch : undefined,
       Boolean(options.useTransaction),
     );
 
-    const operations = [];
-    if (feeResult) {
-      operations.push(new PreCalculatedOperation(feeResult));
-    }
-
     return new StorageResult(
-        identity,
-      operations,
+      identity,
+      [],
     );
   }
 
@@ -239,25 +245,8 @@ class IdentityStoreRepository {
    * @return {Promise<StorageResult<Buffer>>}
    * */
   async proveMany(ids, options) {
-    const items = ids.map((id) => ({
-      type: 'key',
-      key: id.toBuffer(),
-    }));
-
-    return this.storage.proveQuery({
-      path: IdentityStoreRepository.TREE_PATH,
-      query: {
-        query: {
-          items,
-          subqueryKey: IdentityStoreRepository.IDENTITY_KEY,
-        },
-      },
-    }, options);
+    throw new Error('No implemented');
   }
 }
-
-IdentityStoreRepository.TREE_PATH = [Buffer.from([0])];
-
-IdentityStoreRepository.IDENTITY_KEY = Buffer.from([0]);
 
 module.exports = IdentityStoreRepository;

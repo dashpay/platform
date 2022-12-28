@@ -4,14 +4,14 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 /**
  *
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -93,7 +93,7 @@ function handleUpdatedScriptPayoutFactory(
 
     const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
 
-    await publicKeyToIdentitiesRepository.store(
+    await identityPublicKeyRepository.store(
       publicKeyHash,
       identity.getId(),
       { useTransaction: true },

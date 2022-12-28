@@ -16,14 +16,14 @@ const createVotingIdentifier = require('../../../../lib/identity/masternode/crea
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {expectOperatorIdentity}
  */
 function expectOperatorIdentityFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -80,7 +80,7 @@ function expectOperatorIdentityFactory(
       .deep
       .equal(operatorPubKey);
 
-    const firstOperatorIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
+    const firstOperatorIdentityByPublicKeyHashResult = await identityPublicKeyRepository
       .fetch(firstOperatorMasternodePublicKey.hash(), { useTransaction: true });
 
     const firstOperatorIdentityByPublicKeyHash = firstOperatorIdentityByPublicKeyHashResult
@@ -108,7 +108,7 @@ function expectOperatorIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
         .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
@@ -130,7 +130,7 @@ function expectOperatorIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
         .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
@@ -147,12 +147,12 @@ function expectOperatorIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @returns {expectVotingIdentity}
  */
 function expectVotingIdentityFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
 ) {
   /**
    * @typedef {expectVotingIdentity}
@@ -191,7 +191,7 @@ function expectVotingIdentityFactory(
       Buffer.from(proRegTx.extraPayload.keyIDVoting, 'hex').reverse(),
     );
 
-    const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
+    const masternodeIdentityByPublicKeyHashResult = await identityPublicKeyRepository
       .fetch(masternodePublicKey.hash(), {
         useTransaction: true,
       });
@@ -208,14 +208,14 @@ function expectVotingIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {expectMasternodeIdentity}
  */
 function expectMasternodeIdentityFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -263,7 +263,7 @@ function expectMasternodeIdentityFactory(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
 
-    const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
+    const masternodeIdentityByPublicKeyHashResult = await identityPublicKeyRepository
       .fetch(masternodePublicKey.hash(), { useTransaction: true });
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
@@ -285,7 +285,7 @@ function expectMasternodeIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
         .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
@@ -307,7 +307,7 @@ function expectMasternodeIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
         .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
@@ -357,7 +357,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let rewardsDataContract;
   let identityRepository;
   let documentRepository;
-  let publicKeyToIdentitiesRepository;
+  let identityPublicKeyRepository;
   let expectOperatorIdentity;
   let expectVotingIdentity;
   let expectMasternodeIdentity;
@@ -473,25 +473,25 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     identityRepository = container.resolve('identityRepository');
     documentRepository = container.resolve('documentRepository');
-    publicKeyToIdentitiesRepository = container.resolve('publicKeyToIdentitiesRepository');
+    identityPublicKeyRepository = container.resolve('identityPublicKeyRepository');
     const getWithdrawPubKeyTypeFromPayoutScript = container.resolve('getWithdrawPubKeyTypeFromPayoutScript');
     const getPublicKeyFromPayoutScript = container.resolve('getPublicKeyFromPayoutScript');
 
     expectOperatorIdentity = expectOperatorIdentityFactory(
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
     );
 
     expectVotingIdentity = expectVotingIdentityFactory(
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
     );
 
     expectMasternodeIdentity = expectMasternodeIdentityFactory(
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
     );

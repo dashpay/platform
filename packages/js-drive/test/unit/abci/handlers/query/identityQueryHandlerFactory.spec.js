@@ -22,7 +22,7 @@ const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identityQueryHandlerFactory', () => {
   let identityQueryHandler;
-  let signedIdentityRepositoryMock;
+  let identityRepositoryMock;
   let identity;
   let params;
   let data;
@@ -30,7 +30,7 @@ describe('identityQueryHandlerFactory', () => {
   let responseMock;
 
   beforeEach(function beforeEach() {
-    signedIdentityRepositoryMock = {
+    identityRepositoryMock = {
       fetch: this.sinon.stub(),
       prove: this.sinon.stub(),
     };
@@ -43,7 +43,7 @@ describe('identityQueryHandlerFactory', () => {
     createQueryResponseMock.returns(responseMock);
 
     identityQueryHandler = identityQueryHandlerFactory(
-      signedIdentityRepositoryMock,
+      identityRepositoryMock,
       createQueryResponseMock,
     );
 
@@ -56,20 +56,20 @@ describe('identityQueryHandlerFactory', () => {
   });
 
   it('should return serialized identity', async () => {
-    signedIdentityRepositoryMock.fetch.resolves(
+    identityRepositoryMock.fetch.resolves(
       new StorageResult(identity),
     );
 
     const result = await identityQueryHandler(params, data, {});
 
-    expect(signedIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
   it('should throw NotFoundAbciError if identity not found', async () => {
-    signedIdentityRepositoryMock.fetch.resolves(
+    identityRepositoryMock.fetch.resolves(
       new StorageResult(null),
     );
 
@@ -81,7 +81,7 @@ describe('identityQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(NotFoundAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.NOT_FOUND);
       expect(e.message).to.equal('Identity not found');
-      expect(signedIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+      expect(identityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     }
   });
 
@@ -94,17 +94,17 @@ describe('identityQueryHandlerFactory', () => {
     // };
     const proof = Buffer.alloc(20, 1);
 
-    signedIdentityRepositoryMock.fetch.resolves(
+    identityRepositoryMock.fetch.resolves(
       new StorageResult(null),
     );
-    signedIdentityRepositoryMock.prove.resolves(
+    identityRepositoryMock.prove.resolves(
       new StorageResult(proof),
     );
 
     const result = await identityQueryHandler(params, data, { prove: true });
 
-    expect(signedIdentityRepositoryMock.fetch).to.not.be.called();
-    expect(signedIdentityRepositoryMock.prove).to.be.calledOnceWith(data.id);
+    expect(identityRepositoryMock.fetch).to.not.be.called();
+    expect(identityRepositoryMock.prove).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());

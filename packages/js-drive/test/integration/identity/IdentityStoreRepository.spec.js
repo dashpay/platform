@@ -9,6 +9,7 @@ const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
 const logger = require('../../../lib/util/noopLogger');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('IdentityStoreRepository', () => {
   let rsDrive;
@@ -16,6 +17,7 @@ describe('IdentityStoreRepository', () => {
   let repository;
   let decodeProtocolEntity;
   let identity;
+  let blockInfo;
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
@@ -23,12 +25,16 @@ describe('IdentityStoreRepository', () => {
       dataContractsBlockCacheSize: 500,
     });
 
+    await rsDrive.createInitialStateStructure();
+
     store = new GroveDBStore(rsDrive, logger);
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
     repository = new IdentityStoreRepository(store, decodeProtocolEntity);
     identity = getIdentityFixture();
+
+    blockInfo = new BlockInfo(1, 1, Date.now());
   });
 
   afterEach(async () => {
@@ -38,32 +44,20 @@ describe('IdentityStoreRepository', () => {
   });
 
   describe('#create', () => {
-    beforeEach(async () => {
-      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
-    });
-
     it('should create an identity', async () => {
       const result = await repository.create(
         identity,
+        blockInfo,
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
+      expect(result.getOperations().length).to.equal(1);
 
-      const encodedIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
+      const fetchedResult = await rsDrive.fetchIdentity(
+        identity.getId(),
       );
 
-      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        encodedIdentityResult.getValue(),
-      );
-
-      rawIdentity.protocolVersion = protocolVersion;
-
-      const fetchedIdentity = new Identity(rawIdentity);
-
-      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+      expect(fetchedResult.toObject()).to.be.deep.equal(identity.toObject());
     });
 
     it('should store identity using transaction', async () => {
@@ -71,235 +65,338 @@ describe('IdentityStoreRepository', () => {
 
       await repository.create(
         identity,
+        blockInfo,
         { useTransaction: true },
       );
 
-      const notFoundIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
-        { useTransaction: false },
+      const notFoundIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
       );
 
-      expect(notFoundIdentityResult.isNull()).to.be.true();
+      expect(notFoundIdentity).to.be.null();
 
-      const identityTransactionResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        { useTransaction: true },
+      const identityTransaction = await rsDrive.fetchIdentity(
+        identity.getId(),
+        true,
       );
 
-      let [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        identityTransactionResult.getValue(),
-      );
-
-      rawIdentity.protocolVersion = protocolVersion;
-
-      let fetchedIdentity = new Identity(rawIdentity);
-
-      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+      expect(identityTransaction.toObject()).to.deep.equal(identity.toObject());
 
       await store.commitTransaction();
 
-      const committedIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
+      const committedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
       );
 
-      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getValue());
-
-      rawIdentity.protocolVersion = protocolVersion;
-
-      fetchedIdentity = new Identity(rawIdentity);
-
-      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+      expect(committedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
-  describe('#update', () => {
+  describe('#addToBalance', () => {
     beforeEach(async () => {
-      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
-    });
-
-    it('should update identity', async () => {
       await repository.create(
         identity,
+        blockInfo,
       );
+    });
 
-      const [, publicKey] = identity.getPublicKeys();
+    it('should add to balance', async () => {
+      const amount = 100;
 
-      publicKey.setReadOnly(true);
-
-      const result = await repository.update(
-        identity,
+      const result = await repository.addToBalance(
+        identity.getId(),
+        amount,
+        blockInfo,
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
+      expect(result.getOperations().length).to.equal(1);
 
-      const encodedIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
+      const fetchedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
       );
 
-      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        encodedIdentityResult.getValue(),
-      );
-
-      rawIdentity.protocolVersion = protocolVersion;
-
-      const fetchedIdentity = new Identity(rawIdentity);
-
-      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+      expect(fetchedIdentity.getBalance()).to.equal(identity.getBalance() + amount);
     });
 
-    it('should store identity using transaction', async () => {
-      // Create identity
-      await repository.create(
-        identity,
-      );
-
+    it('should add to balance using transaction', async () => {
       await store.startTransaction();
 
-      // Update identity
-      const updatedIdentity = new Identity(identity.toObject());
+      const amount = 100;
 
-      const [, publicKey] = updatedIdentity.getPublicKeys();
-
-      publicKey.setReadOnly(true);
-
-      await repository.update(
-        updatedIdentity,
+      await repository.addToBalance(
+        identity.getId(),
+        amount,
+        blockInfo,
         { useTransaction: true },
       );
 
-      const previousIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        { useTransaction: false },
+      const previousIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
       );
 
-      let [protocolVersion, rawIdentity] = decodeProtocolEntity(previousIdentityResult.getValue());
+      expect(previousIdentity.getBalance()).to.equal(identity.getBalance());
 
-      rawIdentity.protocolVersion = protocolVersion;
-
-      let fetchedIdentity = new Identity(rawIdentity);
-
-      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
-
-      const identityTransactionResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        { useTransaction: true },
+      const transactionalIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+        true,
       );
 
-      [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        identityTransactionResult.getValue(),
-      );
-
-      rawIdentity.protocolVersion = protocolVersion;
-
-      fetchedIdentity = new Identity(rawIdentity);
-
-      expect(fetchedIdentity.toObject()).to.deep.equal(updatedIdentity.toObject());
+      expect(transactionalIdentity.getBalance()).to.equal(identity.getBalance() + amount);
 
       await store.commitTransaction();
 
-      const committedIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
+      const commitedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
       );
 
-      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getValue());
+      expect(commitedIdentity.getBalance()).to.equal(identity.getBalance() + amount);
+    });
+  });
 
-      rawIdentity.protocolVersion = protocolVersion;
+  describe('#removeFromBalance', () => {
+    beforeEach(async () => {
+      await repository.create(
+        identity,
+        blockInfo,
+      );
+    });
 
-      fetchedIdentity = new Identity(rawIdentity);
+    it('should remove from balance', async () => {
+      const amount = 5;
 
-      expect(fetchedIdentity.toObject()).to.deep.equal(updatedIdentity.toObject());
+      const result = await repository.removeFromBalance(
+        identity.getId(),
+        amount,
+        amount,
+        blockInfo,
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.equal(1);
+
+      const fetchedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+      );
+
+      expect(fetchedIdentity.getBalance()).to.equal(identity.getBalance() - amount);
+    });
+
+    it('should remove from balance using transaction', async () => {
+      await store.startTransaction();
+
+      const amount = 5;
+
+      await repository.removeFromBalance(
+        identity.getId(),
+        amount,
+        amount,
+        blockInfo,
+        { useTransaction: true },
+      );
+
+      const previousIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+      );
+
+      expect(previousIdentity.getBalance()).to.equal(identity.getBalance());
+
+      const transactionalIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+        true,
+      );
+
+      expect(transactionalIdentity.getBalance()).to.equal(identity.getBalance() - amount);
+
+      await store.commitTransaction();
+
+      const commitedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+      );
+
+      expect(commitedIdentity.getBalance()).to.equal(identity.getBalance() - amount);
+    });
+  });
+
+  describe('#updateRevision', () => {
+    beforeEach(async () => {
+      await repository.create(
+        identity,
+        blockInfo,
+      );
+    });
+
+    it('should update revision', async () => {
+      const revision = 2;
+
+      const result = await repository.updateRevision(
+        identity.getId(),
+        revision,
+        blockInfo,
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.equal(1);
+
+      const fetchedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+      );
+
+      expect(fetchedIdentity.getRevision()).to.equal(revision);
+    });
+
+    it('should remove from balance using transaction', async () => {
+      await store.startTransaction();
+
+      const revision = 2;
+
+      await repository.updateRevision(
+        identity.getId(),
+        revision,
+        blockInfo,
+        { useTransaction: true },
+      );
+
+      const previousIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+      );
+
+      expect(previousIdentity.getRevision()).to.equal(identity.getRevision());
+
+      const transactionalIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+        true,
+      );
+
+      expect(transactionalIdentity.getRevision()).to.equal(revision);
+
+      await store.commitTransaction();
+
+      const commitedIdentity = await rsDrive.fetchIdentity(
+        identity.getId(),
+      );
+
+      expect(commitedIdentity.getRevision()).to.equal(revision);
     });
   });
 
   describe('#fetch', () => {
-    beforeEach(async () => {
-      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
-    });
+    context('without block info', () => {
+      it('should fetch null if identity not found', async () => {
+        const result = await repository.fetch(identity.getId());
 
-    it('should fetch null if identity not found', async () => {
-      const result = await repository.fetch(identity.getId());
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(0);
 
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
-
-      expect(result.getValue()).to.be.null();
-    });
-
-    it('should fetch an identity', async () => {
-      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
-
-      await store.put(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        identity.toBuffer(),
-      );
-
-      const result = await repository.fetch(identity.getId());
-
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
-
-      const storedIdentity = result.getValue();
-
-      expect(storedIdentity).to.be.an.instanceof(Identity);
-      expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
-    });
-
-    it('should fetch an identity using transaction', async () => {
-      await store.startTransaction();
-
-      await store.createTree(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
-        { useTransaction: true },
-      );
-
-      await store.put(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        identity.toBuffer(),
-        { useTransaction: true },
-      );
-
-      const notFoundIdentityResult = await repository.fetch(identity.getId(), {
-        useTransaction: false,
+        expect(result.getValue()).to.be.null();
       });
 
-      expect(notFoundIdentityResult.getValue()).to.be.null();
+      it('should fetch an identity', async () => {
+        await rsDrive.insertIdentity(identity, blockInfo);
 
-      const transactionalIdentityResult = await repository.fetch(identity.getId(), {
-        useTransaction: true,
+        const result = await repository.fetch(identity.getId());
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(0);
+
+        const storedIdentity = result.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
       });
 
-      const transactionalIdentity = transactionalIdentityResult.getValue();
+      it('should fetch an identity using transaction', async () => {
+        await store.startTransaction();
 
-      expect(transactionalIdentity).to.be.an.instanceof(Identity);
-      expect(transactionalIdentity.toObject()).to.deep.equal(identity.toObject());
+        await rsDrive.insertIdentity(identity, blockInfo, true);
 
-      await store.commitTransaction();
+        const notFoundIdentityResult = await repository.fetch(identity.getId(), {
+          useTransaction: false,
+        });
 
-      const storedIdentityResult = await repository.fetch(identity.getId());
+        expect(notFoundIdentityResult.getValue()).to.be.null();
 
-      const storedIdentity = storedIdentityResult.getValue();
+        const transactionalIdentityResult = await repository.fetch(identity.getId(), {
+          useTransaction: true,
+        });
 
-      expect(storedIdentity).to.be.an.instanceof(Identity);
-      expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+        const transactionalIdentity = transactionalIdentityResult.getValue();
+
+        expect(transactionalIdentity).to.be.an.instanceof(Identity);
+        expect(transactionalIdentity.toObject()).to.deep.equal(identity.toObject());
+
+        await store.commitTransaction();
+
+        const storedIdentityResult = await repository.fetch(identity.getId());
+
+        const storedIdentity = storedIdentityResult.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+      });
+    });
+
+    context('with block info', () => {
+      it('should fetch null if identity not found', async () => {
+        const result = await repository.fetch(identity.getId(), { blockInfo });
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(1);
+
+        expect(result.getValue()).to.be.null();
+      });
+
+      it('should fetch an identity', async () => {
+        await rsDrive.insertIdentity(identity, blockInfo);
+
+        const result = await repository.fetch(identity.getId(), { blockInfo });
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(1);
+
+        const storedIdentity = result.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+      });
+
+      it('should fetch an identity using transaction', async () => {
+        await store.startTransaction();
+
+        await rsDrive.insertIdentity(identity, blockInfo, true);
+
+        const notFoundIdentityResult = await repository.fetch(identity.getId(), {
+          blockInfo,
+          useTransaction: false,
+        });
+
+        expect(notFoundIdentityResult.getValue()).to.be.null();
+
+        const transactionalIdentityResult = await repository.fetch(identity.getId(), {
+          blockInfo,
+          useTransaction: true,
+        });
+
+        const transactionalIdentity = transactionalIdentityResult.getValue();
+
+        expect(transactionalIdentity).to.be.an.instanceof(Identity);
+        expect(transactionalIdentity.toObject()).to.deep.equal(identity.toObject());
+
+        await store.commitTransaction();
+
+        const storedIdentityResult = await repository.fetch(identity.getId(), {
+          blockInfo,
+        });
+
+        const storedIdentity = storedIdentityResult.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+      });
     });
   });
 
   describe('#prove', () => {
-    beforeEach(async () => {
-      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
-    });
-
     it('should return prove if identity does not exist', async () => {
       const result = await repository.prove(identity.getId());
 

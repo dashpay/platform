@@ -15,7 +15,7 @@ describe('createMasternodeIdentityFactory', () => {
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
   let getPublicKeyFromPayoutScriptMock;
   let identityRepositoryMock;
-  let publicKeyToIdentitiesRepositoryMock;
+  let identityPublicKeyRepositoryMock;
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
@@ -36,14 +36,14 @@ describe('createMasternodeIdentityFactory', () => {
       create: this.sinon.stub(),
     };
 
-    publicKeyToIdentitiesRepositoryMock = {
+    identityPublicKeyRepositoryMock = {
       store: this.sinon.stub(),
     };
 
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
       identityRepositoryMock,
-      publicKeyToIdentitiesRepositoryMock,
+      identityPublicKeyRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
     );
@@ -85,7 +85,7 @@ describe('createMasternodeIdentityFactory', () => {
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(publicKeyToIdentitiesRepositoryMock.store).to.have.been.calledOnceWithExactly(
+    expect(identityPublicKeyRepositoryMock.store).to.have.been.calledOnceWithExactly(
       publicKeyHashes[0],
       identity.getId(),
       { useTransaction: true },
@@ -128,7 +128,7 @@ describe('createMasternodeIdentityFactory', () => {
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(publicKeyToIdentitiesRepositoryMock.store).to.have.been.calledOnceWithExactly(
+    expect(identityPublicKeyRepositoryMock.store).to.have.been.calledOnceWithExactly(
       publicKeyHashes[0],
       identity.getId(),
       { useTransaction: true },
@@ -200,15 +200,15 @@ describe('createMasternodeIdentityFactory', () => {
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(publicKeyToIdentitiesRepositoryMock.store).to.have.been.calledTwice();
+    expect(identityPublicKeyRepositoryMock.store).to.have.been.calledTwice();
 
-    expect(publicKeyToIdentitiesRepositoryMock.store.getCall(0)).to.have.been.calledWithExactly(
+    expect(identityPublicKeyRepositoryMock.store.getCall(0)).to.have.been.calledWithExactly(
       publicKeyHashes[0],
       identity.getId(),
       { useTransaction: true },
     );
 
-    expect(publicKeyToIdentitiesRepositoryMock.store.getCall(1)).to.have.been.calledWithExactly(
+    expect(identityPublicKeyRepositoryMock.store.getCall(1)).to.have.been.calledWithExactly(
       publicKeyHashes[1],
       identity.getId(),
       { useTransaction: true },

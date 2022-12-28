@@ -1,8 +1,8 @@
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const StorageResult = require('../storage/StorageResult');
-const IdentityStoreRepository = require('./IdentityStoreRepository');
 
-class PublicKeyToIdentitiesStoreRepository {
+class IdentityPublicKeyStoreRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
@@ -11,46 +11,6 @@ class PublicKeyToIdentitiesStoreRepository {
   constructor(groveDBStore, decodeProtocolEntity) {
     this.storage = groveDBStore;
     this.decodeProtocolEntity = decodeProtocolEntity;
-  }
-
-  /**
-   * Store public key to identity ids map into database
-   *
-   * @param {Buffer} publicKeyHash
-   * @param {Identifier} identityId
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<void>>}
-   */
-  async store(publicKeyHash, identityId, options = {}) {
-    if (options.dryRun) {
-      return new StorageResult(undefined, []);
-    }
-
-    const treeResult = await this.storage.createTree(
-      PublicKeyToIdentitiesStoreRepository.TREE_PATH,
-      publicKeyHash,
-      {
-        ...options,
-        skipIfExists: true,
-      },
-    );
-
-    const key = identityId.toBuffer();
-
-    const referenceResult = await this.storage.putReference(
-      PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
-      key,
-      IdentityStoreRepository.TREE_PATH.concat([key, IdentityStoreRepository.IDENTITY_KEY]),
-      options,
-    );
-
-    return new StorageResult(
-      undefined,
-      treeResult.getOperations().concat(referenceResult.getOperations()),
-    );
   }
 
   /**
@@ -69,7 +29,7 @@ class PublicKeyToIdentitiesStoreRepository {
     }
 
     const result = await this.storage.query({
-      path: PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
+      path: IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
       query: {
         query: {
           items: [
@@ -93,6 +53,97 @@ class PublicKeyToIdentitiesStoreRepository {
       }),
       result.getOperations(),
     );
+  }
+
+  /**
+   * Add keys to an already existing Identity
+   *
+   * @param {Identifier} identityId
+   * @param {IdentityPublicKey[]} keys
+   * @param {RawBlockInfo} blockInfo
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async add(
+    identityId,
+    keys,
+    blockInfo,
+    options = {},
+  ) {
+    try {
+      const feeResult = await this.storage.getDrive().addKeysToIdentity(
+        identityId,
+        keys,
+        blockInfo,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun),
+      );
+
+      return new StorageResult(
+        undefined,
+        [
+          new PreCalculatedOperation(feeResult),
+        ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'add');
+      }
+    }
+  }
+
+  /**
+   * Disable keys in already existing Identity
+   *
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disabledAt
+   * @param {RawBlockInfo} blockInfo
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async disable(
+    identityId,
+    keyIds,
+    disabledAt,
+    blockInfo,
+    options = {},
+  ) {
+    try {
+      const feeResult = await this.storage.getDrive().disableIdentityKeys(
+        identityId,
+        keyIds,
+        disabledAt,
+        blockInfo,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun),
+      );
+
+      return new StorageResult(
+        undefined,
+        [
+          new PreCalculatedOperation(feeResult),
+        ],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'disable');
+      }
+    }
   }
 
   /**
@@ -147,7 +198,7 @@ class PublicKeyToIdentitiesStoreRepository {
     }));
 
     return this.storage.query({
-      path: PublicKeyToIdentitiesStoreRepository.TREE_PATH,
+      path: IdentityPublicKeyStoreRepository.TREE_PATH,
       query: {
         query: {
           items,
@@ -179,7 +230,7 @@ class PublicKeyToIdentitiesStoreRepository {
     }));
 
     return this.storage.proveQuery({
-      path: PublicKeyToIdentitiesStoreRepository.TREE_PATH,
+      path: IdentityPublicKeyStoreRepository.TREE_PATH,
       query: {
         query: {
           items,
@@ -196,6 +247,6 @@ class PublicKeyToIdentitiesStoreRepository {
   }
 }
 
-PublicKeyToIdentitiesStoreRepository.TREE_PATH = [Buffer.from([2])];
+IdentityPublicKeyStoreRepository.TREE_PATH = [Buffer.from([2])];
 
-module.exports = PublicKeyToIdentitiesStoreRepository;
+module.exports = IdentityPublicKeyStoreRepository;

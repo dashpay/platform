@@ -54,8 +54,8 @@ const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 const GroveDBStore = require('./storage/GroveDBStore');
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
-const PublicKeyToIdentitiesStoreRepository = require(
-  './identity/PublicKeyToIdentitiesStoreRepository',
+const IdentityPublicKeyStoreRepository = require(
+  './identity/IdentityPublicKeyStoreRepository',
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
@@ -450,7 +450,6 @@ function createDIContainer(options) {
       dataContractsGlobalCacheSize,
       dataContractsBlockCacheSize,
     }))
-      // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
         // Flush data on disk
         await rsDrive.getGroveDB().flush();
@@ -475,7 +474,7 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
-    publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
+    identityPublicKeyRepository: asClass(IdentityPublicKeyStoreRepository).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
@@ -548,7 +547,7 @@ function createDIContainer(options) {
 
     stateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -560,7 +559,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentitiesRepository,
+        identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -578,7 +577,7 @@ function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -591,7 +590,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentitiesRepository,
+        identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,

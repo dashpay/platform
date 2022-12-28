@@ -14,7 +14,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let identity;
   let blockInfo;
   let identityRepositoryMock;
-  let publicKeyToIdentitiesRepositoryMock;
+  let identityPublicKeyRepositoryMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -32,13 +32,13 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       fetch: this.sinon.stub().resolves(new StorageResult(identity, [])),
     };
 
-    publicKeyToIdentitiesRepositoryMock = {
+    identityPublicKeyRepositoryMock = {
       store: this.sinon.stub(),
     };
 
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
       identityRepositoryMock,
-      publicKeyToIdentitiesRepositoryMock,
+      identityPublicKeyRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
     );
@@ -65,7 +65,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     expect(result.removedEntities).to.have.lengthOf(0);
 
     expect(identityRepositoryMock.update).to.not.be.called();
-    expect(publicKeyToIdentitiesRepositoryMock.store).to.not.be.called();
+    expect(identityPublicKeyRepositoryMock.store).to.not.be.called();
   });
 
   it('should store updated identity with updated public keys', async () => {
@@ -97,7 +97,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       { useTransaction: true },
     );
 
-    expect(publicKeyToIdentitiesRepositoryMock.store).to.be.calledOnceWithExactly(
+    expect(identityPublicKeyRepositoryMock.store).to.be.calledOnceWithExactly(
       newPubKeyData,
       identity.getId(),
       { useTransaction: true },
@@ -137,7 +137,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identityToStore,
       { useTransaction: true },
     );
-    expect(publicKeyToIdentitiesRepositoryMock.store).to.be.calledOnceWithExactly(
+    expect(identityPublicKeyRepositoryMock.store).to.be.calledOnceWithExactly(
       newPubKeyData,
       identity.getId(),
       { useTransaction: true },

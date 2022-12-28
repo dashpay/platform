@@ -30,7 +30,7 @@ describe('dataContractQueryHandlerFactory', () => {
   let data;
   let createQueryResponseMock;
   let responseMock;
-  let signedDataContractRepositoryMock;
+  let dataContractRepositoryMock;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -42,10 +42,10 @@ describe('dataContractQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    signedDataContractRepositoryMock = new StoreRepositoryMock(this.sinon);
+    dataContractRepositoryMock = new StoreRepositoryMock(this.sinon);
 
     dataContractQueryHandler = dataContractQueryHandlerFactory(
-      signedDataContractRepositoryMock,
+      dataContractRepositoryMock,
       createQueryResponseMock,
     );
 
@@ -56,7 +56,7 @@ describe('dataContractQueryHandlerFactory', () => {
   });
 
   it('should throw NotFoundAbciError if Data Contract not found', async () => {
-    signedDataContractRepositoryMock.fetch.resolves(
+    dataContractRepositoryMock.fetch.resolves(
       new StorageResult(null),
     );
 
@@ -66,12 +66,12 @@ describe('dataContractQueryHandlerFactory', () => {
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(NotFoundAbciError);
-      expect(signedDataContractRepositoryMock.fetch).to.be.calledOnce();
+      expect(dataContractRepositoryMock.fetch).to.be.calledOnce();
     }
   });
 
   it('should return data contract', async () => {
-    signedDataContractRepositoryMock.fetch.resolves(
+    dataContractRepositoryMock.fetch.resolves(
       new StorageResult(dataContract),
     );
 
@@ -103,17 +103,17 @@ describe('dataContractQueryHandlerFactory', () => {
 
     const proof = Buffer.alloc(20, 255);
 
-    signedDataContractRepositoryMock.fetch.resolves(
+    dataContractRepositoryMock.fetch.resolves(
       new StorageResult(dataContract),
     );
 
-    signedDataContractRepositoryMock.prove.resolves(
+    dataContractRepositoryMock.prove.resolves(
       new StorageResult(proof),
     );
 
     const result = await dataContractQueryHandler(params, data, { prove: true });
 
-    expect(signedDataContractRepositoryMock.prove).to.be.calledOnceWithExactly(
+    expect(dataContractRepositoryMock.prove).to.be.calledOnceWithExactly(
       new Identifier(data.id),
     );
 

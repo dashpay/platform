@@ -5,7 +5,7 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @return {createMasternodeIdentity}
@@ -13,7 +13,7 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
 function createMasternodeIdentityFactory(
   dpp,
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -78,7 +78,7 @@ function createMasternodeIdentityFactory(
       .map((publicKey) => publicKey.hash());
 
     for (const hash of publicKeyHashes) {
-      await publicKeyToIdentitiesRepository.store(
+      await identityPublicKeyRepository.store(
         hash,
         identity.getId(),
         { useTransaction: true },

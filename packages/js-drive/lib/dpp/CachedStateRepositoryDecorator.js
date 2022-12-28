@@ -36,32 +36,61 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Update identity
+   * Add keys to identity
    *
-   * @param {Identity} identity
+   * @param {Identifier} identityId
+   * @param {IdentityPublicKey[]} keys
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
    * @returns {Promise<void>}
    */
-  async updateIdentity(identity, executionContext = undefined) {
-    return this.stateRepository.updateIdentity(identity, executionContext);
+  async addKeysToIdentity(identityId, keys, executionContext = undefined) {
+    return this.stateRepository.addKeysToIdentity(identityId, keys, executionContext);
   }
 
   /**
-   * Store public key hashes for an identity id
+   * Add to identity balance
    *
    * @param {Identifier} identityId
-   * @param {Buffer[]} publicKeyHashes
+   * @param {number} amount
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
-    return this.stateRepository.storeIdentityPublicKeyHashes(
+  async addToIdentityBalance(identityId, amount, executionContext = undefined) {
+    return this.stateRepository.addToIdentityBalance(
       identityId,
-      publicKeyHashes,
+      amount,
       executionContext,
     );
+  }
+
+  /**
+   * Disable identity keys
+   *
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async disableIdentityKeys(identityId, keyIds, disableAt, executionContext = undefined) {
+    return this.stateRepository.disableIdentityKeys(
+      identityId,
+      keyIds,
+      disableAt,
+      executionContext,
+    );
+  }
+
+  /**
+   * Update identity revision
+   *
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async updateIdentityRevision(identityId, revision, executionContext = undefined) {
+    return this.stateRepository.updateIdentityRevision(identityId, revision, executionContext);
   }
 
   /**
@@ -237,7 +266,7 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch latest withdrawal transaction index
+   * Fetch the latest withdrawal transaction index
    *
    * @returns {Promise<number>}
    */

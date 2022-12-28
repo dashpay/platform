@@ -85,23 +85,24 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Update identity
+   * Add keys to identity
    *
-   * @param {Identity} identity
+   * @param {Identifier} identityId
+   * @param {IdentityPublicKey[]} keys
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
    * @returns {Promise<void>}
    */
-  async updateIdentity(identity, executionContext = undefined) {
+  async addKeysToIdentity(identityId, keys, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.updateIdentity(identity, executionContext);
+      response = await this.stateRepository.addKeysToIdentity(identityId, keys, executionContext);
     } finally {
       this.log(
-        'updateIdentity',
+        'addKeysToIdentity',
         {
-          identity,
+          identityId,
+          keys,
         },
         response,
       );
@@ -111,26 +112,93 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Store public key hashes for an identity id
+   * Add to identity balance
    *
    * @param {Identifier} identityId
-   * @param {Buffer[]} publicKeyHashes
+   * @param {number} amount
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
+  async addToIdentityBalance(identityId, amount, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository
-        .storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext);
+      response = await this.stateRepository.addToIdentityBalance(
+        identityId,
+        amount,
+        executionContext,
+      );
     } finally {
       this.log(
-        'storeIdentityPublicKeyHashes',
+        'addToIdentityBalance',
         {
           identityId,
-          publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
+          amount,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Disable identity keys
+   *
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async disableIdentityKeys(identityId, keyIds, disableAt, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.disableIdentityKeys(
+        identityId,
+        keyIds,
+        disableAt,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'disableIdentityKeys',
+        {
+          identityId,
+          keyIds,
+          disableAt,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Update identity revision
+   *
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async updateIdentityRevision(identityId, revision, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateIdentityRevision(
+        identityId,
+        revision,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'updateIdentityRevision',
+        {
+          identityId,
+          revision,
         },
         response,
       );
@@ -483,7 +551,7 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch latest withdrawal transaction index
+   * Fetch the latest withdrawal transaction index
    *
    * @returns {Promise<number>}
    */

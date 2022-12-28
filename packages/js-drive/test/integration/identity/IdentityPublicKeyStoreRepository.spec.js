@@ -3,13 +3,13 @@ const Drive = require('@dashevo/rs-drive');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const PublicKeyToIdentitiesStoreRepository = require('../../../lib/identity/PublicKeyToIdentitiesStoreRepository');
+const IdentityPublicKeyStoreRepository = require('../../../lib/identity/IdentityPublicKeyStoreRepository');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
 
-describe('PublicKeyToIdentitiesStoreRepository', () => {
+describe('IdentityPublicKeyStoreRepository', () => {
   let rsDrive;
   let store;
   let publicKeyRepository;
@@ -34,7 +34,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
 
     identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity);
 
-    publicKeyRepository = new PublicKeyToIdentitiesStoreRepository(store, decodeProtocolEntity);
+    publicKeyRepository = new IdentityPublicKeyStoreRepository(store, decodeProtocolEntity);
 
     publicKeyHash = Buffer.alloc(20).fill(1);
     identity = getIdentityFixture();
@@ -59,7 +59,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       expect(result.getOperations().length).to.equal(0);
 
       const fetchedIdentityResult = await store.get(
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
+        IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
         identity.getId().toBuffer(),
       );
 
@@ -79,7 +79,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       );
 
       const emptyIdentitiesResult = await store.get(
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH,
+        IdentityPublicKeyStoreRepository.TREE_PATH,
         publicKeyHash,
       );
 
@@ -87,7 +87,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       expect(emptyIdentitiesResult.isNull()).to.be.true();
 
       const transactionalIdentitiesResult = await store.get(
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
+        IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
         identity.getId().toBuffer(),
         { useTransaction: true },
       );
@@ -98,7 +98,7 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       await store.commitTransaction();
 
       const committedIdentitiesResult = await store.get(
-        PublicKeyToIdentitiesStoreRepository.TREE_PATH.concat([publicKeyHash]),
+        IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
         identity.getId().toBuffer(),
       );
 
