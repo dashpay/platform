@@ -96,42 +96,6 @@ impl Document {
         data_contract: DataContract,
     ) -> Result<Document, ProtocolError> {
         Self::from_value::<Vec<u8>>(raw_document, data_contract)
-
-        // let mut document = Document {
-        //     data_contract,
-        //     ..Default::default()
-        // };
-
-        // if let Ok(value) = raw_document.remove("$protocolVersion") {
-        //     document.protocol_version = serde_json::from_value(value)?
-        // }
-        // if let Ok(value) = raw_document.remove("$id") {
-        //     let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
-        //     document.id = Identifier::from_bytes(&identifier_bytes)?
-        // }
-        // if let Ok(value) = raw_document.remove("$type") {
-        //     document.document_type = serde_json::from_value(value)?
-        // }
-        // if let Ok(value) = raw_document.remove("$dataContractId") {
-        //     let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
-        //     document.data_contract_id = Identifier::from_bytes(&identifier_bytes)?
-        // }
-        // if let Ok(value) = raw_document.remove("$ownerId") {
-        //     let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
-        //     document.owner_id = Identifier::from_bytes(&identifier_bytes)?
-        // }
-        // if let Ok(value) = raw_document.remove("$revision") {
-        //     document.revision = serde_json::from_value(value)?
-        // }
-        // if let Ok(value) = raw_document.remove("$createdAt") {
-        //     document.created_at = serde_json::from_value(value)?
-        // }
-        // if let Ok(value) = raw_document.remove("$updatedAt") {
-        //     document.updated_at = serde_json::from_value(value)?
-        // }
-
-        // document.data = raw_document;
-        // Ok(document)
     }
 
     fn from_value<S>(
@@ -200,7 +164,6 @@ impl Document {
         let mut json_value = cbor_value::cbor_value_to_json_value(&cbor_value)?;
 
         json_value.parse_and_add_protocol_version("$protocolVersion", protocol_version_bytes)?;
-        // TODO identifiers and binary data for dynamic values
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let document: Document = serde_json::from_value(json_value)?;
@@ -208,14 +171,14 @@ impl Document {
         Ok(document)
     }
 
-    pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
+    // the skipIdentifierConversion option is removed as it doesn't make sense in case of
+    // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
+    pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
 
-        if !skip_identifiers_conversion {
-            let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths();
-            let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
-            let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
-        }
+        let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths();
+        let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
+        let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
 
         Ok(json_object)
     }
@@ -409,7 +372,7 @@ mod test {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = serde_json::from_str::<Document>(&document_json).unwrap();
-        let document_object = document.to_object(false).unwrap();
+        let document_object = document.to_object().unwrap();
 
         for property in IDENTIFIER_FIELDS {
             let id = document_object

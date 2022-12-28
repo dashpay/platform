@@ -12,7 +12,6 @@ use dpp::{
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    console_log,
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{ToSerdeJSONExt, WithJsError},
@@ -124,7 +123,7 @@ impl DocumentFactoryWASM {
     pub async fn create_from_object(
         &self,
         raw_document_js: JsValue,
-        options: &JsValue,
+        options: JsValue,
     ) -> Result<DocumentWasm, JsValue> {
         let mut raw_document = raw_document_js.with_serde_to_json_value()?;
         let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
@@ -134,10 +133,13 @@ impl DocumentFactoryWASM {
             Default::default()
         };
 
-        // replace static fields with bytes to make Document created
-        raw_document
+        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes the Array.
+        // When `Identifier` crosses the WASM boundary it becomes the String. From perspective of JS
+        // Identifier and Buffer are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
+        let _ = raw_document
             .replace_identifier_paths(document::IDENTIFIER_FIELDS, ReplaceWith::Bytes)
-            .with_js_error()?;
+            .with_js_error();
+
         let mut document = self
             .0
             .create_from_object(raw_document, options)

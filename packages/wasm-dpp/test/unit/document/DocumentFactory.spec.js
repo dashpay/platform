@@ -1,4 +1,5 @@
 const bs58 = require('bs58');
+const lodash = require('lodash');
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
@@ -294,6 +295,15 @@ describe('DocumentFactory', () => {
       expect(resultMock.merge).to.have.not.been.called();
     });
 
+    it('should return new Document without validation if "skipValidation" option is passed - Rust', async function it() {
+      delete rawDocument.lastName;
+      const result = await factory.createFromObject(rawDocument, { skipValidation: true });
+      expect(result).to.be.an.instanceOf(Document);
+
+      expect(result.toObject()).to.deep.equal(rawDocument);
+      expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
+    });
+
     it('should throw InvalidDocumentError if passed object is not valid', async () => {
       const validationError = new SomeConsensusError('test');
 
@@ -319,6 +329,20 @@ describe('DocumentFactory', () => {
           .to.have.been.calledOnceWithExactly(rawDocumentJs, dataContractJs);
       }
     });
+
+    it('should throw InvalidDocumentError if passed object is not valid - Rust', async () => {
+      delete rawDocument.lastName;
+
+      try {
+        await factory.createFromObject(rawDocument);
+
+        expect.fail('InvalidDocumentError should be thrown');
+      } catch (e) {
+        // TODO - change when errors merged
+        expect(e).to.startWith('ProtocolError: Invalid Document:');
+      }
+    });
+
 
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
       const fetchContractError = new SomeConsensusError('error');
@@ -362,6 +386,7 @@ describe('DocumentFactory', () => {
       factoryJs.createFromObject.restore();
     });
 
+
     it('should return new Document from serialized one', async () => {
       decodeProtocolEntityMock.returns([rawDocumentJs.$protocolVersion, rawDocumentJs]);
 
@@ -376,20 +401,12 @@ describe('DocumentFactory', () => {
       );
     });
 
-    // it('should return new Document from serialized one - Rust', async () => {
 
-    //   decodeProtocolEntityMock.returns([rawDocument.$protocolVersion, rawDocument]);
-
-    //   factoryJs.createFromObject.returns(documentJs);
-
-    //   const result = await factoryJs.createFromBuffer(serializedDocument);
-
-    //   expect(result).to.equal(documentJs);
-    //   expect(factoryJs.createFromObject).to.have.been.calledOnceWith(rawDocument);
-    //   expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
-    //     serializedDocument,
-    //   );
-    // });
+    it('should return new Document from serialized one - Rust', async () => {
+      const result = await factory.createFromBuffer(serializedDocument);
+      expect(result.toObject()).to.deep.equal(documentJs.toObject());
+      expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
+    });
 
 
     it('should throw InvalidDocumentError if the decoding fails with consensus error', async () => {
@@ -425,6 +442,19 @@ describe('DocumentFactory', () => {
         expect(e).to.equal(parsingError);
       }
     });
+
+    it('should throw an error if decoding fails with any other error - Rust', async () => {
+      const serializeDocument = Buffer.alloc(160, 1);
+      try {
+        await factory.createFromBuffer(serializeDocument);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        // TODO - change when errors merged
+        expect(e).to.startsWith("ProtocolError: getting property")
+      }
+    });
+
   });
 
   describe('createStateTransition', () => {

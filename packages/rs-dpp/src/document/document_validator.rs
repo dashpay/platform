@@ -129,7 +129,7 @@ mod test {
         let documents = get_documents_fixture(data_contract.clone()).unwrap();
         let raw_document = documents
             .iter()
-            .map(|d| d.to_object(false))
+            .map(|d| d.to_object())
             .next()
             .expect("at least one Document should be present")
             .expect("Document should be converted to Object");
@@ -476,7 +476,7 @@ mod test {
         let document = documents.get(8).unwrap();
 
         let data = [0u8; 32];
-        let mut raw_document = document.to_object(false).unwrap();
+        let mut raw_document = document.to_object().unwrap();
         raw_document
             .insert("byteArrayField".to_string(), json!(data))
             .unwrap();

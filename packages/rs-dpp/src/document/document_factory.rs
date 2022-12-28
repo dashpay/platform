@@ -284,7 +284,7 @@ where
             if document.revision != document_transition::INITIAL_REVISION {
                 return Err(ProtocolError::InvalidInitialRevisionError { document });
             }
-            let mut raw_document = document.to_object(false)?;
+            let mut raw_document = document.to_object()?;
 
             if let Some(map) = raw_document.as_object_mut() {
                 map.retain(|key, _| {
@@ -311,7 +311,7 @@ where
         let mut raw_transitions = vec![];
         for document in documents {
             let document_revision = document.revision;
-            let mut raw_document = document.to_object(false)?;
+            let mut raw_document = document.to_object()?;
 
             if let Some(map) = raw_document.as_object_mut() {
                 map.retain(|key, _| {

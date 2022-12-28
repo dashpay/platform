@@ -34,6 +34,12 @@ pub(super) enum BinaryType {
     None,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionOptions {
+    skip_identifiers_conversion: bool,
+}
+
 #[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentWasm(Document);
@@ -51,21 +57,20 @@ impl DocumentWasm {
             .get_string(property_names::DOCUMENT_TYPE)
             .with_js_error()?;
 
-        let (identifier_paths, binary_paths) = js_data_contract
+        let (identifier_paths, _) = js_data_contract
             .inner()
             .get_identifiers_and_binary_paths(document_type);
 
-        // the errors are ignore, because I'm not sure what is the expected input for Identifiers and ByteArray
-        // Should they come as string or as array of integers
+        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes the Array.
+        // When `Identifier` crosses the WASM boundary it becomes the String. From perspective of JS
+        // Identifier and Buffer are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
         let _ = raw_document
             .replace_identifier_paths(
                 identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
             )
             .with_js_error();
-        let _ = raw_document
-            .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
-            .with_js_error();
+        // The binary paths are not being converted, because they always should be a `Buffer`, hence the Array
 
         let document =
             Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
@@ -256,8 +261,14 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let mut value = self.0.to_object(false).with_js_error()?;
+    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
+        let options: ConversionOptions = if !options.is_undefined() && options.is_object() {
+            let raw_options = options.with_serde_to_json_value()?;
+            serde_json::from_value(raw_options).with_js_error()?
+        } else {
+            Default::default()
+        };
+        let mut value = self.0.to_object().with_js_error()?;
 
         let (identifiers_paths, binary_paths) = self.0.get_identifiers_and_binary_paths();
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
@@ -265,8 +276,13 @@ impl DocumentWasm {
 
         for path in identifiers_paths.into_iter().chain(IDENTIFIER_FIELDS) {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
-                let id = IdentifierWrapper::new(bytes)?;
-                lodash_set(&js_value, path, id.into());
+                if !options.skip_identifiers_conversion {
+                    let buffer = Buffer::from_bytes(&bytes);
+                    lodash_set(&js_value, path, buffer.into());
+                } else {
+                    let id = IdentifierWrapper::new(bytes)?;
+                    lodash_set(&js_value, path, id.into());
+                }
             }
         }
 

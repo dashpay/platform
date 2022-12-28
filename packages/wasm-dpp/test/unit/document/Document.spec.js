@@ -21,8 +21,10 @@ describe('Document', () => {
   let rawDocument;
   let document;
   let dataContract;
-  let jsDocument;
-  let jsDataContract;
+  let documentJs;
+  let dataContractJs;
+  let rawDocumentJs;
+  let rawDocumentWithBuffers;
 
   beforeEach(async () => {
     ({
@@ -76,7 +78,7 @@ describe('Document', () => {
     };
 
     dataContract = dataContractFactory.create(ownerId.clone(), rawDataContract);
-    jsDataContract = jsDataContractFactory.create(jsOwnerId, rawDataContract);
+    dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
       $protocolVersion: protocolVersion.latestVersion,
@@ -89,14 +91,26 @@ describe('Document', () => {
       $updatedAt: now,
     };
 
-    document = new Document(rawDocument, dataContract);
-    const jsRawDocument = lodash.cloneDeepWith(rawDocument);
-    jsRawDocument.$id = jsId;
-    jsRawDocument.$ownerId = jsOwnerId;
+    rawDocumentWithBuffers = {
+      $protocolVersion: protocolVersion.latestVersion,
+      $id: id.toBuffer(),
+      $type: 'test',
+      $dataContractId: dataContract.getId().toBuffer(),
+      $ownerId: ownerId.toBuffer(),
+      $revision: DocumentCreateTransition.INITIAL_REVISION,
+      $createdAt: now,
+      $updatedAt: now,
+    };
 
-    jsRawDocument.$dataContractId = jsDataContract.id;
-    jsDocument = new JsDocument(jsRawDocument, jsDataContract);
-    jsDocument.dataContractId = JsIdentifier.from(Buffer.from(dataContract.getId().toBuffer()));
+
+    document = new Document(rawDocument, dataContract);
+    rawDocumentJs = lodash.cloneDeepWith(rawDocument);
+    rawDocumentJs.$id = jsId;
+    rawDocumentJs.$ownerId = jsOwnerId;
+
+    rawDocumentJs.$dataContractId = dataContractJs.id;
+    documentJs = new JsDocument(rawDocumentJs, dataContractJs);
+    documentJs.dataContractId = JsIdentifier.from(Buffer.from(dataContract.getId().toBuffer()));
   });
 
   describe('constructor', () => {
@@ -332,23 +346,13 @@ describe('Document', () => {
       it('should return Document as object', () => {
         const result = document.toObject();
 
-        // as we can't compare Identifiers from wasm, therefore we verify every field explicitly
-        expect(result.$protocolVersion).to.deep.equal(rawDocument.$protocolVersion);
-        expect(result.$type).to.deep.equal(rawDocument.$type);
-        expect(result.$revision).to.deep.equal(rawDocument.$revision);
-        expect(result.$createdAt).to.deep.equal(rawDocument.$createdAt);
-        expect(result.$updatedAt).to.deep.equal(rawDocument.$updatedAt);
-        expect(result.$id.toBuffer()).to.deep.equal(rawDocument.$id.toBuffer());
-        expect(result.$dataContractId.toBuffer())
-          .to.deep.equal(rawDocument.$dataContractId.toBuffer());
-        expect(result.$ownerId.toBuffer())
-          .to.deep.equal(rawDocument.$ownerId.toBuffer());
+        expect(rawDocumentWithBuffers).to.deep.equal(result);
       });
     });
 
     describe('#toBuffer', () => {
       it('returned bytes should be the same as JS version', () => {
-        const jsBuffer = jsDocument.toBuffer();
+        const jsBuffer = documentJs.toBuffer();
         const buffer = document.toBuffer();
 
         expect(jsBuffer.length).to.equal(buffer.length);
@@ -360,13 +364,13 @@ describe('Document', () => {
         const id = new Identifier(jsId.toBuffer());
         const path = 'dataObject.binaryObject.identifier';
 
-        jsDocument.set(path, jsId);
+        documentJs.set(path, jsId);
         document.set(path, id);
 
-        expect(jsDocument.get(path).toBuffer()).to.deep.equal(jsId);
+        expect(documentJs.get(path).toBuffer()).to.deep.equal(jsId);
         expect(document.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
 
-        const jsBuffer = jsDocument.toBuffer();
+        const jsBuffer = documentJs.toBuffer();
         const buffer = document.toBuffer();
         expect(jsBuffer).to.deep.equal(buffer);
       });
@@ -375,10 +379,10 @@ describe('Document', () => {
         const data = Buffer.alloc(32);
         const path = 'dataObject.binaryObject.binaryData';
 
-        jsDocument.set(path, data);
+        documentJs.set(path, data);
         document.set(path, data);
 
-        const jsBuffer = jsDocument.toBuffer();
+        const jsBuffer = documentJs.toBuffer();
         const buffer = document.toBuffer();
 
         expect(jsBuffer.length).to.equal(buffer.length);
@@ -388,7 +392,7 @@ describe('Document', () => {
 
     describe('#hash', () => {
       it('returned hash should be the same as JS version', () => {
-        expect(jsDocument.hash()).to.deep.equal(document.hash());
+        expect(documentJs.hash()).to.deep.equal(document.hash());
       });
     });
 
