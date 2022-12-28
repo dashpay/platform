@@ -67,9 +67,9 @@ impl PlatformWrapper {
         let drive_config: Handle<JsObject> = platform_config.get(cx, "drive")?;
         let core_config: Handle<JsObject> = platform_config.get(cx, "core")?;
 
-        let js_core_rpc_url: Handle<JsString> = core_config.get(cx, "rpc_url")?;
-        let js_core_rpc_username: Handle<JsString> = core_config.get(cx, "rpc_username")?;
-        let js_core_rpc_password: Handle<JsString> = core_config.get(cx, "rpc_password")?;
+        let js_core_rpc_url: Handle<JsString> = core_config.get(cx, "rpcUrl")?;
+        let js_core_rpc_username: Handle<JsString> = core_config.get(cx, "rpcUsername")?;
+        let js_core_rpc_password: Handle<JsString> = core_config.get(cx, "rpcPassword")?;
 
         let core_rpc_url = js_core_rpc_url.value(cx);
         let core_rpc_username = js_core_rpc_username.value(cx);
@@ -127,7 +127,7 @@ impl PlatformWrapper {
             // TODO: think how to pass this error to JS
             let mut platform: Platform = Platform::open(path, platform_config).unwrap();
 
-            if cfg!(test) {
+            if cfg!(feature = "enable-core-rpc-mocking") {
                 platform.mock_core_rpc_client();
             }
 

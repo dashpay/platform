@@ -26,7 +26,7 @@ impl Default for PlatformConfig {
         Self {
             drive: None,
             core: CoreConfig {
-                rpc_url: "".to_owned(),
+                rpc_url: "127.0.0.1".to_owned(),
                 rpc_username: "".to_owned(),
                 rpc_password: "".to_owned(),
             },

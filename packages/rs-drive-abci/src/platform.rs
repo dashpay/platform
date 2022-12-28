@@ -58,6 +58,12 @@ pub struct Platform {
     pub core_rpc: Box<dyn CoreRPCLike>,
 }
 
+impl std::fmt::Debug for Platform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Platform").finish()
+    }
+}
+
 impl Platform {
     /// Open Platform with Drive and block execution context.
     pub fn open<P: AsRef<Path>>(path: P, config: PlatformConfig) -> Result<Self, Error> {
@@ -69,7 +75,8 @@ impl Platform {
                 config.core.rpc_username,
                 config.core.rpc_password,
             )
-            .map_err(|_| {
+            .map_err(|e| {
+                dbg!(e);
                 Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "Could not setup Dash Core RPC client",
                 ))

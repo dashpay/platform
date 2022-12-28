@@ -136,6 +136,7 @@ mod tests {
         };
 
         let mut batch: Vec<DriveOperation> = vec![];
+        let mut result_operations = vec![];
 
         drive
             .add_enqueue_withdrawal_transaction_operations(
@@ -146,9 +147,9 @@ mod tests {
             )
             .expect("to add operations");
 
-        // drive
-        //     .apply_drive_operations(batch, true, &block_info, Some(&transaction))
-        //     .expect("to apply batch");
+        drive
+            .apply_batch_drive_operations(None, Some(&transaction), batch, &mut result_operations)
+            .expect("to apply batch");
 
         let withdrawals = drive
             .dequeue_withdrawal_transactions(16, Some(&transaction))

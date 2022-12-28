@@ -44,7 +44,7 @@ describe('Drive', function main() {
         dataContractsBlockCacheSize: 500,
       },
       core: {
-        rpcUrl: '',
+        rpcUrl: '127.0.0.1',
         rpcUsername: '',
         rpcPassword: '',
       },

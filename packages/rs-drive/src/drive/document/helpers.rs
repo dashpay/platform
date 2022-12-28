@@ -48,8 +48,9 @@ impl Drive {
 
         let operations = self.add_document_for_contract_operations(
             DocumentAndContractInfo {
-                document_info: DocumentInfo::DocumentWithoutSerialization((
-                    crate::drive::document::Document::from_cbor(&document_cbor, None, None)?,
+                document_info: DocumentInfo::DocumentRefAndSerialization((
+                    &crate::drive::document::Document::from_cbor(&document_cbor, None, None)?,
+                    &document_cbor,
                     None,
                 )),
                 contract,
@@ -232,6 +233,8 @@ mod tests {
                     Some(&transaction),
                 )
                 .expect("to update transactionId");
+
+            dbg!(&drive_operations);
 
             drive
                 .apply_batch_drive_operations(

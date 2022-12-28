@@ -414,7 +414,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     );
     assert_eq!(
         error.validation_error().as_ref().unwrap().message(),
-        "Key secp256k1 error: malformed public key"
+        "Key secp256k1 error: secp: malformed public key"
     );
 }
 

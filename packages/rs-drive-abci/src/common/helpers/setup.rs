@@ -46,19 +46,23 @@ use tempfile::TempDir;
 /// A function which sets up Platform.
 pub fn setup_platform() -> Platform {
     let tmp_dir = TempDir::new().unwrap();
-    let drive: Platform = Platform::open(tmp_dir, PlatformConfig::default())
+    let mut platform: Platform = Platform::open(tmp_dir, PlatformConfig::default())
         .expect("should open Platform successfully");
 
-    drive
+    platform.mock_core_rpc_client();
+
+    platform
 }
 
 /// A function which sets up Platform with its initial state structure.
 pub fn setup_platform_with_initial_state_structure() -> Platform {
-    let platform = setup_platform();
+    let mut platform = setup_platform();
     platform
         .drive
         .create_initial_state_structure(None)
         .expect("should create root tree successfully");
+
+    platform.mock_core_rpc_client();
 
     platform
 }
