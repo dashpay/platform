@@ -1,5 +1,3 @@
-const wait = require('../../util/wait');
-
 /**
  * Get balance of the address
  *
