@@ -19,12 +19,14 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
 };
 
 const TIMERS = require('../timers');
+const BlockInfo = require('../../../blockExecution/BlockInfo');
 
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
+ * @param {IdentityStoreRepository} identityRepository
  *
  * @return {deliverTx}
  */
@@ -33,6 +35,7 @@ function deliverTxFactory(
   transactionalDpp,
   proposalBlockExecutionContext,
   executionTimer,
+  identityRepository,
 ) {
   /**
    * @typedef deliverTx
@@ -81,7 +84,8 @@ function deliverTxFactory(
       },
     );
 
-    // Keep only actual operations
+    // Remove dry run operations from state transition execution context
+
     const stateTransitionExecutionContext = stateTransition.getExecutionContext();
 
     const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
@@ -89,6 +93,8 @@ function deliverTxFactory(
       .getLastCalculatedFeeDetails();
 
     stateTransitionExecutionContext.clearDryOperations();
+
+    // Validate against state
 
     executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
@@ -111,37 +117,44 @@ function deliverTxFactory(
     executionTimer.startTimer(TIMERS.DELIVER_TX.APPLY);
 
     // Apply state transition to the state
+
     await transactionalDpp.stateTransition.apply(stateTransition);
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
-    // Reduce an identity balance and accumulate fees for all STs in the block
-    // in order to store them in credits distribution pool
+    // Update identity balance
+
     const actualStateTransitionFees = stateTransitionExecutionContext
       .getLastCalculatedFeeDetails();
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
-    if (actualStateTransitionFees.total > predictedStateTransitionFees.total) {
+    if (actualStateTransitionFees.desiredAmount > predictedStateTransitionFees.desiredAmount) {
       txConsensusLogger.warn({
-        predictedFee: predictedStateTransitionFees.total,
-        actualFee: actualStateTransitionFees.total,
-      }, `Actual fees are greater than predicted for ${actualStateTransitionFees.total - predictedStateTransitionFees.total} credits`);
+        predictedFee: predictedStateTransitionFees.desiredAmount,
+        actualFee: actualStateTransitionFees.desiredAmount,
+      }, `Actual fees are greater than predicted for ${actualStateTransitionFees.desiredAmount - predictedStateTransitionFees.desiredAmount} credits`);
     }
 
-    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-      stateTransition.getOwnerId(),
-    );
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
 
-    let updatedBalance = identity.getBalance() - actualStateTransitionFees.total;
-
-    // TODO: We should increment identity balance debt in case if it goes negative
-    if (updatedBalance < 0) {
-      updatedBalance = 0;
+    if (actualStateTransitionFees.desiredAmount < 0) {
+      // Add to balance if refund is higher than storage and processing fees
+      await identityRepository.addToBalance(
+        stateTransition.getOwnerId(),
+        Math.abs(actualStateTransitionFees.desiredAmount),
+        blockInfo,
+        { useTransaction: true },
+      );
+    } else {
+      // Remove from balance otherwise
+      await identityRepository.removeFromBalance(
+        stateTransition.getOwnerId(),
+        actualStateTransitionFees.requiredAmount,
+        actualStateTransitionFees.desiredAmount,
+        blockInfo,
+        { useTransaction: true },
+      );
     }
-
-    identity.setBalance(updatedBalance);
-
-    await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
     /* istanbul ignore next */
@@ -234,20 +247,22 @@ function deliverTxFactory(
             storage: predictedStateTransitionFees.storageFee,
             processing: predictedStateTransitionFees.processingFee,
             refunds: predictedStateTransitionFees.feeRefundsSum,
-            final: predictedStateTransitionFees.total,
+            requiredAmount: predictedStateTransitionFees.requiredAmount,
+            desiredAmount: predictedStateTransitionFees.desiredAmount,
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
             storage: actualStateTransitionFees.storageFee,
             processing: actualStateTransitionFees.processingFee,
             refunds: actualStateTransitionFees.feeRefundsSum,
-            final: actualStateTransitionFees.total,
+            requiredAmount: actualStateTransitionFees.requiredAmount,
+            desiredAmount: actualStateTransitionFees.desiredAmount,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
         },
         txType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.total} credits`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.desiredAmount} credits`,
     );
 
     let feeRefunds = {};

@@ -89,7 +89,8 @@ describe('calculateStateTransitionFeeFactory', () => {
     const storageFee = 10000;
     const processingFee = 1000;
     const feeRefundsSum = 450 + 995 + 400 + 400;
-    const total = storageFee + processingFee - feeRefundsSum;
+    const requiredAmount = storageFee - feeRefundsSum;
+    const desiredAmount = storageFee + processingFee - feeRefundsSum;
 
     const calculatedOperationsFeesResult = {
       storageFee,
@@ -115,7 +116,7 @@ describe('calculateStateTransitionFeeFactory', () => {
 
     const result = await calculateStateTransitionFee(stateTransition);
 
-    expect(result).to.equal(total);
+    expect(result).to.equal(desiredAmount);
 
     expect(stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers)
       .to.have.been.calledWithExactly(1000, 0);
@@ -129,7 +130,8 @@ describe('calculateStateTransitionFeeFactory', () => {
     expect(lastCalculatedFeeDetails).to.be.deep.equal({
       ...calculatedOperationsFeesResult,
       feeRefundsSum,
-      total,
+      requiredAmount,
+      desiredAmount,
     });
   });
 });

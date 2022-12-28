@@ -50,11 +50,7 @@ function registerSystemDataContractFactory(
       }],
     );
 
-    await identityRepository.create(ownerIdentity, {
-      useTransaction: true,
-    });
-
-    await identityPublicKeyRepository.store(masterPublicKey.hash, ownerId, {
+    await identityRepository.create(ownerIdentity, blockInfo, {
       useTransaction: true,
     });
 

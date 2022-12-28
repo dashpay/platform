@@ -24,35 +24,7 @@ class IdentityPublicKeyStoreRepository {
    * @return {Promise<StorageResult<Identity[]>>}
    */
   async fetch(publicKeyHash, options = {}) {
-    if (options.dryRun) {
-      return new StorageResult([], []);
-    }
-
-    const result = await this.storage.query({
-      path: IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
-      query: {
-        query: {
-          items: [
-            {
-              type: 'rangeFull',
-            },
-          ],
-        },
-      },
-    }, options);
-
-    return new StorageResult(
-      result.getValue().map((serializedIdentity) => {
-        const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
-          serializedIdentity,
-        );
-
-        rawIdentity.protocolVersion = protocolVersion;
-
-        return new Identity(rawIdentity);
-      }),
-      result.getOperations(),
-    );
+    throw new Error('not implemented');
   }
 
   /**
@@ -157,24 +129,7 @@ class IdentityPublicKeyStoreRepository {
    * @return {Promise<StorageResult<Identity[]>>}
    */
   async fetchMany(publicKeyHashes, options = {}) {
-    if (options.dryRun) {
-      return new StorageResult([], []);
-    }
-
-    const result = await this.fetchManyBuffers(publicKeyHashes, options);
-
-    return new StorageResult(
-      result.getValue().map((serializedIdentity) => {
-        const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
-          serializedIdentity,
-        );
-
-        rawIdentity.protocolVersion = protocolVersion;
-
-        return new Identity(rawIdentity);
-      }),
-      result.getOperations(),
-    );
+    throw new Error('not implemented');
   }
 
   /**
@@ -188,30 +143,7 @@ class IdentityPublicKeyStoreRepository {
    * @return {Promise<StorageResult<Buffer[]>>}
    */
   async fetchManyBuffers(publicKeyHashes, options = {}) {
-    if (options.dryRun) {
-      return new StorageResult([], []);
-    }
-
-    const items = publicKeyHashes.map((publicKeyHash) => ({
-      type: 'key',
-      key: publicKeyHash,
-    }));
-
-    return this.storage.query({
-      path: IdentityPublicKeyStoreRepository.TREE_PATH,
-      query: {
-        query: {
-          items,
-          subquery: {
-            items: [
-              {
-                type: 'rangeFull',
-              },
-            ],
-          },
-        },
-      },
-    }, options);
+    throw new Error('not implemented');
   }
 
   /**
@@ -224,26 +156,7 @@ class IdentityPublicKeyStoreRepository {
  * @return {Promise<StorageResult<Buffer>>}
  */
   async proveMany(publicKeyHashes, options = {}) {
-    const items = publicKeyHashes.map((publicKeyHash) => ({
-      type: 'key',
-      key: publicKeyHash,
-    }));
-
-    return this.storage.proveQuery({
-      path: IdentityPublicKeyStoreRepository.TREE_PATH,
-      query: {
-        query: {
-          items,
-          subquery: {
-            items: [
-              {
-                type: 'rangeFull',
-              },
-            ],
-          },
-        },
-      },
-    }, options);
+    throw new Error('not implemented');
   }
 }
 

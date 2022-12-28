@@ -309,7 +309,7 @@ describe('feesPrediction', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: IdentityPublicKey.TYPES.BLS12_381,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
             readOnly: false,
@@ -319,12 +319,12 @@ describe('feesPrediction', () => {
             id: 1,
             type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: false,
             data: privateKey.toPublicKey().toBuffer(),
           },
         ],
-        balance: Number.MAX_VALUE,
+        balance: Math.floor(9223372036854775807 / 10000),
         revision: 0,
       });
 
@@ -415,7 +415,7 @@ describe('feesPrediction', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: IdentityPublicKey.TYPES.BLS12_381,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
             readOnly: false,
@@ -425,12 +425,12 @@ describe('feesPrediction', () => {
             id: 1,
             type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: false,
             data: privateKey.toPublicKey().toBuffer(),
           },
         ],
-        balance: Number.MAX_VALUE,
+        balance: Math.floor(9223372036854775807 / 10000),
         revision: 0,
       });
 

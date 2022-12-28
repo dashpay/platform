@@ -54,8 +54,8 @@ describe('Fee Pools', () => {
         mnSharesContract,
       );
 
-      await identityRepository.create(mnIdentity);
-      await identityRepository.create(payToIdentity);
+      await identityRepository.create(mnIdentity, blockInfo);
+      await identityRepository.create(payToIdentity, blockInfo);
       await documentRepository.create(payToDocument, blockInfo);
 
       mnDatas.push({

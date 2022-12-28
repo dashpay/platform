@@ -36,8 +36,8 @@ function getBiggestPossibleIdentity() {
     protocolVersion: 1,
     id: generateRandomIdentifier().toBuffer(),
     publicKeys,
-    balance: Number.MAX_VALUE,
-    revision: Number.MAX_VALUE,
+    balance: Math.floor(9223372036854775807 / 10000), // credits (i64) max + room for tests
+    revision: Math.floor(18446744073709551615 / 10000), // u64 max + room for tests
   });
 
   return identity;

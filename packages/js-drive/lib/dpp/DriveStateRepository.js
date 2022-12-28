@@ -61,9 +61,14 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.identityRepository.fetch(
       id,
-      this.#createRepositoryOptions(executionContext),
+      {
+        blockInfo,
+        ...this.#createRepositoryOptions(executionContext)
+      },
     );
 
     if (executionContext) {

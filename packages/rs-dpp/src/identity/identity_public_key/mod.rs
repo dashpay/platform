@@ -96,6 +96,7 @@ impl IdentityPublicKey {
         match self.key_type {
             KeyType::ECDSA_SECP256K1 => {
                 let key = match self.data.len() {
+                    // TODO: We need to update schema and tests for 65 len keys
                     65 | 33 => ECDSAPublicKey::from_slice(&self.data.as_slice())
                         .map_err(|e| anyhow!("unable to create pub key - {}", e))?,
                     _ => {
