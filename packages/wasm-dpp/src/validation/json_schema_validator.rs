@@ -1,13 +1,9 @@
 use anyhow::Context;
 use dpp::validation::JsonSchemaValidator;
-use serde::__private::de;
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    console_log,
-    utils::{ToSerdeJSONExt, WithJsError},
-};
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 #[wasm_bindgen(js_name=JsonSchemaValidator)]
 pub struct JsonSchemaValidatorWasm(JsonSchemaValidator);
@@ -27,11 +23,13 @@ impl JsonSchemaValidatorWasm {
         };
 
         let validator = if let Some(defs) = maybe_defs {
-            console_log!("new with definitinos");
-            unimplemented!()
-            // JsonSchemaValidator::new_with_definitions(schema, defs)
-            //     .context("Schema Validator creation failed")
-            //     .with_js_error()?
+            let map = defs
+                .as_object()
+                .context("definitions are not a map")
+                .with_js_error()?;
+            JsonSchemaValidator::new_with_definitions(schema, map)
+                .context("Schema Validator creation with definitions failed")
+                .with_js_error()?
         } else {
             JsonSchemaValidator::new(schema)
                 .context("Schema Validator creation failed")

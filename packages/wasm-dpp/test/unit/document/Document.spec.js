@@ -102,7 +102,6 @@ describe('Document', () => {
       $updatedAt: now,
     };
 
-
     document = new Document(rawDocument, dataContract);
     rawDocumentJs = lodash.cloneDeepWith(rawDocument);
     rawDocumentJs.$id = jsId;
