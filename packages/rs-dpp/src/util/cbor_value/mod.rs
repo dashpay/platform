@@ -1,21 +1,11 @@
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-use itertools::Itertools;
-use serde::Serialize;
 use serde_json::{Map, Value as JsonValue};
 
-use crate::identifier::Identifier;
-use crate::util::json_value::ReplaceWith;
-use crate::util::string_encoding::Encoding;
 use crate::ProtocolError;
-
-use super::json_path::{JsonPath, JsonPathLiteral, JsonPathStep};
 mod convert;
-use convert::convert_to;
 pub use convert::FieldType;
 
 mod cbor_value;
@@ -133,20 +123,6 @@ impl CborMapExtension for &Vec<(CborValue, CborValue)> {
         Err(ProtocolError::DecodingError(String::from(error_message)))
     }
 }
-
-// pub fn json_value_to_cbor_value(&json: JsonValueValue) -> CborValue {
-//
-// }
-
-// impl From<&BTreeMap<String, JsonValueValue>> for CborCanonicalMap {
-//     fn from(map: &BTreeMap<String, JsonValueValue>) -> Self {
-//         let vec = map.iter().map(|(key, value)| {
-//             (key.into(), value.into())
-//         }).collect::<Vec<(CborValue, CborValue)>>();
-//
-//         Self::from(vec)
-//     }
-// }
 
 // TODO: the issue with stack overflow should be address through re-implemtation of the algorithm
 pub fn cbor_value_to_json_value(cbor: &CborValue) -> Result<serde_json::Value, anyhow::Error> {

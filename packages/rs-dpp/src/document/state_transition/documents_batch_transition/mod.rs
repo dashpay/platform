@@ -305,7 +305,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         let mut canonical_map: CborCanonicalMap = map.try_into()?;
         canonical_map.remove(property_names::PROTOCOL_VERSION);
 
-        // now --> go over every and try to update the paths
+        // Replace binary fields individually for every transition using respective data contract
         if let Some(CborValue::Array(ref mut transitions)) =
             canonical_map.get_mut(&CborValue::Text(property_names::TRANSITIONS.to_string()))
         {

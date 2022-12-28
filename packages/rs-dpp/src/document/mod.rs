@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
@@ -171,7 +170,7 @@ impl Document {
         Ok(document)
     }
 
-    // the skipIdentifierConversion option is removed as it doesn't make sense in case of
+    // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
     // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
     pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
@@ -201,11 +200,10 @@ impl Document {
             .data_contract
             .get_identifiers_and_binary_paths(&self.document_type);
 
-        // the static (part of structure) identifiers are being serialized to the String(bas58)
+        // The static (part of structure) identifiers are being serialized to the String(base58)
         canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
-        // the dynamic identifiers are being serialized to the ArrayInt
-        // the binary fields are also being serialize to the ArrayInt, therefore both need to be
-        // converted to the the Cbor::Bytes
+        // The DYNAMIC identifiers and binary fields are being serialized to the ArrayInt, therefore
+        // they both need to be converted to the the CborValue::Bytes
         canonical_map.replace_paths(
             identifier_paths.into_iter().chain(binary_paths),
             FieldType::ArrayInt,

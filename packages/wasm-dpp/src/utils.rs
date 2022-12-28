@@ -18,8 +18,8 @@ pub trait ToSerdeJSONExt {
 }
 
 impl ToSerdeJSONExt for JsValue {
-    /// converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
-    /// as `jsValue` must be stringified first
+    /// Converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
+    /// as `JsValue` must be stringified first
     fn with_serde_to_json_value(&self) -> Result<Value, JsValue> {
         with_serde_to_json_value(self)
     }

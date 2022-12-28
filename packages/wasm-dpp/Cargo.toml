@@ -26,4 +26,3 @@ anyhow = "1.0.66"
 [profile.release]
 lto = true
 opt-level = 's'
-debug = true

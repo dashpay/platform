@@ -61,16 +61,16 @@ impl DocumentWasm {
             .inner()
             .get_identifiers_and_binary_paths(document_type);
 
-        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes the Array.
-        // When `Identifier` crosses the WASM boundary it becomes the String. From perspective of JS
-        // Identifier and Buffer are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
+        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
+        // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
+        // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
         let _ = raw_document
             .replace_identifier_paths(
                 identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
             )
             .with_js_error();
-        // The binary paths are not being converted, because they always should be a `Buffer`, hence the Array
+        // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
         let document =
             Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
@@ -148,7 +148,6 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        // TODO
         self.0.data = with_js_error!(serde_wasm_bindgen::from_value(d))?;
         Ok(())
     }

@@ -61,8 +61,8 @@ pub async fn validate_state_transition_identity_signature(
 
     let signature_public_key_id = state_transition
         .get_signature_public_key_id()
-        // TODO, what error should be returned here? MissingPublicKeyError only applies to the Identity
-        .context("state transition doesnt have signature public key")?;
+        //? what error should be returned here? MissingPublicKeyError only applies to the Identity
+        .context("State transition doesn't have signature public key")?;
     let maybe_public_key = identity.get_public_key_by_id(signature_public_key_id);
 
     let public_key = match maybe_public_key {

@@ -133,9 +133,9 @@ impl DocumentFactoryWASM {
             Default::default()
         };
 
-        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes the Array.
-        // When `Identifier` crosses the WASM boundary it becomes the String. From perspective of JS
-        // Identifier and Buffer are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
+        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
+        // When `Identifier` crosses the WASM boundary, it becomes a String. From perspective of JS
+        // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
         let _ = raw_document
             .replace_identifier_paths(document::IDENTIFIER_FIELDS, ReplaceWith::Bytes)
             .with_js_error();
@@ -146,7 +146,7 @@ impl DocumentFactoryWASM {
             .await
             .with_js_error()?;
 
-        // when data contract is available, replace remaining dynamic paths
+        // When data contract is available, replace remaining dynamic paths
         let mut document_data = document.data.take();
         let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths();
         document_data

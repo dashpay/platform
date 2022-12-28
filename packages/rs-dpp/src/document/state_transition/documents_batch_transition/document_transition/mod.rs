@@ -248,8 +248,7 @@ impl DocumentTransitionExt for DocumentTransition {
     }
 }
 
-/// Assumes the both values are maps and merge them together. In case of overlap, the
-/// values from b d
+/// Assumes both values are maps and merges them together. In case of overlap, b is used.
 fn merge_serde_json_values(a: &mut Value, b: Value) -> Result<(), anyhow::Error> {
     if let Value::Object(ref mut map_a) = a {
         if let Value::Object(map_b) = b {

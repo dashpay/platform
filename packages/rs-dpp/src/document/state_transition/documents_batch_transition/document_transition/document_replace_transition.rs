@@ -39,9 +39,9 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let (identifiers_paths, binary_paths) =
             data_contract.get_identifiers_and_binary_paths(document_type);
 
-        // only dynamic binary paths are being replaced with bytes (no static ones)
+        // Only dynamic binary paths are replaced with Bytes (no static ones)
         json_value.replace_binary_paths(binary_paths.into_iter(), ReplaceWith::Bytes)?;
-        // only dynamic identifiers are being replaced with bytes.
+        // Only dynamic identifiers are replaced with Bytes
         json_value.replace_identifier_paths(identifiers_paths, ReplaceWith::Bytes)?;
         let mut document: DocumentReplaceTransition = serde_json::from_value(json_value)?;
 
@@ -55,7 +55,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {
-        // only static identifiers are replaced, as the dynamic ones are stored as Arrays
+        // Only static identifiers are replaced, as the dynamic ones are stored as Arrays
         raw_transition.replace_identifier_paths(
             document_base_transition::IDENTIFIER_FIELDS,
             ReplaceWith::Base58,

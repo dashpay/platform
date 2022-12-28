@@ -165,21 +165,21 @@ impl DocumentsBatchTransitionWASM {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 
-        // transform every transition individually
+        // Transform every transition individually
         let transitions = Array::new();
         for transition in self.0.transitions.iter() {
             let js_value =
                 DocumentTransitionWasm::from(transition.to_owned()).to_object(options)?;
             transitions.push(&js_value);
         }
-        // replace the whole collection of transitions
+        // Replace the whole collection of transitions
         Reflect::set(
             &js_value,
             &property_names::TRANSITIONS.into(),
             &transitions.into(),
         )?;
 
-        // transform paths that are specific to the DocumentsBatchTransition
+        // Transform paths that are specific to the DocumentsBatchTransition
         for path in DocumentsBatchTransition::binary_property_paths() {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
                 let buffer = Buffer::from_bytes(&bytes);

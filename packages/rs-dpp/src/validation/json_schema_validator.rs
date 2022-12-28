@@ -47,8 +47,7 @@ impl JsonSchemaValidator {
     /// creates a new json schema validator from the json schema and allows to add the definitions
     pub fn new_with_definitions<'a>(
         mut schema_json: Value,
-        // definitions
-        definitions: impl IntoIterator<Item = (&'a String, &'a Value)>, // definitions: &BTreeMap<String, Value>,
+        definitions: impl IntoIterator<Item = (&'a String, &'a Value)>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let defs: HashMap<&str, &'a Value> = definitions
             .into_iter()

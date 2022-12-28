@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::util::json_path::JsonPathStep;
 
-/// returns the value from the Value based on the JsonPath
+/// Removes value from provided path. If path does't exist None is returned.
 pub(super) fn remove_path(path: &[JsonPathStep], value: &mut Value) -> Option<Value> {
     let mut last_ptr: &mut Value = value;
     let last_index = path.len() - 1;

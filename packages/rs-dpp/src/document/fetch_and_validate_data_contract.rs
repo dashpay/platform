@@ -31,7 +31,8 @@ where
         &self,
         raw_document: &Value,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
-        // TODO - where the state transition context should be created?
+        // TODO - stateTransitionExecutionContext shouldn't be created because it should be optional for
+        // TODO all StateRepository queries
         let ctx = StateTransitionExecutionContext::default();
         fetch_and_validate_data_contract(self.state_repository.as_ref(), raw_document, &ctx).await
     }

@@ -86,7 +86,7 @@ pub trait JsonValueExt {
     /// exists they will be created
     fn insert_with_path(&mut self, path: &str, value: JsonValue) -> Result<(), anyhow::Error>;
 
-    /// removes data from path and tries deserialize into given type
+    /// Removes data from given path and tries deserialize it into provided type
     fn remove_path_into<K: DeserializeOwned>(
         &mut self,
         property_name: &str,
