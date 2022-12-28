@@ -398,4 +398,21 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.12': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.core.logIps = 0;
+        config.core.indexes = config.name === 'mainnet' ? 0 : 1;
+        config.core.minimumDifficultyBlocks = 0;
+        config.core.powTargetSpacing = 150;
+        config.platform.tenderdash.log.level = 'debug';
+        config.core.rpc.allowIps = [
+          '127.0.0.1',
+          '172.16.0.0/12',
+          '192.168.0.0/16',
+        ];
+      });
+
+    return configFile;
+  },
 };
