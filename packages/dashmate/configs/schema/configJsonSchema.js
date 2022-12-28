@@ -153,7 +153,7 @@ module.exports = {
             allowIps: {
               type: 'array',
               items: {
-                type: 'string'
+                type: 'string',
               },
             },
           },
