@@ -1,4 +1,3 @@
-const stripAnsi = require('strip-ansi');
 const { table } = require('table');
 
 const { OUTPUT_FORMATS } = require('../constants');
@@ -11,7 +10,7 @@ const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
  * @param {[Object[]]} array
  * @param {string} format
  */
-function printArrayofObjects(array, format) {
+function printArrayOfObjects(array, format) {
   let output;
   switch (format) {
     case OUTPUT_FORMATS.PLAIN: {
@@ -27,15 +26,7 @@ function printArrayofObjects(array, format) {
       break;
     }
     case OUTPUT_FORMATS.JSON: {
-      const cleanArray = [];
-      array.forEach((outputRow, i) => {
-        const cleanRow = {};
-        Object.keys(outputRow).forEach((key) => {
-          cleanRow[key] = stripAnsi(outputRow[key]);
-        });
-        cleanArray[i] = cleanRow;
-      });
-      output = JSON.stringify(cleanArray);
+      output = JSON.stringify(array);
       break;
     }
     default: {
@@ -47,4 +38,4 @@ function printArrayofObjects(array, format) {
   console.log(output);
 }
 
-module.exports = printArrayofObjects;
+module.exports = printArrayOfObjects;
