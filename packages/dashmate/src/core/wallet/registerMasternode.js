@@ -23,7 +23,7 @@ async function registerMasternode(
   config,
 ) {
   // get collateral index
-  const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('/wallet/main', 'outputs');
+  const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('outputs', { wallet: 'main' });
 
   const collateralOutputIndex = masternodeOutputs
     .find((outpoint) => outpoint.startsWith(collateralHash))
@@ -32,7 +32,6 @@ async function registerMasternode(
   const ipAndPort = `${config.get('externalIp', true)}:${config.get('core.p2p.port')}`;
 
   const { result: proRegTxId } = await coreService.getRpcClient().protx(
-    '/wallet/main',
     'register',
     collateralHash, // The txid of the 1000 Dash collateral funding transaction
     parseInt(collateralOutputIndex, 10), // The output index of the 1000 Dash funding transaction
@@ -42,6 +41,7 @@ async function registerMasternode(
     ownerAddress, // The new Dash address, or the address of a delegate, used for proposal voting
     operatorReward, // The percentage of the block reward allocated to the operator as payment
     fundSourceAddress, // A new or existing Dash address to receive the owner’s masternode rewards
+    { wallet: 'main' },
   );
 
   return proRegTxId;

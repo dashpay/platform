@@ -31,7 +31,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
 
     expect(simplifiedMasternodeList.getStore()).to.equal(undefined);
 
-    const { result: randomAddress } = await dashCore.getApi().getNewAddress('/wallet/main');
+    const { result: randomAddress } = await dashCore.getApi().getNewAddress({ wallet: 'main' });
 
     await dashCore.getApi().generateToAddress(1000, randomAddress);
 
@@ -61,7 +61,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
     const smlMaxListsLimit = container.resolve('smlMaxListsLimit');
 
     const api = dashCore.getApi();
-    const { result: randomAddress } = await api.getNewAddress('/wallet/main');
+    const { result: randomAddress } = await api.getNewAddress({ wallet: 'main' });
 
     await api.generateToAddress(600, randomAddress);
 
