@@ -154,6 +154,7 @@ module.exports = {
               type: 'array',
               items: {
                 type: 'string',
+                format: 'ipv4',
               },
             },
           },
