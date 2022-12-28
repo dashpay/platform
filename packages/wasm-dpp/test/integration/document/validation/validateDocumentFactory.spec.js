@@ -2,27 +2,19 @@ const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const JsonSchemaValidatorJs = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DataContractJs = require('@dashevo/dpp/lib/dataContract/DataContract');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const validateDocumentFactoryJs = require('@dashevo/dpp/lib/document/validation/validateDocumentFactory');
-const enrichDataContractWithBaseSchemaJs = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
+const validateDocumentFactory = require('@dashevo/dpp/lib/document/validation/validateDocumentFactory');
+const enrichDataContractWithBaseSchema = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
-const MissingDocumentTypeErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTypeError');
-const InvalidDocumentTypeErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
-
-const { default: loadWasmDpp } = require('../../../dist');
-
-
-let JsonSchemaValidator;
-let ValidationResult;
-let DataContract;
-let validateDocumentFactory;
+const MissingDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTypeError');
+const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
 
 const {
   expectValidationError,
@@ -31,45 +23,33 @@ const {
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('validateDocumentFactory', () => {
-  let dataContractJs;
+  let dataContract;
   let rawDocuments;
   let rawDocument;
   let documents;
-  let validateDocumentJs;
   let validateDocument;
-  let validatorJs;
   let validator;
   let validateProtocolVersionMock;
-
-  beforeEach(async () => {
-    ({
-      ValidationResult, DataContract, JsonSchemaValidator,
-      // Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory,
-      // DataContract, Document,
-    } = await loadWasmDpp());
-  });
 
   beforeEach(async function beforeEach() {
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
 
-    validatorJs = new JsonSchemaValidatorJs(ajv);
+    validator = new JsonSchemaValidator(ajv);
 
-    this.sinonSandbox.spy(validatorJs, 'validate');
+    this.sinonSandbox.spy(validator, 'validate');
 
-    dataContractJs = getDataContractFixture();
-    const dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
+    dataContract = getDataContractFixture();
 
-    validator = new JsonSchemaValidator(dataContract);
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResultJs());
+    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
-    validateDocumentJs = validateDocumentFactoryJs(
-      validatorJs,
-      enrichDataContractWithBaseSchemaJs,
+    validateDocument = validateDocumentFactory(
+      validator,
+      enrichDataContractWithBaseSchema,
       validateProtocolVersionMock,
     );
 
-    documents = getDocumentsFixture(dataContractJs);
+    documents = getDocumentsFixture(dataContract);
     rawDocuments = documents.map((o) => o.toObject());
     [rawDocument] = rawDocuments;
   });
@@ -79,7 +59,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$protocolVersion;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -93,7 +73,7 @@ describe('validateDocumentFactory', () => {
       it('should be an integer', () => {
         rawDocument.$protocolVersion = '1';
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -107,13 +87,13 @@ describe('validateDocumentFactory', () => {
         rawDocument.$protocolVersion = -1;
 
         const protocolVersionError = new SomeConsensusError('test');
-        const protocolVersionResult = new ValidationResultJs([
+        const protocolVersionResult = new ValidationResult([
           protocolVersionError,
         ]);
 
         validateProtocolVersionMock.returns(protocolVersionResult);
 
-        const result = await validateDocumentJs(rawDocument, dataContractJs);
+        const result = await validateDocument(rawDocument, dataContract);
 
         expectValidationError(result, SomeConsensusError);
 
@@ -131,7 +111,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$id;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -145,7 +125,7 @@ describe('validateDocumentFactory', () => {
       it('should be a byte array', () => {
         rawDocument.$id = new Array(32).fill('string');
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result, 2);
 
@@ -160,7 +140,7 @@ describe('validateDocumentFactory', () => {
       it('should be no less than 32 bytes', () => {
         rawDocument.$id = Buffer.alloc(31);
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -173,7 +153,7 @@ describe('validateDocumentFactory', () => {
       it('should be no longer than 32 bytes', () => {
         rawDocument.$id = Buffer.alloc(33);
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -196,11 +176,11 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$type;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectValidationError(
           result,
-          MissingDocumentTypeErrorJs,
+          MissingDocumentTypeError,
         );
 
         const [error] = result.getErrors();
@@ -211,11 +191,11 @@ describe('validateDocumentFactory', () => {
       it('should be defined in Data Contract', () => {
         rawDocument.$type = 'undefinedDocument';
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectValidationError(
           result,
-          InvalidDocumentTypeErrorJs,
+          InvalidDocumentTypeError,
         );
 
         const [error] = result.getErrors();
@@ -227,18 +207,18 @@ describe('validateDocumentFactory', () => {
       it('should throw an error if getDocumentSchemaRef throws error', function it() {
         const someError = new Error();
 
-        DataContractMock = this.sinonSandbox.stub(DataContractJs.prototype, 'getDocumentSchemaRef').throws(someError);
+        DataContractMock = this.sinonSandbox.stub(DataContract.prototype, 'getDocumentSchemaRef').throws(someError);
 
         let error;
         try {
-          validateDocumentJs(rawDocument, dataContractJs);
+          validateDocument(rawDocument, dataContract);
         } catch (e) {
           error = e;
         }
 
         expect(error).to.equal(someError);
 
-        expect(dataContractJs.getDocumentSchemaRef).to.have.been.calledOnce();
+        expect(dataContract.getDocumentSchemaRef).to.have.been.calledOnce();
       });
     });
 
@@ -246,7 +226,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$revision;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -260,7 +240,7 @@ describe('validateDocumentFactory', () => {
       it('should be a number', () => {
         rawDocument.$revision = 'string';
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -273,7 +253,7 @@ describe('validateDocumentFactory', () => {
       it('should be an integer', () => {
         rawDocument.$revision = 1.1;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -286,7 +266,7 @@ describe('validateDocumentFactory', () => {
       it('should be greater or equal to one', () => {
         rawDocument.$revision = -1;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -301,7 +281,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$dataContractId;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -315,7 +295,7 @@ describe('validateDocumentFactory', () => {
       it('should be a byte array', () => {
         rawDocument.$dataContractId = new Array(32).fill('string');
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result, 2);
 
@@ -330,7 +310,7 @@ describe('validateDocumentFactory', () => {
       it('should be no less than 32 bytes', () => {
         rawDocument.$dataContractId = Buffer.alloc(31);
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -343,7 +323,7 @@ describe('validateDocumentFactory', () => {
       it('should be no longer than 32 bytes', () => {
         rawDocument.$dataContractId = Buffer.alloc(33);
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -358,7 +338,7 @@ describe('validateDocumentFactory', () => {
       it('should be present', () => {
         delete rawDocument.$ownerId;
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -372,7 +352,7 @@ describe('validateDocumentFactory', () => {
       it('should be a byte array', () => {
         rawDocument.$ownerId = new Array(32).fill('string');
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result, 2);
 
@@ -387,7 +367,7 @@ describe('validateDocumentFactory', () => {
       it('should be no less than 32 bytes', () => {
         rawDocument.$ownerId = Buffer.alloc(31);
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -400,7 +380,7 @@ describe('validateDocumentFactory', () => {
       it('should be no longer than 32 bytes', () => {
         rawDocument.$ownerId = Buffer.alloc(33);
 
-        const result = validateDocumentJs(rawDocument, dataContractJs);
+        const result = validateDocument(rawDocument, dataContract);
 
         expectJsonSchemaError(result);
 
@@ -416,7 +396,7 @@ describe('validateDocumentFactory', () => {
     it('should return an error if the first document is not valid against Data Contract', () => {
       rawDocument.name = 1;
 
-      const result = validateDocumentJs(rawDocument, dataContractJs);
+      const result = validateDocument(rawDocument, dataContract);
 
       expectJsonSchemaError(result);
 
@@ -431,7 +411,7 @@ describe('validateDocumentFactory', () => {
       rawDocument = rawDocuments[1];
       rawDocument.undefined = 1;
 
-      const result = validateDocumentJs(rawDocument, dataContractJs);
+      const result = validateDocument(rawDocument, dataContract);
 
       expectJsonSchemaError(result);
 
@@ -444,11 +424,11 @@ describe('validateDocumentFactory', () => {
 
   it('return invalid result if a byte array exceeds `maxItems`', () => {
     // eslint-disable-next-line prefer-destructuring
-    rawDocument = getDocumentsFixture(dataContractJs)[8].toObject();
+    rawDocument = getDocumentsFixture(dataContract)[8].toObject();
 
     rawDocument.byteArrayField = Buffer.alloc(32);
 
-    const result = validateDocumentJs(rawDocument, dataContractJs);
+    const result = validateDocument(rawDocument, dataContract);
 
     expectJsonSchemaError(result);
 
@@ -459,9 +439,9 @@ describe('validateDocumentFactory', () => {
   });
 
   it('should return valid result is a document is valid', () => {
-    const result = validateDocumentJs(rawDocument, dataContractJs);
+    const result = validateDocument(rawDocument, dataContract);
 
-    expect(result).to.be.an.instanceOf(ValidationResultJs);
+    expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
   });
 });
