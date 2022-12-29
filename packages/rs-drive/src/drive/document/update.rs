@@ -268,7 +268,6 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
-        dbg!(&document_and_contract_info.owned_document_info.document_info);
         if !document_and_contract_info.document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
