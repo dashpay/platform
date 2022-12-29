@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
-    data_contract::DataContract,
+    data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
@@ -17,6 +17,7 @@ use crate::{
 use super::{
     document_transition::{self, Action},
     document_validator::DocumentValidator,
+    errors::DocumentError,
     fetch_and_validate_data_contract::{self, DataContractFetcherAndValidator},
     generate_document_id::generate_document_id,
     property_names, Document, DocumentsBatchTransition,
@@ -94,10 +95,11 @@ where
         data: JsonValue,
     ) -> Result<Document, ProtocolError> {
         if !data_contract.is_document_defined(&document_type) {
-            return Err(ProtocolError::InvalidDocumentTypeError {
-                document_type,
+            return Err(DataContractError::InvalidDocumentTypeError {
+                doc_type: document_type,
                 data_contract,
-            });
+            }
+            .into());
         }
 
         let document_entropy = entropy_generator::generate()?; // TODO use EntropyGenerator
@@ -140,12 +142,13 @@ where
         let validation_result = self
             .document_validator
             .validate(&raw_document, &data_contract)?;
-
         if !validation_result.is_valid() {
-            return Err(ProtocolError::InvalidDocumentError {
-                errors: validation_result.errors,
-                raw_document,
-            });
+            return Err(ProtocolError::Document(Box::new(
+                DocumentError::InvalidDocumentError {
+                    errors: validation_result.errors,
+                    raw_document,
+                },
+            )));
         }
 
         let mut document = Document::from_raw_document(raw_document, data_contract)?;
@@ -164,15 +167,16 @@ where
         let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
 
         if Self::is_empty(flattened_documents_iter.clone()) {
-            return Err(ProtocolError::NoDocumentsSuppliedError);
+            return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
         let is_the_same =
             Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id));
         if !is_the_same {
-            return Err(ProtocolError::MismatchOwnerIdsError {
+            return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
-            });
+            }
+            .into());
         }
 
         let owner_id = flattened_documents_iter
@@ -194,7 +198,7 @@ where
         }
 
         if raw_documents_transitions.is_empty() {
-            return Err(ProtocolError::NoDocumentsSuppliedError);
+            return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
         let raw_batch_transition = json!({
@@ -215,10 +219,11 @@ where
 
         match result {
             Err(ProtocolError::AbstractConsensusError(err)) => {
-                Err(ProtocolError::InvalidDocumentError {
+                Err(DocumentError::InvalidDocumentError {
                     errors: vec![*err],
                     raw_document: JsonValue::Null,
-                })
+                }
+                .into())
             }
             Err(err) => Err(err),
             Ok((version, mut raw_document)) => {
@@ -252,10 +257,12 @@ where
             .await?;
 
         if !result.is_valid() {
-            return Err(ProtocolError::InvalidDocumentError {
-                errors: result.errors,
-                raw_document: raw_document.clone(),
-            });
+            return Err(ProtocolError::Document(Box::new(
+                DocumentError::InvalidDocumentError {
+                    errors: result.errors,
+                    raw_document: raw_document.clone(),
+                },
+            )));
         }
         let data_contract = result
             .take_data()
@@ -266,10 +273,12 @@ where
                 .document_validator
                 .validate(raw_document, &data_contract)?;
             if !result.is_valid() {
-                return Err(ProtocolError::InvalidDocumentError {
-                    errors: result.errors,
-                    raw_document: raw_document.clone(),
-                });
+                return Err(ProtocolError::Document(Box::new(
+                    DocumentError::InvalidDocumentError {
+                        errors: result.errors,
+                        raw_document: raw_document.clone(),
+                    },
+                )));
             }
         }
 
@@ -282,7 +291,10 @@ where
         let mut raw_transitions = vec![];
         for document in documents {
             if document.revision != document_transition::INITIAL_REVISION {
-                return Err(ProtocolError::InvalidInitialRevisionError { document });
+                return Err(DocumentError::InvalidInitialRevisionError {
+                    document: Box::new(document),
+                }
+                .into());
             }
             let mut raw_document = document.to_object()?;
 
