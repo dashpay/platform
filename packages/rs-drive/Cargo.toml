@@ -9,7 +9,6 @@ private = true
 [dependencies]
 serde = { version = "1.0.132", features = ["derive"] }
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
-# ciborium = "0.2.0"
 integer-encoding = "3.0.3"
 bs58 = "0.4.0"
 base64 = "0.13.0"
