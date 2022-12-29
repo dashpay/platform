@@ -243,3 +243,53 @@ fn should_return_valid_result_if_indices_are_not_changed() {
 
     assert!(result.is_valid());
 }
+
+#[test]
+fn should_return_invalid_result_if_non_unique_index_added_for_non_indexed_property() {
+    let TestData {
+        mut old_documents_schema,
+        mut new_documents_schema,
+        ..
+    } = setup_test();
+
+    // Here we add another property to old schema that certainly was not indexed by any means.
+    old_documents_schema.get_mut("indexedDocument").unwrap()["properties"]
+        ["oldUnindexedProperty"] = json!({
+        "type": "string",
+        "maxLength": "420",
+    });
+
+    new_documents_schema.get_mut("indexedDocument").unwrap()["indices"]
+        .push(json!(
+            {
+                "name": "index1337",
+                "properties": [
+                    {
+                        "oldUnindexedProperty": "asc",
+                    },
+                ],
+                "unique": false,
+            }
+        ))
+        .unwrap();
+    let result = validate_indices_are_backward_compatible(
+        old_documents_schema.iter(),
+        new_documents_schema.iter(),
+    )
+    .expect("validation result should be returned");
+
+    assert_eq!(result.errors().len(), 1);
+    // TODO the error doesn't have assigned error code
+    assert_eq!(result.errors()[0].code(), 0);
+
+    let basic_error = get_basic_error(&result, 0);
+    assert!(matches!(
+        basic_error,
+        BasicError::DataContractInvalidIndexDefinitionUpdateError {
+            document_type,
+            index_name,
+        } if {
+        document_type == "indexedDocument" &&
+        index_name == "index1337"
+    }));
+}

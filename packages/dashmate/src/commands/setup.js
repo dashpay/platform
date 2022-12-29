@@ -12,6 +12,7 @@ const {
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
   MASTERNODE_DASH_AMOUNT,
+  SSL_PROVIDERS,
 } = require('../constants');
 
 class SetupCommand extends BaseCommand {
@@ -36,6 +37,10 @@ class SetupCommand extends BaseCommand {
       'debug-logs': debugLogs,
       'miner-interval': minerInterval,
       verbose: isVerbose,
+      'ssl-provider': certificateProvider,
+      'zerossl-apikey': zeroSslApiKey,
+      'ssl-certificate-file': sslCertificateFilePath,
+      'ssl-privatekey-file': sslCertificatePrivateKeyFilePath,
     },
     generateBlsKeys,
     setupLocalPresetTask,
@@ -103,6 +108,10 @@ class SetupCommand extends BaseCommand {
         operatorBlsPrivateKey,
         fundingPrivateKeyString,
         isVerbose,
+        zeroSslApiKey,
+        certificateProvider,
+        sslCertificateFilePath,
+        sslCertificatePrivateKeyFilePath,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -135,6 +144,11 @@ SetupCommand.flags = {
   'funding-private-key': Flags.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
   'node-count': Flags.integer({ description: 'number of nodes to setup' }),
   'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
+  'ssl-provider': Flags.string({ char: 's', description: '', options: SSL_PROVIDERS.filter((item) => item !== 'selfSigned') }),
+  'zerossl-apikey': Flags.string({ char: 'z', description: 'ZeroSSL API key', dependsOn: ['ssl-provider'] }),
+  'ssl-certificate-file': Flags.string({ char: 'c', description: 'SSL certificate file path', dependsOn: ['ssl-provider'] }),
+  'ssl-privatekey-file': Flags.string({ char: 'l', description: 'SSL certificate private key file path', dependsOn: ['ssl-provider'] }),
+
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
