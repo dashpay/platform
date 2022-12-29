@@ -168,6 +168,8 @@ describe('getRandomQuorumFactory', () => {
     expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(
       quorumType, '1af5ffbdb862a18b454106b6b99e30bb683fa5bab8278b19a6e91bf742405cce',
     );
+
+    expect(coreRpcClientMock.quorum).to.be.calledOnceWithExactly('listextended', coreHeight);
     expect(result).to.equals(randomQuorum);
   });
 

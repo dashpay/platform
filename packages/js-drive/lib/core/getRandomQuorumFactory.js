@@ -49,7 +49,7 @@ function getRandomQuorumFactory(coreRpcClient) {
       throw new QuorumsNotFoundError(sml, quorumType);
     }
 
-    const { result: allValidatorQuorumsExtendedInfo } = await coreRpcClient.quorum('listextended');
+    const { result: allValidatorQuorumsExtendedInfo } = await coreRpcClient.quorum('listextended', coreHeight);
 
     // convert to object
     const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[llmqMap[quorumType]]
