@@ -969,7 +969,7 @@ impl Drive {
                 let consistency_results =
                     GroveDbOp::verify_consistency_of_operations(&ops.operations);
                 if !consistency_results.is_empty() {
-                    println!("results {:#?}", consistency_results);
+                    println!("consistency_results {:#?}", consistency_results);
                     return Err(Error::Drive(DriveError::GroveDBInsertion(
                         "insertion order error",
                     )));

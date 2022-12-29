@@ -1150,7 +1150,7 @@ mod tests {
 
         let contract = setup_contract(
             &drive,
-            "tests/supporting_files/contract/family/family-contract.json",
+            "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
             Some(&db_transaction),
         );
@@ -1165,7 +1165,7 @@ mod tests {
         );
 
         let person_serialized_document1 = json_document_to_cbor(
-            "tests/supporting_files/contract/family/person1.json",
+            "tests/supporting_files/contract/family/person3.json",
             Some(1),
         );
 
@@ -1276,7 +1276,7 @@ mod tests {
         operations.push(UpdateOperation(UpdateOperationInfo {
             document: &document1,
             serialized_document: Some(person_serialized_document1.as_slice()),
-            owner_id: Some(random_owner_id0),
+            owner_id: Some(random_owner_id1),
             storage_flags: None,
         }));
 
@@ -1297,14 +1297,14 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
             )
-            .expect("expected to be able to insert documents");
+            .expect("expected to be able to update documents");
 
         let query_value = json!({
             "where": [
             ],
             "limit": 100,
             "orderBy": [
-                ["$ownerId", "asc"],
+                ["age", "asc"],
             ]
         });
         let where_cbor = common::value_to_cbor(query_value, None);
