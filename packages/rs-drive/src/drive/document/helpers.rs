@@ -46,7 +46,7 @@ impl Drive {
             ))
         })?;
 
-        let operations = self.add_document_for_contract_operations(
+        let operations = self.update_document_for_contract_operations(
             DocumentAndContractInfo {
                 document_info: DocumentInfo::DocumentRefAndSerialization((
                     &crate::drive::document::Document::from_cbor(&document_cbor, None, None)?,
@@ -58,7 +58,6 @@ impl Drive {
                     .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?,
                 owner_id: Some(document.owner_id.to_buffer()),
             },
-            true,
             block_info,
             &mut None,
             transaction,

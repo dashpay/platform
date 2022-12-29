@@ -134,6 +134,7 @@ const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUp
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
 const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
 const updateWithdrawalTransactionIdAndStatusFactory = require('./identity/withdrawals/updateWithdrawalTransactionIdAndStatusFactory');
+const broadcastWithdrawalTransactionsFactory = require('./abci/handlers/proposal/broadcastWithdrawalTransactionsFactory');
 
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
@@ -696,6 +697,7 @@ function createDIContainer(options) {
     updateWithdrawalTransactionIdAndStatus: asFunction(
       updateWithdrawalTransactionIdAndStatusFactory,
     ),
+    broadcastWithdrawalTransactions: asFunction(broadcastWithdrawalTransactionsFactory),
   });
 
   /**
