@@ -474,7 +474,7 @@ mod test {
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
-        assert_error_contains!(result, "Invalid Document initial revision 3")
+        assert_error_contains!(result, "Invalid Document initial revision '3'")
     }
 
     #[test]

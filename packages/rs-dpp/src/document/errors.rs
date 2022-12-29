@@ -27,7 +27,7 @@ pub enum DocumentError {
         errors: Vec<ConsensusError>,
         raw_document: Value,
     },
-    #[error("Invalid Document Initial revision '{}'", document.revision)]
+    #[error("Invalid Document initial revision '{}'", document.revision)]
     InvalidInitialRevisionError { document: Box<Document> },
 
     #[error("Documents have mixed owner ids")]

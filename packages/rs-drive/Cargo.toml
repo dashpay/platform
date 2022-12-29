@@ -49,6 +49,7 @@ rev = "1e92ea9875b4952e30142ac9353f4a12470eb9a3"
 
 [dev-dependencies]
 criterion = "0.3.5"
+dpp = { path = "../rs-dpp", features=["mocks"]}
 
 [[bench]]
 name = "benchmarks"
