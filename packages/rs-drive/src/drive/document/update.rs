@@ -573,6 +573,7 @@ impl Drive {
                                 is_known_to_be_subtree_with_sum: Some((false, false)),
                             },
                             transaction,
+                            &previous_batch_operations,
                             &mut batch_operations,
                         )?;
                     } else {
@@ -585,6 +586,7 @@ impl Drive {
                                 is_known_to_be_subtree_with_sum: Some((false, false)),
                             },
                             transaction,
+                            &previous_batch_operations,
                             &mut batch_operations,
                         )?;
                     }

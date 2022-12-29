@@ -872,9 +872,19 @@ impl Drive {
         stop_path_height: Option<u16>,
         apply_type: BatchDeleteUpTreeApplyType,
         transaction: TransactionArg,
+        check_existing_operations: &Option<&mut Vec<DriveOperation>>,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let current_batch_operations = DriveOperation::grovedb_operations_batch(drive_operations);
+        //these are the operations in the current operations (eg, delete/add)
+        let mut current_batch_operations =
+            DriveOperation::grovedb_operations_batch(drive_operations);
+
+        //These are the operations in the same batch, but in a different operation
+        if let Some(existing_operations) = check_existing_operations {
+            let mut other_batch_operations =
+                DriveOperation::grovedb_operations_batch(existing_operations);
+            current_batch_operations.append(&mut other_batch_operations);
+        }
         let cost_context = match apply_type {
             BatchDeleteUpTreeApplyType::StatelessBatchDelete {
                 estimated_layer_info,

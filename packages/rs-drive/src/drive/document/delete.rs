@@ -193,6 +193,7 @@ impl Drive {
             contract,
             document_type_name,
             owner_id,
+            None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -284,6 +285,7 @@ impl Drive {
         unique: bool,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -340,6 +342,7 @@ impl Drive {
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                 delete_apply_type,
                 transaction,
+                previous_batch_operations,
                 batch_operations,
             )?;
         } else {
@@ -361,6 +364,7 @@ impl Drive {
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                 delete_apply_type,
                 transaction,
+                previous_batch_operations,
                 batch_operations,
             )?;
         }
@@ -375,6 +379,7 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -407,6 +412,7 @@ impl Drive {
                 unique,
                 any_fields_null,
                 storage_flags,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 event_id,
                 transaction,
@@ -476,6 +482,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 storage_flags,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 event_id,
                 transaction,
@@ -489,6 +496,7 @@ impl Drive {
     fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -608,6 +616,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 &storage_flags,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 event_id,
                 transaction,
@@ -624,6 +633,7 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
+        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -718,6 +728,7 @@ impl Drive {
 
         self.remove_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
+            &previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
