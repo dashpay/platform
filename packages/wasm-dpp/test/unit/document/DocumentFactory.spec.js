@@ -460,9 +460,8 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        // TODO - change when errors merged
-        console.log(e.toString());
-        // expect(e).to.startsWith('ProtocolError: getting property');
+        // TODO - parsing errors are not handled yet
+        expect(e).to.startsWith('ProtocolError: getting property');
       }
     });
   }); describe('createStateTransition', () => {
@@ -487,7 +486,7 @@ describe('DocumentFactory', () => {
         expect.fail('Error was not thrown');
       } catch (e) {
         // newDocumentsContainer filter out unknown type, so the no documents is expected
-        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError)
+        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
       }
     });
 
