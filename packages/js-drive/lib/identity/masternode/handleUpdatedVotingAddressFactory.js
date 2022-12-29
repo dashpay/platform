@@ -17,6 +17,7 @@ function handleUpdatedVotingAddressFactory(
   /**
    * @typedef handleUpdatedVotingAddress
    * @param {SimplifiedMNListEntry} masternodeEntry
+   * @param {BlockInfo} blockInfo
    * @return {Promise<{
    *  createdEntities: Array<Identity|Document>,
    *  updatedEntities: Array<Identity>,
@@ -25,6 +26,7 @@ function handleUpdatedVotingAddressFactory(
    */
   async function handleUpdatedVotingAddress(
     masternodeEntry,
+    blockInfo,
   ) {
     const result = {
       createdEntities: [],
@@ -58,6 +60,7 @@ function handleUpdatedVotingAddressFactory(
 
       result.createdEntities.push(
         await createMasternodeIdentity(
+          blockInfo,
           votingIdentifier,
           votingPublicKeyHash,
           IdentityPublicKey.TYPES.ECDSA_HASH160,

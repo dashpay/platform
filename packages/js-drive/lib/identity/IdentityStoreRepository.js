@@ -16,7 +16,7 @@ class IdentityStoreRepository {
    * Create Identity in database
    *
    * @param {Identity} identity
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -54,7 +54,7 @@ class IdentityStoreRepository {
    *
    * @param {Identifier} identityId
    * @param {number} amount
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -94,7 +94,7 @@ class IdentityStoreRepository {
    * @param {Identifier} identityId
    * @param {number} requiredAmount
    * @param {number} desiredAmount
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -140,7 +140,7 @@ class IdentityStoreRepository {
    *
    * @param {Identifier} identityId
    * @param {number} revision
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]

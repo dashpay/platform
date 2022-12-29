@@ -32,7 +32,7 @@ class IdentityPublicKeyStoreRepository {
    *
    * @param {Identifier} identityId
    * @param {IdentityPublicKey[]} keys
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -77,7 +77,7 @@ class IdentityPublicKeyStoreRepository {
    * @param {Identifier} identityId
    * @param {number[]} keyIds
    * @param {number} disabledAt
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]

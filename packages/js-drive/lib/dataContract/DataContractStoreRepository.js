@@ -20,7 +20,7 @@ class DataContractStoreRepository {
    * Create Data Contract in database
    *
    * @param {DataContract} dataContract
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -61,7 +61,7 @@ class DataContractStoreRepository {
    * Update Data Contract in database
    *
    * @param {DataContract} dataContract
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]

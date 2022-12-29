@@ -53,6 +53,7 @@ function handleNewMasternodeFactory(
 
     createdEntities.push(
       await createMasternodeIdentity(
+        blockInfo,
         masternodeIdentifier,
         ownerPublicKeyHash,
         IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -75,6 +76,7 @@ function handleNewMasternodeFactory(
 
       createdEntities.push(
         await createMasternodeIdentity(
+          blockInfo,
           operatorIdentifier,
           operatorPubKey,
           IdentityPublicKey.TYPES.BLS12_381,
@@ -105,6 +107,7 @@ function handleNewMasternodeFactory(
 
       createdEntities.push(
         await createMasternodeIdentity(
+          blockInfo,
           votingIdentifier,
           votingPubKeyHash,
           IdentityPublicKey.TYPES.ECDSA_HASH160,

@@ -43,8 +43,6 @@ function handleUpdatedScriptPayoutFactory(
 
     const identity = identityResult.getValue();
 
-    identity.setRevision(identity.getRevision() + 1);
-
     let identityPublicKeys = identity
       .getPublicKeys();
 
@@ -81,6 +79,7 @@ function handleUpdatedScriptPayoutFactory(
       .setType(withdrawPubKeyType)
       .setData(pubKeyData)
       .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
+      .setReadOnly(true)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
     identityPublicKeys.push(
@@ -89,13 +88,19 @@ function handleUpdatedScriptPayoutFactory(
 
     identity.setPublicKeys(identityPublicKeys);
 
-    await identityRepository.update(identity, { useTransaction: true });
+    identity.setRevision(identity.getRevision() + 1);
 
-    const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
+    await identityRepository.updateRevision(
+      identityId,
+      identity.getRevision(),
+      blockInfo,
+      { useTransaction: true },
+    );
 
-    await identityPublicKeyRepository.store(
-      publicKeyHash,
-      identity.getId(),
+    await identityPublicKeyRepository.add(
+      identityId,
+      [newWithdrawalIdentityPublicKey],
+      blockInfo,
       { useTransaction: true },
     );
 
