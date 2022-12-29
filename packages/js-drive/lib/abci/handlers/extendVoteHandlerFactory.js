@@ -17,11 +17,16 @@ const {
 function extendVoteHandlerFactory(proposalBlockExecutionContext) {
   /**
    * @typedef extendVoteHandler
-   * @param {Object} request
-   * @param {number} request.round
    * @return {Promise<abci.ResponseExtendVote>}
    */
   async function extendVoteHandler() {
+    const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
+      .child({
+        abciMethod: 'extendVote',
+      });
+
+    consensusLogger.debug('ExtendVote ABCI method requested');
+
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
 
@@ -31,6 +36,25 @@ function extendVoteHandlerFactory(proposalBlockExecutionContext) {
         type: VoteExtensionType.THRESHOLD_RECOVER,
         extension: Buffer.from(txHashHex, 'hex'),
       }));
+
+    const voteExtensionTypeName = {
+      [VoteExtensionType.DEFAULT]: 'default',
+      [VoteExtensionType.THRESHOLD_RECOVER]: 'threshold recovery',
+    };
+
+    voteExtensions.forEach(({ extension, type }) => {
+      const extensionString = extension.toString('hex');
+
+      const extensionTruncatedString = extensionString.substring(
+        0,
+        Math.min(30, extensionString.length),
+      );
+
+      consensusLogger.debug({
+        type,
+        extension: extensionString,
+      }, `Vote extended to obtain ${voteExtensionTypeName} signature for ${extensionTruncatedString}... payload`);
+    });
 
     return new ResponseExtendVote({
       voteExtensions,

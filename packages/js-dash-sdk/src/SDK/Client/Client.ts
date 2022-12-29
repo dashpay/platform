@@ -76,7 +76,9 @@ export class Client extends EventEmitter {
             'seeds',
             'timeout',
             'retries',
-            'baseBanTime'
+            'baseBanTime',
+            'blockHeadersProviderOptions',
+            'blockHeadersProvider'
         ].forEach((optionName) => {
             if (this.options.hasOwnProperty(optionName)) {
                 dapiClientOptions[optionName] = this.options[optionName];

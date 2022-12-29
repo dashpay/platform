@@ -1,8 +1,10 @@
+use std::convert::TryInto;
+
 use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::{
-    data_contract::state_transition::DataContractCreateTransition,
+    data_contract::{state_transition::DataContractCreateTransition, DataContract},
     errors::StateError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -51,12 +53,15 @@ pub async fn validate_data_contract_create_transition_state(
     let mut result = ValidationResult::default();
 
     // Data contract shouldn't exist
-    let maybe_existing_data_contract: Option<Vec<u8>> = state_repository
+    let maybe_existing_data_contract: Option<DataContract> = state_repository
         .fetch_data_contract(
             &state_transition.data_contract.id,
             state_transition.get_execution_context(),
         )
-        .await?;
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     if state_transition.get_execution_context().is_dry_run() {
         return Ok(result);
@@ -90,8 +95,8 @@ mod test {
         };
 
         state_repository_mock
-            .expect_fetch_data_contract::<Option<Vec<u8>>>()
-            .return_once(|_, _| Ok(Some(vec![])));
+            .expect_fetch_data_contract()
+            .return_once(|_, _| Ok(None));
         state_transition.execution_context.enable_dry_run();
 
         let result = validate_data_contract_create_transition_state(

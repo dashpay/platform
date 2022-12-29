@@ -33,11 +33,11 @@ describe('Account - injectPlugin', function suite() {
     });
 
     setTimeout(() => {
-      expect(mockedSelf.storage.workingWorkerPass).to.equal(2);
+      expect(mockedSelf.storage.workingWorkerPass).to.be.greaterThan(2);
       mockedSelf.plugins.workers['workingworker'].stopWorker();
 
       done();
-    }, 10000);
+    }, 2000);
   });
   it('should handle faulty worker', async function () {
     const expectedException1 = 'Some reason.';

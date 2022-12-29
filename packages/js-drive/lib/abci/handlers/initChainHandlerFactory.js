@@ -21,6 +21,7 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {registerSystemDataContracts} registerSystemDataContracts
  * @param {GroveDBStore} groveDBStore
  * @param {RSAbci} rsAbci
+ * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -33,6 +34,7 @@ function initChainHandlerFactory(
   registerSystemDataContracts,
   groveDBStore,
   rsAbci,
+  createCoreChainLockUpdate,
 ) {
   /**
    * @typedef initChainHandler
@@ -97,10 +99,6 @@ function initChainHandlerFactory(
       'Synchronized masternode identities',
     );
 
-    await groveDBStore.commitTransaction();
-
-    const appHash = await groveDBStore.getRootHash();
-
     // Set initial validator set
 
     await validatorSet.initialize(initialCoreChainLockedHeight);
@@ -108,6 +106,16 @@ function initChainHandlerFactory(
     const { quorumHash } = validatorSet.getQuorum();
 
     const validatorSetUpdate = createValidatorSetUpdate(validatorSet);
+
+    const coreChainLockUpdate = await createCoreChainLockUpdate(
+      initialCoreChainLockedHeight,
+      0,
+      consensusLogger,
+    );
+
+    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
+
+    await groveDBStore.commitTransaction();
 
     consensusLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
@@ -125,6 +133,7 @@ function initChainHandlerFactory(
       appHash,
       validatorSetUpdate,
       initialCoreHeight: initialCoreChainLockedHeight,
+      nextCoreChainLockUpdate: coreChainLockUpdate,
     });
   }
 

@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.24.0-dev.8",
+  "version": "0.24.0-dev.11",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -88,9 +88,7 @@
     "dotenv-safe": "^8.2.0",
     "find-my-way": "^2.2.2",
     "js-merkle": "^0.1.5",
-    "lodash.clonedeep": "^4.5.0",
-    "lodash.get": "^4.4.2",
-    "lodash.set": "^4.3.2",
+    "lodash": "^4.17.21",
     "long": "^5.2.0",
     "node-graceful": "^3.0.1",
     "pino": "^6.4.0",

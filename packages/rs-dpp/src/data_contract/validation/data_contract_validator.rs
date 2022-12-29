@@ -72,7 +72,7 @@ impl DataContractValidator {
         trace!("validating against data contract meta validator");
         result.merge(JsonSchemaValidator::validate_data_contract_schema(
             raw_data_contract,
-        )?);
+        ));
         if !result.is_valid() {
             return Ok(result);
         }

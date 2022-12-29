@@ -55,6 +55,8 @@ class BlockExecutionContextMock {
     this.getTimeMs = sinon.stub();
     this.setRound = sinon.stub();
     this.getRound = sinon.stub();
+    this.getPrepareProposalResult = sinon.stub();
+    this.setPrepareProposalResult = sinon.stub();
   }
 }
 

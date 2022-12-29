@@ -1,8 +1,9 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
 };
 
+use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -120,21 +121,24 @@ pub async fn validate_documents_batch_transition_basic(
 
     for (data_contract_id, transitions) in document_transitions_by_contracts {
         let maybe_data_contract = state_repository
-            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
-            .await;
+            .fetch_data_contract(&data_contract_id, execution_context)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
 
         if execution_context.is_dry_run() {
             return Ok(result);
         }
 
         let data_contract = match maybe_data_contract {
-            Err(_) => {
+            None => {
                 result.add_error(BasicError::DataContractNotPresent {
                     data_contract_id: data_contract_id.clone(),
                 });
                 continue;
             }
-            Ok(data_contract) => data_contract,
+            Some(data_contract) => data_contract,
         };
 
         let owner_id = Identifier::from_bytes(&raw_state_transition.get_bytes("ownerId")?)?;
@@ -206,7 +210,7 @@ fn validate_raw_transitions<'a>(
     for raw_document_transition in raw_document_transitions.iter() {
         let document_type = match raw_document_transition.get_string("$type") {
             Err(_) => {
-                result.add_error(BasicError::MissingDocumentTypeError);
+                result.add_error(BasicError::MissingDocumentTransitionTypeError);
                 return Ok(result);
             }
 
@@ -245,10 +249,11 @@ fn validate_raw_transitions<'a>(
                 let enriched_data_contract = &enriched_contracts_by_action[&action];
                 let document_schema = enriched_data_contract.get_document_schema(document_type)?;
 
-                let schema_validator = JsonSchemaValidator::new_with_definitions(
-                    document_schema.clone(),
-                    enriched_data_contract.definitions(),
-                )
+                let schema_validator = if let Some(defs) = enriched_data_contract.definitions() {
+                    JsonSchemaValidator::new_with_definitions(document_schema.clone(), defs)
+                } else {
+                    JsonSchemaValidator::new(document_schema.clone())
+                }
                 .map_err(|e| anyhow!("unable to compile enriched schema: {}", e))?;
 
                 let schema_result = schema_validator.validate(raw_document_transition)?;
@@ -288,8 +293,7 @@ fn validate_raw_transitions<'a>(
 
     let raw_document_transitions_iter = raw_document_transitions.into_iter();
 
-    let duplicate_transitions =
-        find_duplicates_by_indices(raw_document_transitions_iter.clone(), data_contract)?;
+    let duplicate_transitions = find_duplicates_by_id(raw_document_transitions_iter.clone())?;
     if !duplicate_transitions.is_empty() {
         let references: Vec<(String, Vec<u8>)> = duplicate_transitions
             .iter()
@@ -300,6 +304,20 @@ fn validate_raw_transitions<'a>(
             })
             .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
         result.add_error(BasicError::DuplicateDocumentTransitionsWithIdsError { references });
+    }
+
+    let duplicate_transitions_by_indices =
+        find_duplicates_by_indices(raw_document_transitions_iter.clone(), data_contract)?;
+    if !duplicate_transitions_by_indices.is_empty() {
+        let references: Vec<(String, Vec<u8>)> = duplicate_transitions_by_indices
+            .iter()
+            .map(|t| {
+                let doc_type = t.get_string("$type")?.to_string();
+                let id = t.get_bytes("$id")?;
+                Ok((doc_type, id))
+            })
+            .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
+        result.add_error(BasicError::DuplicateDocumentTransitionsWithIndicesError { references });
     }
 
     let validation_result = validate_partial_compound_indices(

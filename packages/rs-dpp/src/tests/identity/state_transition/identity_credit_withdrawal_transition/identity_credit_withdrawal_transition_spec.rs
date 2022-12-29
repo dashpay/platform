@@ -79,7 +79,7 @@ mod serialization {
 
         assert_eq!(
             identity_credit_withdrawal_transition_fixture_json(),
-            state_transition.to_json().unwrap()
+            state_transition.to_json(false).unwrap()
         );
     }
 }

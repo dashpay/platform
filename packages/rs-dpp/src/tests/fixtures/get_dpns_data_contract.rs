@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use lazy_static::lazy_static;
 use serde_json::{json, Value};
@@ -35,9 +35,8 @@ pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContr
         .create(owner_id, dpns_schema)
         .expect("data in fixture should be correct");
 
-    data_contract
-        .defs
-        .insert(String::from("lastName"), json!({ "type" : "string"}));
+    let defs: &mut BTreeMap<_, _> = data_contract.defs.get_or_insert(BTreeMap::new());
+    defs.insert(String::from("lastName"), json!({ "type" : "string"}));
 
     data_contract
 }

@@ -20,7 +20,7 @@ function getUTXOS(options = {
 
   const chainStore = this.storage.getChainStore(network);
   const accountState = this.storage.getWalletStore(walletId).getPathState(this.accountPath);
-  const currentBlockHeight = chainStore.state.blockHeight;
+  const currentBlockHeight = chainStore.state.chainHeight;
 
   Object.values(accountState.addresses).forEach((address) => {
     const addressData = chainStore.getAddress(address);

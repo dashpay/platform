@@ -204,6 +204,7 @@ function categorizeTransactions(
       type,
       blockHash: metadata.blockHash,
       height: metadata.height,
+      time: metadata.time,
       isInstantLocked: metadata.isInstantLocked,
       isChainLocked: metadata.isChainLocked,
       satoshisBalanceImpact,

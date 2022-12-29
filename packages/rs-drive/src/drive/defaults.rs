@@ -50,12 +50,18 @@ pub const BASE_CONTRACT_DOCUMENTS_PATH: u32 = 34;
 pub const BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH: u32 = 35;
 /// Default hash size
 pub const DEFAULT_HASH_SIZE: u32 = 32;
-/// Default float size
-pub const SOME_TREE_SIZE: Option<u16> = Some(32);
+/// Default hash size as u8
+pub const DEFAULT_HASH_SIZE_U8: u8 = 32;
+/// Default hash size as u16
+pub const DEFAULT_HASH_SIZE_U16: u16 = 32;
 /// Some optimized document reference size
-pub const SOME_OPTIMIZED_DOCUMENT_REFERENCE: Option<u16> = Some(34); // 1 + hops + DEFAULT_HASH_SIZE
+pub const OPTIMIZED_DOCUMENT_REFERENCE: u16 = 34; // 1 + hops + DEFAULT_HASH_SIZE
 /// Default float size
 pub const DEFAULT_FLOAT_SIZE: u32 = 8;
+/// Default float size as u16
+pub const DEFAULT_FLOAT_SIZE_U16: u16 = 8;
+/// Default float size as u8
+pub const DEFAULT_FLOAT_SIZE_U8: u8 = 8;
 /// Empty tree storage size
 pub const EMPTY_TREE_STORAGE_SIZE: u32 = 33;
 /// Max index size
@@ -68,3 +74,16 @@ pub const CONTRACT_MAX_SERIALIZED_SIZE: u16 = 16384;
 // TODO: Insert correct value here
 /// Max element size
 pub const MAX_ELEMENT_SIZE: u32 = 5000;
+
+/// How many updates would occur on average for an item
+pub const AVERAGE_NUMBER_OF_UPDATES: u8 = 10;
+
+/// How many bytes are added on average per update
+/// 1 here signifies less than 128
+pub const AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE: u8 = 1;
+
+/// The estimated average document type name size
+pub const ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE: u8 = 12;
+
+/// The estimated average index name size
+pub const ESTIMATED_AVERAGE_INDEX_NAME_SIZE: u8 = 16;

@@ -8,7 +8,7 @@ const ConfigIsNotPresentError = require('../../config/errors/ConfigIsNotPresentE
 /**
  * @abstract
  */
-class GroupBaseCommand extends BaseCommand {
+class ConfigBaseCommand extends BaseCommand {
   async run() {
     const configFile = this.container.resolve('configFile');
 
@@ -49,7 +49,7 @@ class GroupBaseCommand extends BaseCommand {
   }
 }
 
-GroupBaseCommand.flags = {
+ConfigBaseCommand.flags = {
   config: Flags.string({
     description: 'configuration name to use',
     default: null,
@@ -57,4 +57,4 @@ GroupBaseCommand.flags = {
   ...BaseCommand.flags,
 };
 
-module.exports = GroupBaseCommand;
+module.exports = ConfigBaseCommand;

@@ -34,6 +34,13 @@ class ReadOperation extends AbstractOperation {
   }
 
   /**
+   * @return {{identifier: Buffer, creditsPerEpoch: Object<string, number>}[]}
+   */
+  getRefunds() {
+    return [];
+  }
+
+  /**
    * @return {{valueSize: number, type: string}}
    */
   toJSON() {

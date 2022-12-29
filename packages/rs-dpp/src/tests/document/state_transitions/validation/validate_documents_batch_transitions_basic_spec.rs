@@ -78,7 +78,7 @@ fn setup_test(action: Action) -> TestData {
     let contract_to_return = data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract()
-        .returning(move |_, _| Ok(contract_to_return.clone()));
+        .returning(move |_, _| Ok(Some(contract_to_return.clone())));
 
     TestData {
         data_contract,
@@ -592,8 +592,8 @@ async fn data_contract_should_exist_in_the_state() {
     } = setup_test(Action::Create);
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
-        .returning(|_, _| Err(anyhow!("no contract found")));
+        .expect_fetch_data_contract()
+        .returning(|_, _| Ok(None));
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -944,8 +944,8 @@ async fn should_not_validate_document_transitions_on_dry_run() {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
-        .return_once(|_, _| Err(anyhow!("some error")));
+        .expect_fetch_data_contract()
+        .return_once(|_, _| Ok(None));
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -955,6 +955,6 @@ async fn should_not_validate_document_transitions_on_dry_run() {
     )
     .await
     .expect("validation result should be returned");
-
+    dbg!(&result);
     assert!(result.is_valid());
 }

@@ -25,8 +25,8 @@ impl ErrorWithCode for ConsensusError {
             Self::IncompatibleProtocolVersionError(_) => 1003,
 
             // Identity
-            Self::DuplicatedIdentityPublicKeyError(_) => 1029,
-            Self::DuplicatedIdentityPublicKeyIdError(_) => 1030,
+            Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
+            Self::DuplicatedIdentityPublicKeyBasicIdError(_) => 1030,
             Self::IdentityAssetLockProofLockedTransactionMismatchError(_) => 1031,
             Self::IdentityAssetLockTransactionIsNotFoundError(_) => 1032,
             Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 1033,
@@ -64,8 +64,8 @@ impl ErrorWithCode for StateError {
             // Document
             Self::DocumentAlreadyPresentError { .. } => 4004,
             Self::DocumentNotFoundError { .. } => 4005,
-            Self::DocumentOwnerMismatchError { .. } => 4006,
-            Self::DocumentTimestampMismatchError { .. } => 4007,
+            Self::DocumentOwnerIdMismatchError { .. } => 4006,
+            Self::DocumentTimestampsMismatchError { .. } => 4007,
             Self::DocumentTimestampWindowViolationError { .. } => 4008,
             Self::DuplicateUniqueIndexError { .. } => 4009,
             Self::InvalidDocumentRevisionError { .. } => 4010,
@@ -78,10 +78,10 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::MaxIdentityPublicKeyLimitReached { .. } => 4020,
+            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
-            Self::IdentityPublicKeyDisabledError { .. } => 4023,
+            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
         }
     }
 }
@@ -103,12 +103,14 @@ impl ErrorWithCode for BasicError {
             // Document
             Self::DataContractNotPresent { .. } => 1018,
             Self::InvalidDocumentTypeError { .. } => 1024,
-            Self::MissingDocumentTypeError { .. } => 1027,
+            Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTransitionActionError { .. } => 1026,
+            Self::MissingDocumentTypeError => 1028,
             Self::InvalidDocumentTransitionIdError { .. } => 1023,
             Self::InvalidDocumentTransitionActionError { .. } => 1022,
 
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
+            Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
             Self::MissingDataContractIdError => 1025,
             Self::InvalidIdentifierError { .. } => 1006,
 
@@ -122,13 +124,13 @@ impl ErrorWithCode for BasicError {
             Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
             Self::IncompatibleDataContractSchemaError { .. } => 1051,
 
-            Self::DataContractUniqueIndicesChangedError { .. } => 4016,
+            Self::DataContractUniqueIndicesChangedError { .. } => 1053,
             // TODO  -  they don't have error codes in  https://github.com/dashevo/platform/blob/25ab6d8a38880eaff6ac119126b2ee5991b2a5aa/packages/js-dpp/lib/errors/consensus/codes.js
             Self::DataContractHaveNewUniqueIndexError { .. } => 0,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
             Self::IndexError(ref e) => e.get_code(),
             Self::IdentityNotFoundError { .. } => 2000,
-            Self::InvalidDataContractId { .. } => 1011,
+            Self::InvalidDataContractIdError { .. } => 1011,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -136,7 +138,7 @@ impl ErrorWithCode for BasicError {
             Self::StateTransitionMaxSizeExceededError { .. } => 1045,
 
             // Identity
-            Self::InvalidIdentityPublicKeySignatureError { .. } => 1056,
+            Self::InvalidIdentityKeySignatureError { .. } => 1056,
         }
     }
 }

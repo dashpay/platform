@@ -1,5 +1,5 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
-const lodashCloneDeep = require('lodash.clonedeep');
+const lodashCloneDeep = require('lodash/cloneDeep');
 
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
