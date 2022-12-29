@@ -1,19 +1,19 @@
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name=DataContractMaxDepthError)]
-pub struct DataContractMaxDepthErrorWasm {
+#[wasm_bindgen(js_name=DataContractMaxDepthExceedError)]
+pub struct DataContractMaxDepthExceedErrorWasm {
     depth: usize,
     code: u32,
 }
 
-impl DataContractMaxDepthErrorWasm {
+impl DataContractMaxDepthExceedErrorWasm {
     pub fn new(depth: usize, code: u32) -> Self {
-        DataContractMaxDepthErrorWasm { depth, code }
+        DataContractMaxDepthExceedErrorWasm { depth, code }
     }
 }
 
 #[wasm_bindgen(js_class=DataContractMaxDepthError)]
-impl DataContractMaxDepthErrorWasm {
+impl DataContractMaxDepthExceedErrorWasm {
     #[wasm_bindgen(js_name=getDepth)]
     pub fn get_expected_version(&self) -> usize {
         self.depth
