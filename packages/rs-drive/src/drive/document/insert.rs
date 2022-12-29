@@ -173,7 +173,7 @@ impl Drive {
                 storage_flags,
                 apply_type,
                 transaction,
-                false, //not going to have multiple same documents in same batch
+                &None, //not going to have multiple same documents in same batch
                 drive_operations,
             )?;
             let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
@@ -566,20 +566,37 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
-        let batch_operations = self.add_document_for_contract_operations(
-            document_and_contract_info,
-            override_document,
-            block_info,
-            document_is_unique_for_document_type_in_batch,
-            &mut estimated_costs_only_with_layer_info,
-            transaction,
-        )?;
-        self.apply_batch_drive_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            batch_operations,
-            drive_operations,
-        )
+        if document_is_unique_for_document_type_in_batch {
+            let batch_operations = self.add_document_for_contract_operations(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                None,
+                &mut estimated_costs_only_with_layer_info,
+                transaction,
+            )?;
+            self.apply_batch_drive_operations(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                drive_operations,
+            )
+        } else {
+            let batch_operations = self.add_document_for_contract_operations(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                Some(drive_operations),
+                &mut estimated_costs_only_with_layer_info,
+                transaction,
+            )?;
+            self.apply_batch_drive_operations(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                drive_operations,
+            )
+        }
     }
 
     /// Adds the terminal reference.
@@ -589,7 +606,7 @@ impl Drive {
         mut index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
-        document_is_unique_for_document_type_in_batch: bool,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -622,7 +639,7 @@ impl Drive {
                 *storage_flags,
                 apply_type,
                 transaction,
-                !document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 batch_operations,
             )?;
 
@@ -757,7 +774,7 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
-        document_is_unique_for_document_type_in_batch: bool,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -772,7 +789,7 @@ impl Drive {
                 index_path_info.clone(),
                 unique,
                 any_fields_null,
-                document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -838,7 +855,7 @@ impl Drive {
                 *storage_flags,
                 apply_type,
                 transaction,
-                !document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 batch_operations,
             )?;
 
@@ -884,7 +901,7 @@ impl Drive {
                 *storage_flags,
                 apply_type,
                 transaction,
-                !document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 batch_operations,
             )?;
 
@@ -899,7 +916,7 @@ impl Drive {
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
-                document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
                 event_id,
@@ -914,7 +931,7 @@ impl Drive {
     fn add_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        document_is_unique_for_document_type_in_batch: bool,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -1005,7 +1022,7 @@ impl Drive {
                 storage_flags,
                 apply_type,
                 transaction,
-                !document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 batch_operations,
             )?;
 
@@ -1059,7 +1076,7 @@ impl Drive {
                 index_path_info,
                 sub_level,
                 any_fields_null,
-                document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,
                 event_id,
@@ -1076,7 +1093,7 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
-        document_is_unique_for_document_type_in_batch: bool,
+        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -1121,7 +1138,7 @@ impl Drive {
             let update_operations = self.update_document_for_contract_operations(
                 document_and_contract_info,
                 block_info,
-                true,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
             )?;
@@ -1149,7 +1166,7 @@ impl Drive {
 
         self.add_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
-            document_is_unique_for_document_type_in_batch,
+            &previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,

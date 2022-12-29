@@ -313,7 +313,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     document_and_contract_info,
                     override_document,
                     block_info,
-                    true,
+                    None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -345,7 +345,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     document_and_contract_info,
                     override_document,
                     block_info,
-                    true,
+                    None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -357,7 +357,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 document_and_contract_info,
                 override_document,
                 block_info,
-                true,
+                None,
                 estimated_costs_only_with_layer_info,
                 transaction,
             ),
@@ -417,7 +417,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
-                    true,
+                    None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -447,7 +447,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
-                    true,
+                    None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -476,7 +476,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
-                    true,
+                    None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -490,9 +490,9 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     document_type,
                 } = document_operations;
 
-                operations
-                    .into_iter()
-                    .map(|document_operation| match document_operation {
+                let mut drive_operations = vec![];
+                for document_operation in operations {
+                    match document_operation {
                         DocumentOperation::AddOperation {
                             owned_document_info,
                             override_document,
@@ -502,14 +502,15 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                                 contract,
                                 document_type,
                             };
-                            drive.add_document_for_contract_operations(
+                            let mut operations = drive.add_document_for_contract_operations(
                                 document_and_contract_info,
                                 override_document,
                                 block_info,
-                                false,
+                                Some(&mut drive_operations),
                                 estimated_costs_only_with_layer_info,
                                 transaction,
-                            )
+                            )?;
+                            drive_operations.append(&mut operations);
                         }
                         DocumentOperation::UpdateOperation(update_operation) => {
                             let UpdateOperation {
@@ -537,17 +538,18 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                                 contract,
                                 document_type,
                             };
-                            drive.update_document_for_contract_operations(
+                            let mut operations = drive.update_document_for_contract_operations(
                                 document_and_contract_info,
                                 block_info,
-                                false,
+                                Some(&mut drive_operations),
                                 estimated_costs_only_with_layer_info,
                                 transaction,
-                            )
+                            )?;
+                            drive_operations.append(&mut operations);
                         }
-                    })
-                    .collect::<Result<Vec<Vec<DriveOperation>>, Error>>()
-                    .map(|a| a.into_iter().flatten().collect())
+                    }
+                }
+                Ok(drive_operations)
             }
         }
     }
@@ -683,6 +685,7 @@ mod tests {
         AddSerializedDocumentForContract, MultipleDocumentOperationsForSameContractDocumentType,
     };
     use crate::drive::batch::DriveOperationType::{ContractOperation, DocumentOperation};
+    use crate::drive::config::DriveConfig;
     use crate::drive::contract::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
@@ -846,45 +849,19 @@ mod tests {
                 Some(&db_transaction),
             )
             .expect_err("expected to not be able to insert documents");
-
-        let element = drive
-            .grove
-            .get(
-                contract_root_path(&contract.id.buffer),
-                &[0],
-                Some(&db_transaction),
-            )
-            .unwrap()
-            .expect("expected to get contract back");
-
-        assert_eq!(element, Element::Item(serialized_contract, None));
-
-        let query_value = json!({
-            "where": [
-            ],
-            "limit": 100,
-            "orderBy": [
-                ["$ownerId", "asc"],
-            ]
-        });
-        let where_cbor = common::value_to_cbor(query_value, None);
-
-        let (docs, _, _) = drive
-            .query_documents_from_contract(
-                &contract,
-                document_type,
-                where_cbor.as_slice(),
-                None,
-                Some(&db_transaction),
-            )
-            .expect("expected to query");
-        assert_eq!(docs.len(), 2);
     }
 
     #[test]
     fn test_add_multiple_dashpay_documents() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(
+            tmp_dir,
+            Some(DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            }),
+        )
+        .expect("expected to open Drive successfully");
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();

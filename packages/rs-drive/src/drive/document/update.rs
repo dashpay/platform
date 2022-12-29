@@ -244,7 +244,7 @@ impl Drive {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
-            true,
+            None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -261,7 +261,7 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        document_is_unique_for_document_type_in_batch: bool,
+        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -286,7 +286,7 @@ impl Drive {
                 document_and_contract_info,
                 true, // we say we should override as this skips an unnecessary check
                 block_info,
-                document_is_unique_for_document_type_in_batch,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
             );
@@ -431,7 +431,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
-                            !document_is_unique_for_document_type_in_batch,
+                            &previous_batch_operations,
                             &mut batch_operations,
                         )?;
                         if inserted {
@@ -496,7 +496,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
-                                !document_is_unique_for_document_type_in_batch,
+                                &previous_batch_operations,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -527,7 +527,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
-                                !document_is_unique_for_document_type_in_batch,
+                                &previous_batch_operations,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -598,7 +598,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
-                            !document_is_unique_for_document_type_in_batch,
+                            &previous_batch_operations,
                             &mut batch_operations,
                         )?;
                         index_path.push(vec![0]);

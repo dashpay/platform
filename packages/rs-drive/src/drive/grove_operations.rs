@@ -527,7 +527,7 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
-        check_existing_operations: bool,
+        check_existing_operations: &Option<&mut Vec<DriveOperation>>,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<bool, Error> {
         match path_key_info {
@@ -539,7 +539,23 @@ impl Drive {
                     storage_flags,
                 );
                 // we only add the operation if it doesn't already exist in the current batch
-                if !check_existing_operations || !drive_operations.contains(&drive_operation) {
+                if let Some(existing_operations) = check_existing_operations {
+                    if !existing_operations.contains(&drive_operation) {
+                        let has_raw = self.grove_has_raw(
+                            path_iter.clone(),
+                            key,
+                            apply_type.to_direct_query_type(),
+                            transaction,
+                            drive_operations,
+                        )?;
+                        if !has_raw {
+                            drive_operations.push(drive_operation);
+                        }
+                        Ok(!has_raw)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
                     let has_raw = self.grove_has_raw(
                         path_iter.clone(),
                         key,
@@ -551,8 +567,6 @@ impl Drive {
                         drive_operations.push(drive_operation);
                     }
                     Ok(!has_raw)
-                } else {
-                    Ok(false)
                 }
             }
             PathKeySize(_key_path_info, _key_info) => Err(Error::Drive(
@@ -565,7 +579,24 @@ impl Drive {
                     storage_flags,
                 );
                 // we only add the operation if it doesn't already exist in the current batch
-                if !check_existing_operations || !drive_operations.contains(&drive_operation) {
+                if let Some(existing_operations) = check_existing_operations {
+                    if !existing_operations.contains(&drive_operation) {
+                        let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                        let has_raw = self.grove_has_raw(
+                            path_iter.clone(),
+                            key.as_slice(),
+                            apply_type.to_direct_query_type(),
+                            transaction,
+                            drive_operations,
+                        )?;
+                        if !has_raw {
+                            drive_operations.push(drive_operation);
+                        }
+                        Ok(!has_raw)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
                     let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                     let has_raw = self.grove_has_raw(
                         path_iter.clone(),
@@ -578,8 +609,6 @@ impl Drive {
                         drive_operations.push(drive_operation);
                     }
                     Ok(!has_raw)
-                } else {
-                    Ok(false)
                 }
             }
             PathFixedSizeKey((path, key)) => {
@@ -590,7 +619,23 @@ impl Drive {
                     storage_flags,
                 );
                 // we only add the operation if it doesn't already exist in the current batch
-                if !check_existing_operations || !drive_operations.contains(&drive_operation) {
+                if let Some(existing_operations) = check_existing_operations {
+                    if !existing_operations.contains(&drive_operation) {
+                        let has_raw = self.grove_has_raw(
+                            path,
+                            key.as_slice(),
+                            apply_type.to_direct_query_type(),
+                            transaction,
+                            drive_operations,
+                        )?;
+                        if !has_raw {
+                            drive_operations.push(drive_operation);
+                        }
+                        Ok(!has_raw)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
                     let has_raw = self.grove_has_raw(
                         path,
                         key.as_slice(),
@@ -602,8 +647,6 @@ impl Drive {
                         drive_operations.push(drive_operation);
                     }
                     Ok(!has_raw)
-                } else {
-                    Ok(false)
                 }
             }
             PathFixedSizeKeyRef((path, key)) => {
@@ -614,7 +657,23 @@ impl Drive {
                     storage_flags,
                 );
                 // we only add the operation if it doesn't already exist in the current batch
-                if !check_existing_operations || !drive_operations.contains(&drive_operation) {
+                if let Some(existing_operations) = check_existing_operations {
+                    if !existing_operations.contains(&drive_operation) {
+                        let has_raw = self.grove_has_raw(
+                            path,
+                            key,
+                            apply_type.to_direct_query_type(),
+                            transaction,
+                            drive_operations,
+                        )?;
+                        if !has_raw {
+                            drive_operations.push(drive_operation);
+                        }
+                        Ok(!has_raw)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
                     let has_raw = self.grove_has_raw(
                         path,
                         key,
@@ -626,8 +685,6 @@ impl Drive {
                         drive_operations.push(drive_operation);
                     }
                     Ok(!has_raw)
-                } else {
-                    Ok(false)
                 }
             }
         }
@@ -902,7 +959,7 @@ impl Drive {
                 let consistency_results =
                     GroveDbOp::verify_consistency_of_operations(&ops.operations);
                 if !consistency_results.is_empty() {
-                    //println!("results {:#?}", consistency_results);
+                    println!("results {:#?}", consistency_results);
                     return Err(Error::Drive(DriveError::GroveDBInsertion(
                         "insertion order error",
                     )));
