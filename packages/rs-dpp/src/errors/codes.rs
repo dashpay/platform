@@ -116,7 +116,7 @@ impl ErrorWithCode for BasicError {
 
             // Data contract
             Self::JsonSchemaCompilationError { .. } => 1004,
-            Self::InvalidDataContractVersionError { .. } => 4013,
+            Self::InvalidDataContractVersionError { .. } => 1050,
             Self::DataContractMaxDepthExceedError { .. } => 1007,
             Self::DuplicateIndexNameError { .. } => 1048,
             Self::InvalidJsonSchemaRefError { .. } => 1014,

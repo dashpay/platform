@@ -5,7 +5,7 @@ pub use apply::*;
 pub use validation::*;
 
 use dpp::{
-    data_contract::state_transition::DataContractCreateTransition,
+    data_contract::state_transition::DataContractUpdateTransition,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
@@ -20,24 +20,24 @@ use crate::{
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
-#[wasm_bindgen(js_name=DataContractCreateTransition)]
-pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
+#[wasm_bindgen(js_name=DataContractUpdateTransition)]
+pub struct DataContractUpdateTransitionWasm(DataContractUpdateTransition);
 
-impl From<DataContractCreateTransition> for DataContractCreateTransitionWasm {
-    fn from(v: DataContractCreateTransition) -> Self {
-        DataContractCreateTransitionWasm(v)
+impl From<DataContractUpdateTransition> for DataContractUpdateTransitionWasm {
+    fn from(v: DataContractUpdateTransition) -> Self {
+        DataContractUpdateTransitionWasm(v)
     }
 }
 
-impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
-    fn from(val: DataContractCreateTransitionWasm) -> Self {
+impl From<DataContractUpdateTransitionWasm> for DataContractUpdateTransition {
+    fn from(val: DataContractUpdateTransitionWasm) -> Self {
         val.0
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DataContractCreateTransitionParameters {
+struct DataContractUpdateTransitionParameters {
     protocol_version: u32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
@@ -49,13 +49,13 @@ struct DataContractCreateTransitionParameters {
     signature: Option<Vec<u8>>,
 }
 
-#[wasm_bindgen(js_class=DataContractCreateTransition)]
-impl DataContractCreateTransitionWasm {
+#[wasm_bindgen(js_class=DataContractUpdateTransition)]
+impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<DataContractCreateTransitionWasm, JsValue> {
-        let parameters: DataContractCreateTransitionParameters =
+    pub fn new(raw_parameters: JsValue) -> Result<DataContractUpdateTransitionWasm, JsValue> {
+        let parameters: DataContractUpdateTransitionParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-        DataContractCreateTransition::from_raw_object(
+        DataContractUpdateTransition::from_raw_object(
             serde_json::to_value(parameters).expect("the struct will be a valid json"),
         )
         .map(Into::into)
@@ -74,7 +74,7 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes(&self.0.entropy)
+        Buffer::from_bytes(&self.0.data_contract.entropy)
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -134,5 +134,14 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=setExecutionContext)]
     pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=hash)]
+    pub fn hash(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
+        let bytes = self
+            .0
+            .hash(skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+        Ok(Buffer::from_bytes(&bytes))
     }
 }
