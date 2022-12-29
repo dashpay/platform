@@ -38,6 +38,36 @@ pub fn validate_indices_are_backward_compatible<'a>(
                 })?
                 .get_indices()?,
         );
+
+        let old_properties_set: HashSet<&str> = existing_schema
+            .get_schema_properties()?
+            .as_object()
+            .ok_or_else(|| {
+                anyhow!(
+                    "the document '{}' properties in old schema must be an object",
+                    document_type
+                )
+            })?
+            .keys()
+            .map(|x| x.as_ref())
+            .collect();
+        let new_properties_set: HashSet<&str> = new_documents_by_type
+            .get(document_type)
+            .expect("checked above")
+            .get_schema_properties()?
+            .as_object()
+            .ok_or_else(|| {
+                anyhow!(
+                    "the document '{}' properties in new schema must be an object",
+                    document_type
+                )
+            })?
+            .keys()
+            .map(|x| x.as_ref())
+            .collect();
+
+        let added_properties = new_properties_set.difference(&old_properties_set);
+
         let existing_schema_indices = existing_schema.get_indices().unwrap_or_default();
 
         let maybe_changed_unique_existing_index =
@@ -69,10 +99,10 @@ pub fn validate_indices_are_backward_compatible<'a>(
                 index_name: index.name.clone(),
             })
         }
-
         let maybe_wrongly_constructed_new_index = get_wrongly_constructed_new_index(
             existing_schema_indices.iter(),
             name_new_index_map.values(),
+            added_properties.map(|x| *x),
         )?;
         if let Some(index) = maybe_wrongly_constructed_new_index {
             result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError {
@@ -113,10 +143,12 @@ fn indexes_are_not_equal(index_a: &Index, index_b: Option<&Index>) -> bool {
 fn get_wrongly_constructed_new_index<'a>(
     existing_schema_indices: impl IntoIterator<Item = &'a Index>,
     new_schema_indices: impl IntoIterator<Item = &'a Index>,
+    added_properties: impl IntoIterator<Item = &'a str>,
 ) -> Result<Option<&'a Index>, ProtocolError> {
     let mut existing_index_names: HashSet<&String> = Default::default();
     let mut existing_indexed_properties: HashSet<&String> = Default::default();
     let mut possible_sequences_of_properties: HashSet<&[IndexProperty]> = Default::default();
+    let added_properties_set: HashSet<&str> = added_properties.into_iter().collect();
 
     for existing_index in existing_schema_indices {
         existing_index_names.insert(&existing_index.name);
@@ -130,16 +162,26 @@ fn get_wrongly_constructed_new_index<'a>(
         .filter(|index| !existing_index_names.contains(&&index.name));
 
     for new_index in new_indices {
-        let existing_properties_len = new_index
+        let existing_indexed_properties_len = new_index
             .properties
             .iter()
             .filter(|prop| existing_indexed_properties.contains(&&prop.name))
             .count();
-        if existing_properties_len == 0 {
-            continue;
+
+        if existing_indexed_properties_len == 0 {
+            // Creating a new index for unindexed field is not ok unless it's a new field:
+            if let Some(property) = new_index.properties.first() {
+                if new_index.properties.len() == 1 && added_properties_set.contains(&*property.name)
+                {
+                    continue;
+                }
+            } else {
+                return Ok(Some(new_index));
+            }
         }
 
-        let properties_sequence = &new_index.properties[..existing_properties_len];
+        let properties_sequence = &new_index.properties[..existing_indexed_properties_len];
+
         if !possible_sequences_of_properties.contains(properties_sequence) {
             return Ok(Some(new_index));
         }
