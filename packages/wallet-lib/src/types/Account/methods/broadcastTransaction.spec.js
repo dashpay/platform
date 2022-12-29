@@ -51,7 +51,11 @@ describe('Account - broadcastTransaction', function suite() {
 
     sendCalled = 0;
     self = new EventEmitter();
-    self.removeListener = this.sinonSandbox.spy();
+    self.logger = {
+      debug: () => {},
+      silly: () => {},
+    }
+    self.removeListener = this.sinon.spy();
     self.transport = {
       sendTransaction: (txHex) => {
         const transaction = new Dashcore.Transaction(txHex)

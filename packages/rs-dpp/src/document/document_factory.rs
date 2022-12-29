@@ -83,7 +83,7 @@ impl DocumentFactory {
             });
         }
 
-        let document_entropy = entropy_generator::generate();
+        let document_entropy = entropy_generator::generate(); // TODO use EntropyGenerator
 
         let document_required_fields = data_contract
             .get_document_schema(&document_type)?

@@ -1,6 +1,46 @@
-const castStorageItemsTypes = (originalItem, schema) => {
+const createCastFunction = (schemaValue) => {
+  let castFunction;
+  if (typeof schemaValue === 'string') {
+    castFunction = (itemToCast) => {
+      // eslint-disable-next-line valid-typeof
+      if (typeof itemToCast !== schemaValue) {
+        throw new Error(`Value "${itemToCast}" is not of type "${schemaValue}"`);
+      }
+      return itemToCast;
+    };
+  } else if (typeof schemaValue === 'function') {
+    castFunction = schemaValue;
+  } else {
+    castFunction = (itemToCast) => {
+      const Clazz = schemaValue;
+      return new Clazz(itemToCast);
+    };
+  }
+
+  return castFunction;
+};
+
+/**
+ * Performs casting of items to specified schema.
+ * Supports nested objects, but does not support nested arrays or arrays of objects.
+ * @param originalItem
+ * @param schema
+ * @returns {{}|*}
+ */
+const castStorageItemsTypes = (originalItem, schema, path = '') => {
   if (!schema) {
     throw new Error('Schema is undefined');
+  }
+
+  if (Array.isArray(schema)) {
+    const schemaValue = schema[0];
+
+    const schemaType = schemaValue.constructor.name;
+    if (schemaType !== 'Object' && schemaType !== 'Array') {
+      const castItem = createCastFunction(schemaValue);
+      return originalItem.map((element) => castItem(element));
+    }
+    throw new Error('Casting of nested arrays and arrays of objects is not supported.');
   }
 
   return Object.entries(schema).reduce((acc, next) => {
@@ -8,28 +48,12 @@ const castStorageItemsTypes = (originalItem, schema) => {
     const result = {};
 
     if (schemaKey !== '*' && originalItem[schemaKey] === undefined) {
-      throw new Error(`No item found for schema key "${schemaKey}" in item ${JSON.stringify(originalItem)}`);
+      throw new Error(`No item found for schema key "${schemaKey}" in path "${path}"`);
     }
 
-    if (schemaValue.constructor.name !== 'Object') {
-      let castItem;
-
-      if (typeof schemaValue === 'string') {
-        castItem = (itemToCast) => {
-          // eslint-disable-next-line valid-typeof
-          if (typeof itemToCast !== schemaValue) {
-            throw new Error(`Value "${itemToCast}" is not of type "${schemaValue}"`);
-          }
-          return itemToCast;
-        };
-      } else if (typeof schemaValue === 'function') {
-        castItem = schemaValue;
-      } else {
-        castItem = (itemToCast) => {
-          const Clazz = schemaValue;
-          return new Clazz(itemToCast);
-        };
-      }
+    const schemaType = schemaValue.constructor.name;
+    if (schemaType !== 'Object' && schemaType !== 'Array') {
+      const castItem = createCastFunction(schemaValue);
 
       if (schemaKey === '*') {
         Object.keys(originalItem).forEach((itemKey) => {
@@ -42,10 +66,10 @@ const castStorageItemsTypes = (originalItem, schema) => {
       Object
         .entries(originalItem)
         .forEach(([key, value]) => {
-          result[key] = castStorageItemsTypes(value, schemaValue);
+          result[key] = castStorageItemsTypes(value, schemaValue, `${path}.${key}`);
         }, {});
     } else {
-      result[schemaKey] = castStorageItemsTypes(originalItem[schemaKey], schemaValue);
+      result[schemaKey] = castStorageItemsTypes(originalItem[schemaKey], schemaValue, `${path}.${schemaKey}`);
     }
 
     return { ...acc, ...result };

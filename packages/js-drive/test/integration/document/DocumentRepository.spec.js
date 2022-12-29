@@ -709,14 +709,14 @@ describe('DocumentRepository', function main() {
       ...dataContract.documents[document.getType()].properties,
       name: {
         type: 'string',
-        maxLength: 255,
+        maxLength: 63,
       },
       order: {
         type: 'number',
       },
       lastName: {
         type: 'string',
-        maxLength: 255,
+        maxLength: 63,
       },
       // arrayWithScalar: {
       //   type: 'array',

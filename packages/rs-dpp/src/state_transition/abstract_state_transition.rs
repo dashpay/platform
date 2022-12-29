@@ -191,8 +191,13 @@ pub trait StateTransitionConvert: Serialize {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        state_transition_helpers::to_json(self, Self::binary_property_paths())
+    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+        state_transition_helpers::to_json(
+            self,
+            Self::binary_property_paths(),
+            Self::signature_property_paths(),
+            skip_signature,
+        )
     }
 
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
@@ -214,8 +219,18 @@ pub mod state_transition_helpers {
     pub fn to_json<'a>(
         serializable: impl Serialize,
         binary_property_paths: impl IntoIterator<Item = &'a str>,
+        signature_property_paths: impl IntoIterator<Item = &'a str>,
+        skip_signature: bool,
     ) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(serializable)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in signature_property_paths {
+                    o.remove(path);
+                }
+            }
+        }
 
         json_value.replace_binary_paths(binary_property_paths, ReplaceWith::Base64)?;
 

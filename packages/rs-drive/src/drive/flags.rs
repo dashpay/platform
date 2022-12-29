@@ -30,6 +30,7 @@
 //! Flags
 //!
 
+use crate::drive::defaults::DEFAULT_HASH_SIZE;
 use crate::drive::flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
@@ -335,6 +336,20 @@ impl StorageFlags {
         }
     }
 
+    fn maybe_epoch_map_size(&self) -> u32 {
+        let mut size = 0;
+        match self {
+            MultiEpoch(_, epoch_map) | MultiEpochOwned(_, epoch_map, _) => {
+                epoch_map.iter().for_each(|(_epoch_index, bytes_added)| {
+                    size += 2;
+                    size += bytes_added.encode_var_vec().len() as u32;
+                })
+            }
+            _ => {}
+        }
+        size
+    }
+
     fn maybe_append_to_vec_owner_id(&self, buffer: &mut Vec<u8>) {
         match self {
             SingleEpochOwned(_, owner_id) | MultiEpochOwned(_, _, owner_id) => {
@@ -344,6 +359,30 @@ impl StorageFlags {
         }
     }
 
+    fn maybe_owner_id_size(&self) -> u32 {
+        match self {
+            SingleEpochOwned(..) | MultiEpochOwned(..) => DEFAULT_HASH_SIZE,
+            _ => 0,
+        }
+    }
+
+    /// ApproximateSize
+    pub fn approximate_size(
+        has_owner_id: bool,
+        approximate_changes_and_bytes_count: Option<(u16, u8)>,
+    ) -> u32 {
+        let mut size = 3; // 1 for type byte, 2 for epoch number
+        if has_owner_id {
+            size += DEFAULT_HASH_SIZE;
+        }
+        if let Some((approximate_change_count, bytes_changed_required_size)) =
+            approximate_changes_and_bytes_count
+        {
+            size += (approximate_change_count as u32) * (2 + bytes_changed_required_size as u32)
+        }
+        size
+    }
+
     /// Serialize storage flags
     pub fn serialize(&self) -> Vec<u8> {
         let mut buffer = vec![self.type_byte()];
@@ -351,6 +390,14 @@ impl StorageFlags {
         self.append_to_vec_base_epoch(&mut buffer);
         self.maybe_append_to_vec_epoch_map(&mut buffer);
         buffer
+    }
+
+    /// Serialize storage flags
+    pub fn serialized_size(&self) -> u32 {
+        let mut buffer_len = 3; //for type byte and base epoch
+        buffer_len += self.maybe_owner_id_size();
+        buffer_len += self.maybe_epoch_map_size();
+        buffer_len
     }
 
     /// Deserialize single epoch storage flags from bytes

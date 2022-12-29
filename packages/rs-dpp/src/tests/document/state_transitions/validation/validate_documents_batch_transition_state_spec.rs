@@ -67,8 +67,8 @@ fn setup_test() -> TestData {
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let data_contract_to_return = data_contract.clone();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
-        .returning(move |_, _| Ok(data_contract_to_return.clone()));
+        .expect_fetch_data_contract()
+        .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
@@ -123,8 +123,8 @@ async fn should_throw_error_if_data_contract_was_not_found() {
     } = setup_test();
     let mut state_repository_mock = MockStateRepositoryLike::default();
     state_repository_mock
-        .expect_fetch_data_contract::<DataContract>()
-        .returning(|_, _| Err(anyhow!("no document found")));
+        .expect_fetch_data_contract()
+        .returning(|_, _| Ok(None));
 
     let error = validate_document_transitions(
         &state_repository_mock,
@@ -305,7 +305,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     assert_eq!(4006, state_error.get_code());
     assert!(matches!(
         state_error,
-        StateError::DocumentOwnerMismatchError { document_id, document_owner_id, existing_document_owner_id } if  {
+        StateError::DocumentOwnerIdMismatchError { document_id, document_owner_id, existing_document_owner_id } if  {
             document_id == &transition_id &&
             existing_document_owner_id == &another_owner_id &&
             document_owner_id ==  &owner_id
@@ -372,7 +372,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
     assert_eq!(4007, state_error.get_code());
     assert!(matches!(
         state_error,
-        StateError::DocumentTimestampMismatchError { document_id }  if  {
+        StateError::DocumentTimestampsMismatchError { document_id }  if  {
             document_id == &transition_id
         }
     ));

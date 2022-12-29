@@ -33,12 +33,12 @@
 //!
 
 use crate::drive::Drive;
-use crate::error::fee::FeeError;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 use grovedb::{Element, TransactionArg};
 
-use crate::fee_pools::epochs::epoch_key_constants;
+use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
 
 impl Drive {
     /// Returns the start time of the given Epoch.
@@ -51,130 +51,113 @@ impl Drive {
             .grove
             .get(
                 epoch_tree.get_path(),
-                epoch_key_constants::KEY_START_TIME.as_slice(),
+                KEY_START_TIME.as_slice(),
                 transaction,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if let Element::Item(item, _) = element {
-            Ok(u64::from_be_bytes(item.as_slice().try_into().map_err(
-                |_| Error::Fee(FeeError::CorruptedStartTimeLength()),
-            )?))
-        } else {
-            Err(Error::Fee(FeeError::CorruptedStartTimeNotItem()))
-        }
+        let Element::Item(encoded_start_time, _) = element else {
+            return Err(Error::Drive(DriveError::UnexpectedElementType("start time must be an item")))
+        };
+
+        let start_time =
+            u64::from_be_bytes(encoded_start_time.as_slice().try_into().map_err(|_| {
+                Error::Drive(DriveError::CorruptedSerialization("start time must be u64"))
+            })?);
+
+        Ok(start_time)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-    use grovedb::Element;
 
-    use crate::error;
-    use crate::error::fee::FeeError;
-
-    use super::Epoch;
+    use super::*;
 
     mod get_epoch_start_time {
-        use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
+        use super::*;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let non_initiated_epoch_tree = super::Epoch::new(7000);
+            let non_initiated_epoch_tree = Epoch::new(7000);
 
-            match drive.get_epoch_start_time(&non_initiated_epoch_tree, Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to get start time on uninit epochs pool"
-                ),
-                Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_epoch_start_time(&non_initiated_epoch_tree, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            ));
         }
 
         #[test]
         fn test_error_if_value_is_not_set() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = super::Epoch::new(0);
+            let epoch_tree = Epoch::new(0);
 
-            match drive.get_epoch_start_time(&epoch_tree, Some(&transaction)) {
-                Ok(_) => assert!(false, "must be an error"),
-                Err(e) => match e {
-                    super::error::Error::GroveDB(_) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_epoch_start_time(&epoch_tree, Some(&transaction));
+
+            assert!(matches!(result, Err(Error::GroveDB(_))));
         }
 
         #[test]
         fn test_error_if_element_has_invalid_type() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             drive
                 .grove
                 .insert(
                     epoch.get_path(),
                     KEY_START_TIME.as_slice(),
-                    super::Element::empty_tree(),
+                    Element::empty_tree(),
                     None,
                     Some(&transaction),
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_epoch_start_time(&epoch, Some(&transaction)) {
-                Ok(_) => assert!(false, "must be an error"),
-                Err(e) => match e {
-                    super::error::Error::Fee(super::FeeError::CorruptedStartTimeNotItem()) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_epoch_start_time(&epoch, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::UnexpectedElementType(_)))
+            ));
         }
 
         #[test]
         fn test_error_if_value_has_invalid_length() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = super::Epoch::new(0);
+            let epoch_tree = Epoch::new(0);
 
             drive
                 .grove
                 .insert(
                     epoch_tree.get_path(),
                     KEY_START_TIME.as_slice(),
-                    super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                    Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_epoch_start_time(&epoch_tree, Some(&transaction)) {
-                Ok(_) => assert!(false, "must be an error"),
-                Err(e) => match e {
-                    super::error::Error::Fee(super::FeeError::CorruptedStartTimeLength()) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_epoch_start_time(&epoch_tree, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedSerialization(_)))
+            ))
         }
     }
 }

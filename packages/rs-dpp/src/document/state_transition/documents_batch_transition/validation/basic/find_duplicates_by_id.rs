@@ -1,41 +1,42 @@
+use anyhow::anyhow;
+use serde_json::Value as JsonValue;
+use sha2::digest::generic_array::functional::FunctionalSequence;
 use std::collections::{hash_map::Entry, HashMap};
 
-use crate::document::document_transition::{DocumentBaseTransition, DocumentTransition};
+use crate::document::document_transition::{
+    DocumentBaseTransition, DocumentTransition, DocumentTransitionObjectLike,
+};
 use crate::util::string_encoding::Encoding;
 
 /// Find the duplicates in the collection of Document Transitions
 pub fn find_duplicates_by_id<'a>(
-    document_transitions: impl IntoIterator<Item = &'a DocumentTransition>,
-) -> Vec<&'a DocumentTransition> {
-    let mut fingerprints: HashMap<String, ()> = HashMap::new();
-    let mut duplicates: Vec<&DocumentTransition> = vec![];
+    document_transitions: impl IntoIterator<Item = &'a JsonValue>,
+) -> Result<Vec<JsonValue>, anyhow::Error> {
+    let mut fingerprints: HashMap<String, JsonValue> = HashMap::new();
+    let mut duplicates: Vec<JsonValue> = vec![];
 
-    for dt in document_transitions {
-        match fingerprints.entry(create_fingerprint(dt)) {
-            Entry::Occupied(_) => {
-                duplicates.push(dt);
+    for transition in document_transitions {
+        let fingerprint = create_fingerprint(&transition).ok_or(anyhow!(
+            "Can't create fingerprint from a document transition"
+        ))?;
+        match fingerprints.entry(fingerprint.clone()) {
+            Entry::Occupied(val) => {
+                duplicates.push(val.get().clone());
             }
             Entry::Vacant(v) => {
-                v.insert(());
+                v.insert(transition.clone());
             }
         }
     }
-    duplicates
+    Ok(duplicates)
 }
 
-fn create_fingerprint(document_transition: &DocumentTransition) -> String {
-    match document_transition {
-        DocumentTransition::Create(ref dt) => fingerprint(&dt.base),
-        DocumentTransition::Delete(ref dt) => fingerprint(&dt.base),
-        DocumentTransition::Replace(ref dt) => fingerprint(&dt.base),
-    }
-}
-fn fingerprint(document: &DocumentBaseTransition) -> String {
-    format!(
+fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
+    Some(format!(
         "{}:{}",
-        document.data_contract_id.to_string(Encoding::Base58),
-        document.document_type
-    )
+        document_transition.as_object()?.get("$type")?,
+        document_transition.as_object()?.get("id")?,
+    ))
 }
 
 #[cfg(test)]

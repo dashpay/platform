@@ -152,15 +152,6 @@
  */
 
 /**
- * Fetch the latest platform block time
- *
- * @async
- * @method
- * @name StateRepository#fetchLatestPlatformBlockTime
- * @returns {Promise<protobuf.Timestamp>}
- */
-
-/**
  * Fetch the latest platform block height
  *
  * @async
@@ -223,7 +214,19 @@
 /**
  * Returns current block time in milliseconds
  *
+ * @async
  * @method
  * @name StateRepository#fetchLatestPlatformBlockTime
- * @returns {number}
+ * @returns {Promise<number>}
+ */
+
+/**
+ * Calculates storage fee to epochs distribution amount and leftovers
+ *
+ * @async
+ * @method
+ * @name StateRepository#calculateStorageFeeDistributionAmountAndLeftovers
+ * @param {number} storageFee
+ * @param {number} startEpochIndex
+ * @returns {Promise<[number, number]>}
  */

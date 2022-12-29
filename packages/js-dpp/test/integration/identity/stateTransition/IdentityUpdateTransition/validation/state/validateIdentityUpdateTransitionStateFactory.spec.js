@@ -36,7 +36,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     blockTime = Date.now();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       stateRepositoryMock,

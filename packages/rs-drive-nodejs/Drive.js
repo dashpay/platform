@@ -1,6 +1,7 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -24,6 +25,7 @@ const {
   abciBlockBegin,
   abciBlockEnd,
   abciAfterFinalizeBlock,
+  calculateStorageFeeDistributionAmountAndLeftovers,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -31,7 +33,7 @@ const {
 const GroveDB = require('./GroveDB');
 const FeeResult = require('./FeeResult');
 
-const { appendStackAsync } = require('./appendStack');
+const { appendStackAsync, appendStack } = require('./appendStack');
 
 const decodeProtocolEntity = decodeProtocolEntityFactory();
 
@@ -59,6 +61,10 @@ const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
 const abciBlockBeginAsync = appendStackAsync(promisify(abciBlockBegin));
 const abciBlockEndAsync = appendStackAsync(promisify(abciBlockEnd));
 const abciAfterFinalizeBlockAsync = appendStackAsync(promisify(abciAfterFinalizeBlock));
+
+const calculateStorageFeeDistributionAmountAndLeftoversWithStack = appendStack(
+  calculateStorageFeeDistributionAmountAndLeftovers,
+);
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -98,10 +104,10 @@ class Drive {
 
   /**
    * @param {Buffer|Identifier} id
-   * @param {number} epochIndex
+   * @param {number} [epochIndex]
    * @param {boolean} [useTransaction=false]
    *
-   * @returns {Promise<[DataContract, FeeResult]>}
+   * @returns {Promise<[DataContract|null, FeeResult]>}
    */
   async fetchContract(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchContractAsync.call(
@@ -109,16 +115,23 @@ class Drive {
       Buffer.from(id),
       epochIndex,
       useTransaction,
-    ).then(([dataContract, innerFeeResult]) => {
-      const result = [];
+    ).then(([encodedDataContract, innerFeeResult]) => {
+      let dataContract = encodedDataContract;
 
-      // TODO: Fee result should be present even if data contract wasn't found
-      if (dataContract) {
-        result.push(dataContract);
+      if (encodedDataContract !== null) {
+        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+          encodedDataContract,
+        );
 
-        if (innerFeeResult) {
-          result.push(new FeeResult(innerFeeResult));
-        }
+        rawDataContract.protocolVersion = protocolVersion;
+
+        dataContract = new DataContract(rawDataContract);
+      }
+
+      const result = [dataContract];
+
+      if (innerFeeResult) {
+        result.push(new FeeResult(innerFeeResult));
       }
 
       return result;
@@ -422,17 +435,9 @@ class Drive {
        * @returns {Promise<BlockEndResponse>}
        */
       async blockEnd(request, useTransaction = false) {
-        // Pass instance of FeeResult separately to avoid of unnecessary serialization
-        const feeResultInner = request.fees.inner;
-
-        delete request.fees;
-
-        const requestBytes = cbor.encode(request);
-
         const responseBytes = await abciBlockEndAsync.call(
           drive,
-          feeResultInner,
-          requestBytes,
+          request,
           useTransaction,
         );
 
@@ -464,6 +469,9 @@ class Drive {
     };
   }
 }
+
+// eslint-disable-next-line max-len
+Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDistributionAmountAndLeftoversWithStack;
 
 /**
  * @typedef RawBlockInfo
@@ -504,7 +512,15 @@ class Drive {
 
 /**
  * @typedef BlockEndRequest
- * @property {FeeResult} fees
+ * @property {BlockFeeResult} fees
+ */
+
+/**
+ * @typedef BlockFeeResult
+ * @property {number} storageFee
+ * @property {number} processingFee
+ * @property {Object<string, number>} feeRefunds
+ * @property {number} feeRefundsSum
  */
 
 /**

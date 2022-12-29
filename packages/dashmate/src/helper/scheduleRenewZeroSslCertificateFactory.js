@@ -24,13 +24,14 @@ function scheduleRenewZeroSslCertificateFactory(
     );
 
     if (!certificate) {
-      console.info('No ZeroSSL certificate found.');
+      // eslint-disable-next-line no-console
+      console.log('No ZeroSSL certificate found.');
 
       return;
     }
 
     let expiresAt = new Date(certificate.expires);
-    expiresAt.setDay(expiresAt.getDay() - 7);
+    expiresAt.setDate(expiresAt.getDate() - 7);
 
     if (expiresAt.getTime() < Date.now()) {
       expiresAt = new Date(Date.now() + 3000);

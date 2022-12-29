@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::anyhow;
 use anyhow::Context;
 use json_patch::PatchOperation;
@@ -94,13 +96,16 @@ where
         }
 
         // Data Contract should exists
-        let existing_data_contract = match self
+        let existing_data_contract: DataContract = match self
             .state_repository
-            .fetch_data_contract::<DataContract>(&data_contract_id, execution_context)
-            .await
+            .fetch_data_contract(&data_contract_id, execution_context)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?
         {
-            Ok(data_contract) => data_contract,
-            Err(_) => {
+            Some(data_contract) => data_contract,
+            None => {
                 validation_result.add_error(BasicError::DataContractNotPresent {
                     data_contract_id: data_contract_id.clone(),
                 });

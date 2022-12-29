@@ -6,9 +6,18 @@ const {BlockHeader, Transaction} = require('@dashevo/dashcore-lib')
 const WalletStore = require("../types/WalletStore/WalletStore");
 
 const mockChainStorage = {
-  "blockHeaders": {
-    "fakeBlockHash": "000000206ff6709b4816a98a7601bc9626a597191fe4f788228a037de3bd839e811f4913c49de57ac9553f0cd2529c94eaa9781273f315a792c4148eb7e3756c9cd7e1ce40285562ffff7f2000000000"
+  "headersMetadata": {
+     "fakeBlockHash": {
+       height: 1,
+       time: 99999999
+     }
   },
+  "chainHeight": 1000,
+  "lastSyncedHeaderHeight": 1,
+  "lastSyncedBlockHeight": 1,
+  "blockHeaders": [
+    "000000206ff6709b4816a98a7601bc9626a597191fe4f788228a037de3bd839e811f4913c49de57ac9553f0cd2529c94eaa9781273f315a792c4148eb7e3756c9cd7e1ce40285562ffff7f2000000000"
+  ],
   "transactions": {
     "fakeTxHash": "0300000001e569f827418be2e49f5ae4a34d30ff3bc5abc723f72b0e10712598dff1e70689010000006b483045022100f9aebe9bcfaa8208f1486ad4d15f65730b5adc0cb02c1d2bd8836a4582e2ea7f02200250bbfe524f70324417237549f421c2c3584d6b532194dbac8043e46900753701210387f3d1ff9e6a06db60bd61d0757002836407e8a3b1094b446690d13392c3fb9affffffff02e8030000000000001976a9148d0ba6247ad4988ba70fdcb56bb5f45b6e49423d88aca351c253040000001976a91471a97f71915e7c1d4460ad520511761b06534d8088ac00000000"
   },
@@ -18,7 +27,8 @@ const mockChainStorage = {
       "blockHash": "0eca27f921836079a85f41b134679cd557fab1f66b2e60013b873eb56e7b3f2d",
       "height": 5409,
       "isInstantLocked": true,
-      "isChainLocked": true
+      "isChainLocked": true,
+      "time": 1539095200000,
     }
   },
   "fees": {
@@ -26,25 +36,17 @@ const mockChainStorage = {
   }
 }
 
-const mockWalletStorage = {
-  "lastKnownBlock": {
-    "height": 11703
-  }
-}
-
 describe('Utils - castStorageItemsTypes', function suite() {
   it('should proceed with valid schema', function () {
     const chainStore = castItemTypes(mockChainStorage, ChainStore.prototype.SCHEMA)
 
-    expect(chainStore.blockHeaders.fakeBlockHash instanceof BlockHeader).to.be.true
+    expect(chainStore.blockHeaders[0] instanceof BlockHeader).to.be.true
     expect(chainStore.transactions.fakeTxHash instanceof Transaction).to.be.true
     expect(chainStore.txMetadata.fakeTxHash.isInstantLocked).to.be.true
     expect(chainStore.txMetadata.fakeTxHash.isChainLocked).to.be.true
     expect(typeof chainStore.txMetadata.fakeTxHash.height).to.be.equal('number')
-
-    const walletStore = castItemTypes(mockWalletStorage, WalletStore.prototype.SCHEMA)
-
-    expect(walletStore.lastKnownBlock.height).to.be.equal(11703)
+    expect(typeof chainStore.lastSyncedHeaderHeight).to.be.equal('number')
+    expect(typeof chainStore.lastSyncedBlockHeight).to.be.equal('number')
   });
 
   it('should throw if no schema passed', function () {
@@ -53,9 +55,9 @@ describe('Utils - castStorageItemsTypes', function suite() {
   });
 
   it('should throw if invalid primitive value passed', function () {
-    const mockWalletStorageWithWrongType = _.cloneDeep(mockWalletStorage)
-    mockWalletStorageWithWrongType.lastKnownBlock.height = '11703'
-    expect(() => castItemTypes(mockWalletStorageWithWrongType, WalletStore.prototype.SCHEMA))
+    const mockChainStorageWithWrongType = _.cloneDeep(mockChainStorage)
+    mockChainStorageWithWrongType.lastSyncedBlockHeight = '11703'
+    expect(() => castItemTypes(mockChainStorageWithWrongType, ChainStore.prototype.SCHEMA))
       .to.throw(Error, 'Value "11703" is not of type "number"');
   });
 
@@ -64,7 +66,7 @@ describe('Utils - castStorageItemsTypes', function suite() {
     mockChainStorageWithUnknownKeys.txMetadata.unknownKey = true
 
     expect(() => castItemTypes(mockChainStorageWithUnknownKeys, ChainStore.prototype.SCHEMA))
-      .to.throw('No item found for schema key "blockHash" in item true')
+      .to.throw('No item found for schema key "blockHash" in path ".txMetadata.unknownKey"')
   });
 
   it('should throw if invalid uniform object with primitives passed', function () {
@@ -85,6 +87,6 @@ describe('Utils - castStorageItemsTypes', function suite() {
     mockWalletChainStorageWithMissingKeys.txMetadata = undefined
 
     expect(() => castItemTypes(mockWalletChainStorageWithMissingKeys, ChainStore.prototype.SCHEMA))
-      .to.throw(Error, 'No item found for schema key "txMetadata" in item');
+      .to.throw(Error, 'No item found for schema key "txMetadata" in path ""');
   });
 });
