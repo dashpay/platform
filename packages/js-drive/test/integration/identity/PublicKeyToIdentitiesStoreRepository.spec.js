@@ -19,8 +19,15 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsBlockCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpcUrl: '127.0.0.1',
+        rpcUsername: '',
+        rpcPassword: '',
+      },
     });
 
     store = new GroveDBStore(rsDrive, logger, {

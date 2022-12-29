@@ -473,9 +473,20 @@ function createDIContainer(options) {
       groveDBLatestFile,
       dataContractsGlobalCacheSize,
       dataContractsBlockCacheSize,
+      coreJsonRpcHost,
+      coreJsonRpcPort,
+      coreJsonRpcUsername,
+      coreJsonRpcPassword,
     ) => new RSDrive(groveDBLatestFile, {
-      dataContractsGlobalCacheSize,
-      dataContractsBlockCacheSize,
+      drive: {
+        dataContractsGlobalCacheSize,
+        dataContractsBlockCacheSize,
+      },
+      core: {
+        rpcUrl: `${coreJsonRpcHost}:${coreJsonRpcPort}`,
+        rpcUsername: coreJsonRpcUsername,
+        rpcPassword: coreJsonRpcPassword,
+      },
     }))
       // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
