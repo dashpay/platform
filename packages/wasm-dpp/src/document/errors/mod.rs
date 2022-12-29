@@ -52,10 +52,8 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
             InvalidInitialRevisionError::new((*document).into()).into()
         }
         DocumentError::MismatchOwnerIdsError { documents } => {
-            let documents_wasm: Vec<DocumentWasm> =
-                documents.into_iter().map(DocumentWasm::from).collect();
-            MismatchOwnersIdsError::new(to_vec_js(documents_wasm)).into()
+            MismatchOwnerIdsError::from_documents(documents).into()
         }
-        DocumentError::NoDocumentsSuppliedError => NotDocumentsSuppliedError::new().into(),
+        DocumentError::NoDocumentsSuppliedError => NoDocumentsSuppliedError::new().into(),
     }
 }

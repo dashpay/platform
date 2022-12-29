@@ -33,6 +33,13 @@ let Document;
 let DocumentValidator;
 let ProtocolVersionValidator;
 
+let InvalidDocumentTypeInDataContractError;
+let InvalidDocumentError;
+let JsonSchemaError;
+let NoDocumentsSuppliedError;
+let MismatchOwnerIdsError;
+let InvalidInitialRevisionError;
+
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
   let generateEntropyMock;
@@ -60,6 +67,13 @@ describe('DocumentFactory', () => {
     ({
       Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory,
       DataContract, Document,
+      // Errors:
+      InvalidDocumentTypeInDataContractError,
+      InvalidDocumentError,
+      JsonSchemaError,
+      NoDocumentsSuppliedError,
+      MismatchOwnerIdsError,
+      InvalidInitialRevisionError,
     } = await loadWasmDpp());
   });
 
@@ -206,8 +220,8 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentTypeError should be thrown');
       } catch (e) {
-        // TODO - change after error merge
-        expect(e).to.contain("Data Contract doesn't define document");
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
+        expect(e.getType()).to.equal(type);
       }
     });
 
@@ -239,8 +253,7 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        // TODO - change when errors merged
-        expect(e).to.contain('Invalid Document');
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
       }
     });
   });
@@ -332,8 +345,15 @@ describe('DocumentFactory', () => {
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        // TODO - change when errors merged
-        expect(e).to.startWith('ProtocolError: Invalid Document:');
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        expect(e.getErrors()).to.have.length(1);
+
+        // TODO rawDocument cannot be converted back to the original form as it is invalid
+        // TODO so we cannot use valid fields DataContract to convert to buffer/identifier
+        // expect(e.getRawDocument()).to.equal(rawDocument);
+
+        const [consensusError] = e.getErrors();
+        expect(consensusError).to.be.an.instanceOf(JsonSchemaError);
       }
     });
 
@@ -441,12 +461,11 @@ describe('DocumentFactory', () => {
         expect.fail('should throw an error');
       } catch (e) {
         // TODO - change when errors merged
-        expect(e).to.startsWith('ProtocolError: getting property');
+        console.log(e.toString());
+        // expect(e).to.startsWith('ProtocolError: getting property');
       }
     });
-  });
-
-  describe('createStateTransition', () => {
+  }); describe('createStateTransition', () => {
     it('should throw and error if documents have unknown action', () => {
       try {
         factoryJs.createStateTransition({
@@ -468,7 +487,7 @@ describe('DocumentFactory', () => {
         expect.fail('Error was not thrown');
       } catch (e) {
         // newDocumentsContainer filter out unknown type, so the no documents is expected
-        expect(e).to.contain('ProtocolError: No documents were supplied to state transition');
+        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError)
       }
     });
 
@@ -486,8 +505,7 @@ describe('DocumentFactory', () => {
         factory.createStateTransition(await newDocumentsContainer({}));
         expect.fail('Error was not thrown');
       } catch (e) {
-        // TODO - change when errors merged
-        expect(e).to.contain('ProtocolError: No documents were supplied to state transition');
+        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
       }
     });
 
@@ -507,6 +525,7 @@ describe('DocumentFactory', () => {
     it('should throw and error if documents have mixed owner ids - Rust', async () => {
       const newId = generateRandomIdentifier().toBuffer();
       documents[0].setOwnerId(new Identifier(newId));
+      const rawDocuments = documents.map((d) => d.toObject());
 
       try {
         factory.createStateTransition(await newDocumentsContainer({
@@ -514,8 +533,9 @@ describe('DocumentFactory', () => {
         }));
         expect.fail('Error was not thrown');
       } catch (e) {
-        // TODO - change when errors merged
-        expect(e).to.contain('ProtocolError: Documents have mixed owner ids');
+        expect(e).to.be.an.instanceOf(MismatchOwnerIdsError);
+        const rawDocumentsFromError = e.getDocuments().map((d) => d.toObject());
+        expect(rawDocumentsFromError).to.have.deep.members(rawDocuments);
       }
     });
 
@@ -534,14 +554,15 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if create documents have invalid initial version - Rust', async () => {
       documents[0].setRevision(3);
+      const expectedDocument = documents[0].toObject();
       try {
         factory.createStateTransition(await newDocumentsContainer({
           create: documents,
         }));
         expect.fail('Error was not thrown');
       } catch (e) {
-        // TODO - change when errors merged
-        expect(e).to.contain('ProtocolError: Invalid Document initial revision 3');
+        expect(e).to.be.an.instanceOf(InvalidInitialRevisionError);
+        expect(e.getDocument().toObject()).to.deep.equal(expectedDocument);
       }
     });
 

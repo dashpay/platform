@@ -21,7 +21,7 @@ impl InvalidDocumentTypeInDataContractError {
             data_contract,
         }
     }
-    #[wasm_bindgen(js_name = "getDocType")]
+    #[wasm_bindgen(js_name = "getType")]
     pub fn get_doc_type(&self) -> String {
         self.doc_type.clone()
     }
