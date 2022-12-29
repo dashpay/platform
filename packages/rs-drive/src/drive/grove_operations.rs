@@ -40,6 +40,7 @@ use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op};
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
 use std::collections::HashMap;
+use std::ops::DerefMut;
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -55,11 +56,12 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use crate::fee::op::DriveOperation::CalculatedCostOperation;
+use crate::fee::op::DriveOperation::{CalculatedCostOperation, GroveOperation};
 use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::Error as GroveError;
+use indexmap::Equivalent;
 use intmap::IntMap;
 use storage::rocksdb_storage::RocksDbStorage;
 
@@ -527,7 +529,7 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
-        check_existing_operations: &Option<&mut Vec<DriveOperation>>,
+        check_existing_operations: &mut Option<&mut Vec<DriveOperation>>,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<bool, Error> {
         match path_key_info {
@@ -540,7 +542,32 @@ impl Drive {
                 );
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
-                    if !existing_operations.contains(&drive_operation) {
+                    let mut i = 0;
+                    let mut found = false;
+                    while i < existing_operations.len() {
+                        // we need to check every drive operation
+                        // if it already exists then just ignore things
+                        // if we had a delete then we need to remove the delete
+                        let previous_drive_operation = &existing_operations[i];
+                        if previous_drive_operation == &drive_operation {
+                            found = true;
+                            break;
+                        } else if let GroveOperation(grove_op) = previous_drive_operation {
+                            if grove_op.key == KeyInfo::KnownKey(key.to_vec())
+                                && grove_op.path == KeyInfoPath::from_known_owned_path(path.clone())
+                                && matches!(grove_op.op, Op::DeleteTree)
+                            {
+                                found = true;
+                                existing_operations.remove(i);
+                                break;
+                            } else {
+                                i += 1;
+                            }
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    if !found {
                         let has_raw = self.grove_has_raw(
                             path_iter.clone(),
                             key,
@@ -964,7 +991,7 @@ impl Drive {
             return Err(Error::Drive(DriveError::BatchIsEmpty()));
         }
         if self.config.batching_enabled {
-            // println!("batch {:#?}", ops);
+            println!("batch {:#?}", ops);
             if self.config.batching_consistency_verification {
                 let consistency_results =
                     GroveDbOp::verify_consistency_of_operations(&ops.operations);

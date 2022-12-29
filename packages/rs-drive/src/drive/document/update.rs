@@ -244,7 +244,7 @@ impl Drive {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
-            None,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -261,14 +261,14 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
-
+        dbg!(&document_and_contract_info.owned_document_info.document_info);
         if !document_and_contract_info.document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
@@ -431,7 +431,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
-                            &previous_batch_operations,
+                            previous_batch_operations,
                             &mut batch_operations,
                         )?;
                         if inserted {
@@ -496,7 +496,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
-                                &previous_batch_operations,
+                                previous_batch_operations,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -527,7 +527,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
-                                &previous_batch_operations,
+                                previous_batch_operations,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -600,7 +600,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
-                            &previous_batch_operations,
+                            previous_batch_operations,
                             &mut batch_operations,
                         )?;
                         index_path.push(vec![0]);

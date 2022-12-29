@@ -520,7 +520,7 @@ pub struct DocumentAndContractInfo<'a> {
 }
 
 /// Document info
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
     /// The borrowed document and it's serialized form
     DocumentRefAndSerialization((&'a Document, &'a [u8], Option<&'a StorageFlags>)),

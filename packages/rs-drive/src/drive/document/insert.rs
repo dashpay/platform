@@ -173,7 +173,7 @@ impl Drive {
                 storage_flags,
                 apply_type,
                 transaction,
-                &None, //not going to have multiple same documents in same batch
+                &mut None, //not going to have multiple same documents in same batch
                 drive_operations,
             )?;
             let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
@@ -571,7 +571,7 @@ impl Drive {
                 document_and_contract_info,
                 override_document,
                 block_info,
-                None,
+                &mut None,
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
             )?;
@@ -586,7 +586,7 @@ impl Drive {
                 document_and_contract_info,
                 override_document,
                 block_info,
-                Some(drive_operations),
+                &mut Some(drive_operations),
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
             )?;
@@ -606,7 +606,7 @@ impl Drive {
         mut index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
-        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -774,7 +774,7 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
-        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -931,7 +931,7 @@ impl Drive {
     fn add_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -1093,14 +1093,17 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
-        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
-
+        dbg!(
+            "add",
+            &document_and_contract_info.owned_document_info.document_info
+        );
         let primary_key_path = contract_documents_primary_key_path(
             document_and_contract_info.contract.id.as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
@@ -1166,7 +1169,7 @@ impl Drive {
 
         self.add_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
-            &previous_batch_operations,
+            previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,

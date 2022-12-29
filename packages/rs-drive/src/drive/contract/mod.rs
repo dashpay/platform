@@ -641,7 +641,7 @@ impl Drive {
                             storage_flags.as_ref(),
                             apply_type,
                             transaction,
-                            &None,
+                            &mut None,
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
