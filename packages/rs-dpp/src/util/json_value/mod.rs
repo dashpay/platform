@@ -409,7 +409,7 @@ impl JsonValueExt for JsonValue {
             return Ok(*s);
         }
         bail!(
-            "getting property '{}' failed: {:?} isn't a number",
+            "getting property '{}' failed: {:?} isn't a boolean",
             property_name,
             property_value
         );
