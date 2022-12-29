@@ -1603,7 +1603,7 @@ impl PlatformWrapper {
 
             let result = transaction_result.and_then(|transaction_arg| {
                 grove_db
-                    .query(&path_query, transaction_arg)
+                    .query_item_value(&path_query, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
                     .map_err(|err| err.to_string())
