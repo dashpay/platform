@@ -64,7 +64,9 @@ use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, OwnedDocumentInfo, PathInfo, PathKeyElementInfo,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -114,41 +116,46 @@ impl Drive {
         }
 
         if document_type.documents_keep_history {
-            let (path_key_info, storage_flags) =
-                if document_and_contract_info.document_info.is_document_size() {
-                    (
-                        PathKeySize(
-                            KeyInfoPath::from_known_path(primary_key_path),
-                            KeyInfo::MaxKeySize {
-                                unique_id: document_type.unique_id_for_storage().to_vec(),
-                                max_size: DEFAULT_HASH_SIZE_U8,
-                            },
-                        ),
-                        StorageFlags::optional_default_as_ref(),
-                    )
+            let (path_key_info, storage_flags) = if document_and_contract_info
+                .owned_document_info
+                .document_info
+                .is_document_size()
+            {
+                (
+                    PathKeySize(
+                        KeyInfoPath::from_known_path(primary_key_path),
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_type.unique_id_for_storage().to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                    ),
+                    StorageFlags::optional_default_as_ref(),
+                )
+            } else {
+                let inserted_storage_flags = if contract.can_be_deleted() {
+                    document_and_contract_info
+                        .owned_document_info
+                        .document_info
+                        .get_storage_flags_ref()
                 } else {
-                    let inserted_storage_flags = if contract.can_be_deleted() {
-                        document_and_contract_info
-                            .document_info
-                            .get_storage_flags_ref()
-                    } else {
-                        // there are no need for storage flags if the contract can not be deleted
-                        // as this tree can never be deleted
-                        None
-                    };
-                    (
-                        PathFixedSizeKeyRef((
-                            primary_key_path,
-                            document_and_contract_info
-                                .document_info
-                                .get_document_id_as_slice()
-                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                    "can not get document id from estimated document",
-                                )))?,
-                        )),
-                        inserted_storage_flags,
-                    )
+                    // there are no need for storage flags if the contract can not be deleted
+                    // as this tree can never be deleted
+                    None
                 };
+                (
+                    PathFixedSizeKeyRef((
+                        primary_key_path,
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_document_id_as_slice()
+                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "can not get document id from estimated document",
+                            )))?,
+                    )),
+                    inserted_storage_flags,
+                )
+            };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertTreeApplyType::StatefulBatchInsert
             } else {
@@ -166,195 +173,203 @@ impl Drive {
                 storage_flags,
                 apply_type,
                 transaction,
+                false, //not going to have multiple same documents in same batch
                 drive_operations,
             )?;
             let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
-            let path_key_element_info = match &document_and_contract_info.document_info {
-                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
-                    let element = Element::Item(
-                        serialized_document.to_vec(),
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
-                    );
-                    let document_id_in_primary_path =
-                        contract_documents_keeping_history_primary_key_path_for_document_id(
-                            contract.id().as_bytes(),
-                            document_type.name.as_str(),
-                            document.id.as_slice(),
+            let path_key_element_info =
+                match &document_and_contract_info.owned_document_info.document_info {
+                    DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                        let element = Element::Item(
+                            serialized_document.to_vec(),
+                            StorageFlags::map_to_some_element_flags(*storage_flags),
                         );
-                    PathFixedSizeKeyElement((
-                        document_id_in_primary_path,
-                        encoded_time.as_slice(),
-                        element,
-                    ))
-                }
-                DocumentWithoutSerialization((document, storage_flags)) => {
-                    let serialized_document =
-                        document.serialize(document_and_contract_info.document_type)?;
-                    let element = Element::Item(
-                        serialized_document,
-                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-                    );
-                    let document_id_in_primary_path =
-                        contract_documents_keeping_history_primary_key_path_for_document_id(
-                            contract.id.as_bytes(),
-                            document_type.name.as_str(),
-                            document.id.as_slice(),
+                        let document_id_in_primary_path =
+                            contract_documents_keeping_history_primary_key_path_for_document_id(
+                                contract.id().as_bytes(),
+                                document_type.name.as_str(),
+                                document.id.as_slice(),
+                            );
+                        PathFixedSizeKeyElement((
+                            document_id_in_primary_path,
+                            encoded_time.as_slice(),
+                            element,
+                        ))
+                    }
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let serialized_document =
+                            document.serialize(document_and_contract_info.document_type)?;
+                        let element = Element::Item(
+                            serialized_document,
+                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
                         );
-                    PathFixedSizeKeyElement((
-                        document_id_in_primary_path,
-                        encoded_time.as_slice(),
-                        element,
-                    ))
-                }
-                DocumentRefWithoutSerialization((document, storage_flags)) => {
-                    let serialized_document =
-                        document.serialize(document_and_contract_info.document_type)?;
-                    let element = Element::Item(
-                        serialized_document,
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
-                    );
-                    let document_id_in_primary_path =
-                        contract_documents_keeping_history_primary_key_path_for_document_id(
-                            contract.id.as_bytes(),
-                            document_type.name.as_str(),
-                            document.id.as_slice(),
+                        let document_id_in_primary_path =
+                            contract_documents_keeping_history_primary_key_path_for_document_id(
+                                contract.id.as_bytes(),
+                                document_type.name.as_str(),
+                                document.id.as_slice(),
+                            );
+                        PathFixedSizeKeyElement((
+                            document_id_in_primary_path,
+                            encoded_time.as_slice(),
+                            element,
+                        ))
+                    }
+                    DocumentRefWithoutSerialization((document, storage_flags)) => {
+                        let serialized_document =
+                            document.serialize(document_and_contract_info.document_type)?;
+                        let element = Element::Item(
+                            serialized_document,
+                            StorageFlags::map_to_some_element_flags(*storage_flags),
                         );
-                    PathFixedSizeKeyElement((
-                        document_id_in_primary_path,
-                        encoded_time.as_slice(),
-                        element,
-                    ))
-                }
-                DocumentEstimatedAverageSize(max_size) => {
-                    let document_id_in_primary_path =
+                        let document_id_in_primary_path =
+                            contract_documents_keeping_history_primary_key_path_for_document_id(
+                                contract.id.as_bytes(),
+                                document_type.name.as_str(),
+                                document.id.as_slice(),
+                            );
+                        PathFixedSizeKeyElement((
+                            document_id_in_primary_path,
+                            encoded_time.as_slice(),
+                            element,
+                        ))
+                    }
+                    DocumentEstimatedAverageSize(max_size) => {
+                        let document_id_in_primary_path =
                         contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
                             contract.id.as_bytes(),
                             document_type,
                         );
-                    PathKeyUnknownElementSize((
-                        document_id_in_primary_path,
-                        KnownKey(encoded_time.clone()),
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                    ))
-                }
-            };
+                        PathKeyUnknownElementSize((
+                            document_id_in_primary_path,
+                            KnownKey(encoded_time.clone()),
+                            Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                        ))
+                    }
+                };
             self.batch_insert(path_key_element_info, drive_operations)?;
 
-            let path_key_element_info =
-                if document_and_contract_info.document_info.is_document_size() {
-                    let document_id_in_primary_path =
-                        contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
-                            contract.id.as_bytes(),
-                            document_type,
-                        );
-                    let reference_max_size =
-                        contract_documents_keeping_history_storage_time_reference_path_size(
-                            document_type.name.len() as u32,
-                        );
-                    PathKeyUnknownElementSize((
-                        document_id_in_primary_path,
-                        KnownKey(vec![0]),
-                        Element::required_item_space(reference_max_size, STORAGE_FLAGS_SIZE),
-                    ))
-                } else {
-                    // we should also insert a reference at 0 to the current value
-                    // todo: we could construct this only once
-                    let document_id_in_primary_path =
-                        contract_documents_keeping_history_primary_key_path_for_document_id(
-                            contract.id.as_bytes(),
-                            document_type.name.as_str(),
-                            document_and_contract_info
-                                .document_info
-                                .get_document_id_as_slice()
-                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                    "can not get document id from estimated document",
-                                )))?,
-                        );
-                    PathFixedSizeKeyElement((
-                        document_id_in_primary_path,
-                        &[0],
-                        Element::Reference(
-                            SiblingReference(encoded_time),
-                            Some(1),
-                            StorageFlags::map_to_some_element_flags(storage_flags),
-                        ),
-                    ))
-                };
+            let path_key_element_info = if document_and_contract_info
+                .owned_document_info
+                .document_info
+                .is_document_size()
+            {
+                let document_id_in_primary_path =
+                    contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
+                        contract.id.as_bytes(),
+                        document_type,
+                    );
+                let reference_max_size =
+                    contract_documents_keeping_history_storage_time_reference_path_size(
+                        document_type.name.len() as u32,
+                    );
+                PathKeyUnknownElementSize((
+                    document_id_in_primary_path,
+                    KnownKey(vec![0]),
+                    Element::required_item_space(reference_max_size, STORAGE_FLAGS_SIZE),
+                ))
+            } else {
+                // we should also insert a reference at 0 to the current value
+                // todo: we could construct this only once
+                let document_id_in_primary_path =
+                    contract_documents_keeping_history_primary_key_path_for_document_id(
+                        contract.id.as_bytes(),
+                        document_type.name.as_str(),
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_document_id_as_slice()
+                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "can not get document id from estimated document",
+                            )))?,
+                    );
+                PathFixedSizeKeyElement((
+                    document_id_in_primary_path,
+                    &[0],
+                    Element::Reference(
+                        SiblingReference(encoded_time),
+                        Some(1),
+                        StorageFlags::map_to_some_element_flags(storage_flags),
+                    ),
+                ))
+            };
 
             self.batch_insert(path_key_element_info, drive_operations)?;
         } else if insert_without_check {
-            let path_key_element_info = match &document_and_contract_info.document_info {
-                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
-                    let element = Element::Item(
-                        serialized_document.to_vec(),
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
-                    );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                }
-                DocumentRefWithoutSerialization((document, storage_flags)) => {
-                    let serialized_document =
-                        document.serialize(document_and_contract_info.document_type)?;
-                    let element = Element::Item(
-                        serialized_document,
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
-                    );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                }
-                DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
-                    KeyInfoPath::from_known_path(primary_key_path),
-                    KeyInfo::MaxKeySize {
-                        unique_id: document_type.unique_id_for_storage().to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    },
-                    Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
-                )),
-                DocumentWithoutSerialization((document, storage_flags)) => {
-                    let serialized_document =
-                        document.serialize(document_and_contract_info.document_type)?;
-                    let element = Element::Item(
-                        serialized_document,
-                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-                    );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                }
-            };
+            let path_key_element_info =
+                match &document_and_contract_info.owned_document_info.document_info {
+                    DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                        let element = Element::Item(
+                            serialized_document.to_vec(),
+                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                        );
+                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    }
+                    DocumentRefWithoutSerialization((document, storage_flags)) => {
+                        let serialized_document =
+                            document.serialize(document_and_contract_info.document_type)?;
+                        let element = Element::Item(
+                            serialized_document,
+                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                        );
+                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    }
+                    DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
+                        KeyInfoPath::from_known_path(primary_key_path),
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_type.unique_id_for_storage().to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                        Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
+                    )),
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let serialized_document =
+                            document.serialize(document_and_contract_info.document_type)?;
+                        let element = Element::Item(
+                            serialized_document,
+                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                        );
+                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    }
+                };
             self.batch_insert(path_key_element_info, drive_operations)?;
         } else {
-            let path_key_element_info = match &document_and_contract_info.document_info {
-                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
-                    let element = Element::Item(
-                        serialized_document.to_vec(),
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
-                    );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                }
-                DocumentWithoutSerialization((document, storage_flags)) => {
-                    let serialized_document =
-                        document.serialize(document_and_contract_info.document_type)?;
-                    let element = Element::Item(
-                        serialized_document,
-                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-                    );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                }
-                DocumentRefWithoutSerialization((document, storage_flags)) => {
-                    let serialized_document =
-                        document.serialize(document_and_contract_info.document_type)?;
-                    let element = Element::Item(
-                        serialized_document,
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
-                    );
-                    PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                }
-                DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
-                    KeyInfoPath::from_known_path(primary_key_path),
-                    KeyInfo::MaxKeySize {
-                        unique_id: document_type.unique_id_for_storage().to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    },
-                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                )),
-            };
+            let path_key_element_info =
+                match &document_and_contract_info.owned_document_info.document_info {
+                    DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                        let element = Element::Item(
+                            serialized_document.to_vec(),
+                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                        );
+                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    }
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let serialized_document =
+                            document.serialize(document_and_contract_info.document_type)?;
+                        let element = Element::Item(
+                            serialized_document,
+                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                        );
+                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    }
+                    DocumentRefWithoutSerialization((document, storage_flags)) => {
+                        let serialized_document =
+                            document.serialize(document_and_contract_info.document_type)?;
+                        let element = Element::Item(
+                            serialized_document,
+                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                        );
+                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
+                    }
+                    DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
+                        KeyInfoPath::from_known_path(primary_key_path),
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_type.unique_id_for_storage().to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                    )),
+                };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
@@ -407,10 +422,12 @@ impl Drive {
 
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract: &contract,
                 document_type,
-                owner_id,
             },
             override_document,
             block_info,
@@ -441,10 +458,12 @@ impl Drive {
 
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract,
                 document_type,
-                owner_id,
             },
             override_document,
             block_info,
@@ -488,13 +507,16 @@ impl Drive {
 
         self.add_document_for_contract_apply_and_add_to_operations(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract,
                 document_type,
-                owner_id,
             },
             override_document,
             &block_info,
+            true,
             apply,
             transaction,
             &mut drive_operations,
@@ -519,6 +541,7 @@ impl Drive {
             document_and_contract_info,
             override_document,
             &block_info,
+            true,
             apply,
             transaction,
             &mut drive_operations,
@@ -533,6 +556,7 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
+        document_is_unique_for_document_type_in_batch: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
@@ -546,6 +570,7 @@ impl Drive {
             document_and_contract_info,
             override_document,
             block_info,
+            document_is_unique_for_document_type_in_batch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -564,6 +589,7 @@ impl Drive {
         mut index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
+        document_is_unique_for_document_type_in_batch: bool,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -596,6 +622,7 @@ impl Drive {
                 *storage_flags,
                 apply_type,
                 transaction,
+                !document_is_unique_for_document_type_in_batch,
                 batch_operations,
             )?;
 
@@ -618,35 +645,36 @@ impl Drive {
                 );
             }
 
-            let key_element_info = match &document_and_contract_info.document_info {
-                DocumentRefAndSerialization((document, _, storage_flags))
-                | DocumentRefWithoutSerialization((document, storage_flags)) => {
-                    let document_reference = make_document_reference(
-                        document,
-                        document_and_contract_info.document_type,
-                        *storage_flags,
-                    );
-                    KeyElement((document.id.as_slice(), document_reference))
-                }
-                DocumentWithoutSerialization((document, storage_flags)) => {
-                    let document_reference = make_document_reference(
-                        document,
-                        document_and_contract_info.document_type,
-                        storage_flags.as_ref(),
-                    );
-                    KeyElement((document.id.as_slice(), document_reference))
-                }
-                DocumentEstimatedAverageSize(max_size) => KeyUnknownElementSize((
-                    KeyInfo::MaxKeySize {
-                        unique_id: document_and_contract_info
-                            .document_type
-                            .unique_id_for_storage()
-                            .to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    },
-                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                )),
-            };
+            let key_element_info =
+                match &document_and_contract_info.owned_document_info.document_info {
+                    DocumentRefAndSerialization((document, _, storage_flags))
+                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
+                        let document_reference = make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            *storage_flags,
+                        );
+                        KeyElement((document.id.as_slice(), document_reference))
+                    }
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let document_reference = make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            storage_flags.as_ref(),
+                        );
+                        KeyElement((document.id.as_slice(), document_reference))
+                    }
+                    DocumentEstimatedAverageSize(max_size) => KeyUnknownElementSize((
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_and_contract_info
+                                .document_type
+                                .unique_id_for_storage()
+                                .to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                    )),
+                };
 
             let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
                 index_path_info,
@@ -656,35 +684,36 @@ impl Drive {
             // here we should return an error if the element already exists
             self.batch_insert(path_key_element_info, batch_operations)?;
         } else {
-            let key_element_info = match &document_and_contract_info.document_info {
-                DocumentRefAndSerialization((document, _, storage_flags))
-                | DocumentRefWithoutSerialization((document, storage_flags)) => {
-                    let document_reference = make_document_reference(
-                        document,
-                        document_and_contract_info.document_type,
-                        *storage_flags,
-                    );
-                    KeyElement((&[0], document_reference))
-                }
-                DocumentWithoutSerialization((document, storage_flags)) => {
-                    let document_reference = make_document_reference(
-                        document,
-                        document_and_contract_info.document_type,
-                        storage_flags.as_ref(),
-                    );
-                    KeyElement((&[0], document_reference))
-                }
-                DocumentEstimatedAverageSize(estimated_size) => KeyUnknownElementSize((
-                    KeyInfo::MaxKeySize {
-                        unique_id: document_and_contract_info
-                            .document_type
-                            .unique_id_for_storage()
-                            .to_vec(),
-                        max_size: 1,
-                    },
-                    Element::required_item_space(*estimated_size, STORAGE_FLAGS_SIZE),
-                )),
-            };
+            let key_element_info =
+                match &document_and_contract_info.owned_document_info.document_info {
+                    DocumentRefAndSerialization((document, _, storage_flags))
+                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
+                        let document_reference = make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            *storage_flags,
+                        );
+                        KeyElement((&[0], document_reference))
+                    }
+                    DocumentWithoutSerialization((document, storage_flags)) => {
+                        let document_reference = make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            storage_flags.as_ref(),
+                        );
+                        KeyElement((&[0], document_reference))
+                    }
+                    DocumentEstimatedAverageSize(estimated_size) => KeyUnknownElementSize((
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_and_contract_info
+                                .document_type
+                                .unique_id_for_storage()
+                                .to_vec(),
+                            max_size: 1,
+                        },
+                        Element::required_item_space(*estimated_size, STORAGE_FLAGS_SIZE),
+                    )),
+                };
 
             let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
                 index_path_info,
@@ -728,6 +757,7 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
+        document_is_unique_for_document_type_in_batch: bool,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -742,6 +772,7 @@ impl Drive {
                 index_path_info.clone(),
                 unique,
                 any_fields_null,
+                document_is_unique_for_document_type_in_batch,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -787,11 +818,12 @@ impl Drive {
             let index_property_key = KeyRef(name.as_bytes());
 
             let document_index_field = document_and_contract_info
+                .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
                     name,
                     document_type,
-                    document_and_contract_info.owner_id,
+                    document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
@@ -806,6 +838,7 @@ impl Drive {
                 *storage_flags,
                 apply_type,
                 transaction,
+                !document_is_unique_for_document_type_in_batch,
                 batch_operations,
             )?;
 
@@ -814,6 +847,7 @@ impl Drive {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 let document_top_field_estimated_size = document_and_contract_info
+                    .owned_document_info
                     .document_info
                     .get_estimated_size_for_document_type(name, document_type)?;
 
@@ -850,6 +884,7 @@ impl Drive {
                 *storage_flags,
                 apply_type,
                 transaction,
+                !document_is_unique_for_document_type_in_batch,
                 batch_operations,
             )?;
 
@@ -864,6 +899,7 @@ impl Drive {
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
+                document_is_unique_for_document_type_in_batch,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
                 event_id,
@@ -878,6 +914,7 @@ impl Drive {
     fn add_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
+        document_is_unique_for_document_type_in_batch: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -890,6 +927,7 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
         let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
             document_and_contract_info
+                .owned_document_info
                 .document_info
                 .get_storage_flags_ref()
         } else {
@@ -949,11 +987,12 @@ impl Drive {
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document_and_contract_info
+                .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
                     name,
                     document_type,
-                    document_and_contract_info.owner_id,
+                    document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
@@ -966,12 +1005,14 @@ impl Drive {
                 storage_flags,
                 apply_type,
                 transaction,
+                !document_is_unique_for_document_type_in_batch,
                 batch_operations,
             )?;
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 let document_top_field_estimated_size = document_and_contract_info
+                    .owned_document_info
                     .document_info
                     .get_estimated_size_for_document_type(name, document_type)?;
 
@@ -998,7 +1039,10 @@ impl Drive {
 
             let any_fields_null = document_top_field.is_empty();
 
-            let mut index_path_info = if document_and_contract_info.document_info.is_document_size()
+            let mut index_path_info = if document_and_contract_info
+                .owned_document_info
+                .document_info
+                .is_document_size()
             {
                 // This is a stateless operation
                 PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
@@ -1015,6 +1059,7 @@ impl Drive {
                 index_path_info,
                 sub_level,
                 any_fields_null,
+                document_is_unique_for_document_type_in_batch,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,
                 event_id,
@@ -1031,6 +1076,7 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
+        document_is_unique_for_document_type_in_batch: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -1056,10 +1102,14 @@ impl Drive {
         };
 
         if override_document
-            && !document_and_contract_info.document_info.is_document_size()
+            && !document_and_contract_info
+                .owned_document_info
+                .document_info
+                .is_document_size()
             && self.grove_has_raw(
                 primary_key_path,
                 document_and_contract_info
+                    .owned_document_info
                     .document_info
                     .id_key_value_info()
                     .as_key_ref_request()?,
@@ -1071,6 +1121,7 @@ impl Drive {
             let update_operations = self.update_document_for_contract_operations(
                 document_and_contract_info,
                 block_info,
+                true,
                 estimated_costs_only_with_layer_info,
                 transaction,
             )?;
@@ -1098,6 +1149,7 @@ impl Drive {
 
         self.add_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
+            document_is_unique_for_document_type_in_batch,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
@@ -1495,13 +1547,16 @@ mod tests {
         drive
             .add_document_for_contract_apply_and_add_to_operations(
                 DocumentAndContractInfo {
-                    document_info: document_info.clone(),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: document_info.clone(),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(owner_id),
                 },
                 false,
                 &BlockInfo::default(),
+                true,
                 false,
                 Some(&db_transaction),
                 &mut fee_drive_operations,
@@ -1519,13 +1574,16 @@ mod tests {
         drive
             .add_document_for_contract_apply_and_add_to_operations(
                 DocumentAndContractInfo {
-                    document_info,
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id: Some(owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(owner_id),
                 },
                 false,
                 &BlockInfo::default(),
+                true,
                 true,
                 Some(&db_transaction),
                 &mut actual_drive_operations,
@@ -1579,14 +1637,16 @@ mod tests {
         } = drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &dpns_domain_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &dpns_domain_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),

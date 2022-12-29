@@ -502,15 +502,21 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
 }
 
 /// Document and contract info
-pub struct DocumentAndContractInfo<'a> {
+pub struct OwnedDocumentInfo<'a> {
     /// Document info
     pub document_info: DocumentInfo<'a>,
+    /// Owner ID
+    pub owner_id: Option<[u8; 32]>,
+}
+
+/// Document and contract info
+pub struct DocumentAndContractInfo<'a> {
+    /// Document info
+    pub owned_document_info: OwnedDocumentInfo<'a>,
     /// Contract
     pub contract: &'a Contract,
     /// Document type
     pub document_type: &'a DocumentType,
-    /// Owner ID
-    pub owner_id: Option<[u8; 32]>,
 }
 
 /// Document info

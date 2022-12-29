@@ -53,7 +53,9 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
-use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathKeyInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -140,10 +142,12 @@ impl Drive {
 
         self.update_document_for_contract_apply_and_add_to_operations(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract,
                 document_type,
-                owner_id,
             },
             &block_info,
             estimated_costs_only_with_layer_info,
@@ -210,10 +214,12 @@ impl Drive {
 
         self.update_document_for_contract_apply_and_add_to_operations(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract,
                 document_type,
-                owner_id,
             },
             &block_info,
             estimated_costs_only_with_layer_info,
@@ -238,6 +244,7 @@ impl Drive {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
+            true,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -254,6 +261,7 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
+        document_is_unique_for_document_type_in_batch: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -268,13 +276,17 @@ impl Drive {
         }
 
         // If we are going for estimated costs do an add instead as it always worse than an update
-        if document_and_contract_info.document_info.is_document_size()
+        if document_and_contract_info
+            .owned_document_info
+            .document_info
+            .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
             return self.add_document_for_contract_operations(
                 document_and_contract_info,
                 true, // we say we should override as this skips an unnecessary check
                 block_info,
+                document_is_unique_for_document_type_in_batch,
                 estimated_costs_only_with_layer_info,
                 transaction,
             );
@@ -282,10 +294,10 @@ impl Drive {
 
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
-        let owner_id = document_and_contract_info.owner_id;
+        let owner_id = document_and_contract_info.owned_document_info.owner_id;
 
         if let DocumentRefAndSerialization((document, _serialized_document, storage_flags)) =
-            document_and_contract_info.document_info
+            document_and_contract_info.owned_document_info.document_info
         {
             // we need to construct the path for documents on the contract
             // the path is
@@ -419,6 +431,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
+                            !document_is_unique_for_document_type_in_batch,
                             &mut batch_operations,
                         )?;
                         if inserted {
@@ -483,6 +496,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
+                                !document_is_unique_for_document_type_in_batch,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -513,6 +527,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
+                                !document_is_unique_for_document_type_in_batch,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -583,6 +598,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
+                            !document_is_unique_for_document_type_in_batch,
                             &mut batch_operations,
                         )?;
                         index_path.push(vec![0]);
@@ -752,14 +768,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &alice_profile,
-                        alice_profile_cbor.as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &alice_profile,
+                            alice_profile_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::default(),
@@ -843,14 +861,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &alice_profile,
-                        alice_profile_cbor.as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &alice_profile,
+                            alice_profile_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::default(),
@@ -954,14 +974,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &alice_profile,
-                        alice_profile_cbor.as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &alice_profile,
+                            alice_profile_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::default(),
@@ -2016,14 +2038,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            document_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 block_info,
