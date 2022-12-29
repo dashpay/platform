@@ -461,7 +461,7 @@ describe('DocumentFactory', () => {
         expect.fail('should throw an error');
       } catch (e) {
         // TODO - parsing errors are not handled yet
-        expect(e).to.startsWith('ProtocolError: getting property');
+        expect(e).to.startsWith('Error conversion not implemented:');
       }
     });
   }); describe('createStateTransition', () => {
