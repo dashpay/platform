@@ -803,7 +803,7 @@ mod tests {
         let serialized_contract =
             DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 
-        let document_type = contract
+        let _document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
