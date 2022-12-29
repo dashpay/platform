@@ -12,7 +12,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   let StateTransitionExecutionContext;
   let DataContractFactory;
   let DataContractValidator;
-  let factory;
+  let validateTransitionWithExistingContract;
   let DataContractNotPresentError;
   let InvalidDataContractVersionError;
   let ValidationResult;
@@ -54,7 +54,10 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       fetchDataContract: () => wasmDataContract,
     };
 
-    factory = (t) => validateDataContractUpdateTransitionState(stateRepositoryLike, t);
+    validateTransitionWithExistingContract = (t) => validateDataContractUpdateTransitionState(
+      stateRepositoryLike,
+      t,
+    );
   });
 
   it('should return invalid result if Data Contract with specified contractId was not found', async () => {
@@ -62,12 +65,12 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       fetchDataContract: () => undefined,
     };
 
-    const factoryNoDataContract = (t) => validateDataContractUpdateTransitionState(
+    const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
       stateRepositoryLikeNoDataContract,
       t,
     );
 
-    const result = await factoryNoDataContract(stateTransition);
+    const result = await validateTransitionWithNoContract(stateTransition);
 
     expect(result.isValid()).to.be.false();
 
@@ -87,7 +90,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       protocolVersion: protocolVersion.latestVersion,
     });
 
-    const result = await factory(badStateTransition);
+    const result = await validateTransitionWithExistingContract(badStateTransition);
 
     expect(result.isValid()).to.be.false();
 
@@ -97,7 +100,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await factory(stateTransition);
+    const result = await validateTransitionWithExistingContract(stateTransition);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
@@ -108,14 +111,14 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       fetchDataContract: () => undefined,
     };
 
-    const factoryNoDataContract = (t) => validateDataContractUpdateTransitionState(
+    const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
       stateRepositoryLikeNoDataContract,
       t,
     );
 
     executionContext.enableDryRun();
 
-    const result = await factoryNoDataContract(stateTransition);
+    const result = await validateTransitionWithNoContract(stateTransition);
 
     executionContext.disableDryRun();
 

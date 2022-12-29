@@ -135,4 +135,13 @@ impl DataContractUpdateTransitionWasm {
     pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
     }
+
+    #[wasm_bindgen(js_name=hash)]
+    pub fn hash(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
+        let bytes = self
+            .0
+            .hash(skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+        Ok(Buffer::from_bytes(&bytes))
+    }
 }
