@@ -141,7 +141,7 @@ impl From<&ValidationErrorKind> for Params {
                 .build(),
             ValidationErrorKind::MinItems { limit } => ParamsBuilder::new()
                 .set_keyword("minItems")
-                .add_param("maximum", Value::from(*limit))
+                .add_param("minItems", Value::from(*limit))
                 .build(),
             ValidationErrorKind::Minimum { limit } => ParamsBuilder::new()
                 .set_keyword("minimum")

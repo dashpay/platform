@@ -14,9 +14,6 @@ mod security_level;
 pub use security_level::*;
 
 mod key_type;
-mod public_keys_validator;
-
-pub use public_keys_validator::*;
 
 pub use key_type::*;
 

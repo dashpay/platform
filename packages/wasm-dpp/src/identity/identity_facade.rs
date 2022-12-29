@@ -6,7 +6,7 @@ use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::validation_result::ValidationResultWasm;
+use crate::validation::ValidationResultWasm;
 use dpp::version::ProtocolVersionValidator;
 use dpp::NonConsensusError;
 

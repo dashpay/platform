@@ -139,9 +139,9 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
             let js_buffer = JsBuffer::external(cx, item);
             Some(js_buffer.upcast())
         }
-        Element::SumItem(item, _) => {
-            let js_number = JsNumber::new(cx, item as f64);
-            Some(js_number.upcast())
+        Element::SumItem(number, _) => {
+            let js_number = cx.number(number as f64).upcast();
+            Some(js_number)
         }
         Element::Reference(reference, _, _) => {
             let reference = reference_to_dictionary(cx, reference)?;
