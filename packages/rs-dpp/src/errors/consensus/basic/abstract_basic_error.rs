@@ -48,6 +48,9 @@ pub enum BasicError {
     },
 
     #[error("$type is not present")]
+    MissingDocumentTransitionTypeError,
+
+    #[error("$type is not present")]
     MissingDocumentTypeError,
 
     #[error("$action is not present")]
@@ -68,6 +71,12 @@ pub enum BasicError {
 
     #[error("Document transitions with duplicate IDs {:?}", references)]
     DuplicateDocumentTransitionsWithIdsError { references: Vec<(String, Vec<u8>)> },
+
+    #[error(
+        "Document transitions with duplicate unique properties: {:?}",
+        references
+    )]
+    DuplicateDocumentTransitionsWithIndicesError { references: Vec<(String, Vec<u8>)> },
 
     #[error("$dataContractId is not present")]
     MissingDataContractIdError,

@@ -111,4 +111,8 @@ pub enum DriveError {
     /// Error
     #[error("batch is empty")]
     BatchIsEmpty(),
+
+    /// Error
+    #[error("unexpected element type: {0}")]
+    UnexpectedElementType(&'static str),
 }

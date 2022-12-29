@@ -141,3 +141,12 @@ impl GroveDbOpBatch {
         GroveDbOp::verify_consistency_of_operations(&self.operations)
     }
 }
+
+impl IntoIterator for GroveDbOpBatch {
+    type Item = GroveDbOp;
+    type IntoIter = std::vec::IntoIter<GroveDbOp>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.operations.into_iter()
+    }
+}

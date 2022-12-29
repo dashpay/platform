@@ -64,9 +64,10 @@ use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
 /// The global root path for all contracts
