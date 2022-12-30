@@ -37,8 +37,6 @@ use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_transactions_expired_ids_path_as_u8, get_withdrawal_transactions_queue_path,
     WithdrawalTransaction, WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
 };
-use crate::drive::object_size_info::DocumentAndContractInfo;
-use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentRefWithoutSerialization,
 };
