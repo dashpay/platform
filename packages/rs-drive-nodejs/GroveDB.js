@@ -269,7 +269,7 @@ class GroveDB {
  *    QueryItemRangeAfterTo|
  *    QueryItemRangeAfterToInclusive
  * >} [items]
- * @property {Buffer} [subqueryKey]
+ * @property {Buffer} [subqueryPath]
  * @property {Query} [subquery]
  * @property {boolean} [leftToRight]
  */

@@ -28,6 +28,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         let document = if let Some(document) = document_and_contract_info
+            .owned_document_info
             .document_info
             .get_borrowed_document()
         {

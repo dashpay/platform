@@ -67,6 +67,16 @@ impl GroveDbOpBatch {
         self.operations.push(op);
     }
 
+    /// Appends operations into a list of GroveDB ops.
+    pub fn append(&mut self, other: &mut Self) {
+        self.operations.append(&mut other.operations);
+    }
+
+    /// Extend operations into a list of GroveDB ops.
+    pub fn extend<I: IntoIterator<Item = GroveDbOp>>(&mut self, other_ops: I) {
+        self.operations.extend(other_ops);
+    }
+
     /// Puts a list of GroveDB operations into a batch.
     pub fn from_operations(operations: Vec<GroveDbOp>) -> Self {
         GroveDbOpBatch { operations }
