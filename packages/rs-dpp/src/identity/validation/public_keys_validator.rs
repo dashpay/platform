@@ -173,6 +173,8 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         self.public_key_schema_validator.validate(public_key)
     }
+
+    pub fn validate_state(&self) {}
 }
 
 pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<u64> {

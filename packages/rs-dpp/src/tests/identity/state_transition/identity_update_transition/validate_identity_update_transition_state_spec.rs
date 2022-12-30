@@ -7,23 +7,21 @@ use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
     consensus::{basic::TestConsensusError, ConsensusError},
     identity::{
-        state_transition::identity_update_transition::{
-            identity_update_transition::IdentityUpdateTransition,
-            validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator,
-        },
-        validation::MockTPublicKeysValidator,
-        Purpose, SecurityLevel,
+        Purpose,
+        SecurityLevel,
+        state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, validation::MockTPublicKeysValidator,
     },
+    NativeBlsModule,
     prelude::Identity,
     state_repository::MockStateRepositoryLike,
     state_transition::StateTransitionLike,
+    StateError,
     tests::{
         fixtures::{get_identity_update_transition_fixture, identity_fixture},
         utils::{get_state_error_from_result, new_block_header},
-    },
-    validation::SimpleValidationResult,
-    NativeBlsModule, StateError,
+    }, validation::SimpleValidationResult,
 };
+use crate::identity::state_transition::identity_update_transition::validation::state::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 
 struct TestData {
     identity: Identity,

@@ -12,7 +12,7 @@ use crate::{
 
 lazy_static! {
     pub static ref IDENTITY_JSON_SCHEMA: JsonValue =
-        serde_json::from_str(include_str!("./../../../schema/identity/identity.json"))
+        serde_json::from_str(include_str!("./../../../../../schema/identity/identity.json"))
             .expect("Identity Schema file should exist");
 }
 

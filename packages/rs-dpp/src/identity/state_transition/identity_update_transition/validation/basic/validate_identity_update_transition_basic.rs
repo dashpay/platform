@@ -14,11 +14,11 @@ use crate::{
     NonConsensusError, ProtocolError,
 };
 
-use super::identity_update_transition::property_names;
+use crate::identity::state_transition::identity_update_transition::identity_update_transition::property_names;
 
 lazy_static! {
     static ref IDENTITY_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "./../../../schema/identity/stateTransition/identityUpdate.json"
+        "./../../../../../schema/identity/stateTransition/identityUpdate.json"
     ))
     .expect("Identity Update Schema file should exist");
 }

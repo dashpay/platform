@@ -2,16 +2,17 @@ use crate::identity::state_transition::validate_public_key_signatures::PublicKey
 use crate::{
     consensus::{basic::TestConsensusError, ConsensusError},
     identity::{
-        state_transition::{
+        KeyType,
+        Purpose,
+        SecurityLevel, state_transition::{
             identity_update_transition::{
-                identity_update_transition::{property_names, IdentityUpdateTransition},
-                validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic,
+                identity_update_transition::{IdentityUpdateTransition, property_names},
             },
             validate_public_key_signatures::TPublicKeysSignaturesValidator,
-        },
-        validation::MockTPublicKeysValidator,
-        KeyType, Purpose, SecurityLevel,
+        }, validation::MockTPublicKeysValidator,
     },
+    NativeBlsModule,
+    NonConsensusError,
     prelude::IdentityPublicKey,
     state_transition::{StateTransitionConvert, StateTransitionIdentitySigned},
     tests::{
@@ -21,14 +22,13 @@ use crate::{
         utils::get_schema_error,
     },
     util::json_value::JsonValueExt,
-    validation::SimpleValidationResult,
-    version::ProtocolVersionValidator,
-    NativeBlsModule, NonConsensusError,
+    validation::SimpleValidationResult, version::ProtocolVersionValidator,
 };
 use jsonschema::error::ValidationErrorKind;
 use serde_json::{json, Value as JsonValue};
 use std::{convert::TryInto, sync::Arc};
 use test_case::test_case;
+use crate::identity::state_transition::identity_update_transition::validation::basic::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
 
 struct TestData {
     protocol_version_validator: ProtocolVersionValidator,
