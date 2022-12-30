@@ -1,3 +1,7 @@
+pub mod identity_facade;
+mod identity_public_key;
+mod validation;
+
 use js_sys::Array;
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
@@ -12,8 +16,8 @@ use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::utils;
 use crate::utils::to_vec_of_serde_values;
-use crate::IdentityPublicKeyWasm;
 use crate::MetadataWasm;
+pub use identity_public_key::*;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]
@@ -60,12 +64,7 @@ impl IdentityWasm {
             .into_iter()
             .map(IdentityPublicKey::from_json_object)
             .collect::<Result<_, _>>()
-            .map_err(|e| {
-                format!(
-                    "converting to collection of IdentityPublicKeys failed: {:#}",
-                    e
-                )
-            })?;
+            .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
         self.0.set_public_keys(public_keys);
 

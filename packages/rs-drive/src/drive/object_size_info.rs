@@ -261,7 +261,11 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
                 (*path_iterator).iter().map(|a| a.len() as u32).sum::<u32>() + key.len() as u32
             }
             PathKeySize(key_info_path, key_size) => {
-                key_info_path.iterator().map(|a| a.max_length() as u32).sum::<u32>() + key_size.max_length() as u32
+                key_info_path
+                    .iterator()
+                    .map(|a| a.max_length() as u32)
+                    .sum::<u32>()
+                    + key_size.max_length() as u32
             }
         }
     }
@@ -498,19 +502,25 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
 }
 
 /// Document and contract info
-pub struct DocumentAndContractInfo<'a> {
+pub struct OwnedDocumentInfo<'a> {
     /// Document info
     pub document_info: DocumentInfo<'a>,
-    /// Contract
-    pub contract: &'a Contract,
-    /// Document type
-    pub document_type: &'a DocumentType,
     /// Owner ID
     pub owner_id: Option<[u8; 32]>,
 }
 
+/// Document and contract info
+pub struct DocumentAndContractInfo<'a> {
+    /// Document info
+    pub owned_document_info: OwnedDocumentInfo<'a>,
+    /// Contract
+    pub contract: &'a Contract,
+    /// Document type
+    pub document_type: &'a DocumentType,
+}
+
 /// Document info
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
     /// The borrowed document and it's serialized form
     DocumentRefAndSerialization((&'a Document, &'a [u8], Option<&'a StorageFlags>)),

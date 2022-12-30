@@ -66,7 +66,7 @@ const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe
 const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDataContractVersionError');
 const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
 const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
-const DataContractIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
+const DataContractUniqueIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
 const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
 const DataContractInvalidIndexDefinitionUpdateError = require('./basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
 const DataContractHaveNewUniqueIndexError = require('./basic/dataContract/DataContractHaveNewUniqueIndexError');
@@ -116,7 +116,7 @@ const codes = {
   1050: InvalidDataContractVersionError,
   1051: IncompatibleDataContractSchemaError,
   1052: DataContractImmutablePropertiesUpdateError,
-  1053: DataContractIndicesChangedError,
+  1053: DataContractUniqueIndicesChangedError,
   1054: DataContractInvalidIndexDefinitionUpdateError,
   1055: DataContractHaveNewUniqueIndexError,
 

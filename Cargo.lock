@@ -571,7 +571,7 @@ checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=1e92ea9875b4952e30142ac9353f4a12470eb9a3#1e92ea9875b4952e30142ac9353f4a12470eb9a3"
+source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1306,8 +1306,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.8.2"
-source = "git+https://github.com/dashpay/grovedb?rev=1e92ea9875b4952e30142ac9353f4a12470eb9a3#1e92ea9875b4952e30142ac9353f4a12470eb9a3"
+version = "0.9.0"
+source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
 dependencies = [
  "bincode",
  "costs",
@@ -1318,7 +1318,6 @@ dependencies = [
  "itertools",
  "merk",
  "nohash-hasher",
- "rs_merkle",
  "serde",
  "storage",
  "tempfile",
@@ -1624,9 +1623,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.138"
+version = "0.2.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6d7e329c562c5dfab7a46a2afabc8b987ab9a4834c9d1ca04dc54c1546cef8"
+checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
 
 [[package]]
 name = "libloading"
@@ -1749,8 +1748,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "0.8.2"
-source = "git+https://github.com/dashpay/grovedb?rev=1e92ea9875b4952e30142ac9353f4a12470eb9a3#1e92ea9875b4952e30142ac9353f4a12470eb9a3"
+version = "0.9.0"
+source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1769,12 +1768,6 @@ dependencies = [
  "time 0.3.17",
  "visualize",
 ]
-
-[[package]]
-name = "micromath"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39617bc909d64b068dcffd0e3e31679195b5576d0c83fadc52690268cc2b2b55"
 
 [[package]]
 name = "minimal-lexical"
@@ -2087,9 +2080,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
+checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
 name = "oorandom"
@@ -2201,9 +2194,9 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
 name = "predicates"
-version = "2.1.4"
+version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f54fc5dc63ed3bbf19494623db4f3af16842c0d975818e469022d09e53f0aa05"
+checksum = "59230a63c37f3e18569bdb90e4a89cbf5bf8b06fea0b84e65ea10cc4df47addd"
 dependencies = [
  "difflib",
  "float-cmp",
@@ -2616,16 +2609,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rs_merkle"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a632a43487c1332be8e183588079f89b6820fab24e04db49521eacd536837372"
-dependencies = [
- "micromath",
- "sha2 0.10.6",
-]
-
-[[package]]
 name = "rust_decimal"
 version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2757,9 +2740,9 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
-version = "1.0.151"
+version = "1.0.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97fed41fc1a24994d044e6db6935e69511a1153b52c15eb42493b26fa87feba0"
+checksum = "bb7d1f0d3021d347a83e556fc4683dea2ea09d87bccdf88ff5c12545d89d5efb"
 dependencies = [
  "serde_derive",
 ]
@@ -2796,9 +2779,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.151"
+version = "1.0.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "255abe9a125a985c05190d687b320c12f9b1f0b99445e608c21ba0782c719ad8"
+checksum = "af487d118eecd09402d70a5d72551860e788df87b464af30e5ea6a38c75c541e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2947,7 +2930,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=1e92ea9875b4952e30142ac9353f4a12470eb9a3#1e92ea9875b4952e30142ac9353f4a12470eb9a3"
+source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
 dependencies = [
  "blake3",
  "costs",
@@ -3341,7 +3324,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=1e92ea9875b4952e30142ac9353f4a12470eb9a3#1e92ea9875b4952e30142ac9353f4a12470eb9a3"
+source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
 dependencies = [
  "hex",
  "itertools",

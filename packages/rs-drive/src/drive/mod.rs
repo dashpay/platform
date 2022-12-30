@@ -73,6 +73,7 @@ mod test_utils;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
+use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::extra::DriveContractExt;
@@ -277,10 +278,12 @@ impl Drive {
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
+                    owner_id: None,
+                },
                 contract,
                 document_type,
-                owner_id: None,
             },
             false,
             BlockInfo::default_with_epoch(Epoch::new(epoch_index)),

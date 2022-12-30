@@ -78,12 +78,11 @@ pub async fn validate_data_contract_update_transition_state(
     // Version difference should be exactly 1
     let old_version = existing_data_contract.version;
     let new_version = state_transition.data_contract.version;
-    let version_diff = new_version - old_version;
 
-    if version_diff != 1 {
+    if new_version < old_version || new_version - old_version != 1 {
         let err = BasicError::InvalidDataContractVersionError {
             expected_version: old_version + 1,
-            version: old_version + version_diff,
+            version: new_version,
         };
         result.add_error(err);
     }

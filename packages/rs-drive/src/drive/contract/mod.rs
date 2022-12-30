@@ -641,6 +641,7 @@ impl Drive {
                             storage_flags.as_ref(),
                             apply_type,
                             transaction,
+                            &mut None,
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -1033,7 +1034,9 @@ mod tests {
     use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
+    use crate::drive::object_size_info::{
+        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
+    };
     use crate::drive::Drive;
 
     fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
@@ -1148,14 +1151,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentInfo::DocumentRefAndSerialization((
-                        &document,
-                        document.to_cbor().as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefAndSerialization((
+                            &document,
+                            document.to_cbor().as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(random_owner_id),
                 },
                 false,
                 BlockInfo::default(),
@@ -1185,14 +1190,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentInfo::DocumentRefAndSerialization((
-                        &document,
-                        document.to_cbor().as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefAndSerialization((
+                            &document,
+                            document.to_cbor().as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(random_owner_id),
                 },
                 false,
                 BlockInfo::default(),

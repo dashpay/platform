@@ -6182,7 +6182,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/browserslist-npm-4.18.1-38eb8a64b9-ae58322dee.zip/node_modules/browserslist/",\
           "packageDependencies": [\
             ["browserslist", "npm:4.18.1"],\
-            ["caniuse-lite", "npm:1.0.30001431"],\
+            ["caniuse-lite", "npm:1.0.30001282"],\
             ["electron-to-chromium", "npm:1.3.903"],\
             ["escalade", "npm:3.1.1"],\
             ["node-releases", "npm:2.0.1"],\
@@ -6460,10 +6460,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["caniuse-lite", [\
-        ["npm:1.0.30001431", {\
-          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001431-6d607db8ef-bc8ab55cd1.zip/node_modules/caniuse-lite/",\
+        ["npm:1.0.30001282", {\
+          "packageLocation": "./.yarn/cache/caniuse-lite-npm-1.0.30001282-49173a42dd-62797fd756.zip/node_modules/caniuse-lite/",\
           "packageDependencies": [\
-            ["caniuse-lite", "npm:1.0.30001431"]\
+            ["caniuse-lite", "npm:1.0.30001282"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -7698,9 +7698,12 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["awilix", "npm:4.3.4"],\
             ["axios", "npm:0.27.2"],\
             ["bls-signatures", "npm:0.2.5"],\
+            ["chai", "npm:4.3.4"],\
+            ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chalk", "npm:4.1.2"],\
             ["cron", "npm:2.1.0"],\
             ["dash", "workspace:packages/js-dash-sdk"],\
+            ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["dockerode", "npm:3.3.1"],\
             ["dot", "npm:1.1.3"],\
             ["dotenv", "npm:8.6.0"],\
@@ -7715,6 +7718,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
             ["lodash", "npm:4.17.21"],\
             ["memory-streams", "npm:0.1.3"],\
+            ["mocha", "npm:9.2.2"],\
+            ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
             ["node-fetch", "virtual:25a5f5382d53dbf298bf7a1191760bc2e0a523a619eeb0e667b99a8649e8ad183f9e2e0b45f6fb831b92f4078b61622aa567cf79565f6aa5af9597e3c84864f6#npm:2.6.7"],\
             ["node-forge", "npm:1.3.1"],\
             ["node-graceful", "npm:3.1.0"],\
@@ -7725,7 +7730,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["qs", "npm:6.11.0"],\
             ["rxjs", "npm:6.6.7"],\
             ["semver", "npm:7.3.8"],\
-            ["strip-ansi", "npm:6.0.1"],\
+            ["sinon", "npm:11.1.2"],\
+            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["table", "npm:5.4.6"]\
           ],\
           "linkType": "SOFT"\

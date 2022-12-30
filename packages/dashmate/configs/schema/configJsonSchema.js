@@ -150,6 +150,12 @@ module.exports = {
               type: 'string',
               minLength: 1,
             },
+            allowIps: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+            },
           },
           required: ['port', 'user', 'password'],
           additionalProperties: false,
@@ -218,6 +224,14 @@ module.exports = {
           required: ['docker'],
           additionalProperties: false,
         },
+        minimumDifficultyBlocks: {
+          type: 'integer',
+          minimum: 0,
+        },
+        powTargetSpacing: {
+          type: 'integer',
+          minimum: 1,
+        },
         devnetName: {
           type: ['string', 'null'],
           minLength: 1,
@@ -225,6 +239,13 @@ module.exports = {
         debug: {
           type: 'integer',
           enum: [0, 1],
+        },
+        logIps: {
+          type: 'integer',
+          enum: [0, 1],
+        },
+        indexes: {
+          type: 'boolean',
         },
         reindex: {
           type: 'object',
@@ -242,7 +263,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName',
+        'debug', 'reindex', 'minimumDifficultyBlocks', 'powTargetSpacing', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {
@@ -445,41 +467,8 @@ module.exports = {
                   type: 'object',
                   properties: {
                     level: {
-                      type: 'object',
-                      properties: {
-                        'abci-client': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        blockchain: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        consensus: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        main: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        mempool: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        p2p: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        'rpc-server': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        state: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        statesync: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        '*': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                      },
-                      minProperties: 1,
-                      additionalProperties: false,
+                      type: 'string',
+                      enum: ['trace', 'debug', 'info', 'warn', 'error'],
                     },
                     format: {
                       type: 'string',

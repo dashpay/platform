@@ -39,13 +39,13 @@ pub enum ConsensusError {
     #[error("{0}")]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
     #[error("{0}")]
-    DuplicatedIdentityPublicKeyIdError(DuplicatedIdentityPublicKeyIdError),
+    DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
     #[error("{0}")]
     InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
     #[error("{0}")]
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
     #[error("{0}")]
-    DuplicatedIdentityPublicKeyError(DuplicatedIdentityPublicKeyError),
+    DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyError),
     #[error("{0}")]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
     #[error("{0}")]
@@ -144,8 +144,8 @@ impl ConsensusError {
             ConsensusError::IncompatibleProtocolVersionError(_) => 1003,
 
             // Identity
-            ConsensusError::DuplicatedIdentityPublicKeyError(_) => 1029,
-            ConsensusError::DuplicatedIdentityPublicKeyIdError(_) => 1030,
+            ConsensusError::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
+            ConsensusError::DuplicatedIdentityPublicKeyBasicIdError(_) => 1030,
             ConsensusError::IdentityAssetLockProofLockedTransactionMismatchError(_) => 1031,
             ConsensusError::IdentityAssetLockTransactionIsNotFoundError(_) => 1032,
             ConsensusError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 1033,
@@ -204,7 +204,7 @@ impl From<IncompatibleProtocolVersionError> for ConsensusError {
 
 impl From<DuplicatedIdentityPublicKeyIdError> for ConsensusError {
     fn from(error: DuplicatedIdentityPublicKeyIdError) -> Self {
-        Self::DuplicatedIdentityPublicKeyIdError(error)
+        Self::DuplicatedIdentityPublicKeyBasicIdError(error)
     }
 }
 
@@ -222,7 +222,7 @@ impl From<InvalidIdentityPublicKeySecurityLevelError> for ConsensusError {
 
 impl From<DuplicatedIdentityPublicKeyError> for ConsensusError {
     fn from(error: DuplicatedIdentityPublicKeyError) -> Self {
-        Self::DuplicatedIdentityPublicKeyError(error)
+        Self::DuplicatedIdentityPublicKeyBasicError(error)
     }
 }
 

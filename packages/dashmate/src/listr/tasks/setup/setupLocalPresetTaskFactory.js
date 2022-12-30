@@ -201,9 +201,7 @@ function setupLocalPresetTaskFactory(
                     config.set('platform.drive.abci.log.stdout.level', 'trace');
                     config.set('platform.drive.abci.log.prettyFile.level', 'trace');
 
-                    config.set('platform.drive.tenderdash.log.level', {
-                      '*': 'debug',
-                    });
+                    config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
 
                   if (!config.get('platform.drive.abci.log.prettyFile.path')) {

@@ -71,7 +71,7 @@ pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
 
 /// Sets up Drive with the initial state structure.
 pub fn setup_drive_with_initial_state_structure() -> Drive {
-    let drive = setup_drive(Some(DriveConfig{
+    let drive = setup_drive(Some(DriveConfig {
         batching_consistency_verification: true,
         ..Default::default()
     }));

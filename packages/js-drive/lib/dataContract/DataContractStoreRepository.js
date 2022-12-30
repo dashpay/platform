@@ -165,7 +165,9 @@ class DataContractStoreRepository {
       query: {
         query: {
           items,
-          subqueryKey: DataContractStoreRepository.DATA_CONTRACT_KEY,
+          subqueryPath: [
+            DataContractStoreRepository.DATA_CONTRACT_KEY,
+          ],
         },
       },
     }, options);
