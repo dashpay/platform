@@ -1,7 +1,7 @@
 use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyError;
 use dpp::consensus::ConsensusError;
-use wasm_bindgen::prelude::*;
 use dpp::StateError;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicatedIdentityPublicKeyStateError)]
 pub struct DuplicatedIdentityPublicKeyStateErrorWasm {
@@ -28,6 +28,9 @@ impl DuplicatedIdentityPublicKeyStateErrorWasm {
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        ConsensusError::from(StateError::DuplicatedIdentityPublicKeyError { duplicated_public_key_ids: vec![] }).code()
+        ConsensusError::from(StateError::DuplicatedIdentityPublicKeyError {
+            duplicated_public_key_ids: vec![],
+        })
+        .code()
     }
 }

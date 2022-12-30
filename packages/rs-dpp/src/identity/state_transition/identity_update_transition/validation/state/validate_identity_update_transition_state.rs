@@ -13,7 +13,9 @@ use crate::{
     NonConsensusError, SerdeParsingError, StateError,
 };
 
-use crate::identity::state_transition::identity_update_transition::identity_update_transition::{property_names, IdentityUpdateTransition};
+use crate::identity::state_transition::identity_update_transition::identity_update_transition::{
+    property_names, IdentityUpdateTransition,
+};
 
 pub struct IdentityUpdateTransitionStateValidator<T, ST> {
     state_repository: Arc<ST>,
