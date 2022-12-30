@@ -86,6 +86,8 @@ const {
     PublicKeySecurityLevelNotMetError,
     WrongPublicKeyPurposeError,
     IdentityPublicKeyIsDisabledError,
+    DuplicatedIdentityPublicKeyIdStateError,
+    DuplicatedIdentityPublicKeyStateError
 } = dpp_module;
 
 export function patchConsensusErrors() {
@@ -172,4 +174,6 @@ export function patchConsensusErrors() {
     extend(PublicKeySecurityLevelNotMetError, AbstractConsensusError);
     extend(WrongPublicKeyPurposeError, AbstractConsensusError);
     extend(IdentityPublicKeyIsDisabledError, AbstractConsensusError);
+    extend(DuplicatedIdentityPublicKeyStateError, AbstractConsensusError);
+    extend(DuplicatedIdentityPublicKeyIdStateError, AbstractConsensusError);
 }
