@@ -121,11 +121,11 @@ jobs:
             ${{ runner.os }}-buildkit-
 
       - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
+        uses: dashevo/gh-action-cache-buildkit-state@skip-cachemount
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+          cache-max-size: 6gb
 
       - name: Setup local network
         run: yarn configure
