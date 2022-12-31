@@ -159,7 +159,6 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      # Maybe adding some vars here can change the way we do mount cache?
       - name: Enable Rust cache
         uses: Swatinem/rust-cache@v2
 
