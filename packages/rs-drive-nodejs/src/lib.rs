@@ -2274,7 +2274,7 @@ impl PlatformWrapper {
                 epoch: Epoch::new(1),
             };
 
-            let mut batch = vec![];
+            let mut drive_operations = vec![];
 
             let index_bytes = (index as u64).to_be_bytes().to_vec();
 
@@ -2285,28 +2285,22 @@ impl PlatformWrapper {
                     .drive
                     .add_enqueue_withdrawal_transaction_operations(
                         &withdrawals,
-                        &block_info,
-                        &mut batch,
-                        transaction,
-                    )
-                    .map_err(|err| err.to_string())?;
+                        &mut drive_operations,
+                    );
 
                 platform
                     .drive
                     .add_update_withdrawal_index_counter_operation(
                         index as u64,
-                        &block_info,
-                        &mut batch,
-                        transaction,
-                    )
-                    .map_err(|err| err.to_string())?;
-
-                let mut result_operations = vec![];
+                        &mut drive_operations,
+                    );
 
                 platform
                     .drive
-                    .apply_batch_drive_operations(None, transaction, batch, &mut result_operations)
-                    .map_err(|err| err.to_string())
+                    .apply_drive_operations(drive_operations, true, &block_info, transaction)
+                    .map_err(|err| err.to_string())?;
+
+                Ok(())
             };
 
             let result = transaction_result.and_then(execution_function);

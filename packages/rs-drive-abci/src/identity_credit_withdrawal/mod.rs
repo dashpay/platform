@@ -4,11 +4,16 @@ use dashcore::{
 };
 use dpp::{
     contracts::withdrawals_contract,
+    data_contract::extra::DriveContractExt,
     prelude::{Document, Identifier},
     util::{hash, json_value::JsonValueExt, string_encoding::Encoding},
 };
 use drive::{
-    drive::block_info::BlockInfo, fee::op::DriveOperation, fee_pools::epochs::Epoch,
+    drive::{
+        batch::DriveOperationType, block_info::BlockInfo,
+        identity::withdrawals::paths::WithdrawalTransaction,
+    },
+    fee_pools::epochs::Epoch,
     query::TransactionArg,
 };
 use serde_json::{Number, Value as JsonValue};
@@ -55,7 +60,7 @@ impl Platform {
             block_execution_context.block_info.core_chain_locked_height,
         )?;
 
-        let broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
+        let mut broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::statuses::BROADCASTED,
             transaction,
         )?;
@@ -66,9 +71,9 @@ impl Platform {
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<DriveOperationType> = vec![];
 
-        for mut document in broadcasted_documents {
+        for document in broadcasted_documents.iter_mut() {
             let transaction_sign_height =
                 document
                     .data
@@ -103,20 +108,15 @@ impl Platform {
                 } else {
                     self.drive.add_insert_expired_index_operation(
                         transaction_index,
-                        &block_info,
                         &mut drive_operations,
-                        transaction,
-                    )?;
+                    );
 
                     withdrawals_contract::statuses::EXPIRED
                 };
 
-                self.drive.add_update_document_data_operations(
-                    &contract_fetch_info.contract,
-                    &mut document,
+                self.drive.update_document_data(
+                    document,
                     &block_info,
-                    transaction,
-                    &mut drive_operations,
                     |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                         document
                             .set("status", JsonValue::Number(Number::from(status)))
@@ -134,15 +134,27 @@ impl Platform {
             }
         }
 
-        if !drive_operations.is_empty() {
-            let mut result_operations = vec![];
+        let drive_documents = self
+            .drive
+            .convert_dpp_documents_to_drive_documents(broadcasted_documents.iter())?;
 
-            self.drive.apply_batch_drive_operations(
-                None,
-                transaction,
-                drive_operations,
-                &mut result_operations,
-            )?;
+        self.drive.add_update_multiple_documents_operations(
+            &drive_documents,
+            &contract_fetch_info.contract,
+            contract_fetch_info
+                .contract
+                .document_type_for_name("withdrawal")
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't fetch withdrawal data contract",
+                    ))
+                })?,
+            &mut drive_operations,
+        );
+
+        if !drive_operations.is_empty() {
+            self.drive
+                .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
         }
 
         Ok(())
@@ -155,13 +167,34 @@ impl Platform {
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
+        let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
+            Identifier::from_string(
+                &withdrawals_contract::system_ids().contract_id,
+                Encoding::Base58,
+            )
+            .map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "Can't create withdrawals id identifier from string",
+                ))
+            })?
+            .to_buffer(),
+            Some(&Epoch::new(
+                block_execution_context.epoch_info.current_epoch_index,
+            )),
+            transaction,
+        )?;
+
+        let contract_fetch_info = maybe_data_contract.ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
+        ))?;
+
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
             height: block_execution_context.block_info.block_height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
-        let mut drive_operations = vec![];
+        let mut drive_operations: Vec<DriveOperationType> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
         let withdrawal_transactions = self
@@ -170,7 +203,7 @@ impl Platform {
 
         // Appending request_height and quorum_hash to withdrwal transaction
         // and pass it to JS Drive for singing and broadcasting
-        let result = withdrawal_transactions
+        let transactions_and_documents = withdrawal_transactions
             .into_iter()
             .map(|(_, bytes)| {
                 let request_info = AssetUnlockRequestInfo {
@@ -192,30 +225,65 @@ impl Platform {
                 let original_transaction_id = hash::hash(bytes);
                 let update_transaction_id = hash::hash(bytes_buffer.clone());
 
-                self.drive.update_document_transaction_id(
-                    &original_transaction_id,
-                    &update_transaction_id,
-                    &block_info,
-                    &mut drive_operations,
-                    transaction,
-                )?;
+                let mut document = self
+                    .drive
+                    .find_document_by_transaction_id(&original_transaction_id, transaction)?;
 
-                Ok(bytes_buffer)
+                self.drive
+                    .update_document_data(&mut document, &block_info, |doc| {
+                        doc.set(
+                            "transactionId",
+                            JsonValue::Array(
+                                update_transaction_id
+                                    .iter()
+                                    .map(|byte| JsonValue::Number(Number::from(*byte)))
+                                    .collect(),
+                            ),
+                        )
+                        .map_err(|_| {
+                            drive::error::Error::Drive(
+                                drive::error::drive::DriveError::CorruptedCodeExecution(
+                                    "Can't set document field: transactionId",
+                                ),
+                            )
+                        })?;
+
+                        Ok(doc)
+                    })?;
+
+                Ok((bytes_buffer, document))
             })
-            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
+            .collect::<Result<Vec<(Vec<u8>, Document)>, Error>>()?;
+
+        let drive_documents = self.drive.convert_dpp_documents_to_drive_documents(
+            transactions_and_documents
+                .iter()
+                .map(|(_, document)| document),
+        )?;
+
+        self.drive.add_update_multiple_documents_operations(
+            &drive_documents,
+            &contract_fetch_info.contract,
+            contract_fetch_info
+                .contract
+                .document_type_for_name("withdrawal")
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "could not get document type",
+                    ))
+                })?,
+            &mut drive_operations,
+        );
 
         if !drive_operations.is_empty() {
-            let mut result_operations = vec![];
-
-            self.drive.apply_batch_drive_operations(
-                None,
-                transaction,
-                drive_operations,
-                &mut result_operations,
-            )?;
+            self.drive
+                .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
         }
 
-        Ok(result)
+        Ok(transactions_and_documents
+            .iter()
+            .map(|(bytes, _)| bytes.clone())
+            .collect())
     }
 
     /// Pool withdrawal documents into transactions
@@ -266,12 +334,9 @@ impl Platform {
             let transaction_id =
                 hash::hash(withdrawal_transactions.get(&document.id).unwrap().1.clone());
 
-            self.drive.add_update_document_data_operations(
-                &contract_fetch_info.contract,
+            self.drive.update_document_data(
                 document,
                 &block_info,
-                transaction,
-                &mut drive_operations,
                 |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
                     document
                         .set(
@@ -310,7 +375,41 @@ impl Platform {
             )?;
         }
 
-        let withdrawal_transactions = withdrawal_transactions
+        let drive_documents = documents
+            .iter()
+            .map(|document| {
+                drive::contract::document::Document::from_cbor(
+                    &document.to_cbor().map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't fetch withdrawal data contract",
+                        ))
+                    })?,
+                    None,
+                    None,
+                )
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't fetch withdrawal data contract",
+                    ))
+                })
+            })
+            .collect::<Result<Vec<drive::contract::document::Document>, Error>>()?;
+
+        self.drive.add_update_multiple_documents_operations(
+            &drive_documents,
+            &contract_fetch_info.contract,
+            contract_fetch_info
+                .contract
+                .document_type_for_name("withdrawal")
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't fetch withdrawal data contract",
+                    ))
+                })?,
+            &mut drive_operations,
+        );
+
+        let withdrawal_transactions: Vec<WithdrawalTransaction> = withdrawal_transactions
             .values()
             .into_iter()
             .cloned()
@@ -318,20 +417,12 @@ impl Platform {
 
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
-            &block_info,
             &mut drive_operations,
-            transaction,
-        )?;
+        );
 
         if !drive_operations.is_empty() {
-            let mut result_operations = vec![];
-
-            self.drive.apply_batch_drive_operations(
-                None,
-                transaction,
-                drive_operations,
-                &mut result_operations,
-            )?;
+            self.drive
+                .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
         }
 
         Ok(())
@@ -403,6 +494,8 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
+        use dpp::prelude::DataContract;
+
         use super::*;
 
         #[test]
@@ -460,6 +553,14 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            // TODO: figure out the bug in data contract factory
+            let data_contract = DataContract::from_cbor(
+                data_contract
+                    .to_cbor()
+                    .expect("to convert contract to CBOR"),
+            )
+            .expect("to create data contract from CBOR");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

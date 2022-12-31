@@ -137,7 +137,11 @@ impl TenderdashAbci for Platform {
                 &block_execution_context,
                 request.validator_set_quorum_hash,
                 transaction,
-            )?;
+            );
+
+        dbg!(&unsigned_withdrawal_transaction_bytes);
+
+        let unsigned_withdrawal_transaction_bytes = unsigned_withdrawal_transaction_bytes?;
 
         self.block_execution_context
             .replace(Some(block_execution_context));
@@ -199,9 +203,16 @@ mod tests {
         use chrono::{Duration, Utc};
         use dashcore::hashes::hex::FromHex;
         use dashcore::BlockHash;
-        use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
+        use dpp::contracts::withdrawals_contract;
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::tests::fixtures::{
+            get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture,
+        };
+        use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
+        use drive::common::helpers::setup::setup_document;
         use drive::drive::block_info::BlockInfo;
+        use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
@@ -230,16 +241,39 @@ mod tests {
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
 
-            setup_system_data_contract(
-                &platform.drive,
-                &get_withdrawals_data_contract_fixture(None),
-                Some(&transaction),
-            );
+            let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
             // Init withdrawal requests
-            let withdrawals = (0..16)
+            let withdrawals: Vec<WithdrawalTransaction> = (0..16)
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
+
+            for (_, tx_bytes) in withdrawals.iter() {
+                let tx_id = hash::hash(tx_bytes);
+
+                let document = get_withdrawal_document_fixture(
+                    &data_contract,
+                    json!({
+                        "amount": 1000,
+                        "coreFeePerByte": 1,
+                        "pooling": Pooling::Never,
+                        "outputScript": (0..23).collect::<Vec<u8>>(),
+                        "status": withdrawals_contract::statuses::POOLED,
+                        "transactionIndex": 1,
+                        "transactionSignHeight": 93,
+                        "transactionId": tx_id,
+                    }),
+                );
+
+                setup_document(
+                    &platform.drive,
+                    &document,
+                    &data_contract,
+                    Some(&transaction),
+                );
+            }
 
             let block_info = BlockInfo {
                 time_ms: 1,
@@ -247,28 +281,16 @@ mod tests {
                 epoch: Epoch::new(1),
             };
 
-            let mut batch = vec![];
-            let mut result_operations = vec![];
+            let mut drive_operations = vec![];
 
             platform
                 .drive
-                .add_enqueue_withdrawal_transaction_operations(
-                    &withdrawals,
-                    &block_info,
-                    &mut batch,
-                    Some(&transaction),
-                )
-                .expect("to add enqueue operations");
+                .add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
 
             platform
                 .drive
-                .apply_batch_drive_operations(
-                    None,
-                    Some(&transaction),
-                    batch,
-                    &mut result_operations,
-                )
-                .expect("to apply batch");
+                .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+                .expect("to apply drive operations");
 
             // setup the contract
             let contract = platform.create_mn_shares_contract(Some(&transaction));

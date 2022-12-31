@@ -136,13 +136,13 @@ impl DriveOperationConverter for ContractOperationType<'_> {
 /// A wrapper for an update operation
 pub struct UpdateOperationInfo<'a> {
     /// The document to update
-    document: &'a Document,
+    pub document: &'a Document,
     /// The document in pre-serialized form
-    serialized_document: Option<&'a [u8]>,
+    pub serialized_document: Option<&'a [u8]>,
     /// The owner id, if none is specified will try to recover from serialized document
-    owner_id: Option<[u8; 32]>,
+    pub owner_id: Option<[u8; 32]>,
     /// Add storage flags (like epoch, owner id, etc)
-    storage_flags: Option<&'a StorageFlags>,
+    pub storage_flags: Option<&'a StorageFlags>,
 }
 
 /// A wrapper for a document operation
@@ -527,6 +527,12 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                                 owner_id,
                                 storage_flags,
                             } = update_operation;
+
+                            let document_cbor = document.to_cbor();
+
+                            // If serialized document not submitted updates are not performed
+                            // TODO: figure that out
+                            let serialized_document = serialized_document.or(Some(&document_cbor));
 
                             let document_info =
                                 if let Some(serialized_document) = serialized_document {

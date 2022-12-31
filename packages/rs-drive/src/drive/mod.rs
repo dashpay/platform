@@ -208,7 +208,7 @@ impl Drive {
     }
 
     /// Applies a batch of Drive operations to groveDB.
-    pub fn apply_batch_drive_operations(
+    fn apply_batch_drive_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

@@ -8,7 +8,7 @@ use grovedb::TransactionArg;
 use serde_json::json;
 
 use crate::{
-    drive::Drive,
+    drive::{block_info::BlockInfo, Drive},
     error::{drive::DriveError, Error},
 };
 
@@ -59,6 +59,60 @@ impl Drive {
             .collect::<Result<Vec<Document>, Error>>()?;
 
         Ok(documents)
+    }
+
+    /// Find one document by it's transactionId field
+    pub fn find_document_by_transaction_id(
+        &self,
+        original_transaction_id: &[u8],
+        transaction: TransactionArg,
+    ) -> Result<Document, Error> {
+        let data_contract_id = Identifier::from_string(
+            &withdrawals_contract::system_ids().contract_id,
+            Encoding::Base58,
+        )
+        .map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution(
+                "Can't create withdrawals id identifier from string",
+            ))
+        })?;
+
+        let query_value = json!({
+            "where": [
+                ["transactionId", "==", original_transaction_id],
+                ["status", "==", withdrawals_contract::statuses::POOLED],
+            ],
+        });
+
+        let query_cbor = common::value_to_cbor(query_value, None);
+
+        let (documents, _, _) = self.query_documents(
+            &query_cbor,
+            data_contract_id.to_buffer(),
+            withdrawals_contract::types::WITHDRAWAL,
+            None,
+            transaction,
+        )?;
+
+        let documents = documents
+            .into_iter()
+            .map(|document_cbor| {
+                Document::from_cbor(document_cbor).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Can't create a document from cbor",
+                    ))
+                })
+            })
+            .collect::<Result<Vec<Document>, Error>>()?;
+
+        let document = documents
+            .get(0)
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "Document was not found by transactionId",
+            )))?
+            .clone();
+
+        Ok(document)
     }
 }
 
