@@ -45,8 +45,8 @@ use drive::contract::Contract;
 use drive::dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentAndContractInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -88,14 +88,16 @@ fn create_test_mn_share_document(
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &document_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &document_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract,
                 document_type,
-                owner_id: None,
             },
             false,
             BlockInfo::genesis(),

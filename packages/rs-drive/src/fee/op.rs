@@ -207,7 +207,7 @@ impl FunctionOp {
 }
 
 /// Drive operation
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum DriveOperation {
     /// Grove operation
     GroveOperation(GroveDbOp),

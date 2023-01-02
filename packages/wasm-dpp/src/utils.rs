@@ -41,8 +41,8 @@ where
 pub fn to_serde_json_value(data: &JsValue) -> Result<Value, JsValue> {
     let data = stringify(data)?;
     let value: Value = serde_json::from_str(&data)
-        .with_context(|| format!("cant convert {:#?} to serde json value", data))
-        .map_err(|e| format!("{:#}", e))?;
+        .with_context(|| format!("cant convert {data:#?} to serde json value"))
+        .map_err(|e| format!("{e:#}"))?;
     Ok(value)
 }
 

@@ -352,15 +352,16 @@ fn js_object_to_query<'a, C: Context<'a>>(
         }
     }
 
-    let subquery_key = js_value_to_option::<JsBuffer, _>(js_object.get(cx, "subqueryKey")?, cx)?
-        .map(|x| js_buffer_to_vec_u8(x, cx));
+    let subquery_path = js_value_to_option::<JsArray, _>(js_object.get(cx, "subqueryPath")?, cx)?
+        .map(|x| js_array_of_buffers_to_vec(x, cx))
+        .transpose()?;
     let subquery = js_value_to_option::<JsObject, _>(js_object.get(cx, "subquery")?, cx)?
         .map(|x| js_object_to_query(x, cx))
         .transpose()?;
     let left_to_right = js_value_to_option::<JsBoolean, _>(js_object.get(cx, "leftToRight")?, cx)?
         .map(|x| x.value(cx));
 
-    query.default_subquery_branch.subquery_key = subquery_key;
+    query.default_subquery_branch.subquery_path = subquery_path;
     query.default_subquery_branch.subquery = subquery.map(Box::new);
     query.left_to_right = left_to_right.unwrap_or(true);
 

@@ -64,7 +64,7 @@ use crate::drive::grove_operations::BatchDeleteApplyType::{
 };
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
@@ -193,6 +193,7 @@ impl Drive {
             contract,
             document_type_name,
             owner_id,
+            None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -284,6 +285,7 @@ impl Drive {
         unique: bool,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -333,12 +335,14 @@ impl Drive {
             self.batch_delete_up_tree_while_empty(
                 key_info_path,
                 document_and_contract_info
+                    .owned_document_info
                     .document_info
                     .get_document_id_as_slice()
                     .unwrap_or(event_id.as_slice()),
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                 delete_apply_type,
                 transaction,
+                previous_batch_operations,
                 batch_operations,
             )?;
         } else {
@@ -360,6 +364,7 @@ impl Drive {
                 Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                 delete_apply_type,
                 transaction,
+                previous_batch_operations,
                 batch_operations,
             )?;
         }
@@ -374,6 +379,7 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -406,6 +412,7 @@ impl Drive {
                 unique,
                 any_fields_null,
                 storage_flags,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 event_id,
                 transaction,
@@ -421,11 +428,12 @@ impl Drive {
             let index_property_key = KeyRef(name.as_bytes());
 
             let document_index_field = document_and_contract_info
+                .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
                     name,
                     document_type,
-                    document_and_contract_info.owner_id,
+                    document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
@@ -435,6 +443,7 @@ impl Drive {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 let document_top_field_estimated_size = document_and_contract_info
+                    .owned_document_info
                     .document_info
                     .get_estimated_size_for_document_type(name, document_type)?;
 
@@ -473,6 +482,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 storage_flags,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 event_id,
                 transaction,
@@ -486,6 +496,7 @@ impl Drive {
     fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
+        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -498,6 +509,7 @@ impl Drive {
         let event_id = unique_event_id();
         let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
             document_and_contract_info
+                .owned_document_info
                 .document_info
                 .get_storage_flags_ref()
         } else {
@@ -543,11 +555,12 @@ impl Drive {
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document_and_contract_info
+                .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
                     name,
                     document_type,
-                    document_and_contract_info.owner_id,
+                    document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                 )?
                 .unwrap_or_default();
@@ -555,6 +568,7 @@ impl Drive {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 let document_top_field_estimated_size = document_and_contract_info
+                    .owned_document_info
                     .document_info
                     .get_estimated_size_for_document_type(name, document_type)?;
 
@@ -581,7 +595,10 @@ impl Drive {
 
             let any_fields_null = document_top_field.is_empty();
 
-            let mut index_path_info = if document_and_contract_info.document_info.is_document_size()
+            let mut index_path_info = if document_and_contract_info
+                .owned_document_info
+                .document_info
+                .is_document_size()
             {
                 // This is a stateless operation
                 PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
@@ -599,6 +616,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 &storage_flags,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 event_id,
                 transaction,
@@ -615,6 +633,7 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
+        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -699,14 +718,17 @@ impl Drive {
         )?;
 
         let document_and_contract_info = DocumentAndContractInfo {
-            document_info,
+            owned_document_info: OwnedDocumentInfo {
+                document_info,
+                owner_id: None,
+            },
             contract,
             document_type,
-            owner_id: None,
         };
 
         self.remove_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
+            &previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
@@ -774,14 +796,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -869,14 +893,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -980,14 +1006,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -1016,14 +1044,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -1161,14 +1191,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -1197,14 +1229,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -1269,14 +1303,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_serialized_document,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &person_serialized_document,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 false,
                 BlockInfo::default(),
@@ -1572,14 +1608,16 @@ mod tests {
                 drive
                     .add_document_for_contract(
                         DocumentAndContractInfo {
-                            document_info: DocumentRefAndSerialization((
-                                &document,
-                                &serialized_document,
-                                storage_flags.as_ref(),
-                            )),
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefAndSerialization((
+                                    &document,
+                                    &serialized_document,
+                                    storage_flags.as_ref(),
+                                )),
+                                owner_id: None,
+                            },
                             contract: &contract,
                             document_type,
-                            owner_id: None,
                         },
                         false,
                         BlockInfo::default(),

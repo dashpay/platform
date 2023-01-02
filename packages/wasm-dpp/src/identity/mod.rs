@@ -64,12 +64,7 @@ impl IdentityWasm {
             .into_iter()
             .map(|v| IdentityPublicKey::from_json_object(v).map(|key| (key.id, key)))
             .collect::<Result<_, _>>()
-            .map_err(|e| {
-                format!(
-                    "converting to collection of IdentityPublicKeys failed: {:#}",
-                    e
-                )
-            })?;
+            .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
         self.0.set_public_keys(public_keys);
 
