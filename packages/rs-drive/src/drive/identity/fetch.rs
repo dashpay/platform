@@ -4,7 +4,7 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::identity::{balance_path, balance_path_vec, identity_path, identity_path_vec};
+use crate::drive::identity::{identity_path, identity_path_vec};
 
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
 use crate::drive::{Drive, RootTree};
@@ -17,6 +17,7 @@ use crate::query::{Query, QueryItem};
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
 
+use crate::drive::balances::{balance_path, balance_path_vec};
 use crate::fee::credits::Credits;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
@@ -117,7 +118,7 @@ impl Drive {
 
         let balance_path = balance_path();
 
-        match self.grove_get_direct(
+        match self.grove_get_raw(
             balance_path,
             identity_id.as_slice(),
             direct_query_type,
@@ -195,7 +196,7 @@ impl Drive {
             }
         };
         let identity_path = identity_path(identity_id.as_slice());
-        match self.grove_get_direct(
+        match self.grove_get_raw(
             identity_path,
             &[IdentityTreeRevision as u8],
             direct_query_type,

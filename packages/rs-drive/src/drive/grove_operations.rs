@@ -63,6 +63,7 @@ use grovedb::query_result_type::{
     PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
 };
 use grovedb::Error as GroveError;
+use integer_encoding::VarInt;
 
 use intmap::IntMap;
 use storage::rocksdb_storage::RocksDbStorage;
@@ -295,9 +296,9 @@ impl Drive {
         push_drive_operation_result(cost_context, drive_operations)
     }
 
-    /// grove_get_direct basically means that there are no reference hops, this only matters
+    /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub fn grove_get_direct<'p, P>(
+    pub fn grove_get_raw<'p, P>(
         &self,
         path: P,
         key: &'p [u8],
@@ -309,13 +310,73 @@ impl Drive {
         P: IntoIterator<Item = &'p [u8]>,
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
-        self.grove_get(
-            path,
-            key,
-            direct_query_type.into_query_type(),
-            transaction,
-            drive_operations,
-        )
+        let path_iter = path.into_iter();
+        match direct_query_type {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums,
+                query_target,
+            } => {
+                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info = KeyInfo::KnownKey(key.to_vec());
+                let cost = match query_target {
+                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                        GroveDb::average_case_for_get_tree(
+                            &key_info_path,
+                            &key_info,
+                            flags_size,
+                            is_sum_tree,
+                            in_tree_using_sums,
+                        )
+                    }
+                    QueryTarget::QueryTargetValue(estimated_value_size) => {
+                        GroveDb::average_case_for_get_raw(
+                            &key_info_path,
+                            &key_info,
+                            estimated_value_size as u32,
+                            in_tree_using_sums,
+                        )
+                    }
+                };
+
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(None)
+            }
+            DirectQueryType::StatefulDirectQuery => {
+                let CostContext { value, cost } = self.grove.get_raw(path_iter, key, transaction);
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(Some(value.map_err(Error::GroveDB)?))
+            }
+        }
+    }
+
+    /// grove_get_direct_u64 is a helper function to get a
+    pub fn grove_get_raw_value_u64_from_encoded_var_vec<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        direct_query_type: DirectQueryType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Option<u64>, Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let element =
+            self.grove_get_raw(path, key, direct_query_type, transaction, drive_operations)?;
+        element
+            .map(|element| match element {
+                Element::Item(value, ..) => u64::decode_var(value.as_slice())
+                    .ok_or(Error::Drive(DriveError::CorruptedElementType(
+                        "encoded value could not be decoded",
+                    )))
+                    .map(|(value, _)| value),
+                Element::SumItem(value, ..) => Ok(value as u64),
+                _ => Err(Error::Drive(DriveError::CorruptedQueryReturnedNonItem(
+                    "expected an item",
+                ))),
+            })
+            .transpose()
     }
 
     /// Gets the element at the given path from groveDB.
@@ -333,9 +394,6 @@ impl Drive {
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
         let path_iter = path.into_iter();
-        // if let Some((max_value_size, max_reference_sizes)) =
-        //     query_stateless_with_max_value_size_and_max_reference_sizes
-        // {
         match query_type {
             QueryType::StatelessQuery {
                 in_tree_using_sums,
@@ -442,6 +500,60 @@ impl Drive {
         let CostContext { value, cost } = self.grove.get_proved_path_query(path_query, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the element at the given path from groveDB.
+    /// Pushes the `OperationCost` of getting the element to `drive_operations`.
+    pub fn grove_get_sum_tree_total_value<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        query_type: DirectQueryType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<i64, Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path_iter = path.into_iter();
+        match query_type {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums,
+                query_target,
+            } => {
+                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info = KeyInfo::KnownKey(key.to_vec());
+                let cost = match query_target {
+                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                        Ok(GroveDb::average_case_for_get_tree(
+                            &key_info_path,
+                            &key_info,
+                            flags_size,
+                            is_sum_tree,
+                            in_tree_using_sums,
+                        ))
+                    }
+                    _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "can not query a non tree",
+                    ))),
+                }?;
+
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(0)
+            }
+            DirectQueryType::StatefulDirectQuery => {
+                let CostContext { value, cost } = self.grove.get_raw(path_iter, key, transaction);
+                drive_operations.push(CalculatedCostOperation(cost));
+                let element = value.map_err(Error::GroveDB)?;
+                match element {
+                    Element::SumTree(_, value, _) => Ok(value),
+                    _ => Err(Error::Drive(DriveError::CorruptedBalancePath(
+                        "balance path does not refer to a sum tree",
+                    ))),
+                }
+            }
+        }
     }
 
     /// Gets the return value and the cost of a groveDB `has_raw` operation.

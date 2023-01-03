@@ -40,8 +40,8 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::identity::Identity;
 use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -582,6 +582,7 @@ impl DriveOperationConverter for IdentityOperationType {
                 .add_insert_identity_operations(
                     identity,
                     block_info,
+                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 ),

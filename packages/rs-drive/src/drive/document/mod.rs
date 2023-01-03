@@ -67,7 +67,7 @@ pub(crate) fn contract_document_type_path_vec(
     document_type_name: &str,
 ) -> Vec<Vec<u8>> {
     vec![
-        vec![1u8],
+        vec![RootTree::ContractDocuments as u8],
         contract_id.to_vec(),
         vec![1u8],
         document_type_name.as_bytes().to_vec(),

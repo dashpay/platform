@@ -680,7 +680,7 @@ impl Drive {
         };
 
         // next we need to get the document from storage
-        let document_element: Option<Element> = self.grove_get_direct(
+        let document_element: Option<Element> = self.grove_get_raw(
             contract_documents_primary_key_path,
             document_id.as_slice(),
             direct_query_type,
@@ -1563,7 +1563,7 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 147661810);
+        assert_eq!(fee_result.processing_fee, 147665780);
     }
 
     #[test]

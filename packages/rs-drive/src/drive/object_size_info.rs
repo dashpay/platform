@@ -464,7 +464,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         }
     }
 
-    /// Create and return a `PathFixedSizeKeyElement` from a fixed-size path and `KeyElementInfo`
+    /// Create and return a `PathFixedSizeKeyRefElement` from a fixed-size path and `KeyElementInfo`
     pub fn from_fixed_size_path_and_key_element(
         path: [&'a [u8]; N],
         key_element: KeyElementInfo<'a>,

@@ -58,6 +58,7 @@ use crate::common::bytes_for_system_value;
 use crate::contract::{document::Document, Contract};
 use crate::drive::block_info::BlockInfo;
 
+use crate::drive::contract::paths::DriveContractPathExt;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

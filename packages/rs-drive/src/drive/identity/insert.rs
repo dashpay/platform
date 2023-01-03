@@ -40,6 +40,7 @@ impl Drive {
             identity,
             block_info,
             apply,
+            &mut None,
             transaction,
             &mut drive_operations,
         )?;
@@ -53,6 +54,7 @@ impl Drive {
         identity: Identity,
         block_info: &BlockInfo,
         apply: bool,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
@@ -65,6 +67,7 @@ impl Drive {
         let batch_operations = self.add_insert_identity_operations(
             identity,
             block_info,
+            previous_batch_operations,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -82,6 +85,7 @@ impl Drive {
         &self,
         identity: Identity,
         block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -118,6 +122,7 @@ impl Drive {
             Some(&storage_flags),
             apply_type,
             transaction,
+            previous_batch_operations,
             &mut batch_operations,
         )?;
 

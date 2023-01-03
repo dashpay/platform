@@ -1,7 +1,7 @@
 use crate::drive::block_info::BlockInfo;
 
 use crate::drive::flags::StorageFlags;
-use crate::drive::identity::{balance_path_vec, identity_path_vec, IdentityRootStructure};
+use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -10,6 +10,7 @@ use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use grovedb::batch::KeyInfoPath;
 
+use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
@@ -512,7 +513,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 623220,
+                    processing_fee: 620020,
                     removed_bytes_from_system: 24, // TODO: That's fine?
                     ..Default::default()
                 }
@@ -560,7 +561,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 5528800,
+                    processing_fee: 5532770,
                     ..Default::default()
                 }
             );
@@ -973,7 +974,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 623220,
+                    processing_fee: 620020,
                     removed_bytes_from_system: 24, // TODO: That's fine?
                     ..Default::default()
                 }

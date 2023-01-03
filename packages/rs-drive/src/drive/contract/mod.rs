@@ -33,6 +33,7 @@
 //!
 
 mod estimation_costs;
+pub(crate) mod paths;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -968,7 +969,7 @@ impl Drive {
         };
 
         // We can do a get direct because there are no references involved
-        if let Ok(Some(stored_element)) = self.grove_get_direct(
+        if let Ok(Some(stored_element)) = self.grove_get_raw(
             contract_root_path(contract.id.as_bytes()),
             &[0],
             direct_query_type,

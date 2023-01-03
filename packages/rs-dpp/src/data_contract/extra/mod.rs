@@ -18,7 +18,6 @@ pub use {
     errors::{ContractError, StructureError},
     index::{Index, IndexProperty},
     mutability::ContractConfig,
-    root_tree::RootTree,
 };
 
 pub mod common;
@@ -30,7 +29,6 @@ mod drive_api;
 mod errors;
 mod index;
 mod mutability;
-mod root_tree;
 
 pub fn get_mutability(
     contract: &BTreeMap<String, CborValue>,

@@ -44,6 +44,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::GroveOperation;
 
+pub mod balances;
 /// Batch module
 pub mod batch;
 /// Block info module
@@ -68,6 +69,7 @@ pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
 pub mod query;
+mod system;
 #[cfg(test)]
 mod test_utils;
 
@@ -88,28 +90,43 @@ pub struct Drive {
     pub cache: RefCell<DriveCache>,
 }
 
+// The root tree structure is very important!
+// It must be constructed in such a way that important information
+// is at the top of the tree in order to reduce proof size
+// the most import tree is the Contract Documents tree
+
+//                         Contract_Documents 64
+//                  /                               \
+//             Identities 32                           Balances 96
+//             /        \                         /                   \
+//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Misc  112
+//       /      \                                /
+//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72
+
 /// Keys for the root tree.
 #[repr(u8)]
 pub enum RootTree {
     // Input data errors
-    /// Identities
-    Identities = 0,
     /// Contract Documents
-    ContractDocuments = 1,
+    ContractDocuments = 64,
+    /// Identities
+    Identities = 32,
     /// Unique Public Key Hashes to Identities
-    UniquePublicKeyHashesToIdentities = 2,
-    /// Spent Asset Lock Transactions
-    SpentAssetLockTransactions = 3,
-    /// Pools
-    Pools = 4,
-    /// Misc
-    Misc = 5,
-    /// Asset Unlock Transactions
-    WithdrawalTransactions = 6,
-    /// Balances
-    Balances = 7,
+    UniquePublicKeyHashesToIdentities = 24, // UPKH->I above
     /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
-    NonUniquePublicKeyKeyHashesToIdentities = 8,
+    NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
+    /// Pools
+    Pools = 48,
+    /// Spent Asset Lock Transactions
+    SpentAssetLockTransactions = 72,
+    /// Misc
+    Misc = 112,
+    /// Asset Unlock Transactions
+    WithdrawalTransactions = 80,
+    /// Balances
+    Balances = 96,
+    /// Token Balances
+    TokenBalances = 16,
 }
 
 /// Storage cost
@@ -130,14 +147,15 @@ impl From<RootTree> for [u8; 1] {
 impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
-            RootTree::Identities => &[0],
-            RootTree::ContractDocuments => &[1],
-            RootTree::UniquePublicKeyHashesToIdentities => &[2],
-            RootTree::SpentAssetLockTransactions => &[3],
-            RootTree::Pools => &[4],
-            RootTree::Misc => &[5],
-            RootTree::WithdrawalTransactions => &[6],
-            RootTree::Balances => &[7],
+            RootTree::Identities => &[32],
+            RootTree::ContractDocuments => &[64],
+            RootTree::UniquePublicKeyHashesToIdentities => &[24],
+            RootTree::SpentAssetLockTransactions => &[72],
+            RootTree::Pools => &[48],
+            RootTree::Misc => &[112],
+            RootTree::WithdrawalTransactions => &[80],
+            RootTree::Balances => &[96],
+            RootTree::TokenBalances => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
         }
     }

@@ -61,14 +61,6 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     ]
 }
 
-pub(crate) fn balance_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::Balances)]
-}
-
-pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
-    vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
-}
-
 pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),

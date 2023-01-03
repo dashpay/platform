@@ -30,12 +30,14 @@
 //! Drive Initialization
 //!
 
+use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::contract::add_init_contracts_structure_operations;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
-use grovedb::TransactionArg;
+use grovedb::{Element, TransactionArg};
+use integer_encoding::VarInt;
 
 use super::identity::add_initial_withdrawal_state_structure_operations;
 
@@ -44,31 +46,50 @@ impl Drive {
     pub fn create_initial_state_structure(&self, transaction: TransactionArg) -> Result<(), Error> {
         let mut batch = GroveDbOpBatch::new();
 
-        batch.add_insert_empty_tree(vec![], vec![RootTree::Identities as u8]);
+        //Row 0 (Full)
 
         add_init_contracts_structure_operations(&mut batch);
 
-        batch.add_insert_empty_tree(
-            vec![],
-            vec![RootTree::UniquePublicKeyHashesToIdentities as u8],
-        );
+        //Row 1 (Full)
+
+        batch.add_insert_empty_tree(vec![], vec![RootTree::Identities as u8]);
+
+        batch.add_insert_empty_sum_tree(vec![], vec![RootTree::Balances as u8]);
+
+        //Row 2 (Full)
+
+        batch.add_insert_empty_sum_tree(vec![], vec![RootTree::TokenBalances as u8]);
+
+        batch.add_insert_empty_sum_tree(vec![], vec![RootTree::Pools as u8]);
+
+        add_initial_withdrawal_state_structure_operations(&mut batch);
+
+        batch.add_insert_empty_tree(vec![], vec![RootTree::Misc as u8]);
+
+        //Row 3 (3/8 taken)
 
         batch.add_insert_empty_tree(
             vec![],
             vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],
         );
 
+        batch.add_insert_empty_tree(
+            vec![],
+            vec![RootTree::UniquePublicKeyHashesToIdentities as u8],
+        );
+
         batch.add_insert_empty_tree(vec![], vec![RootTree::SpentAssetLockTransactions as u8]);
 
-        batch.add_insert_empty_sum_tree(vec![], vec![RootTree::Pools as u8]);
+        // On lower layers
 
-        batch.add_insert_empty_tree(vec![], vec![RootTree::Misc as u8]);
+        // In Misc
+        batch.add_insert(
+            vec![vec![RootTree::Misc as u8]],
+            TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
+            Element::Item(0.encode_var_vec(), None),
+        );
 
-        batch.add_insert_empty_sum_tree(vec![], vec![RootTree::Balances as u8]);
-
-        add_initial_withdrawal_state_structure_operations(&mut batch);
-
-        // initialize the pools with epochs
+        // In Pools: initialize the pools with epochs
         add_create_fee_pool_trees_operations(&mut batch)?;
 
         self.grove_apply_batch(batch, false, transaction)?;
@@ -111,6 +132,6 @@ mod tests {
                 &mut drive_operations,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 9);
+        assert_eq!(elements.len(), 10);
     }
 }

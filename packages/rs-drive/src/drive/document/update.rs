@@ -52,7 +52,6 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
 
-
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
     DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
@@ -336,7 +335,7 @@ impl Drive {
                     &mut batch_operations,
                 )?
             } else {
-                self.grove_get_direct(
+                self.grove_get_raw(
                     contract_documents_primary_key_path,
                     document.id.as_slice(),
                     DirectQueryType::StatefulDirectQuery,

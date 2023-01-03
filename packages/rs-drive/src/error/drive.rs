@@ -7,6 +7,12 @@ pub enum DriveError {
     CorruptedCodeExecution(&'static str),
 
     /// Error
+    /// A critical corrupted state should stall the chain.
+    /// This is done on purpose to prevent more harm to the system
+    #[error("critical corrupted state error: {0}")]
+    CriticalCorruptedState(&'static str),
+
+    /// Error
     #[error("not supported error: {0}")]
     NotSupported(&'static str),
 
@@ -65,6 +71,9 @@ pub enum DriveError {
     #[error("corrupted document path error: {0}")]
     CorruptedDocumentPath(&'static str),
     /// Error
+    #[error("corrupted balance path error: {0}")]
+    CorruptedBalancePath(&'static str),
+    /// Error
     #[error("corrupted document already exists error: {0}")]
     CorruptedDocumentAlreadyExists(&'static str),
     /// Error
@@ -74,6 +83,9 @@ pub enum DriveError {
     #[error("corrupted identity not an item error: {0}")]
     CorruptedIdentityNotItem(&'static str),
 
+    /// Error
+    #[error("corrupted query returned non item error: {0}")]
+    CorruptedQueryReturnedNonItem(&'static str),
     /// Error
     #[error("corrupted withdrawal not an item error: {0}")]
     CorruptedWithdrawalNotItem(&'static str),
