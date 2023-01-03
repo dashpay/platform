@@ -13,7 +13,7 @@ use crate::drive::object_size_info::PathKeyElementInfo::{
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
-use crate::drive::{key_hashes_tree_path_vec, Drive};
+use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation::FunctionOperation;
@@ -48,7 +48,7 @@ impl Drive {
             storage_flags.to_some_element_flags(),
         );
 
-        let key_hashes_tree = key_hashes_tree_path_vec();
+        let key_hashes_tree = unique_key_hashes_tree_path_vec();
 
         let (apply_type, path_key_element_info) = if estimated_costs_only_with_layer_info.is_none()
         {

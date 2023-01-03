@@ -167,22 +167,27 @@ pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
 }
 
 /// Returns the path to the key hashes.
-pub(crate) fn key_hashes_tree_path() -> [&'static [u8]; 1] {
+pub(crate) fn unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::UniquePublicKeyHashesToIdentities,
     )]
 }
 
 /// Returns the path to the key hashes.
-pub(crate) fn key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+pub(crate) fn unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::UniquePublicKeyHashesToIdentities as u8]]
 }
 
 /// Returns the path to the masternode key hashes.
-pub(crate) fn masternode_key_hashes_tree_path() -> [&'static [u8]; 1] {
+pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::NonUniquePublicKeyKeyHashesToIdentities,
     )]
+}
+
+/// Returns the path to the masternode key hashes.
+pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8]]
 }
 
 /// Returns the path to a contract's document types.
