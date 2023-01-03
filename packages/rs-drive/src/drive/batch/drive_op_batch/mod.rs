@@ -27,12 +27,13 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-pub(crate) mod identity;
-pub(crate) mod document;
 pub(crate) mod contract;
+pub(crate) mod document;
+pub(crate) mod identity;
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
+use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
@@ -44,17 +45,16 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
-use itertools::Itertools;
 use contract::ContractOperationType;
 use document::DocumentOperationType;
+use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
+use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use identity::IdentityOperationType;
-use crate::drive::batch::GroveDbOpBatch;
+use itertools::Itertools;
+use std::collections::HashMap;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveOperationConverter {
@@ -120,18 +120,24 @@ impl DriveOperationConverter for DriveOperationType<'_> {
 }
 
 impl Drive {
-    pub fn convert_drive_operations_to_grove_operations(&self, drive_batch_operations: Vec<DriveOperationType>,         block_info: &BlockInfo,
-                                                        transaction: TransactionArg)
-        -> Result<GroveDbOpBatch, Error>{
-        let ops = drive_batch_operations.into_iter().map(|drive_op| {
-            let mut inner_drive_operations = drive_op.to_drive_operations(
-                self,
-                &mut None,
-                block_info,
-                transaction,
-            )?;
-            Ok(DriveOperation::grovedb_operations_consume(inner_drive_operations))
-        }).flatten_ok().collect::<Result<Vec<GroveDbOp>,Error>>()?;
+    /// Converts drive operations to grove operations
+    pub fn convert_drive_operations_to_grove_operations(
+        &self,
+        drive_batch_operations: Vec<DriveOperationType>,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+    ) -> Result<GroveDbOpBatch, Error> {
+        let ops = drive_batch_operations
+            .into_iter()
+            .map(|drive_op| {
+                let mut inner_drive_operations =
+                    drive_op.to_drive_operations(self, &mut None, block_info, transaction)?;
+                Ok(DriveOperation::grovedb_operations_consume(
+                    inner_drive_operations,
+                ))
+            })
+            .flatten_ok()
+            .collect::<Result<Vec<GroveDbOp>, Error>>()?;
         Ok(GroveDbOpBatch::from_operations(ops))
     }
     /// We can apply multiple operations at once
@@ -179,11 +185,15 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::common::{json_document_to_cbor, setup_contract};
-    use crate::drive::batch::drive_op_batch::document::DocumentOperation::{AddOperation, UpdateOperation};
     use crate::drive::batch::drive_op_batch::contract::ContractOperationType::ApplyContractWithSerialization;
-    use crate::drive::batch::drive_op_batch::document::{DocumentOperationsForContractDocumentType, UpdateOperationInfo};
+    use crate::drive::batch::drive_op_batch::document::DocumentOperation::{
+        AddOperation, UpdateOperation,
+    };
     use crate::drive::batch::drive_op_batch::document::DocumentOperationType::{
         AddSerializedDocumentForContract, MultipleDocumentOperationsForSameContractDocumentType,
+    };
+    use crate::drive::batch::drive_op_batch::document::{
+        DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
     use crate::drive::batch::DriveOperationType::{ContractOperation, DocumentOperation};
     use crate::drive::config::DriveConfig;

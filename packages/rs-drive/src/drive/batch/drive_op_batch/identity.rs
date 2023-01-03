@@ -1,18 +1,18 @@
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::Revision;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use dpp::prelude::Revision;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 /// Operations on Identities
 pub enum IdentityOperationType {
     /// Inserts a new identity to the `Identities` subtree.
-    InsertIdentity {
+    AddNewIdentity {
         /// The identity we wish to insert
         identity: Identity,
     },
@@ -66,7 +66,7 @@ pub enum IdentityOperationType {
         identity_id: [u8; 32],
         /// The revision we are updating to
         revision: Revision,
-    }
+    },
 }
 
 impl DriveOperationConverter for IdentityOperationType {
@@ -80,7 +80,7 @@ impl DriveOperationConverter for IdentityOperationType {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         match self {
-            IdentityOperationType::InsertIdentity { identity } => drive
+            IdentityOperationType::AddNewIdentity { identity } => drive
                 .add_insert_identity_operations(
                     identity,
                     block_info,
@@ -88,24 +88,63 @@ impl DriveOperationConverter for IdentityOperationType {
                     estimated_costs_only_with_layer_info,
                     transaction,
                 ),
-            IdentityOperationType::UpdateIdentityBalance { identity_id, balance, is_replace } => {
-                Ok(vec![drive.update_identity_balance_operation(identity_id, balance, is_replace)?])
-            }
-            IdentityOperationType::AddToIdentityBalance { identity_id, added_balance } => {
-                drive.add_to_identity_balance_operations(identity_id, added_balance, estimated_costs_only_with_layer_info, transaction)
-            }
-            IdentityOperationType::RemoveFromIdentityBalance { identity_id, required_removed_balance, total_desired_removed_balance } => {
-                drive.remove_from_identity_balance_operations(identity_id, required_removed_balance, total_desired_removed_balance, estimated_costs_only_with_layer_info, transaction)
-            }
-            IdentityOperationType::AddNewKeysToIdentity { identity_id, keys_to_add } => {
-                drive.add_new_keys_to_identity_operations(identity_id, keys_to_add, &block_info.epoch, estimated_costs_only_with_layer_info, transaction)
-            }
-            IdentityOperationType::DisableIdentityKeys { identity_id, keys_ids, disable_at } => {
-                drive.disable_identity_keys_operations(identity_id, keys_ids, disable_at, &block_info.epoch, estimated_costs_only_with_layer_info, transaction)
-            }
-            IdentityOperationType::UpdateIdentityRevision { identity_id, revision } => {
-                Ok(vec![drive.update_identity_revision_operation(identity_id, revision)])
-            }
+            IdentityOperationType::UpdateIdentityBalance {
+                identity_id,
+                balance,
+                is_replace,
+            } => Ok(vec![drive.update_identity_balance_operation(
+                identity_id,
+                balance,
+                is_replace,
+            )?]),
+            IdentityOperationType::AddToIdentityBalance {
+                identity_id,
+                added_balance,
+            } => drive.add_to_identity_balance_operations(
+                identity_id,
+                added_balance,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            IdentityOperationType::RemoveFromIdentityBalance {
+                identity_id,
+                required_removed_balance,
+                total_desired_removed_balance,
+            } => drive.remove_from_identity_balance_operations(
+                identity_id,
+                required_removed_balance,
+                total_desired_removed_balance,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            IdentityOperationType::AddNewKeysToIdentity {
+                identity_id,
+                keys_to_add,
+            } => drive.add_new_keys_to_identity_operations(
+                identity_id,
+                keys_to_add,
+                &block_info.epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            IdentityOperationType::DisableIdentityKeys {
+                identity_id,
+                keys_ids,
+                disable_at,
+            } => drive.disable_identity_keys_operations(
+                identity_id,
+                keys_ids,
+                disable_at,
+                &block_info.epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            IdentityOperationType::UpdateIdentityRevision {
+                identity_id,
+                revision,
+            } => Ok(vec![
+                drive.update_identity_revision_operation(identity_id, revision)
+            ]),
         }
     }
 }

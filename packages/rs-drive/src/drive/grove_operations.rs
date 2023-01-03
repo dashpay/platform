@@ -254,6 +254,44 @@ impl Drive {
         push_drive_operation_result(cost_context, drive_operations)
     }
 
+    /// Pushes the `OperationCost` of inserting an empty tree in groveDB to `drive_operations`.
+    pub fn grove_insert_empty_tree<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        transaction: TransactionArg,
+        options: Option<InsertOptions>,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let cost_context =
+            self.grove
+                .insert(path, key, Element::empty_tree(), options, transaction);
+        push_drive_operation_result(cost_context, drive_operations)
+    }
+
+    /// Pushes the `OperationCost` of inserting an empty sum tree in groveDB to `drive_operations`.
+    pub fn grove_insert_empty_sum_tree<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        transaction: TransactionArg,
+        options: Option<InsertOptions>,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let cost_context =
+            self.grove
+                .insert(path, key, Element::empty_sum_tree(), options, transaction);
+        push_drive_operation_result(cost_context, drive_operations)
+    }
+
     /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
     /// to `drive_operations`.
     pub fn grove_insert_if_not_exists<'p, P>(

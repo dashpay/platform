@@ -1,17 +1,19 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::data_contract::DataContract as Contract;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
 use crate::contract::document::Document;
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
+use crate::drive::object_size_info::DocumentInfo::{
+    DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+};
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use crate::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefWithoutSerialization};
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::data_contract::DataContract as Contract;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 /// A wrapper for a document operation
 pub enum DocumentOperation<'a> {

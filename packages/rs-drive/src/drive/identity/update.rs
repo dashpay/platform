@@ -348,7 +348,10 @@ impl Drive {
 
         let key_ids_len = key_ids.len();
 
-        let keys: KeyIDIdentityPublicKeyPairVec = if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+        let keys: KeyIDIdentityPublicKeyPairVec = if let Some(
+            estimated_costs_only_with_layer_info,
+        ) = estimated_costs_only_with_layer_info
+        {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
@@ -358,7 +361,6 @@ impl Drive {
                 .map(|key_id| (key_id, IdentityPublicKey::max_possible_size_key(key_id)))
                 .collect()
         } else {
-
             let key_request = IdentityKeysRequest {
                 identity_id,
                 request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
@@ -368,8 +370,6 @@ impl Drive {
 
             self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations)?
         };
-
-
 
         if keys.len() != key_ids_len {
             // TODO Choose / add an appropriate error
@@ -596,7 +596,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 15498000,
-                    processing_fee: 2642980,
+                    processing_fee: 2654580,
                     ..Default::default()
                 }
             );
@@ -760,7 +760,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1787720,
+                    processing_fee: 1645600,
                     ..Default::default()
                 }
             );
@@ -863,7 +863,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 832780,
+                    processing_fee: 690660,
                     removed_bytes_from_system: 8,
                     ..Default::default()
                 }

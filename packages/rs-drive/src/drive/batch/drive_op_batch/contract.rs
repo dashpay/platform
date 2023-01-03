@@ -1,14 +1,14 @@
-use dpp::data_contract::DataContract as Contract;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::data_contract::extra::DriveContractExt;
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
+use dpp::data_contract::extra::DriveContractExt;
+use dpp::data_contract::DataContract as Contract;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 /// Operations on Contracts
 pub enum ContractOperationType<'a> {
