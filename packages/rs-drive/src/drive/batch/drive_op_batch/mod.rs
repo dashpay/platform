@@ -27,9 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-pub(crate) mod contract;
-pub(crate) mod document;
-pub(crate) mod identity;
+mod contract;
+mod document;
+mod identity;
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
@@ -45,14 +45,14 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use contract::ContractOperationType;
-use document::DocumentOperationType;
+pub use contract::ContractOperationType;
+pub use document::DocumentOperationType;
 use dpp::data_contract::extra::{DocumentType, DriveContractExt};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use identity::IdentityOperationType;
+pub use identity::IdentityOperationType;
 use itertools::Itertools;
 use std::collections::HashMap;
 

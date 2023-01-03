@@ -35,12 +35,12 @@
 use crate::error::execution::ExecutionError;
 
 use crate::abci::messages::BlockFees;
-use crate::block::BlockInfo;
 use crate::error::Error;
 use crate::platform::Platform;
-use drive::drive::batch::drive_op_batch::identity::IdentityOperationType::AddToIdentityBalance;
+use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperationType::IdentityOperation;
 use drive::drive::batch::{DriveOperationType, GroveDbOpBatch};
+use drive::drive::block_info::BlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
@@ -361,7 +361,7 @@ impl Platform {
             drive_operations,
             &BlockInfo::default(),
             transaction,
-        );
+        )?;
         batch.append(&mut operations);
 
         // remove proposers we've paid out
