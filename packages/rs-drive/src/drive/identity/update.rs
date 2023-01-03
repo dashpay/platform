@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// We can set an identities balance
-    pub(super) fn update_identity_balance_operation(
+    pub(crate) fn update_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
         balance: u64,
@@ -76,8 +76,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
-
         // TODO: In case of dry run we will get less because we replace the same bytes
 
         let estimated_costs_only_with_layer_info = if apply {
@@ -86,7 +84,7 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        batch_operations.push(self.update_revision_operation(identity_id, revision));
+        let batch_operations = vec![self.update_identity_revision_operation(identity_id, revision)];
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
@@ -104,12 +102,13 @@ impl Drive {
 
     /// Update the revision of the identity
     /// Revisions get bumped on all changes except for the balance and negative credit fields
-    pub(super) fn update_revision_operation(
+    pub(crate) fn update_identity_revision_operation(
         &self,
         identity_id: [u8; 32],
         revision: Revision,
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
+        //todo: can this be a var vec?
         let revision_bytes = revision.encode_var_vec();
         DriveOperation::insert_for_known_path_key_element(
             identity_path,
@@ -127,19 +126,17 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
         };
 
-        self.add_to_identity_balance_operations(
+        let batch_operations = self.add_to_identity_balance_operations(
             identity_id,
             added_balance,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            &mut batch_operations,
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -157,7 +154,7 @@ impl Drive {
 
     /// Balances are stored in the balance tree under the identity's id
     /// This gets operations based on apply flag (stateful vs stateless)
-    pub fn add_to_identity_balance_operations(
+    pub(crate) fn add_to_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
         added_balance: u64,
@@ -165,8 +162,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
         }
@@ -175,7 +172,7 @@ impl Drive {
             identity_id,
             estimated_costs_only_with_layer_info.is_none(),
             transaction,
-            drive_operations,
+            &mut drive_operations,
         )?;
 
         let new_balance = if estimated_costs_only_with_layer_info.is_none() {
@@ -197,7 +194,7 @@ impl Drive {
             new_balance,
             true,
         )?);
-        Ok(())
+        Ok(drive_operations)
     }
 
     /// Balances are stored in the balance tree under the identity's id
@@ -210,21 +207,18 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
-
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
         };
 
-        self.remove_from_identity_balance_operations(
+        let batch_operations = self.remove_from_identity_balance_operations(
             identity_id,
             required_removed_balance,
             total_desired_removed_balance,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            &mut batch_operations,
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -241,7 +235,7 @@ impl Drive {
 
     /// Balances are stored in the identity under key 0
     /// This gets operations based on apply flag (stateful vs stateless)
-    pub fn remove_from_identity_balance_operations(
+    pub(crate) fn remove_from_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
         required_removed_balance: u64,
@@ -250,8 +244,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
         }
@@ -261,7 +255,7 @@ impl Drive {
                 identity_id,
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
-                drive_operations,
+                &mut drive_operations,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "there should always be a balance if apply is set to true",
@@ -297,41 +291,7 @@ impl Drive {
             );
         }
 
-        Ok(())
-    }
-
-    /// Add new keys to an identity
-    pub fn add_new_keys_to_identity(
-        &self,
-        identity_id: [u8; 32],
-        keys_to_add: Vec<IdentityPublicKey>,
-        block_info: &BlockInfo,
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<FeeResult, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
-        self.add_new_keys_to_identity_operations(
-            identity_id,
-            keys_to_add,
-            &block_info.epoch,
-            &mut estimated_costs_only_with_layer_info,
-            transaction,
-            &mut batch_operations,
-        )?;
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.apply_batch_drive_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            batch_operations,
-            &mut drive_operations,
-        )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
-        Ok(fees)
+        Ok(drive_operations)
     }
 
     /// Disable identity keys
@@ -344,22 +304,19 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
         };
 
-        self.disable_identity_keys_operations(
+        let batch_operations = self.disable_identity_keys_operations(
             identity_id,
             keys_ids,
             disable_at,
             &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
-            apply,
             transaction,
-            &mut batch_operations,
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -385,34 +342,34 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(), Error> {
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
+
+        let key_ids_len = key_ids.len();
+
+        let keys: KeyIDIdentityPublicKeyPairVec = if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
             );
-        }
-
-        let key_ids_len = key_ids.len();
-
-        let key_request = IdentityKeysRequest {
-            identity_id,
-            request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
-            limit: Some(key_ids_len as u16),
-            offset: None,
-        };
-
-        let keys: KeyIDIdentityPublicKeyPairVec = if apply {
-            self.fetch_identity_keys_operations(key_request, transaction, drive_operations)?
-        } else {
             key_ids
                 .into_iter()
                 .map(|key_id| (key_id, IdentityPublicKey::max_possible_size_key(key_id)))
                 .collect()
+        } else {
+
+            let key_request = IdentityKeysRequest {
+                identity_id,
+                request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
+                limit: Some(key_ids_len as u16),
+                offset: None,
+            };
+
+            self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations)?
         };
+
+
 
         if keys.len() != key_ids_len {
             // TODO Choose / add an appropriate error
@@ -432,15 +389,47 @@ impl Drive {
                 &key_id_bytes,
                 &StorageFlags::SingleEpoch(epoch.index),
                 estimated_costs_only_with_layer_info,
-                drive_operations,
+                &mut drive_operations,
             )?;
         }
 
-        Ok(())
+        Ok(drive_operations)
+    }
+
+    /// Add new keys to an identity
+    pub fn add_new_keys_to_identity(
+        &self,
+        identity_id: [u8; 32],
+        keys_to_add: Vec<IdentityPublicKey>,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+        let batch_operations = self.add_new_keys_to_identity_operations(
+            identity_id,
+            keys_to_add,
+            &block_info.epoch,
+            &mut estimated_costs_only_with_layer_info,
+            transaction,
+        )?;
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.apply_batch_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
     }
 
     /// The operations for adding new keys to an identity
-    pub fn add_new_keys_to_identity_operations(
+    pub(crate) fn add_new_keys_to_identity_operations(
         &self,
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,
@@ -449,8 +438,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
@@ -465,10 +454,10 @@ impl Drive {
                 &StorageFlags::SingleEpoch(epoch.index),
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_operations,
+                &mut drive_operations,
             )?;
         }
-        Ok(())
+        Ok(drive_operations)
     }
 }
 

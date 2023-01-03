@@ -35,9 +35,12 @@
 use crate::error::execution::ExecutionError;
 
 use crate::abci::messages::BlockFees;
+use crate::block::BlockInfo;
 use crate::error::Error;
 use crate::platform::Platform;
-use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::batch::drive_op_batch::identity::IdentityOperationType::AddToIdentityBalance;
+use drive::drive::batch::DriveOperationType::IdentityOperation;
+use drive::drive::batch::{DriveOperationType, GroveDbOpBatch};
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
@@ -317,14 +320,10 @@ impl Platform {
                     ))
                 })?;
 
-                // we need to pay out the reward
-                self.drive.add_to_identity_balance_operations(
-                    pay_to_id,
-                    reward_floored,
-                    &mut None,
-                    transaction,
-                    &mut drive_operations,
-                )?;
+                drive_operations.push(IdentityOperation(AddToIdentityBalance {
+                    identity_id: pay_to_id,
+                    added_balance: reward_floored,
+                }));
             }
 
             // Since balance is an integer, we collect rewards remainder
@@ -347,20 +346,22 @@ impl Platform {
                     ))
                 })?;
 
-            self.drive.add_to_identity_balance_operations(
-                proposer_tx_hash.as_slice().try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::DriveIncoherence(
-                        "proposer_tx_hash is not 32 bytes long",
-                    ))
-                })?,
-                masternode_reward_given,
-                &mut None,
-                transaction,
-                &mut drive_operations,
-            )?;
+            let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
+                Error::Execution(ExecutionError::DriveIncoherence(
+                    "proposer_tx_hash is not 32 bytes long",
+                ))
+            })?;
+            drive_operations.push(IdentityOperation(AddToIdentityBalance {
+                identity_id: proposer,
+                added_balance: masternode_reward_given,
+            }));
         }
 
-        let mut operations = DriveOperation::grovedb_operations_batch(&drive_operations);
+        let mut operations = self.drive.convert_drive_operations_to_grove_operations(
+            drive_operations,
+            &BlockInfo::default(),
+            transaction,
+        );
         batch.append(&mut operations);
 
         // remove proposers we've paid out

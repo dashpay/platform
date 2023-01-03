@@ -307,6 +307,17 @@ impl DriveOperation {
         GroveDbOpBatch::from_operations(operations)
     }
 
+    /// Filters the groveDB ops from a list of operations and collects them in a `Vec<GroveDbOp>`.
+    pub fn grovedb_operations_consume(insert_operations: Vec<DriveOperation>) -> Vec<GroveDbOp> {
+        insert_operations
+            .into_iter()
+            .filter_map(|op| match op {
+                GroveOperation(grovedb_op) => Some(grovedb_op),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     pub fn for_known_path_key_empty_tree(
         path: Vec<Vec<u8>>,
