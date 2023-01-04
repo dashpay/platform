@@ -2611,7 +2611,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["events", "npm:3.3.0"],\
-            ["fast-json-patch", "npm:3.1.0"],\
+            ["fast-json-patch", "npm:3.1.1"],\
             ["https-browserify", "npm:1.0.0"],\
             ["json-schema-diff-validator", "npm:0.4.1"],\
             ["json-schema-traverse", "npm:1.0.0"],\
@@ -2975,7 +2975,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
             ["events", "npm:3.3.0"],\
-            ["fast-json-patch", "npm:3.1.0"],\
+            ["fast-json-patch", "npm:3.1.1"],\
             ["https-browserify", "npm:1.0.0"],\
             ["json-schema-diff-validator", "npm:0.4.1"],\
             ["karma", "npm:6.4.1"],\
@@ -9157,13 +9157,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["fast-deep-equal", [\
-        ["npm:2.0.1", {\
-          "packageLocation": "./.yarn/cache/fast-deep-equal-npm-2.0.1-9c01e08a62-b701835a87.zip/node_modules/fast-deep-equal/",\
-          "packageDependencies": [\
-            ["fast-deep-equal", "npm:2.0.1"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:3.1.3", {\
           "packageLocation": "./.yarn/cache/fast-deep-equal-npm-3.1.3-790edcfcf5-e21a9d8d84.zip/node_modules/fast-deep-equal/",\
           "packageDependencies": [\
@@ -9187,18 +9180,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["fast-json-patch", [\
-        ["npm:2.2.1", {\
-          "packageLocation": "./.yarn/cache/fast-json-patch-npm-2.2.1-63b021bb37-955aebb3f8.zip/node_modules/fast-json-patch/",\
+        ["npm:3.1.1", {\
+          "packageLocation": "./.yarn/cache/fast-json-patch-npm-3.1.1-7e8bb70a45-c4525b61b2.zip/node_modules/fast-json-patch/",\
           "packageDependencies": [\
-            ["fast-json-patch", "npm:2.2.1"],\
-            ["fast-deep-equal", "npm:2.0.1"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:3.1.0", {\
-          "packageLocation": "./.yarn/cache/fast-json-patch-npm-3.1.0-f4bd467b5f-bad25a6121.zip/node_modules/fast-json-patch/",\
-          "packageDependencies": [\
-            ["fast-json-patch", "npm:3.1.0"]\
+            ["fast-json-patch", "npm:3.1.1"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -11497,7 +11482,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/json-schema-diff-validator-npm-0.4.1-a98b53360c-d75b7f5540.zip/node_modules/json-schema-diff-validator/",\
           "packageDependencies": [\
             ["json-schema-diff-validator", "npm:0.4.1"],\
-            ["fast-json-patch", "npm:2.2.1"],\
+            ["fast-json-patch", "npm:3.1.1"],\
             ["json-pointer", "npm:0.6.2"]\
           ],\
           "linkType": "HARD"\
