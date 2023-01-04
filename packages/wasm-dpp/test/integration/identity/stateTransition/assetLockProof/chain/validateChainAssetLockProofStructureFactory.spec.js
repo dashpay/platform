@@ -59,13 +59,10 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
     stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.returns(42);
 
-    // TODO: rework to return object?
-    const response = new FetchTransactionResponse({
+    stateRepositoryMock.fetchTransaction.returns({
       data: Buffer.from(rawTransaction, 'hex'),
       height: 42,
     });
-
-    stateRepositoryMock.fetchTransaction.returns(response);
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -309,17 +306,15 @@ describe('validateChainAssetLockProofStructureFactory', () => {
     });
 
     it('should point to valid transaction', async () => {
+      // Validator expects asset lock proof TX to have OP_RETURN in it's first output, break it
       const parsedTx = new Transaction(Buffer.from(rawTransaction, 'hex'));
-      const fromAddress = new PrivateKey().toAddress().toString();
-      // TX for this asset lock proof has to have OP_RETURN in it's first output,
-      // break it
+      const fromAddress = new PrivateKey().toAddress();
       parsedTx.outputs[0].setScript(Script.buildPublicKeyHashOut(fromAddress).toString());
 
-      // TODO: rework with plain object?
-      stateRepositoryMock.fetchTransaction.returns(new FetchTransactionResponse({
+      stateRepositoryMock.fetchTransaction.returns({
         data: parsedTx.toBuffer(),
         height: 42,
-      }));
+      });
 
       const result = await validateChainAssetLockProofStructure(
         stateRepositoryMock,

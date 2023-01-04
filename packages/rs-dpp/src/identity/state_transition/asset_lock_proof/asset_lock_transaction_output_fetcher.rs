@@ -51,7 +51,7 @@ pub async fn fetch_asset_lock_transaction_output(
             let output_index = out_point.vout as usize;
             let transaction_hash = out_point.txid;
 
-            let maybe_transaction_data = state_repository
+            let transaction_data = state_repository
                 .fetch_transaction(&transaction_hash.to_hex(), execution_context)
                 .await
                 .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
@@ -63,25 +63,19 @@ pub async fn fetch_asset_lock_transaction_output(
                 });
             }
 
-            if let Some(transaction_data) = maybe_transaction_data {
-                let transaction_data = transaction_data
-                    .try_into()
+            let transaction_data = transaction_data
+                .try_into()
+                .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
+
+            if let Some(raw_transaction) = transaction_data.data {
+                let transaction = Transaction::deserialize(&raw_transaction)
                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
 
-                if let Some(raw_transaction) = transaction_data.data {
-                    let transaction = Transaction::deserialize(&raw_transaction)
-                        .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
-
-                    transaction
-                        .output
-                        .get(output_index)
-                        .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
-                        .cloned()
-                } else {
-                    Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
-                        transaction_hash,
-                    )))
-                }
+                transaction
+                    .output
+                    .get(output_index)
+                    .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
+                    .cloned()
             } else {
                 Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
                     transaction_hash,

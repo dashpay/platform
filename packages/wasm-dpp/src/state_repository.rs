@@ -1,62 +1,25 @@
 //! Bindings for state repository -like objects coming from JS.
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
-use dpp::state_repository::FetchTransactionResponse;
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
     document::Document,
     prelude::{Identifier, Identity},
-    state_repository::StateRepositoryLike,
+    state_repository::{
+        FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
+    },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 use wasm_bindgen::prelude::*;
 
-use crate::errors::RustConversionError;
 use crate::{
-    identifier::IdentifierWrapper, with_js_error, DataContractWasm, IdentityWasm,
+    identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
 };
-
-#[wasm_bindgen(js_name=FetchTransactionResponse)]
-#[derive(Clone)]
-pub struct FetchTransactionResponseWasm(FetchTransactionResponse);
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FetchTransactionResponseParams {
-    height: Option<u32>,
-    data: Option<Vec<u8>>,
-}
-
-impl From<FetchTransactionResponse> for FetchTransactionResponseWasm {
-    fn from(v: FetchTransactionResponse) -> Self {
-        FetchTransactionResponseWasm(v)
-    }
-}
-
-impl From<FetchTransactionResponseWasm> for FetchTransactionResponse {
-    fn from(v: FetchTransactionResponseWasm) -> Self {
-        v.0
-    }
-}
-
-#[wasm_bindgen(js_class = FetchTransactionResponse)]
-impl FetchTransactionResponseWasm {
-    #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<FetchTransactionResponseWasm, JsValue> {
-        let parameters: FetchTransactionResponseParams =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-
-        let response = FetchTransactionResponse::new(parameters.data, parameters.height);
-
-        Ok(response.into())
-    }
-}
 
 #[wasm_bindgen]
 extern "C" {
@@ -93,7 +56,7 @@ extern "C" {
         this: &ExternalStateRepositoryLike,
         id: &str,
         execution_context: StateTransitionExecutionContextWasm,
-    ) -> Option<FetchTransactionResponseWasm>;
+    ) -> JsValue;
 
     #[wasm_bindgen(structural, method, js_name=isAssetLockTransactionOutPointAlreadyUsed)]
     pub fn is_asset_lock_transaction_out_point_already_used(
@@ -118,12 +81,41 @@ impl ExternalStateRepositoryLikeWrapper {
     }
 }
 
+// TODO: move to a dedicated module together with all From traits?
+#[derive(Clone, Serialize, Deserialize)]
+pub struct FetchTransactionResponse {
+    pub height: Option<u32>,
+    pub data: Option<Vec<u8>>,
+}
+
+impl From<JsValue> for FetchTransactionResponse {
+    fn from(v: JsValue) -> Self {
+        if v.is_falsy() {
+            FetchTransactionResponse {
+                height: Some(0),
+                data: None,
+            }
+        } else {
+            serde_wasm_bindgen::from_value(v).unwrap()
+        }
+    }
+}
+
+impl From<FetchTransactionResponse> for FetchTransactionResponseDPP {
+    fn from(v: FetchTransactionResponse) -> Self {
+        FetchTransactionResponseDPP {
+            data: v.data,
+            height: v.height,
+        }
+    }
+}
+
 #[async_trait]
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
     type FetchIdentity = IdentityWasm;
-    type FetchTransaction = FetchTransactionResponseWasm;
+    type FetchTransaction = FetchTransactionResponse;
 
     async fn fetch_data_contract(
         &self,
@@ -196,13 +188,13 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         id: &str,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Option<Self::FetchTransaction>> {
-        Ok(self
+    ) -> anyhow::Result<Self::FetchTransaction> {
+        let response = self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_transaction(id, execution_context.into())
-            .map(Into::into))
+            .fetch_transaction(id, execution_context.into());
+        Ok(FetchTransactionResponse::from(response))
     }
 
     async fn fetch_identity(

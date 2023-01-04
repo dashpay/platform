@@ -1,11 +1,11 @@
-use std::convert::{Infallible, TryInto};
-
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
 #[cfg(any(test, feature = "mocks"))]
 use mockall::{automock, predicate::*};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::convert::{Infallible, TryInto};
 
 use crate::{
     prelude::*,
@@ -22,12 +22,6 @@ impl From<Infallible> for ProtocolError {
 pub struct FetchTransactionResponse {
     pub height: Option<u32>,
     pub data: Option<Vec<u8>>,
-}
-
-impl FetchTransactionResponse {
-    pub fn new(data: Option<Vec<u8>>, height: Option<u32>) -> Self {
-        Self { height, data }
-    }
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
@@ -95,7 +89,7 @@ pub trait StateRepositoryLike: Send + Sync {
         &self,
         id: &str,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Option<Self::FetchTransaction>>;
+    ) -> AnyResult<Self::FetchTransaction>;
 
     /// Fetch Identity by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
