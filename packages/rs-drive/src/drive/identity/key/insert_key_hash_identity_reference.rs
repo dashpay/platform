@@ -10,18 +10,18 @@ use crate::drive::{
     non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path,
     non_unique_key_hashes_tree_path_vec, unique_key_hashes_tree_path_vec, Drive,
 };
+use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
+use crate::fee::op::DriveOperation::FunctionOperation;
 use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
+use dpp::identity::IdentityPublicKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::identity::IdentityPublicKey;
-use crate::error::drive::DriveError;
-use crate::fee::op::DriveOperation::FunctionOperation;
 
 impl Drive {
     /// Insert a public key hash reference that contains an identity id
@@ -37,7 +37,10 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
-        let key_hash = identity_key.hash()?.as_slice().try_into().map_err(|_| Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes")))?;
+        let hash_vec = identity_key.hash()?;
+        let key_hash = hash_vec.as_slice().try_into().map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
+        })?;
 
         let key_len = identity_key.data.len();
         drive_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
@@ -47,7 +50,12 @@ impl Drive {
 
         //todo: check if key is unique
 
-        self.insert_unique_public_key_hash_reference_to_identity_operations(identity_id, key_hash, estimated_costs_only_with_layer_info, transaction)
+        self.insert_unique_public_key_hash_reference_to_identity_operations(
+            identity_id,
+            key_hash,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )
     }
 
     /// Adds the estimation costs for the insertion of a unique public key hash reference

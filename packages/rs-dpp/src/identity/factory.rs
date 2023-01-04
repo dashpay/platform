@@ -24,7 +24,7 @@ impl Identity {
             revision,
             asset_lock_proof: None,
             balance,
-            public_keys: public_keys,
+            public_keys,
             metadata: None,
         }
     }

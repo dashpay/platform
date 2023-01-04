@@ -14,6 +14,7 @@ use crate::drive::object_size_info::PathKeyElementInfo::{
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation::FunctionOperation;
@@ -27,10 +28,8 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
-use crate::error::drive::DriveError;
 
 impl Drive {
-
     pub(crate) fn insert_key_to_storage_operations(
         &self,
         identity_id: [u8; 32],

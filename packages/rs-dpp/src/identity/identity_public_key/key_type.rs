@@ -26,9 +26,9 @@ pub enum KeyType {
 lazy_static! {
     static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = vec![
         (KeyType::ECDSA_SECP256K1, 33),
-        (KeyType::BIP13_SCRIPT_HASH, 48),
-        (KeyType::ECDSA_HASH160, 32),
-        (KeyType::BIP13_SCRIPT_HASH, 32)
+        (KeyType::BLS12_381, 48),
+        (KeyType::ECDSA_HASH160, 20),
+        (KeyType::BIP13_SCRIPT_HASH, 20)
     ]
     .iter()
     .copied()
