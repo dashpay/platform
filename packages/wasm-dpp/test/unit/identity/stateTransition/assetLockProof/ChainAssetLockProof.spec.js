@@ -14,12 +14,9 @@ describe('ChainAssetLockProof', () => {
   });
 
   beforeEach(() => {
-    const { coreChainLockedHeight, outPoint } = chainAssetLockProofJS;
+    const rawObject = chainAssetLockProofJS.toObject();
 
-    chainAssetLockProof = new ChainAssetLockProof({
-      coreChainLockedHeight,
-      outPoint,
-    });
+    chainAssetLockProof = new ChainAssetLockProof(rawObject);
   });
 
   describe('#getType', () => {

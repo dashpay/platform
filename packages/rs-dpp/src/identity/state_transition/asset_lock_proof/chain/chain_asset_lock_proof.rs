@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
-use std::convert::TryInto;
 
 use crate::{
     errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,

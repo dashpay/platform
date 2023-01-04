@@ -1,5 +1,4 @@
 use crate::errors::consensus_error::from_consensus_error_ref;
-use dpp::identity::state_transition::asset_lock_proof::PublicKeyHash;
 use dpp::validation::ValidationResult;
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
@@ -41,5 +40,10 @@ impl ValidationResultWasm {
             .iter()
             .map(from_consensus_error_ref)
             .collect()
+    }
+
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&self) -> JsValue {
+        self.0.data().unwrap_or(&JsValue::undefined()).to_owned()
     }
 }

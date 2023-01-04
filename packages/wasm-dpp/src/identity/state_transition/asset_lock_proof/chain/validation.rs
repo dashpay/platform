@@ -1,35 +1,45 @@
-use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::{
-    AssetLockTransactionValidator, ChainAssetLockProofStructureValidator, PublicKeyHash,
+    AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,
 };
-use dpp::identity::state_transition::identity_create_transition::validation::state::validate_identity_create_transition_state;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::validation::ValidationResult;
 use dpp::ProtocolError;
+use serde::{Deserialize, Serialize};
+use serde_with::skip_serializing_none;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
-use web_sys::console::log_1;
 
+use crate::buffer::Buffer;
 use crate::{
-    errors::from_dpp_err,
+    errors::{from_dpp_err, RustConversionError},
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation::ValidationResultWasm,
-    AssetLockProofWasm, ChainAssetLockProofWasm, IdentityCreateTransitionWasm,
-    StateTransitionExecutionContextWasm,
+    with_js_error, StateTransitionExecutionContextWasm,
 };
+
+#[skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawChainAssetLockProof {
+    #[serde(rename = "type")]
+    lock_type: Option<u8>,
+    core_chain_locked_height: Option<u32>,
+    out_point: Option<Vec<u8>>,
+}
 
 #[wasm_bindgen(js_name=validateChainAssetLockProofStructure)]
 pub async fn validate_chain_asset_lock_proof_structure(
     state_repository: ExternalStateRepositoryLike, // TODO: test with wrapper?
-    asset_lock_proof: &ChainAssetLockProofWasm,    // TODO: should be AssetLockProofWasm?
-    execution_context: StateTransitionExecutionContextWasm,
+    raw_asset_lock_proof: JsValue,
+    execution_context: &StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let state_repository_wrapper =
         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
 
-    let asset_lock_proof: ChainAssetLockProof = asset_lock_proof.to_owned().into();
+    let parsed_asset_lock_proof: RawChainAssetLockProof =
+        with_js_error!(serde_wasm_bindgen::from_value(raw_asset_lock_proof))?;
+
     let asset_lock_proof_json =
-        serde_json::to_value(asset_lock_proof.clone()).map_err(|e| from_dpp_err(e.into()))?;
+        serde_json::to_value(parsed_asset_lock_proof).map_err(|e| from_dpp_err(e.into()))?;
 
     let tx_validator = Arc::new(AssetLockTransactionValidator::new(
         state_repository_wrapper.clone(),
@@ -39,9 +49,13 @@ pub async fn validate_chain_asset_lock_proof_structure(
         ChainAssetLockProofStructureValidator::new(state_repository_wrapper, tx_validator)
             .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
 
+    let context: &StateTransitionExecutionContext = execution_context.into();
     let validation_result = validator
-        .validate(&asset_lock_proof_json, &execution_context.into())
+        .validate(&asset_lock_proof_json, context)
         .await
         .map_err(|e| from_dpp_err(e.into()))?;
-    Ok(validation_result.map(|_| JsValue::undefined()).into())
+
+    Ok(validation_result
+        .map(|item| JsValue::from(Buffer::from_bytes(&item)))
+        .into())
 }

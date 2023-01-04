@@ -9,15 +9,15 @@ const expectError = {
    * @param {ValidationResult} result
    * @param {AbstractConsensusError} [errorClass]
    * @param {number} [count]
-   * @param [validationErrorClass]
+   * @param [validationResultClass]
    */
   expectValidationError(
     result,
     errorClass = AbstractConsensusError,
     count = 1,
-    validationErrorClass = ValidationResult,
+    validationResultClass = ValidationResult,
   ) {
-    expect(result).to.be.an.instanceOf(validationErrorClass);
+    expect(result).to.be.an.instanceOf(validationResultClass);
     expect(result.getErrors()).to.have.lengthOf(count);
 
     result.getErrors().forEach((error) => expect(error).to.be.an.instanceOf(errorClass));

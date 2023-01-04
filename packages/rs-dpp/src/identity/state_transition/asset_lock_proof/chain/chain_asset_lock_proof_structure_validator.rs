@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use dashcore::consensus::Decodable;
@@ -86,14 +87,12 @@ where
 
         let proof_core_chain_locked_height = proof.core_chain_locked_height();
 
-        let latest_platform_block_header: PlatformBlockHeader = self
+        let current_core_chain_locked_height = self
             .state_repository
-            .fetch_latest_platform_block_header()
+            .fetch_latest_platform_core_chain_locked_height()
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
-
-        let current_core_chain_locked_height =
-            latest_platform_block_header.current_core_chain_locked_height;
+            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?
+            .unwrap_or(0);
 
         if current_core_chain_locked_height < proof_core_chain_locked_height {
             result.add_error(InvalidAssetLockProofCoreChainHeightError::new(
@@ -112,13 +111,18 @@ where
         let transaction_hash = out_point.txid;
         let transaction_hash_string = transaction_hash.to_hex();
 
-        let maybe_transaction_fetch_result: Option<FetchTransactionResult> = self
+        let maybe_transaction_fetch_result = self
             .state_repository
             .fetch_transaction(&transaction_hash_string, execution_context)
             .await
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
         return if let Some(transaction_result) = maybe_transaction_fetch_result {
+            let transaction_result = transaction_result
+                .try_into()
+                .map_err(Into::into)
+                .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+
             if let Some(tx_height) = transaction_result.height {
                 if proof_core_chain_locked_height < tx_height {
                     result.add_error(InvalidAssetLockProofTransactionHeightError::new(
@@ -137,34 +141,38 @@ where
                 return Ok(result);
             }
 
-            let validate_asset_lock_transaction_result = self
-                .asset_lock_transaction_validator
-                .validate(
-                    &transaction_result.data,
-                    output_index as usize,
-                    execution_context,
-                )
-                .await?;
+            if let Some(raw_tx) = transaction_result.data {
+                let validate_asset_lock_transaction_result = self
+                    .asset_lock_transaction_validator
+                    .validate(&raw_tx, output_index as usize, execution_context)
+                    .await?;
 
-            let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
-                validate_asset_lock_transaction_result
-                    .data()
-                    .expect("This can not happen due to the logic above")
-                    .clone()
+                let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
+                    validate_asset_lock_transaction_result
+                        .data()
+                        .expect("This can not happen due to the logic above")
+                        .clone()
+                } else {
+                    result.merge(validate_asset_lock_transaction_result);
+                    return Ok(result);
+                };
+
+                let public_key_hash = validation_result_data.public_key_hash;
+
+                result.set_data(public_key_hash);
+
+                Ok(result)
             } else {
-                result.merge(validate_asset_lock_transaction_result);
+                result.add_error(IdentityAssetLockTransactionIsNotFoundError::new(
+                    transaction_hash.as_hash().into_inner(),
+                ));
+
                 return Ok(result);
-            };
-
-            let public_key_hash = validation_result_data.public_key_hash;
-
-            result.set_data(public_key_hash);
-
-            Ok(result)
+            }
         } else {
-            result.add_error(IdentityAssetLockTransactionIsNotFoundError::new(
-                transaction_hash.as_hash().into_inner(),
-            ));
+            let mut hash = transaction_hash.as_hash().into_inner();
+            hash.reverse();
+            result.add_error(IdentityAssetLockTransactionIsNotFoundError::new(hash));
 
             Ok(result)
         };

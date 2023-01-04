@@ -1,8 +1,11 @@
 //! Bindings for state repository -like objects coming from JS.
 
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
+use dpp::state_repository::FetchTransactionResponse;
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
@@ -13,10 +16,47 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::errors::RustConversionError;
 use crate::{
-    identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
+    identifier::IdentifierWrapper, with_js_error, DataContractWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
 };
+
+#[wasm_bindgen(js_name=FetchTransactionResponse)]
+#[derive(Clone)]
+pub struct FetchTransactionResponseWasm(FetchTransactionResponse);
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchTransactionResponseParams {
+    height: Option<u32>,
+    data: Option<Vec<u8>>,
+}
+
+impl From<FetchTransactionResponse> for FetchTransactionResponseWasm {
+    fn from(v: FetchTransactionResponse) -> Self {
+        FetchTransactionResponseWasm(v)
+    }
+}
+
+impl From<FetchTransactionResponseWasm> for FetchTransactionResponse {
+    fn from(v: FetchTransactionResponseWasm) -> Self {
+        v.0
+    }
+}
+
+#[wasm_bindgen(js_class = FetchTransactionResponse)]
+impl FetchTransactionResponseWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(raw_parameters: JsValue) -> Result<FetchTransactionResponseWasm, JsValue> {
+        let parameters: FetchTransactionResponseParams =
+            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+
+        let response = FetchTransactionResponse::new(parameters.data, parameters.height);
+
+        Ok(response.into())
+    }
+}
 
 #[wasm_bindgen]
 extern "C" {
@@ -43,6 +83,25 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     ) -> Option<IdentityWasm>;
 
+    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformCoreChainLockedHeight)]
+    pub fn fetch_latest_platform_core_chain_locked_height(
+        this: &ExternalStateRepositoryLike,
+    ) -> Option<u32>;
+
+    #[wasm_bindgen(structural, method, js_name=fetchTransaction)]
+    pub fn fetch_transaction(
+        this: &ExternalStateRepositoryLike,
+        id: &str,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> Option<FetchTransactionResponseWasm>;
+
+    #[wasm_bindgen(structural, method, js_name=isAssetLockTransactionOutPointAlreadyUsed)]
+    pub fn is_asset_lock_transaction_out_point_already_used(
+        this: &ExternalStateRepositoryLike,
+        out_point_buffer: &[u8],
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> bool;
+
     // TODO add missing declarations
 }
 
@@ -64,6 +123,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
     type FetchIdentity = IdentityWasm;
+    type FetchTransaction = FetchTransactionResponseWasm;
 
     async fn fetch_data_contract(
         &self,
@@ -132,15 +192,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 
-    async fn fetch_transaction<T>(
+    async fn fetch_transaction(
         &self,
-        _id: &str,
-        _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
-        todo!()
+        id: &str,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> anyhow::Result<Option<Self::FetchTransaction>> {
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_transaction(id, execution_context.into())
+            .map(Into::into))
     }
 
     async fn fetch_identity(
@@ -182,6 +244,15 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 
+    async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_latest_platform_core_chain_locked_height()
+            .map(Into::into))
+    }
+
     async fn verify_instant_lock(
         &self,
         _instant_lock: &InstantLock,
@@ -192,10 +263,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn is_asset_lock_transaction_out_point_already_used(
         &self,
-        _out_point_buffer: &[u8],
-        _execution_context: &StateTransitionExecutionContext,
+        out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<bool> {
-        todo!()
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .is_asset_lock_transaction_out_point_already_used(
+                out_point_buffer,
+                execution_context.clone().into(),
+            ))
     }
 
     async fn mark_asset_lock_transaction_out_point_as_used(
