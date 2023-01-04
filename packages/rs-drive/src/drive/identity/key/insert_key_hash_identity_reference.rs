@@ -12,15 +12,44 @@ use crate::drive::{
 };
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::identity::IdentityPublicKey;
+use crate::error::drive::DriveError;
+use crate::fee::op::DriveOperation::FunctionOperation;
 
 impl Drive {
+    /// Insert a public key hash reference that contains an identity id
+    /// Contrary to the name this is not a reference but an Item containing the identity
+    /// identifier
+    pub(crate) fn insert_reference_to_key_operations(
+        &self,
+        identity_id: [u8; 32],
+        identity_key: &IdentityPublicKey,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
+        let key_hash = identity_key.hash()?.as_slice().try_into().map_err(|_| Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes")))?;
+
+        let key_len = identity_key.data.len();
+        drive_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
+            HashFunction::Sha256RipeMD160,
+            key_len as u16,
+        )));
+
+        //todo: check if key is unique
+
+        self.insert_unique_public_key_hash_reference_to_identity_operations(identity_id, key_hash, estimated_costs_only_with_layer_info, transaction)
+    }
+
     /// Adds the estimation costs for the insertion of a unique public key hash reference
     fn add_estimation_costs_for_insert_unique_public_key_hash_reference(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -74,7 +103,7 @@ impl Drive {
     /// Insert a unique public key hash reference that contains an identity id
     /// Contrary to the name this is not a reference but an Item containing the identity
     /// identifier
-    pub(crate) fn insert_unique_public_key_hash_reference_to_identity_operations(
+    fn insert_unique_public_key_hash_reference_to_identity_operations(
         &self,
         identity_id: [u8; 32],
         public_key_hash: [u8; 20],

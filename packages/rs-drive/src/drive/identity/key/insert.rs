@@ -1,4 +1,4 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::drive::defaults::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
@@ -27,82 +27,9 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
+use crate::error::drive::DriveError;
 
 impl Drive {
-    fn insert_reference_to_key_operations(
-        &self,
-        identity_id: [u8; 32],
-        identity_key: &IdentityPublicKey,
-        storage_flags: &StorageFlags,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(), Error> {
-        let identity_path = identity_key_path_vec(identity_id.as_slice(), identity_key.id);
-
-        let reference = Element::new_reference_with_max_hops_and_flags(
-            AbsolutePathReference(identity_path),
-            Some(1),
-            storage_flags.to_some_element_flags(),
-        );
-
-        let key_hashes_tree = unique_key_hashes_tree_path_vec();
-
-        let (apply_type, path_key_element_info) = if estimated_costs_only_with_layer_info.is_none()
-        {
-            let key_hash = identity_key.hash()?;
-            let path_fixed_sized_key_element: PathKeyElementInfo<'_, 0> =
-                PathKeyElement((key_hashes_tree, key_hash, reference));
-            (
-                BatchInsertApplyType::StatefulBatchInsert,
-                path_fixed_sized_key_element,
-            )
-        } else {
-            let ref_size = reference.serialized_size() as u32;
-            let path_fixed_sized_key_element = PathKeyElementSize((
-                KeyInfoPath::from_known_owned_path(key_hashes_tree),
-                KeyInfo::MaxKeySize {
-                    unique_id: b"key_hash".to_vec(),
-                    max_size: DEFAULT_HASH_SIZE_U8,
-                },
-                reference,
-            ));
-
-            // We use key_hash just not to use an empty string, but it doesn't matter what it is
-            // as long as it is unique
-            (
-                BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_using_sums: false,
-                    target: QueryTargetValue(ref_size),
-                },
-                path_fixed_sized_key_element,
-            )
-        };
-
-        let key_len = identity_key.data.len();
-        drive_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
-            HashFunction::Sha256,
-            key_len as u16,
-        )));
-
-        // Let's first insert the hash with a reference to the identity
-        let inserted = self.batch_insert_if_not_exists(
-            path_key_element_info,
-            apply_type,
-            transaction,
-            drive_operations,
-        )?;
-
-        if inserted {
-            Ok(())
-        } else {
-            Err(Error::Identity(IdentityError::IdentityAlreadyExists(
-                "trying to insert a key that already exists",
-            )))
-        }
-    }
 
     pub(crate) fn insert_key_to_storage_operations(
         &self,
@@ -245,14 +172,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        self.insert_reference_to_key_operations(
+        drive_operations.append(&mut self.insert_reference_to_key_operations(
             identity_id,
             &identity_key,
-            storage_flags,
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_operations,
-        )?;
+        )?);
 
         let key_id_bytes = identity_key.id.encode_var_vec();
 
