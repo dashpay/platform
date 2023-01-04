@@ -32,3 +32,6 @@ pub mod platform;
 
 /// Functions related to IdentityCreditWithdrawalTransaction  
 pub mod identity_credit_withdrawal;
+
+/// Platform configuration
+pub mod config;

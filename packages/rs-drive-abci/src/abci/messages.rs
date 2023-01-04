@@ -36,7 +36,7 @@
 use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
-use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
+use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
 use drive::fee::epoch::CreditsPerEpoch;
 use serde::{Deserialize, Serialize};
 
@@ -121,7 +121,7 @@ pub struct BlockEndResponse {
 impl BlockEndResponse {
     /// Retrieves fee info for the block to be implemented in the BlockEndResponse
     pub(crate) fn from_process_block_fees_result(
-        process_block_fees_result: &ProcessedBlockFeesResult,
+        process_block_fees_result: &ProcessedBlockFeesOutcome,
     ) -> Self {
         let (proposers_paid_count, paid_epoch_index) = process_block_fees_result
             .payouts

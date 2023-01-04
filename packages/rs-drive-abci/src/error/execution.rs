@@ -24,4 +24,8 @@ pub enum ExecutionError {
     /// Error
     #[error("drive missing data error: {0}")]
     DriveMissingData(&'static str),
+
+    /// Error
+    #[error("corrupted credits not balanced error: {0}")]
+    CorruptedCreditsNotBalanced(String),
 }

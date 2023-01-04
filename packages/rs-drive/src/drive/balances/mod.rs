@@ -57,10 +57,36 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
     vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
 }
 
+#[derive(Copy, Clone, Debug)]
+/// The outcome of verifying credits
+pub struct VerifyCreditOutcome {
+    /// all the credits in platform
+    pub total_credits_in_platform: u64,
+    /// all the credits in distribution pools
+    pub total_in_pools: u64,
+    /// all the credits in identity balances
+    pub total_identity_balances: u64,
+}
+
+impl VerifyCreditOutcome {
+    /// Is the outcome okay? basically do the values match up
+    /// Errors in case of overflow
+    pub fn ok(&self) -> Result<bool, Error> {
+        let VerifyCreditOutcome{ total_credits_in_platform, total_in_pools, total_identity_balances } = self;
+        let total_from_trees = (*total_in_pools)
+            .checked_add(*total_identity_balances)
+            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                "Overflow of total credits",
+            )))?;
+
+        Ok(*total_credits_in_platform == total_from_trees)
+    }
+}
+
 impl Drive {
     /// Verify that the sum tree identity credits + pool credits are equal to the
     /// Total credits in the system
-    pub fn verify_total_credits(&self, transaction: TransactionArg) -> Result<bool, Error> {
+    pub fn verify_total_credits(&self, transaction: TransactionArg) -> Result<VerifyCreditOutcome, Error> {
         let mut drive_operations = vec![];
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
@@ -102,15 +128,11 @@ impl Drive {
             )));
         }
 
-        let total_from_trees = (total_in_pools as u64)
-            .checked_add(total_identity_balances as u64)
-            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "Overflow of total credits",
-            )))?;
-
-        let system_credits_are_okay = total_credits_in_platform == total_from_trees;
-
-        Ok(system_credits_are_okay)
+        Ok(VerifyCreditOutcome {
+            total_credits_in_platform,
+            total_in_pools: total_in_pools as u64,
+            total_identity_balances: total_identity_balances as u64,
+        })
     }
 }
 

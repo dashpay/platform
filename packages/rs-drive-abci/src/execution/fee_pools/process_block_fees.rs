@@ -49,6 +49,7 @@ use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayout
 use crate::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
+use crate::error::execution::ExecutionError;
 
 /// From the Dash Improvement Proposal:
 
@@ -64,7 +65,7 @@ use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 /// storage fees from future Epoch storage pools.
 
 /// Holds info relevant fees and a processed block
-pub struct ProcessedBlockFeesResult {
+pub struct ProcessedBlockFeesOutcome {
     /// Amount of fees in the storage and processing fee distribution pools
     pub fees_in_pools: FeesInPools,
     /// A struct with the number of proposers to be paid out and the last paid epoch index
@@ -140,7 +141,7 @@ impl Platform {
         epoch_info: &EpochInfo,
         block_fees: BlockFees,
         transaction: TransactionArg,
-    ) -> Result<ProcessedBlockFeesResult, Error> {
+    ) -> Result<ProcessedBlockFeesOutcome, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index);
 
         let mut batch = GroveDbOpBatch::new();
@@ -218,12 +219,25 @@ impl Platform {
 
         self.drive.grove_apply_batch(batch, false, transaction)?;
 
-        Ok(ProcessedBlockFeesResult {
+        let outcome = ProcessedBlockFeesOutcome {
             fees_in_pools,
             payouts,
             refunded_epochs_count: storage_fee_distribution_result
                 .map(|result| result.refunded_epochs_count),
-        })
+        };
+
+        if self.config.verify_sum_trees {
+            // Verify sum trees
+            let credits_verified = self.drive.verify_total_credits(transaction).map_err(Error::Drive)?;
+
+            if credits_verified.ok()? {
+                Ok(outcome)
+            } else {
+                Err(Error::Execution(ExecutionError::CorruptedCreditsNotBalanced(format!("credits are not balanced after block execution {:?}",credits_verified))))
+            }
+        } else {
+            Ok(outcome)
+        }
     }
 }
 
@@ -358,7 +372,7 @@ mod tests {
 
         #[test]
         fn test_processing_epoch_change_for_epoch_0_1_and_4() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let genesis_time_ms = Utc::now()
@@ -528,7 +542,7 @@ mod tests {
 
         #[test]
         fn test_process_3_block_fees_from_different_epochs() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             platform.create_mn_shares_contract(Some(&transaction));

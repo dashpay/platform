@@ -121,7 +121,7 @@ mod tests {
 
         #[test]
         fn should_add_operations_to_distribute_distribution_storage_pool_and_refunds() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             /*
