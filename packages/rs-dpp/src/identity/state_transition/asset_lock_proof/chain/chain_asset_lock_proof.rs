@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use std::convert::TryInto;
 
 use crate::{
     errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,
@@ -35,9 +36,17 @@ impl ChainAssetLockProof {
         self.core_chain_locked_height
     }
 
+    pub fn set_core_chain_locked_height(&mut self, value: u32) {
+        self.core_chain_locked_height = value;
+    }
+
     /// Get out_point
     pub fn out_point(&self) -> &[u8; 36] {
         &self.out_point
+    }
+
+    pub fn set_out_point(&mut self, out_point: [u8; 36]) {
+        self.out_point = out_point;
     }
 
     /// Create identifier

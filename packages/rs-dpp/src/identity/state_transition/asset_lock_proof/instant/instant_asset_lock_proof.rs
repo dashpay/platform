@@ -102,7 +102,16 @@ impl InstantAssetLockProof {
     }
 
     pub fn out_point(&self) -> Option<[u8; 36]> {
-        self.transaction.out_point_buffer(self.output_index())
+        let out_point_buffer = self.transaction.out_point_buffer(self.output_index());
+
+        // Change tx_id endianness to match js-dpp
+        if let Some(mut out_point_buffer) = out_point_buffer {
+            let (tx_id, _) = out_point_buffer.split_at_mut(32);
+            tx_id.reverse();
+            Some(out_point_buffer)
+        } else {
+            None
+        }
     }
 
     pub fn output(&self) -> Option<&TxOut> {
@@ -110,15 +119,11 @@ impl InstantAssetLockProof {
     }
 
     pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
-        let buffer = hash(
-            self.transaction()
-                .out_point_buffer(self.output_index())
-                .ok_or_else(|| {
-                    NonConsensusError::IdentifierCreateError(String::from(
-                        "No output at a given index",
-                    ))
-                })?,
-        );
+        let out_point = self.out_point().ok_or_else(|| {
+            NonConsensusError::IdentifierCreateError(String::from("No output at a given index"))
+        })?;
+
+        let buffer = hash(out_point);
         Ok(Identifier::new(vec_to_array(&buffer)?))
     }
 

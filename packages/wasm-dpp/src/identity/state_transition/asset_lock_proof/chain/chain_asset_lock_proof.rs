@@ -63,9 +63,25 @@ impl ChainAssetLockProofWasm {
         self.0.core_chain_locked_height()
     }
 
+    #[wasm_bindgen(js_name=setCoreChainLockedHeight)]
+    pub fn set_core_chain_locked_height(&mut self, value: u32) {
+        self.0.set_core_chain_locked_height(value);
+    }
+
     #[wasm_bindgen(js_name=getOutPoint)]
     pub fn get_out_point(&self) -> Buffer {
         Buffer::from_bytes(self.0.out_point().as_slice())
+    }
+
+    #[wasm_bindgen(js_name=setOutPoint)]
+    pub fn set_out_point(&mut self, out_point: Vec<u8>) -> Result<(), JsValue> {
+        let out_point: [u8; 36] = out_point.try_into().map_err(|_| {
+            RustConversionError::Error(String::from("outPoint must be a 36 byte array"))
+                .to_js_value()
+        })?;
+        self.0.set_out_point(out_point);
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
