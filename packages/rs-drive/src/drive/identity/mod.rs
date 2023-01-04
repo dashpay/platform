@@ -41,11 +41,11 @@ use integer_encoding::VarInt;
 
 mod estimation_costs;
 mod fetch;
+mod fetch_by_public_key_hashes;
 mod insert;
 mod key;
 mod update;
 mod withdrawal_queue;
-mod fetch_by_public_key_hashes;
 
 pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 

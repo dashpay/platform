@@ -1,18 +1,22 @@
-use grovedb::Element::Item;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use integer_encoding::VarInt;
-use dpp::identifier::Identifier;
-use dpp::identity::Identity;
-use crate::drive::{Drive, unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec};
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::fee::op::DriveOperation;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::identity_path;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+use crate::drive::{
+    non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_tree_path,
+    unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec, Drive,
+};
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::error::Error::GroveDB;
+use crate::fee::op::DriveOperation;
+use dpp::identifier::Identifier;
+use dpp::identity::Identity;
+use grovedb::Element::Item;
+use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use integer_encoding::VarInt;
 
 impl Drive {
     /// Fetches an identity id with all its information from storage.
@@ -22,7 +26,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<[u8; 32]>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_identity_id_by_unique_public_key_hash_operations(public_key_hash, transaction, &mut drive_operations)
+        self.fetch_identity_id_by_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -40,14 +48,15 @@ impl Drive {
             transaction,
             drive_operations,
         ) {
-            Ok(Some(Item(identity_id, _))) => {
-                if identity_id.len() != 32 {
-                    return Err(Error::Drive(DriveError::CorruptedDriveState(
+            Ok(Some(Item(identity_id, _))) => identity_id
+                .as_slice()
+                .try_into()
+                .map_err(|_| {
+                    Error::Drive(DriveError::CorruptedDriveState(
                         "identity id should be 32 bytes".to_string(),
-                    )));
-                }
-                Ok(Some(owner_id.as_slice().try_into()))
-            }
+                    ))
+                })
+                .map(|id| Some(id)),
 
             Ok(None) => Ok(None),
 
@@ -59,6 +68,90 @@ impl Drive {
         }
     }
 
+    /// Does a key with that public key hash already exist in the unique tree?
+    pub fn has_unique_public_key_hash(
+        &self,
+        public_key_hash: [u8; 20],
+        transaction: TransactionArg,
+    ) -> Result<bool, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.has_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Operations for if a key with that public key hash already exists in the unique set?
+    pub(crate) fn has_unique_public_key_hash_operations(
+        &self,
+        public_key_hash: [u8; 20],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<bool, Error> {
+        let unique_key_hashes = unique_key_hashes_tree_path();
+        self.grove_has_raw(
+            unique_key_hashes,
+            public_key_hash.as_slice(),
+            StatefulDirectQuery,
+            transaction,
+            drive_operations,
+        )
+    }
+
+    /// Does a key with that public key hash already exist in the non unique set?
+    pub fn has_non_unique_public_key_hash(
+        &self,
+        public_key_hash: [u8; 20],
+        transaction: TransactionArg,
+    ) -> Result<bool, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.has_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Operations for if a key with that public key hash already exists in the non unique set?
+    pub(crate) fn has_non_unique_public_key_hash_operations(
+        &self,
+        public_key_hash: [u8; 20],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<bool, Error> {
+        let non_unique_key_hashes = non_unique_key_hashes_tree_path();
+        // this will actually get a tree
+        self.grove_has_raw(
+            non_unique_key_hashes,
+            public_key_hash.as_slice(),
+            StatefulDirectQuery,
+            transaction,
+            drive_operations,
+        )
+    }
+
+    /// Operations for if a key with that public key hash already exists in the non unique set?
+    /// For a particular identity
+    pub(crate) fn has_non_unique_public_key_hash_already_for_identity_operations(
+        &self,
+        public_key_hash: [u8; 20],
+        identity_id: [u8; 32],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<bool, Error> {
+        let public_key_hash_sub_tree =
+            non_unique_key_hashes_sub_tree_path(public_key_hash.as_slice());
+        // this will actually get a tree
+        self.grove_has_raw(
+            public_key_hash_sub_tree,
+            identity_id.as_slice(),
+            StatefulDirectQuery,
+            transaction,
+            drive_operations,
+        )
+    }
+
     /// Fetches an identity with all its information from storage.
     pub fn fetch_full_identity_by_unique_public_key_hash(
         &self,
@@ -66,7 +159,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_full_identity_by_unique_public_key_hash_operations(public_key_hash, transaction, &mut drive_operations)
+        self.fetch_full_identity_by_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -76,7 +173,11 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Option<Identity>, Error> {
-        let identity_id = self.fetch_identity_id_by_unique_public_key_hash_operations(public_key_hash, transaction, drive_operations)?;
+        let identity_id = self.fetch_identity_id_by_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            drive_operations,
+        )?;
         if let Some(identity_id) = identity_id {
             self.fetch_full_identity(identity_id, transaction)
         } else {
@@ -85,10 +186,10 @@ impl Drive {
     }
 
     /// The query for the identity revision
-    pub fn identity_id_by_public_key_hash_query(identity_id: [u8; 32]) -> PathQuery {
+    pub fn identity_id_by_public_key_hash_query(public_key_hash: [u8; 20]) -> PathQuery {
         let unique_key_hashes = unique_key_hashes_tree_path_vec();
         let mut query = Query::new();
-        query.insert_key(identity_id.to_vec());
+        query.insert_key(public_key_hash.to_vec());
         PathQuery {
             path: unique_key_hashes,
             query: SizedQuery {
@@ -100,12 +201,18 @@ impl Drive {
     }
 
     /// This query gets the full identity and the public key hash
-    pub fn full_identity_with_public_key_hash_query(public_key_hash: [u8; 20], identity_id: [u8; 32]) -> Result<PathQuery, Error> {
+    pub fn full_identity_with_public_key_hash_query(
+        public_key_hash: [u8; 20],
+        identity_id: [u8; 32],
+    ) -> Result<PathQuery, Error> {
         let full_identity_query = Self::full_identity_query(identity_id)?;
-        let identity_id_by_public_key_hash_query = Self::identity_id_by_public_key_hash_query(public_key_hash)?;
-        // let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
-        // let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&full_identity_query, &identity_id_by_public_key_hash_query]).map_err(Error::GroveDB)
+        let identity_id_by_public_key_hash_query =
+            Self::identity_id_by_public_key_hash_query(public_key_hash);
+        PathQuery::merge(vec![
+            &full_identity_query,
+            &identity_id_by_public_key_hash_query,
+        ])
+        .map_err(Error::GroveDB)
     }
 
     /// Fetches an identity with all its information from storage.
@@ -115,7 +222,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_proved_full_identity_by_unique_public_key_hash_operations(public_key_hash, transaction, &mut drive_operations)
+        self.fetch_proved_full_identity_by_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -125,9 +236,14 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<u8>, Error> {
-        let identity_id = self.fetch_identity_id_by_unique_public_key_hash_operations(public_key_hash, transaction, drive_operations)?;
+        let identity_id = self.fetch_identity_id_by_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            drive_operations,
+        )?;
         if let Some(identity_id) = identity_id {
-            let query = Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)?;
+            let query =
+                Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)?;
             self.grove_get_proved_path_query(&query, transaction, drive_operations)
         } else {
             // We only prove the absence of the public key hash

@@ -448,8 +448,8 @@ impl Drive {
         }
 
         for key in keys_to_add {
-            self.insert_new_key_operations(
-                identity_id.as_slice(),
+            self.insert_new_unique_key_operations(
+                identity_id,
                 key,
                 &StorageFlags::SingleEpoch(epoch.index),
                 estimated_costs_only_with_layer_info,

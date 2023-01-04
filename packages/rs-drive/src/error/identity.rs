@@ -5,9 +5,17 @@ pub enum IdentityError {
     #[error("identity already exists error: {0}")]
     IdentityAlreadyExists(&'static str),
 
+    /// Identity already exists error
+    #[error("identity key already exists for user error: {0}")]
+    IdentityKeyAlreadyExists(&'static str),
+
     /// A user is requesting an unknown key error
     #[error("identity public key not found: {0}")]
     IdentityPublicKeyNotFound(String),
+
+    /// A unique key with that hash already exists
+    #[error("a unique key with that hash already exists: {0}")]
+    UniqueKeyAlreadyExists(&'static str),
 
     /// Missing required key error
     #[error("missing required key: {0}")]

@@ -31,7 +31,7 @@ use std::collections::HashMap;
 impl Drive {
     fn insert_reference_to_key_operations(
         &self,
-        identity_id: &[u8],
+        identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -40,7 +40,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let identity_path = identity_key_path_vec(identity_id, identity_key.id);
+        let identity_path = identity_key_path_vec(identity_id.as_slice(), identity_key.id);
 
         let reference = Element::new_reference_with_max_hops_and_flags(
             AbsolutePathReference(identity_path),
@@ -106,7 +106,7 @@ impl Drive {
 
     pub(crate) fn insert_key_to_storage_operations(
         &self,
-        identity_id: &[u8],
+        identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
         storage_flags: &StorageFlags,
@@ -117,7 +117,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
         // Now lets insert the public key
-        let identity_key_tree = identity_key_tree_path(identity_id);
+        let identity_key_tree = identity_key_tree_path(identity_id.as_slice());
 
         self.batch_insert(
             PathFixedSizeKeyRefElement((
@@ -163,7 +163,7 @@ impl Drive {
 
     fn insert_key_searchable_references_operations(
         &self,
-        identity_id: &[u8],
+        identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
         storage_flags: &StorageFlags,
@@ -186,8 +186,10 @@ impl Drive {
             if security_level != SecurityLevel::MEDIUM {
                 // Not Medium (Medium is already pre-inserted)
 
-                let purpose_path =
-                    identity_query_keys_purpose_tree_path(identity_id, purpose_vec.as_slice());
+                let purpose_path = identity_query_keys_purpose_tree_path(
+                    identity_id.as_slice(),
+                    purpose_vec.as_slice(),
+                );
 
                 let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                     BatchInsertTreeApplyType::StatefulBatchInsert
@@ -212,7 +214,7 @@ impl Drive {
 
         // Now let's set the reference
         let reference_path = identity_query_keys_full_tree_path(
-            identity_id,
+            identity_id.as_slice(),
             purpose_vec.as_slice(),
             security_level_vec.as_slice(),
         );
@@ -232,9 +234,9 @@ impl Drive {
     }
 
     /// Insert a new key into an identity operations
-    pub(crate) fn insert_new_key_operations(
+    pub(crate) fn insert_new_unique_key_operations(
         &self,
-        identity_id: &[u8],
+        identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
         storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -308,8 +310,8 @@ impl Drive {
         )?;
 
         for key in keys.into_iter() {
-            self.insert_new_key_operations(
-                identity_id.as_slice(),
+            self.insert_new_unique_key_operations(
+                identity_id,
                 key,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
