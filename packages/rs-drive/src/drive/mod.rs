@@ -172,6 +172,7 @@ impl Drive {
         }
     }
 
+    /// Drops the drive cache
     pub fn drop_cache(&self) {
         let genesis_time_ms = self.config.default_genesis_time;
         let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;

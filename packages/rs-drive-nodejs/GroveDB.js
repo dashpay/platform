@@ -194,10 +194,11 @@ class GroveDB {
    *
    * @param {PathQuery} query
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [allowCache=false]
    * @return {Promise<*>}
    */
-  async query(query, useTransaction = false) {
-    return groveDbQueryAsync.call(this.db, query, useTransaction);
+  async query(query, useTransaction = false, allowCache = true) {
+    return groveDbQueryAsync.call(this.db, query, allowCache, useTransaction);
   }
 
   /**

@@ -238,10 +238,7 @@ class GroveDBStore {
     let items;
 
     try {
-      [items] = await this.db.query(
-        query,
-        options.useTransaction || false,
-      );
+      [items] = await this.db.query(query, options.useTransaction || false);
     } catch (e) {
       if (
         e.message.startsWith('grovedb: path key not found')
