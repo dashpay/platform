@@ -172,6 +172,19 @@ impl Drive {
         }
     }
 
+    pub fn drop_cache(&self) {
+        let genesis_time_ms = self.config.default_genesis_time;
+        let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;
+        let data_contracts_block_cache_size = self.config.data_contracts_block_cache_size;
+        self.cache.replace(DriveCache {
+            cached_contracts: DataContractCache::new(
+                data_contracts_global_cache_size,
+                data_contracts_block_cache_size,
+            ),
+            genesis_time_ms,
+        });
+    }
+
     /// Commits a transaction.
     pub fn commit_transaction(&self, transaction: Transaction) -> Result<(), Error> {
         self.grove

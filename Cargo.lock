@@ -574,7 +574,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
+source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -784,7 +784,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashevo/rust-dashcore?branch=master#0cf3939e25a66b3cfdb5ba354fb4437d6b0d9d03"
+source = "git+https://github.com/dashevo/rust-dashcore?branch=master#51548a4a1b9eca7430f5f3caf94d9784886ff2e9"
 dependencies = [
  "anyhow",
  "bech32",
@@ -800,7 +800,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#0cf3939e25a66b3cfdb5ba354fb4437d6b0d9d03"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#51548a4a1b9eca7430f5f3caf94d9784886ff2e9"
 dependencies = [
  "anyhow",
  "bech32",
@@ -1253,8 +1253,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.9.0"
-source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
+version = "0.9.2"
+source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
 dependencies = [
  "bincode",
  "costs",
@@ -1687,8 +1687,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "0.9.0"
-source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
+version = "0.9.2"
+source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1833,9 +1833,9 @@ checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
 name = "nom"
-version = "7.1.1"
+version = "7.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8903e5a29a317527874d0402f867152a3d21c908bb0b933e416c65e301d4c36"
+checksum = "e5507769c4919c998e69e49c839d9dc6e693ede4cc4290d6ad8b41d4f09c548c"
 dependencies = [
  "memchr",
  "minimal-lexical",
@@ -2010,9 +2010,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.30.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239da7f290cfa979f43f85a8efeee9a8a76d0827c356d37f9d3d7254d6b537fb"
+checksum = "8d864c91689fdc196779b98dba0aceac6118594c2df6ee5d943eb6a8df4d107a"
 dependencies = [
  "memchr",
 ]
@@ -2729,7 +2729,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
+source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
 dependencies = [
  "blake3",
  "costs",
@@ -2962,9 +2962,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.23.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab6d665857cc6ca78d6e80303a02cea7a7851e85dfbd77cbdc09bd129f1ef46"
+checksum = "38a54aca0c15d014013256222ba0ebed095673f89345dd79119d912eb561b7a8"
 dependencies = [
  "autocfg",
  "bytes",
@@ -3116,7 +3116,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=89df137eb8b50f315d820c252ba6b7be61af46b4#89df137eb8b50f315d820c252ba6b7be61af46b4"
+source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
 dependencies = [
  "hex",
  "itertools",

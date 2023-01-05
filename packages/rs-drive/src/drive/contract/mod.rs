@@ -851,9 +851,15 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> CostResult<Option<Arc<ContractFetchInfo>>, Error> {
-        let CostContext { value, cost } =
-            self.grove
-                .get(contract_root_path(&contract_id), &[0], transaction);
+        // As we want deterministic costs, we want the cost to always be the same for
+        // fetching the contract.
+        // We need to pass allow cache to false
+        let CostContext { value, cost } = self.grove.get_caching_optional(
+            contract_root_path(&contract_id),
+            &[0],
+            false,
+            transaction,
+        );
 
         match value {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
@@ -1302,6 +1308,121 @@ mod tests {
                 None,
             )
             .expect("expected to apply contract successfully");
+    }
+
+    #[test]
+    fn test_contract_cache_returns_same_cost_after_reload() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_path = "tests/supporting_files/contract/references/references.json";
+
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let ref_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+
+        let transaction = drive.grove.start_transaction();
+
+        // Create a contract first
+        drive
+            .apply_contract(
+                &ref_contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_ref(),
+                Some(&transaction),
+            )
+            .expect("expected to apply contract successfully");
+
+        let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+        drive
+            .apply_contract(
+                &deep_contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_ref(),
+                Some(&transaction),
+            )
+            .expect("expected to apply contract successfully");
+
+        let deep_contract_fetch_info = drive
+            .get_contract_with_fetch_info(
+                deep_contract.id().to_buffer(),
+                Some(&Epoch::new(0)),
+                Some(&transaction),
+            )
+            .expect("got contract")
+            .1
+            .expect("got contract fetch info");
+        let ref_contract_fetch_info = drive
+            .get_contract_with_fetch_info(
+                ref_contract.id().to_buffer(),
+                Some(&Epoch::new(0)),
+                Some(&transaction),
+            )
+            .expect("got contract")
+            .1
+            .expect("got contract fetch info");
+
+        transaction.commit().expect("expected to commit");
+
+        let deep_contract_fetch_info_after_prune = drive
+            .get_contract_with_fetch_info(
+                deep_contract.id().to_buffer(),
+                Some(&Epoch::new(0)),
+                None,
+            )
+            .expect("got contract")
+            .1
+            .expect("got contract fetch info");
+        let ref_contract_fetch_info_after_prune = drive
+            .get_contract_with_fetch_info(ref_contract.id().to_buffer(), Some(&Epoch::new(0)), None)
+            .expect("got contract")
+            .1
+            .expect("got contract fetch info");
+
+        assert_eq!(
+            deep_contract_fetch_info,
+            deep_contract_fetch_info_after_prune
+        );
+        assert_eq!(ref_contract_fetch_info, ref_contract_fetch_info_after_prune);
+
+        drive.drop_cache();
+
+        let deep_contract_fetch_info_after_cache_reload = drive
+            .get_contract_with_fetch_info(
+                deep_contract.id().to_buffer(),
+                Some(&Epoch::new(0)),
+                None,
+            )
+            .expect("got contract")
+            .1
+            .expect("got contract fetch info");
+        let ref_contract_fetch_info_after_cache_reload = drive
+            .get_contract_with_fetch_info(ref_contract.id().to_buffer(), Some(&Epoch::new(0)), None)
+            .expect("got contract")
+            .1
+            .expect("got contract fetch info");
+
+        assert_eq!(
+            deep_contract_fetch_info,
+            deep_contract_fetch_info_after_cache_reload
+        );
+        assert_eq!(
+            ref_contract_fetch_info,
+            ref_contract_fetch_info_after_cache_reload
+        );
     }
 
     mod get_contract_with_fetch_info_and_add_to_operations {
