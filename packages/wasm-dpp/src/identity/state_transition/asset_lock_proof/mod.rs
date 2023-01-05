@@ -3,13 +3,21 @@ mod instant;
 
 pub use chain::*;
 pub use instant::*;
+use std::sync::Arc;
 
-use crate::errors::RustConversionError;
+use crate::errors::{from_dpp_err, RustConversionError};
+use dpp::dashcore::consensus;
+use dpp::dashcore::hashes::hex::FromHex;
 use wasm_bindgen::prelude::*;
 
+use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
-use crate::Deserialize;
-use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
+use crate::validation::ValidationResultWasm;
+use crate::{Deserialize, StateTransitionExecutionContextWasm};
+use dpp::identity::state_transition::asset_lock_proof::{
+    AssetLockProof, AssetLockTransactionValidator,
+};
 
 #[derive(Deserialize, Clone)]
 #[wasm_bindgen(js_name=AssetLockProof)]
@@ -108,4 +116,49 @@ pub fn create_asset_lock_proof_instance(raw_parameters: JsValue) -> Result<JsVal
             RustConversionError::Error(String::from("unrecognized asset lock type")).to_js_value(),
         ),
     }
+}
+
+#[wasm_bindgen(js_name=validateAssetLockTransaction)]
+pub async fn validate_asset_lock_transaction(
+    state_repository: ExternalStateRepositoryLike,
+    raw_transaction: String,
+    output_index: usize,
+    execution_context: &StateTransitionExecutionContextWasm,
+) -> Result<ValidationResultWasm, JsValue> {
+    let tx_bytes = Vec::from_hex(&raw_transaction)
+        .map_err(|_| RustConversionError::Error(String::from("invalid transaction hex")))?;
+
+    let state_repository_wrapper =
+        Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+
+    let validator = AssetLockTransactionValidator::new(state_repository_wrapper);
+
+    let result = validator
+        .validate(tx_bytes.as_slice(), output_index, execution_context.into())
+        .await
+        .map_err(|e| from_dpp_err(e.into()))?;
+
+    let validation_result = result.map(|item| {
+        let object = js_sys::Object::new();
+
+        js_sys::Reflect::set(
+            &object,
+            &"publicKeyHash".to_owned().into(),
+            &Buffer::from_bytes(&item.public_key_hash),
+        )
+        .unwrap();
+
+        let deserialized_tx = consensus::serialize(&item.transaction);
+
+        js_sys::Reflect::set(
+            &object,
+            &"transaction".to_owned().into(),
+            &Buffer::from_bytes(&deserialized_tx),
+        )
+        .unwrap();
+
+        object
+    });
+
+    Ok(validation_result.into())
 }

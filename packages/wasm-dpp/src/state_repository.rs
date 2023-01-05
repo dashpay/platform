@@ -62,14 +62,14 @@ extern "C" {
     #[wasm_bindgen(structural, method, js_name=isAssetLockTransactionOutPointAlreadyUsed)]
     pub fn is_asset_lock_transaction_out_point_already_used(
         this: &ExternalStateRepositoryLike,
-        out_point_buffer: &[u8],
+        out_point_buffer: Vec<u8>,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> bool;
 
     #[wasm_bindgen(structural, method, js_name=verifyInstantLock)]
     pub fn verify_instant_lock(
         this: &ExternalStateRepositoryLike,
-        instant_lock: &[u8],
+        instant_lock: &[u8], // TODO: replace with Vec<u8> to ensure that memory won't get allocated to something different
         execution_context: StateTransitionExecutionContextWasm,
     ) -> bool;
 
@@ -282,7 +282,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .is_asset_lock_transaction_out_point_already_used(
-                out_point_buffer,
+                out_point_buffer.to_owned(),
                 execution_context.clone().into(),
             ))
     }
