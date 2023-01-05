@@ -56,6 +56,21 @@ pub struct FeeResult {
 }
 
 impl FeeResult {
+    /// Convenience method to get total fee
+    pub fn total_fee(&self) -> Credits {
+        self.storage_fee + self.processing_fee
+    }
+
+    /// Convenience method to get required removed balance
+    pub fn required_removed_balance(&self) -> Credits {
+        self.storage_fee
+    }
+
+    /// Convenience method to get required removed balance
+    pub fn desired_removed_balance(&self) -> Credits {
+        self.storage_fee
+    }
+
     /// Creates a FeeResult instance with specified storage and processing fees
     pub fn default_with_fees(storage_fee: Credits, processing_fee: Credits) -> Self {
         FeeResult {

@@ -31,11 +31,9 @@
 //!
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use crate::abci::handlers::TenderdashAbci;
-use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
 use chrono::{Duration, Utc};
 use drive::common::helpers::identities::create_test_masternode_identities;
-use drive::dpp::identity::Identity;
+use drive::dpp::identity::{Identity, KeyID};
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::CreditsPerEpoch;
@@ -55,18 +53,13 @@ use rand::Rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::identifier::Identifier;
 use drive::drive::{block_info, Drive};
+use drive::drive::flags::StorageFlags;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use drive::fee::result::FeeResult;
 
-use crate::abci::messages::{
-    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
-};
-use crate::common::helpers::setup::setup_platform_raw;
-use crate::config::PlatformConfig;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Frequency {
     pub times_per_block_range: Range<u16>, //insertion count when block is chosen
     pub chance_per_block: Option<f64>,     //chance of insertion if set
@@ -85,7 +78,7 @@ impl Frequency {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct DocumentOp {
     pub contract: Contract,
     pub document_type: DocumentType,
@@ -93,13 +86,13 @@ pub struct DocumentOp {
 
 pub type ProTxHash = [u8;32];
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 struct Strategy {
     operations: Vec<(DocumentOp, Frequency)>,
     identities_inserts: Frequency,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 struct TestParams {
     strategy: Strategy,
     quorum_members: VecDeque<ProTxHash>,
@@ -116,38 +109,41 @@ impl Strategy {
 }
 
 impl TestParams {
-    fn execute_for_block_identity_operations(
+    fn execute_block_identity_operations(
         &mut self,
         drive: &Drive,
         block_info: &BlockInfo,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         rng: &mut StdRng,
-    ) -> FeeResult {
+    ) {
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            create_identities(drive, block_info, count, 5, transaction,rng: &mut StdRng)
+            create_identities(drive, block_info, count, 5, Some(transaction),rng: &mut StdRng)
         }
     }
 
-    fn execute_for_block_document_operations(
+    fn execute_block_document_operations(
         &mut self,
         drive: &Drive,
         block_info: &BlockInfo,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         rng: &mut StdRng,
-    ) -> FeeResult {
+    ) {
         for (op, frequency) in &self.strategy.operations {
             if frequency.check_hit(rng) {
                 let count = rng.gen_range(frequency.times_per_block_range.clone());
                 let documents = op.document_type.random_documents(count as u32, None);
-                let storage_flags = Some(SingleEpoch(epoch_index));
                 for document in &documents {
+                    let i = rng.gen();
+                    let identity = self.current_identities.values().get(i);
                     let serialization = document
                         .serialize(&op.document_type)
                         .expect("expected to serialize document");
 
-                    let document_fee_result = drive
+                    let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id));
+
+                    let estimated_document_fee_result = drive
                         .add_document_for_contract(
                             DocumentAndContractInfo {
                                 owned_document_info: OwnedDocumentInfo {
@@ -163,29 +159,54 @@ impl TestParams {
                             },
                             false,
                             block_info.clone(),
-                            true,
+                            false,
                             Some(transaction),
                         )
                         .expect("expected to add document");
 
-                    fee_result.checked_add_assign(document_fee_result).unwrap();
+                    // does the identity have enough balance?
+
+                    let balance = drive.fetch_identity_balance(identity.id, true, Some(transaction)).expect("expected to fetch identity balance").expect("expected to get balance");
+
+                    if balance >= estimated_document_fee_result.total_fee() {
+                        // then do the real operation
+                        let fee_result = drive
+                            .add_document_for_contract(
+                                DocumentAndContractInfo {
+                                    owned_document_info: OwnedDocumentInfo {
+                                        document_info: DocumentRefAndSerialization((
+                                            document,
+                                            serialization.as_slice(),
+                                            storage_flags.as_ref(),
+                                        )),
+                                        owner_id: None
+                                    },
+                                    contract: &op.contract,
+                                    document_type: &op.document_type,
+                                },
+                                false,
+                                block_info.clone(),
+                                false,
+                                Some(transaction),
+                            )
+                            .expect("expected to add document");
+
+                        drive.remove_from_identity_balance(identity.id, fee_result.required_removed_balance(), fee_result.desired_removed_balance(), block_info, true, Some(transaction)).expect("expected to pay for operation");
+                    }
                 }
             }
         }
     }
 
-    fn execute_for_block(
+    fn execute_block(
         &mut self,
         drive: &Drive,
         block_info: &BlockInfo,
         transaction: &Transaction,
         rng: &mut StdRng,
-    ) -> FeeResult {
-        let mut fee_result = FeeResult::default();
-        self.execute_for_block_identity_operations(drive, block_info, transaction, rng);
-        self.execute_for_block_document_operations(drive, block_info, transaction, rng);
-
-        fee_result
+    ) {
+        self.execute_block_identity_operations(drive, block_info, transaction, rng);
+        self.execute_block_document_operations(drive, block_info, transaction, rng);
     }
 }
 
@@ -193,16 +214,17 @@ fn create_identities(
     drive: &Drive,
     block_info: &BlockInfo,
     count: u16,
-    key_count: KeyCount,
+    key_count: KeyID,
     transaction: TransactionArg,
     rng: &mut StdRng,
 ) -> Vec<Identity> {
     let identities = Identity::random_identities_with_rng(count, key_count, rng);
     for identity in identities.clone() {
+        let balance = identity.balance;
         drive
             .add_new_identity(identity, block_info, true, transaction)
             .expect("expected to add an identity");
-        drive.sus
+        drive.add_to_system_credits(balance, transaction).expect("added to system credits")
     }
     identities
 }
@@ -228,13 +250,7 @@ fn run_block(platform: &Platform, proposer: [u8;32], block_info: &BlockInfo, tes
             )
         });
 
-    let strategy = &test_params.strategy;
-
-    let FeeResult{ storage_fee, processing_fee, fee_refunds, removed_bytes_from_system } = test_params.execute_for_block(
-        &platform.drive,
-        block_info,
-        &transaction,
-    );
+    test_params.execute_block(&platform.drive, block_info, &transaction, rng);
 
     let block_end_request = BlockEndRequest {
         fees: BlockFees {
@@ -365,28 +381,4 @@ fn play_chain() {
     let block_interval = 86400i64.div(blocks_per_day);
 
     let mut previous_block_time_ms: Option<u64> = None;
-
-    // process blocks
-    for day in 0..total_days {
-        for block_num in 0..blocks_per_day {
-
-
-
-
-            // Should pay to all proposers for epoch 0, when epochs 1 started
-            if epoch_index != 0 && epoch_change {
-                assert!(block_end_response.proposers_paid_count.is_some());
-                assert!(block_end_response.paid_epoch_index.is_some());
-
-                assert_eq!(
-                    block_end_response.proposers_paid_count.unwrap(),
-                    proposers_count
-                );
-                assert_eq!(block_end_response.paid_epoch_index.unwrap(), 0);
-            } else {
-                assert!(block_end_response.proposers_paid_count.is_none());
-                assert!(block_end_response.paid_epoch_index.is_none());
-            };
-        }
-    }
 }
