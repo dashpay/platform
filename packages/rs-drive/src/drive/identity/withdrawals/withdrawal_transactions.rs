@@ -52,7 +52,7 @@ impl Drive {
                 ))
             })?;
 
-            let state_transition_size = 184;
+            let state_transition_size = 190;
 
             let output_script: Script = Script::from(output_script);
 
