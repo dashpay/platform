@@ -37,7 +37,10 @@ use crate::drive::system::misc_path;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use grovedb::operations::insert::InsertOptions;
+use grovedb::Element::Item;
 use grovedb::TransactionArg;
+use integer_encoding::VarInt;
 
 /// Storage fee pool key
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
@@ -72,7 +75,11 @@ impl VerifyCreditOutcome {
     /// Is the outcome okay? basically do the values match up
     /// Errors in case of overflow
     pub fn ok(&self) -> Result<bool, Error> {
-        let VerifyCreditOutcome{ total_credits_in_platform, total_in_pools, total_identity_balances } = self;
+        let VerifyCreditOutcome {
+            total_credits_in_platform,
+            total_in_pools,
+            total_identity_balances,
+        } = self;
         let total_from_trees = (*total_in_pools)
             .checked_add(*total_identity_balances)
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
@@ -84,9 +91,92 @@ impl VerifyCreditOutcome {
 }
 
 impl Drive {
+    /// We add to the total platform system credits when:
+    /// - we create an identity
+    /// - we top up an identity
+    /// - through the block reward
+    pub fn add_to_system_credits(
+        &self,
+        amount: u64,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        let mut drive_operations = vec![];
+        let path_holding_total_credits = misc_path();
+        let total_credits_in_platform = self
+            .grove_get_raw_value_u64_from_encoded_var_vec(
+                path_holding_total_credits,
+                TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut drive_operations,
+            )?
+            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                "Credits not found in Platform",
+            )))?;
+        let new_total = total_credits_in_platform
+            .checked_add(amount)
+            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                "trying to add an amount that would overflow credits",
+            )))?;
+        self.grove_insert(
+            path_holding_total_credits,
+            TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+            Item(new_total.encode_var_vec(), None),
+            transaction,
+            Some(InsertOptions {
+                validate_insertion_does_not_override: false,
+                validate_insertion_does_not_override_tree: false,
+                base_root_storage_is_free: true,
+            }),
+            &mut drive_operations,
+        )
+    }
+
+    /// We remove from system credits when:
+    /// - an identity withdraws some of their balance
+    pub fn remove_from_system_credits(
+        &self,
+        amount: u64,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        let mut drive_operations = vec![];
+        let path_holding_total_credits = misc_path();
+        let total_credits_in_platform = self
+            .grove_get_raw_value_u64_from_encoded_var_vec(
+                path_holding_total_credits,
+                TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut drive_operations,
+            )?
+            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                "Credits not found in Platform",
+            )))?;
+        let new_total = total_credits_in_platform
+            .checked_sub(amount)
+            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                "trying to remove an amount that would underflow credits",
+            )))?;
+        self.grove_insert(
+            path_holding_total_credits,
+            TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+            Item(new_total.encode_var_vec(), None),
+            transaction,
+            Some(InsertOptions {
+                validate_insertion_does_not_override: false,
+                validate_insertion_does_not_override_tree: false,
+                base_root_storage_is_free: true,
+            }),
+            &mut drive_operations,
+        )
+    }
+
     /// Verify that the sum tree identity credits + pool credits are equal to the
     /// Total credits in the system
-    pub fn verify_total_credits(&self, transaction: TransactionArg) -> Result<VerifyCreditOutcome, Error> {
+    pub fn verify_total_credits(
+        &self,
+        transaction: TransactionArg,
+    ) -> Result<VerifyCreditOutcome, Error> {
         let mut drive_operations = vec![];
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self

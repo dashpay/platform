@@ -41,7 +41,7 @@ pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 /// Default maximum number of contracts in cache
 pub const DEFAULT_DATA_CONTRACTS_CACHE_SIZE: u64 = 500;
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 /// Encoding for Drive
 pub enum DriveEncoding {
     /// Drive CBOR
@@ -50,7 +50,7 @@ pub enum DriveEncoding {
     DriveProtobuf,
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 /// Drive configuration struct
 pub struct DriveConfig {
     /// Boolean if batching is enabled

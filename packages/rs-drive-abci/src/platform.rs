@@ -36,12 +36,16 @@ use drive::drive::config::DriveConfig;
 use drive::drive::Drive;
 use std::cell::RefCell;
 use std::path::Path;
+use serde_json::ser::State;
 use crate::config::PlatformConfig;
+use crate::state::PlatformState;
 
 /// Platform
 pub struct Platform {
     /// Drive
     pub drive: Drive,
+    /// State
+    pub state: PlatformState,
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
@@ -53,8 +57,10 @@ impl Platform {
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
+        let state = PlatformState{};
         Ok(Platform {
             drive,
+            state,
             config,
             block_execution_context: RefCell::new(None),
         })
