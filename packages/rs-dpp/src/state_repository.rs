@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use dashcore::InstantLock;
 #[cfg(any(test, feature = "mocks"))]
 use mockall::{automock, predicate::*};
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{Infallible, TryInto};
 

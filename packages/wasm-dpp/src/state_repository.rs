@@ -55,7 +55,7 @@ extern "C" {
     #[wasm_bindgen(structural, method, js_name=fetchTransaction)]
     pub fn fetch_transaction(
         this: &ExternalStateRepositoryLike,
-        id: &str,
+        id: JsValue,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
 
@@ -69,7 +69,7 @@ extern "C" {
     #[wasm_bindgen(structural, method, js_name=verifyInstantLock)]
     pub fn verify_instant_lock(
         this: &ExternalStateRepositoryLike,
-        instant_lock: &[u8], // TODO: replace with Vec<u8> to ensure that memory won't get allocated to something different
+        instant_lock: Vec<u8>, // TODO: replace with Vec<u8> to ensure that memory won't get allocated to something different
         execution_context: StateTransitionExecutionContextWasm,
     ) -> bool;
 
@@ -201,7 +201,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_transaction(id, execution_context.into());
+            .fetch_transaction(JsValue::from_str(id), execution_context.into());
         Ok(FetchTransactionResponse::from(response))
     }
 
@@ -264,10 +264,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .verify_instant_lock(
-                raw_instant_lock.as_slice(),
-                execution_context.clone().into(),
-            );
+            .verify_instant_lock(raw_instant_lock, execution_context.clone().into());
 
         Ok(verified)
     }

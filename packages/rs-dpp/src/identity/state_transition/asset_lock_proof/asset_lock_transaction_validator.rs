@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use dashcore::consensus;
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Transaction};
 
 use crate::consensus::basic::identity::{
