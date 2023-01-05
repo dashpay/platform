@@ -314,6 +314,7 @@ fn run_chain(platform: &Platform, days: u32, blocks_per_day: u32, block_interval
     }
 }
 
+//todo redo
 #[test]
 fn play_chain() {
     let platform = setup_platform_raw(Some(PlatformConfig {
