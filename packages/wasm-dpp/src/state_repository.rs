@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
+use dpp::dashcore::consensus;
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
@@ -62,6 +63,13 @@ extern "C" {
     pub fn is_asset_lock_transaction_out_point_already_used(
         this: &ExternalStateRepositoryLike,
         out_point_buffer: &[u8],
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> bool;
+
+    #[wasm_bindgen(structural, method, js_name=verifyInstantLock)]
+    pub fn verify_instant_lock(
+        this: &ExternalStateRepositoryLike,
+        instant_lock: &[u8],
         execution_context: StateTransitionExecutionContextWasm,
     ) -> bool;
 
@@ -247,10 +255,21 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn verify_instant_lock(
         &self,
-        _instant_lock: &InstantLock,
-        _execution_context: &StateTransitionExecutionContext,
+        instant_lock: &InstantLock,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<bool> {
-        todo!()
+        let raw_instant_lock = consensus::serialize(instant_lock);
+
+        let verified = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .verify_instant_lock(
+                raw_instant_lock.as_slice(),
+                execution_context.clone().into(),
+            );
+
+        Ok(verified)
     }
 
     async fn is_asset_lock_transaction_out_point_already_used(

@@ -20,19 +20,18 @@ describe('validateChainAssetLockProofStructureFactory', () => {
   let executionContext;
 
   let StateTransitionExecutionContext;
-  let FetchTransactionResponse;
   let ValidationResult;
   let JsonSchemaError;
   let InvalidAssetLockProofCoreChainHeightError;
   let IdentityAssetLockTransactionIsNotFoundError;
   let InvalidIdentityAssetLockTransactionOutputError;
   let InvalidAssetLockProofTransactionHeightError;
+
   let validateChainAssetLockProofStructure;
 
   before(async () => {
     ({
       StateTransitionExecutionContext,
-      FetchTransactionResponse,
       ValidationResult,
       JsonSchemaError,
       InvalidAssetLockProofCoreChainHeightError,

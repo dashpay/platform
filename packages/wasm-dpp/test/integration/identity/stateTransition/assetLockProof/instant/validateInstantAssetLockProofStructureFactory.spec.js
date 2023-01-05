@@ -1,35 +1,45 @@
-const { getRE2Class } = require('@dashevo/wasm-re2');
-
 const DashCoreLib = require('@dashevo/dashcore-lib');
 
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-
 const getInstantAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const InvalidIdentityAssetLockProofError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
-const IdentityAssetLockProofLockedTransactionMismatchError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
-const { expectValidationError, expectJsonSchemaError } = require(
+const { expectValidationError } = require(
   '@dashevo/dpp/lib/test/expect/expectError',
 );
 
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const InvalidIdentityAssetLockTransactionError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionError');
-const validateInstantAssetLockProofStructureFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
+const { expect } = require('chai');
+
+const { default: loadWasmDpp } = require('../../../../../../dist');
 
 describe('validateInstantAssetLockProofStructureFactory', () => {
   let rawProof;
   let transaction;
   let stateRepositoryMock;
-  let instantLockFromBufferMock;
-  let instantLockMock;
+  let executionContext;
+
+  let StateTransitionExecutionContext;
+  let ValidationResult;
+  let InvalidInstantAssetLockProofError;
+  let IdentityAssetLockProofLockedTransactionMismatchError;
+  let InvalidInstantAssetLockProofSignatureError;
+  let InvalidIdentityAssetLockTransactionError;
+  let JsonSchemaError;
+
   let validateInstantAssetLockProofStructure;
-  let jsonSchemaValidator;
-  let validateAssetLockTransactionResult;
-  let publicKeyHash;
-  let validateAssetLockTransactionMock;
+  let validateInstantAssetLockProofStructureDPP;
+
+  before(async () => {
+    ({
+      StateTransitionExecutionContext,
+      ValidationResult,
+      JsonSchemaError,
+      InvalidInstantAssetLockProofError,
+      IdentityAssetLockProofLockedTransactionMismatchError,
+      InvalidInstantAssetLockProofSignatureError,
+      InvalidIdentityAssetLockTransactionError,
+      validateInstantAssetLockProofStructure: validateInstantAssetLockProofStructureDPP,
+    } = await loadWasmDpp());
+  });
 
   beforeEach(async function beforeEach() {
     const assetLock = getInstantAssetLockFixture();
@@ -37,41 +47,16 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
     rawProof = assetLock.toObject();
 
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
-
-    jsonSchemaValidator = new JsonSchemaValidator(ajv);
-
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.verifyInstantLock.resolves(true);
+    stateRepositoryMock.verifyInstantLock.returns(true);
 
-    instantLockMock = {
-      txid: transaction.id,
-      verify: this.sinonSandbox.stub().resolves(true),
-    };
+    executionContext = new StateTransitionExecutionContext();
 
-    instantLockFromBufferMock = this.sinonSandbox.stub(DashCoreLib.InstantLock, 'fromBuffer').returns(instantLockMock);
-
-    publicKeyHash = Buffer.from('152073ca2300a86b510fa2f123d3ea7da3af68dc', 'hex');
-
-    validateAssetLockTransactionResult = new ValidationResult();
-    validateAssetLockTransactionResult.setData({
-      publicKeyHash,
-      transaction,
-    });
-    validateAssetLockTransactionMock = this.sinonSandbox.stub().resolves(
-      validateAssetLockTransactionResult,
-    );
-
-    validateInstantAssetLockProofStructure = validateInstantAssetLockProofStructureFactory(
-      jsonSchemaValidator,
+    validateInstantAssetLockProofStructure = (proof) => validateInstantAssetLockProofStructureDPP(
       stateRepositoryMock,
-      validateAssetLockTransactionMock,
+      proof,
+      executionContext,
     );
-  });
-
-  afterEach(() => {
-    instantLockFromBufferMock.restore();
   });
 
   describe('type', () => {
@@ -80,7 +65,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
@@ -89,25 +74,15 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(error.getParams().missingProperty).to.equal('type');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should be equal to 0', async () => {
       rawProof.type = -1;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.getInstancePath()).to.equal('/type');
-      expect(error.getKeyword()).to.equal('const');
+      await expect(validateInstantAssetLockProofStructure(rawProof))
+        .to.be.rejectedWith('Conversion Error: Error: invalid type: floating point `-1`, expected u8');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
   });
 
@@ -117,7 +92,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
@@ -126,27 +101,15 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(error.getParams().missingProperty).to.equal('instantLock');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should be a byte array', async () => {
       rawProof.instantLock = new Array(165).fill('string');
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
-
-      expectJsonSchemaError(result, 2);
-
-      const [error, byteArrayError] = result.getErrors();
-
-      expect(error.getInstancePath()).to.equal('/instantLock/0');
-      expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
+      await expect(validateInstantAssetLockProofStructure(rawProof))
+        .to.be.rejectedWith('Conversion Error: Error: invalid type: string "string", expected u8');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should not be shorter than 160 bytes', async () => {
@@ -154,7 +117,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
@@ -162,8 +125,6 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(error.getKeyword()).to.equal('minItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should not be longer than 100 Kb', async () => {
@@ -171,7 +132,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
@@ -179,37 +140,36 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(error.getKeyword()).to.equal('maxItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should be valid', async () => {
-      const instantLockError = new Error('something is wrong');
-
-      instantLockFromBufferMock.throws(instantLockError);
-
       rawProof.instantLock = Buffer.alloc(200);
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
-      expectValidationError(result, InvalidIdentityAssetLockProofError);
+      expectValidationError(result, InvalidInstantAssetLockProofError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(1041);
-      expect(error.getValidationError()).to.equal(instantLockError);
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should lock the same transaction', async () => {
       const txId = Buffer.alloc(32);
-      instantLockMock.txid = txId.toString('hex');
+
+      const instantLockParsed = new DashCoreLib.InstantLock(rawProof.instantLock);
+      instantLockParsed.txid = txId.toString('hex');
+      rawProof.instantLock = instantLockParsed.toBuffer();
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, IdentityAssetLockProofLockedTransactionMismatchError);
+      expectValidationError(
+        result,
+        IdentityAssetLockProofLockedTransactionMismatchError,
+        1,
+        ValidationResult,
+      );
 
       const [error] = result.getErrors();
 
@@ -217,9 +177,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(error.getInstantLockTransactionId()).to.deep.equal(txId);
       expect(error.getAssetLockTransactionId()).to.deep.equal(Buffer.from(transaction.id, 'hex'));
 
-      // expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.be.calledOnce();
+      expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
     });
 
     it('should have valid signature', async () => {
@@ -227,14 +185,18 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, InvalidIdentityAssetLockProofSignatureError);
+      expectValidationError(
+        result,
+        InvalidInstantAssetLockProofSignatureError,
+        1,
+        ValidationResult,
+      );
 
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(1042);
 
       expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
   });
 
@@ -244,7 +206,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
@@ -253,27 +215,15 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(error.getParams().missingProperty).to.equal('transaction');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should be a byte array', async () => {
       rawProof.transaction = new Array(65).fill('string');
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
-
-      expectJsonSchemaError(result, 2);
-
-      const [error, byteArrayError] = result.getErrors();
-
-      expect(error.getInstancePath()).to.equal('/transaction/0');
-      expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
+      await expect(validateInstantAssetLockProofStructure(rawProof))
+        .to.be.rejectedWith('Conversion Error: Error: invalid type: string "string", expected u8');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should not be shorter than 1 byte', async () => {
@@ -281,16 +231,14 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/transaction');
+      expect(error.getInstancePath()).to.equal('/transaction');
       expect(error.getKeyword()).to.equal('minItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should not be longer than 100 Kb', async () => {
@@ -298,43 +246,29 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/transaction');
+      expect(error.getInstancePath()).to.equal('/transaction');
       expect(error.getKeyword()).to.equal('maxItems');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.not.be.called();
     });
 
     it('should should be valid', async () => {
-      const validationError = new Error('parsing failed');
-
-      const consensusError = new InvalidIdentityAssetLockTransactionError(validationError.message);
-
-      consensusError.setValidationError(validationError);
-
-      validateAssetLockTransactionResult.addError(consensusError);
-      validateAssetLockTransactionMock.resolves(validateAssetLockTransactionResult);
+      rawProof.transaction = Buffer.alloc(1000);
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, InvalidIdentityAssetLockTransactionError);
+      expectValidationError(result, InvalidIdentityAssetLockTransactionError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(1038);
+      expect(error.getValidationError()).to.exist();
 
-      expect(error).to.equal(consensusError);
-
-      expect(error.getValidationError()).to.equal(validationError);
-
-      // expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
-      expect(instantLockMock.verify).to.not.be.called();
-      expect(validateAssetLockTransactionMock).to.be.calledOnce();
+      expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
     });
   });
 
@@ -344,58 +278,47 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectJsonSchemaError(result);
+      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
+      expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('outputIndex');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
     });
 
     it('should be an integer', async () => {
       rawProof.outputIndex = 1.1;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
-
-      expectJsonSchemaError(result, 1);
-
-      const [error] = result.getErrors();
-
-      expect(error.instancePath).to.equal('/outputIndex');
-      expect(error.getKeyword()).to.equal('type');
+      await expect(validateInstantAssetLockProofStructure(rawProof))
+        .to.be.rejectedWith('Conversion Error: Error: invalid type: floating point `1.1`, expected u32');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
     });
 
     it('should not be less than 0', async () => {
       rawProof.outputIndex = -1;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
-
-      expectJsonSchemaError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error.instancePath).to.equal('/outputIndex');
-      expect(error.getKeyword()).to.equal('minimum');
+      await expect(validateInstantAssetLockProofStructure(rawProof))
+        .to.be.rejectedWith('Conversion Error: Error: invalid type: floating point `-1`, expected u32');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
-      expect(instantLockMock.verify).to.not.be.called();
     });
   });
 
   it('should return valid result', async () => {
-    const result = await validateInstantAssetLockProofStructure(rawProof);
+    const result = await validateInstantAssetLockProofStructure(
+      rawProof,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
+
+    const publicKeyHash = transaction.outputs[0].script.getData();
     expect(result.getData()).to.deep.equal(publicKeyHash);
 
-    // expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
+    expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
   });
 });
