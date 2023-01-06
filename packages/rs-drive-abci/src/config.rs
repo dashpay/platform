@@ -1,5 +1,6 @@
 use drive::drive::config::DriveConfig;
 
+/// Configuration for Dash Core RPC client
 pub struct CoreRpcConfig {
     /// Core RPC client url
     pub url: String,

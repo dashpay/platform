@@ -8,7 +8,7 @@ use grovedb::TransactionArg;
 use serde_json::json;
 
 use crate::{
-    drive::{block_info::BlockInfo, Drive},
+    drive::Drive,
     error::{drive::DriveError, Error},
 };
 
@@ -198,4 +198,6 @@ mod tests {
             assert_eq!(documents.len(), 1);
         }
     }
+
+    mod find_document_by_transaction_id {}
 }

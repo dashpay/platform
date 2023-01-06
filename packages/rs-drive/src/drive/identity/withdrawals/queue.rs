@@ -7,11 +7,7 @@ use grovedb::{
 
 use crate::{
     drive::{
-        batch::{
-            drive_op_batch::{DriveOperationConverter, WithdrawalOperationType},
-            DriveOperationType,
-        },
-        block_info::BlockInfo,
+        batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
         grove_operations::BatchDeleteApplyType,
         Drive,
     },

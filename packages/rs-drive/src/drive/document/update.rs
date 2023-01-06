@@ -41,6 +41,10 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
+use crate::drive::batch::drive_op_batch::{
+    DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
+};
+use crate::drive::batch::{DocumentOperationType, DriveOperationType};
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{
     contract_document_type_path,
@@ -71,7 +75,8 @@ use crate::drive::grove_operations::{
     QueryType,
 };
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::DriveContractExt;
+use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::prelude::DataContract;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.
@@ -632,6 +637,39 @@ impl Drive {
             }
         }
         Ok(batch_operations)
+    }
+
+    /// Add update multiple documents operations
+    pub fn add_update_multiple_documents_operations<'a>(
+        &self,
+        documents: &'a [crate::contract::document::Document],
+        data_contract: &'a DataContract,
+        document_type: &'a DocumentType,
+        drive_operations: &mut Vec<DriveOperationType<'a>>,
+    ) {
+        let operations: Vec<DocumentOperation> = documents
+            .iter()
+            .map(|document| {
+                DocumentOperation::UpdateOperation(UpdateOperationInfo {
+                    document,
+                    serialized_document: None,
+                    owner_id: None,
+                    storage_flags: None,
+                })
+            })
+            .collect();
+
+        if !operations.is_empty() {
+            drive_operations.push(DriveOperationType::DocumentOperation(
+                DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                    document_operations: DocumentOperationsForContractDocumentType {
+                        operations,
+                        contract: data_contract,
+                        document_type,
+                    },
+                },
+            ));
+        }
     }
 }
 

@@ -1,16 +1,25 @@
+use std::collections::HashMap;
+
 use dashcore::{
-    blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
-    hashes::Hash, QuorumHash,
+    blockdata::transaction::special_transaction::asset_unlock::{
+        request_info::AssetUnlockRequestInfo,
+        unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
+    },
+    consensus::Encodable,
+    hashes::Hash,
+    QuorumHash, Script, TxOut,
 };
 use dpp::{
     contracts::withdrawals_contract,
     data_contract::extra::DriveContractExt,
+    identity::convert_credits_to_satoshi,
     prelude::{Document, Identifier},
     util::{hash, json_value::JsonValueExt, string_encoding::Encoding},
 };
 use drive::{
     drive::{
         batch::DriveOperationType, block_info::BlockInfo,
+        document::convert_dpp_documents_to_drive_documents,
         identity::withdrawals::paths::WithdrawalTransaction,
     },
     fee_pools::epochs::Epoch,
@@ -35,17 +44,18 @@ impl Platform {
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
+        let data_contract_id = Identifier::from_string(
+            &withdrawals_contract::system_ids().contract_id,
+            Encoding::Base58,
+        )
+        .map_err(|_| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "Can't create withdrawals id identifier from string",
+            ))
+        })?;
+
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
-            Identifier::from_string(
-                &withdrawals_contract::system_ids().contract_id,
-                Encoding::Base58,
-            )
-            .map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't create withdrawals id identifier from string",
-                ))
-            })?
-            .to_buffer(),
+            data_contract_id.to_buffer(),
             Some(&Epoch::new(
                 block_execution_context.epoch_info.current_epoch_index,
             )),
@@ -122,29 +132,25 @@ impl Platform {
                     withdrawals_contract::statuses::EXPIRED
                 };
 
-                self.drive.update_document_data(
-                    document,
-                    &block_info,
-                    |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
-                        document
-                            .set("status", JsonValue::Number(Number::from(status)))
-                            .map_err(|_| {
-                                drive::error::Error::Drive(
-                                    drive::error::drive::DriveError::CorruptedCodeExecution(
-                                        "Can't update document field: status",
-                                    ),
-                                )
-                            })?;
+                document
+                    .set("status", JsonValue::Number(Number::from(status)))
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't update document field: status",
+                        ))
+                    })?;
 
-                        Ok(document)
-                    },
-                )?;
+                document.updated_at = Some(block_info.time_ms.try_into().map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't convert u64 block time to i64 updated_at",
+                    ))
+                })?);
+                document.increment_revision();
             }
         }
 
-        let drive_documents = self
-            .drive
-            .convert_dpp_documents_to_drive_documents(broadcasted_documents.iter())?;
+        let drive_documents =
+            convert_dpp_documents_to_drive_documents(broadcasted_documents.iter())?;
 
         self.drive.add_update_multiple_documents_operations(
             &drive_documents,
@@ -175,17 +181,18 @@ impl Platform {
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
+        let data_contract_id = Identifier::from_string(
+            &withdrawals_contract::system_ids().contract_id,
+            Encoding::Base58,
+        )
+        .map_err(|_| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "Can't create withdrawals id identifier from string",
+            ))
+        })?;
+
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
-            Identifier::from_string(
-                &withdrawals_contract::system_ids().contract_id,
-                Encoding::Base58,
-            )
-            .map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't create withdrawals id identifier from string",
-                ))
-            })?
-            .to_buffer(),
+            data_contract_id.to_buffer(),
             Some(&Epoch::new(
                 block_execution_context.epoch_info.current_epoch_index,
             )),
@@ -237,33 +244,34 @@ impl Platform {
                     .drive
                     .find_document_by_transaction_id(&original_transaction_id, transaction)?;
 
-                self.drive
-                    .update_document_data(&mut document, &block_info, |doc| {
-                        doc.set(
-                            "transactionId",
-                            JsonValue::Array(
-                                update_transaction_id
-                                    .iter()
-                                    .map(|byte| JsonValue::Number(Number::from(*byte)))
-                                    .collect(),
-                            ),
-                        )
-                        .map_err(|_| {
-                            drive::error::Error::Drive(
-                                drive::error::drive::DriveError::CorruptedCodeExecution(
-                                    "Can't set document field: transactionId",
-                                ),
-                            )
-                        })?;
-
-                        Ok(doc)
+                document
+                    .set(
+                        "transactionId",
+                        JsonValue::Array(
+                            update_transaction_id
+                                .iter()
+                                .map(|byte| JsonValue::Number(Number::from(*byte)))
+                                .collect(),
+                        ),
+                    )
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't set document field: transactionId",
+                        ))
                     })?;
+
+                document.updated_at = Some(block_info.time_ms.try_into().map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't convert u64 block time to i64 updated_at",
+                    ))
+                })?);
+                document.increment_revision();
 
                 Ok((bytes_buffer, document))
             })
             .collect::<Result<Vec<(Vec<u8>, Document)>, Error>>()?;
 
-        let drive_documents = self.drive.convert_dpp_documents_to_drive_documents(
+        let drive_documents = convert_dpp_documents_to_drive_documents(
             transactions_and_documents
                 .iter()
                 .map(|(_, document)| document),
@@ -300,17 +308,18 @@ impl Platform {
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
+        let data_contract_id = Identifier::from_string(
+            &withdrawals_contract::system_ids().contract_id,
+            Encoding::Base58,
+        )
+        .map_err(|_| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "Can't create withdrawals id identifier from string",
+            ))
+        })?;
+
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
-            Identifier::from_string(
-                &withdrawals_contract::system_ids().contract_id,
-                Encoding::Base58,
-            )
-            .map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't create withdrawals id identifier from string",
-                ))
-            })?
-            .to_buffer(),
+            data_contract_id.to_buffer(),
             Some(&Epoch::new(
                 block_execution_context.epoch_info.current_epoch_index,
             )),
@@ -326,9 +335,8 @@ impl Platform {
             transaction,
         )?;
 
-        let withdrawal_transactions = self
-            .drive
-            .build_withdrawal_transactions_from_documents(&documents, transaction)?;
+        let withdrawal_transactions =
+            self.build_withdrawal_transactions_from_documents(&documents, transaction)?;
 
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
@@ -342,66 +350,43 @@ impl Platform {
             let transaction_id =
                 hash::hash(withdrawal_transactions.get(&document.id).unwrap().1.clone());
 
-            self.drive.update_document_data(
-                document,
-                &block_info,
-                |document: &mut Document| -> Result<&mut Document, drive::error::Error> {
-                    document
-                        .set(
-                            "transactionId",
-                            JsonValue::Array(
-                                transaction_id
-                                    .clone()
-                                    .into_iter()
-                                    .map(|byte| JsonValue::Number(Number::from(byte)))
-                                    .collect(),
-                            ),
-                        )
-                        .map_err(|_| {
-                            drive::error::Error::Drive(
-                                drive::error::drive::DriveError::CorruptedCodeExecution(
-                                    "Can't update document field: transactionId",
-                                ),
-                            )
-                        })?;
-
-                    document
-                        .set(
-                            "status",
-                            JsonValue::Number(Number::from(withdrawals_contract::statuses::POOLED)),
-                        )
-                        .map_err(|_| {
-                            drive::error::Error::Drive(
-                                drive::error::drive::DriveError::CorruptedCodeExecution(
-                                    "Can't update document field: status",
-                                ),
-                            )
-                        })?;
-
-                    Ok(document)
-                },
-            )?;
-        }
-
-        let drive_documents = documents
-            .iter()
-            .map(|document| {
-                drive::contract::document::Document::from_cbor(
-                    &document.to_cbor().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't fetch withdrawal data contract",
-                        ))
-                    })?,
-                    None,
-                    None,
+            document
+                .set(
+                    "transactionId",
+                    JsonValue::Array(
+                        transaction_id
+                            .clone()
+                            .into_iter()
+                            .map(|byte| JsonValue::Number(Number::from(byte)))
+                            .collect(),
+                    ),
                 )
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't fetch withdrawal data contract",
+                        "Can't update document field: transactionId",
                     ))
-                })
-            })
-            .collect::<Result<Vec<drive::contract::document::Document>, Error>>()?;
+                })?;
+
+            document
+                .set(
+                    "status",
+                    JsonValue::Number(Number::from(withdrawals_contract::statuses::POOLED)),
+                )
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't update document field: status",
+                    ))
+                })?;
+
+            document.updated_at = Some(block_info.time_ms.try_into().map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "Can't convert u64 block time to i64 updated_at",
+                ))
+            })?);
+            document.increment_revision();
+        }
+
+        let drive_documents = convert_dpp_documents_to_drive_documents(documents.iter())?;
 
         self.drive.add_update_multiple_documents_operations(
             &drive_documents,
@@ -475,6 +460,82 @@ impl Platform {
         }
 
         Ok(tx_hashes)
+    }
+
+    /// Build list of Core transactions from withdrawal documents
+    pub fn build_withdrawal_transactions_from_documents(
+        &self,
+        documents: &[Document],
+        transaction: TransactionArg,
+    ) -> Result<HashMap<Identifier, WithdrawalTransaction>, Error> {
+        let mut withdrawals: HashMap<Identifier, WithdrawalTransaction> = HashMap::new();
+
+        let latest_withdrawal_index = self
+            .drive
+            .fetch_latest_withdrawal_transaction_index(transaction)?;
+
+        for (i, document) in documents.iter().enumerate() {
+            let output_script = document.get_data().get_bytes("outputScript").map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "Can't get outputScript from withdrawal document",
+                ))
+            })?;
+
+            let amount = document.get_data().get_u64("amount").map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "Can't get amount from withdrawal document",
+                ))
+            })?;
+
+            let core_fee_per_byte =
+                document.get_data().get_u64("coreFeePerByte").map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get coreFeePerByte from withdrawal document",
+                    ))
+                })?;
+
+            let state_transition_size = 190;
+
+            let output_script: Script = Script::from(output_script);
+
+            let tx_out = TxOut {
+                value: convert_credits_to_satoshi(amount),
+                script_pubkey: output_script,
+            };
+
+            let transaction_index = latest_withdrawal_index + i as u64;
+
+            let withdrawal_transaction = AssetUnlockBaseTransactionInfo {
+                version: 1,
+                lock_time: 0,
+                output: vec![tx_out],
+                base_payload: AssetUnlockBasePayload {
+                    version: 1,
+                    index: transaction_index,
+                    fee: (state_transition_size * core_fee_per_byte * 1000) as u32,
+                },
+            };
+
+            let mut transaction_buffer: Vec<u8> = vec![];
+
+            withdrawal_transaction
+                .consensus_encode(&mut transaction_buffer)
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't consensus encode a withdrawal transaction",
+                    ))
+                })?;
+
+            withdrawals.insert(
+                document.id.clone(),
+                (
+                    transaction_index.to_be_bytes().to_vec(),
+                    transaction_buffer.clone(),
+                ),
+            );
+        }
+
+        Ok(withdrawals)
     }
 }
 
@@ -834,6 +895,98 @@ mod tests {
 
             assert_eq!(transactions.len(), 2);
             assert_eq!(transactions, ["1", "2"]);
+        }
+    }
+
+    mod build_withdrawal_transactions_from_documents {
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
+        use itertools::Itertools;
+
+        use super::*;
+
+        #[test]
+        fn test_build() {
+            let platform = setup_platform_with_initial_state_structure();
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+            let document_1 = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": Pooling::Never,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::POOLED,
+                    "transactionIndex": 1,
+                }),
+            );
+
+            setup_document(
+                &platform.drive,
+                &document_1,
+                &data_contract,
+                Some(&transaction),
+            );
+
+            let document_2 = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": Pooling::Never,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::POOLED,
+                    "transactionIndex": 2,
+                }),
+            );
+
+            setup_document(
+                &platform.drive,
+                &document_2,
+                &data_contract,
+                Some(&transaction),
+            );
+
+            let documents = vec![document_1, document_2];
+
+            let transactions = platform
+                .build_withdrawal_transactions_from_documents(&documents, Some(&transaction))
+                .expect("to build transactions from documents");
+
+            assert_eq!(
+                transactions
+                    .values()
+                    .cloned()
+                    .sorted()
+                    .collect::<Vec<WithdrawalTransaction>>(),
+                vec![
+                    (
+                        vec![0, 0, 0, 0, 0, 0, 0, 0],
+                        vec![
+                            1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
+                            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
+                            1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 206, 2, 0,
+                        ],
+                    ),
+                    (
+                        vec![0, 0, 0, 0, 0, 0, 0, 1],
+                        vec![
+                            1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
+                            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
+                            1, 1, 0, 0, 0, 0, 0, 0, 0, 192, 206, 2, 0,
+                        ],
+                    ),
+                ]
+                .into_iter()
+                .sorted()
+                .collect::<Vec<WithdrawalTransaction>>(),
+            );
         }
     }
 }
