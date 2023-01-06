@@ -287,7 +287,7 @@ impl Platform {
     }
 
     /// Pool withdrawal documents into transactions
-    pub fn pool_withdrawals_into_transactions(
+    pub fn pool_withdrawals_into_transactions_queue(
         &self,
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
@@ -709,7 +709,7 @@ mod tests {
             );
 
             platform
-                .pool_withdrawals_into_transactions(
+                .pool_withdrawals_into_transactions_queue(
                     &BlockExecutionContext {
                         block_info: BlockInfo {
                             block_height: 1,

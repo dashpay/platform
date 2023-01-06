@@ -484,9 +484,11 @@ function createDIContainer(options) {
         dataContractsBlockCacheSize,
       },
       core: {
-        rpcUrl: `${coreJsonRpcHost}:${coreJsonRpcPort}`,
-        rpcUsername: coreJsonRpcUsername,
-        rpcPassword: coreJsonRpcPassword,
+        rpc: {
+          url: `${coreJsonRpcHost}:${coreJsonRpcPort}`,
+          username: coreJsonRpcUsername,
+          password: coreJsonRpcPassword,
+        },
       },
     }))
       // TODO: With signed state rotation we need to dispose each groveDB store.

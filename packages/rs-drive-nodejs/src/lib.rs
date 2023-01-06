@@ -1,7 +1,7 @@
 mod converter;
 mod fee;
 
-use drive_abci::config::{CoreConfig, PlatformConfig};
+use drive_abci::config::{CoreConfig, CoreRpcConfig, PlatformConfig};
 use std::num::ParseIntError;
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
@@ -66,10 +66,11 @@ impl PlatformWrapper {
 
         let drive_config: Handle<JsObject> = platform_config.get(cx, "drive")?;
         let core_config: Handle<JsObject> = platform_config.get(cx, "core")?;
+        let core_rpc_config: Handle<JsObject> = core_config.get(cx, "rpc")?;
 
-        let js_core_rpc_url: Handle<JsString> = core_config.get(cx, "rpcUrl")?;
-        let js_core_rpc_username: Handle<JsString> = core_config.get(cx, "rpcUsername")?;
-        let js_core_rpc_password: Handle<JsString> = core_config.get(cx, "rpcPassword")?;
+        let js_core_rpc_url: Handle<JsString> = core_rpc_config.get(cx, "url")?;
+        let js_core_rpc_username: Handle<JsString> = core_rpc_config.get(cx, "username")?;
+        let js_core_rpc_password: Handle<JsString> = core_rpc_config.get(cx, "password")?;
 
         let core_rpc_url = js_core_rpc_url.value(cx);
         let core_rpc_username = js_core_rpc_username.value(cx);
@@ -114,9 +115,11 @@ impl PlatformWrapper {
             };
 
             let core_config = CoreConfig {
-                rpc_url: core_rpc_url,
-                rpc_username: core_rpc_username,
-                rpc_password: core_rpc_password,
+                rpc: CoreRpcConfig {
+                    url: core_rpc_url,
+                    username: core_rpc_username,
+                    password: core_rpc_password,
+                },
             };
 
             let platform_config = PlatformConfig {

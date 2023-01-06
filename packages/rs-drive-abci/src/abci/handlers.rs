@@ -137,11 +137,7 @@ impl TenderdashAbci for Platform {
                 &block_execution_context,
                 request.validator_set_quorum_hash,
                 transaction,
-            );
-
-        dbg!(&unsigned_withdrawal_transaction_bytes);
-
-        let unsigned_withdrawal_transaction_bytes = unsigned_withdrawal_transaction_bytes?;
+            )?;
 
         self.block_execution_context
             .replace(Some(block_execution_context));
@@ -168,7 +164,7 @@ impl TenderdashAbci for Platform {
             ),
         ))?;
 
-        self.pool_withdrawals_into_transactions(block_execution_context, transaction)?;
+        self.pool_withdrawals_into_transactions_queue(block_execution_context, transaction)?;
 
         // Process fees
         let process_block_fees_result = self.process_block_fees(

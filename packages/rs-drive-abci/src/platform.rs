@@ -71,9 +71,9 @@ impl Platform {
 
         let core_rpc: Box<dyn CoreRPCLike> = Box::new(
             DefaultCoreRPC::open(
-                config.core.rpc_url,
-                config.core.rpc_username,
-                config.core.rpc_password,
+                config.core.rpc.url,
+                config.core.rpc.username,
+                config.core.rpc.password,
             )
             .map_err(|e| {
                 dbg!(e);

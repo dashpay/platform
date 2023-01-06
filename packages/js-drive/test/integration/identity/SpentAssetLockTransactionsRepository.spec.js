@@ -21,9 +21,11 @@ describe('SpentAssetLockTransactionsRepository', () => {
         dataContractsBlockCacheSize: 500,
       },
       core: {
-        rpcUrl: '127.0.0.1',
-        rpcUsername: '',
-        rpcPassword: '',
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
       },
     });
 

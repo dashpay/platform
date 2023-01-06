@@ -1,15 +1,20 @@
 use drive::drive::config::DriveConfig;
 
-/// Configuration for Dash Core related things
-pub struct CoreConfig {
+pub struct CoreRpcConfig {
     /// Core RPC client url
-    pub rpc_url: String,
+    pub url: String,
 
     /// Core RPC client username
-    pub rpc_username: String,
+    pub username: String,
 
     /// Core RPC client password
-    pub rpc_password: String,
+    pub password: String,
+}
+
+/// Configuration for Dash Core related things
+pub struct CoreConfig {
+    /// Core RPC config
+    pub rpc: CoreRpcConfig,
 }
 
 /// Platform configuration
@@ -26,9 +31,11 @@ impl Default for PlatformConfig {
         Self {
             drive: None,
             core: CoreConfig {
-                rpc_url: "127.0.0.1".to_owned(),
-                rpc_username: "".to_owned(),
-                rpc_password: "".to_owned(),
+                rpc: CoreRpcConfig {
+                    url: "127.0.0.1".to_owned(),
+                    username: "".to_owned(),
+                    password: "".to_owned(),
+                },
             },
         }
     }
