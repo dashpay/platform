@@ -3004,6 +3004,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["stream-browserify", "npm:3.0.0"],\
             ["stream-http", "npm:3.2.0"],\
             ["string_decoder", "npm:1.3.0"],\
+            ["terser-webpack-plugin", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.3.6"],\
             ["ts-loader", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:8.3.0"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
             ["url", "npm:0.11.0"],\
@@ -3247,6 +3248,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@jridgewell/resolve-uri", "npm:3.0.8"]\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["npm:3.1.0", {\
+          "packageLocation": "./.yarn/cache/@jridgewell-resolve-uri-npm-3.1.0-6ff2351e61-b5ceaaf9a1.zip/node_modules/@jridgewell/resolve-uri/",\
+          "packageDependencies": [\
+            ["@jridgewell/resolve-uri", "npm:3.1.0"]\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["@jridgewell/set-array", [\
@@ -3284,6 +3292,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@jridgewell/trace-mapping", "npm:0.3.15"],\
             ["@jridgewell/resolve-uri", "npm:3.0.8"],\
+            ["@jridgewell/sourcemap-codec", "npm:1.4.14"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:0.3.17", {\
+          "packageLocation": "./.yarn/cache/@jridgewell-trace-mapping-npm-0.3.17-57578fd48c-9d703b859c.zip/node_modules/@jridgewell/trace-mapping/",\
+          "packageDependencies": [\
+            ["@jridgewell/trace-mapping", "npm:0.3.17"],\
+            ["@jridgewell/resolve-uri", "npm:3.1.0"],\
             ["@jridgewell/sourcemap-codec", "npm:1.4.14"]\
           ],\
           "linkType": "HARD"\
@@ -16572,6 +16589,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["source-map-support", "npm:0.5.21"]\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["npm:5.16.1", {\
+          "packageLocation": "./.yarn/cache/terser-npm-5.16.1-d407c2c364-cb52412350.zip/node_modules/terser/",\
+          "packageDependencies": [\
+            ["terser", "npm:5.16.1"],\
+            ["@jridgewell/source-map", "npm:0.3.2"],\
+            ["acorn", "npm:8.6.0"],\
+            ["commander", "npm:2.20.3"],\
+            ["source-map-support", "npm:0.5.21"]\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["terser-webpack-plugin", [\
@@ -16579,6 +16607,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/terser-webpack-plugin-npm-5.3.3-659a8e4514-4b8d508d8a.zip/node_modules/terser-webpack-plugin/",\
           "packageDependencies": [\
             ["terser-webpack-plugin", "npm:5.3.3"]\
+          ],\
+          "linkType": "SOFT"\
+        }],\
+        ["npm:5.3.6", {\
+          "packageLocation": "./.yarn/cache/terser-webpack-plugin-npm-5.3.6-27ed5132ff-8f3448d7fd.zip/node_modules/terser-webpack-plugin/",\
+          "packageDependencies": [\
+            ["terser-webpack-plugin", "npm:5.3.6"]\
           ],\
           "linkType": "SOFT"\
         }],\
@@ -16749,6 +16784,36 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["terser", "npm:5.14.2"],\
             ["uglify-js", null],\
             ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.64.1"]\
+          ],\
+          "packagePeers": [\
+            "@swc/core",\
+            "@types/esbuild",\
+            "@types/swc__core",\
+            "@types/uglify-js",\
+            "@types/webpack",\
+            "esbuild",\
+            "uglify-js",\
+            "webpack"\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.3.6", {\
+          "packageLocation": "./.yarn/__virtual__/terser-webpack-plugin-virtual-544c4a87c0/0/cache/terser-webpack-plugin-npm-5.3.6-27ed5132ff-8f3448d7fd.zip/node_modules/terser-webpack-plugin/",\
+          "packageDependencies": [\
+            ["terser-webpack-plugin", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.3.6"],\
+            ["@jridgewell/trace-mapping", "npm:0.3.17"],\
+            ["@swc/core", null],\
+            ["@types/esbuild", null],\
+            ["@types/swc__core", null],\
+            ["@types/uglify-js", null],\
+            ["@types/webpack", null],\
+            ["esbuild", null],\
+            ["jest-worker", "npm:27.5.1"],\
+            ["schema-utils", "npm:3.1.1"],\
+            ["serialize-javascript", "npm:6.0.0"],\
+            ["terser", "npm:5.16.1"],\
+            ["uglify-js", null],\
+            ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.64.1"]\
           ],\
           "packagePeers": [\
             "@swc/core",\
