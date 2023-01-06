@@ -836,37 +836,21 @@ describe('GroveDB', () => {
 
       expect(skipped).to.equals(0);
     });
-  });
 
-  describe('#query', () => {
-    let dPath;
-    let dKey;
-    let ePath;
+    it('should be able to retrieve data with subquery', async () => {
+      // Prepare tree structure
+      const dKey = Buffer.from('dKey');
+      const daValue = Buffer.from('da');
+      const dbValue = Buffer.from('db');
+      const dcValue = Buffer.from('dc');
+      const eaValue = Buffer.from('ea');
+      const eaKey = Buffer.from('eaKey');
+      const ebValue = Buffer.from('eb');
 
-    let daValue;
-    let dbValue;
-    let dcValue;
-    let eaValue;
-    let eaKey;
-    let ebValue;
+      const dPath = [...itemTreePath];
 
-    beforeEach(async () => {
-      await groveDb.insert(
-        rootTreePath,
-        treeKey,
-        { type: 'tree', epoch: 0 },
-      );
-
-      dKey = Buffer.from('dKey');
-      daValue = Buffer.from('da');
-      dbValue = Buffer.from('db');
-      dcValue = Buffer.from('dc');
-      eaValue = Buffer.from('ea');
-      eaKey = Buffer.from('eaKey');
-      ebValue = Buffer.from('eb');
-
-      dPath = [...itemTreePath];
       dPath.push(dKey);
+
       await groveDb.insert(
         itemTreePath,
         dKey,
@@ -892,7 +876,8 @@ describe('GroveDB', () => {
       );
 
       const eKey = Buffer.from('eKey');
-      ePath = [...itemTreePath];
+
+      const ePath = [...itemTreePath];
       ePath.push(eKey);
       await groveDb.insert(
         itemTreePath,
@@ -911,9 +896,7 @@ describe('GroveDB', () => {
         Buffer.from('ebKey'),
         { type: 'item', epoch: 0, value: ebValue },
       );
-    });
 
-    it('should be able to retrieve data with subquery', async () => {
       // This should give us only last subtree and apply subquery to it
       const query = {
         path: itemTreePath,
@@ -949,6 +932,25 @@ describe('GroveDB', () => {
 
       expect(skipped).to.equals(0);
     });
+  });
+
+  describe('#query', () => {
+    let dPath;
+    let dKey;
+    let ePath;
+
+    let daValue;
+    let dbValue;
+    let dcValue;
+    let eaValue;
+    let eaKey;
+    let ebValue;
+
+    beforeEach(async () => {
+
+    });
+
+
   });
 
   describe('#proveQuery', () => {
