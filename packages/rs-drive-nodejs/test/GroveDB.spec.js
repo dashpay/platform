@@ -434,7 +434,7 @@ describe('GroveDB', () => {
     });
   });
 
-  describe('#query for Item subtrees', () => {
+  describe('#query', () => {
     let aValue;
     let aKey;
     let bValue;
@@ -932,25 +932,6 @@ describe('GroveDB', () => {
 
       expect(skipped).to.equals(0);
     });
-  });
-
-  describe('#query', () => {
-    let dPath;
-    let dKey;
-    let ePath;
-
-    let daValue;
-    let dbValue;
-    let dcValue;
-    let eaValue;
-    let eaKey;
-    let ebValue;
-
-    beforeEach(async () => {
-
-    });
-
-
   });
 
   describe('#proveQuery', () => {
