@@ -1315,8 +1315,6 @@ mod tests {
     mod get_contract_with_fetch_info {
         use super::*;
         use dpp::prelude::Identifier;
-        use serde::Serialize;
-        use std::borrow::Borrow;
 
         #[test]
         fn should_get_contract_from_global_and_block_cache() {
