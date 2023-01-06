@@ -13,7 +13,10 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
-use crate::{identifier::IdentifierWrapper, DataContractWasm, StateTransitionExecutionContextWasm};
+use crate::{
+    data_contract, identifier::IdentifierWrapper, DataContractWasm, DocumentWasm,
+    StateTransitionExecutionContextWasm,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -33,7 +36,28 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
 
-    // TODO add missing declarations
+    #[wasm_bindgen(structural, method, js_name=createDocument)]
+    pub fn create_document(
+        this: &ExternalStateRepositoryLike,
+        document: DocumentWasm,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> JsValue;
+
+    #[wasm_bindgen(structural, method, js_name=updateDocument)]
+    pub fn update_document(
+        this: &ExternalStateRepositoryLike,
+        document: DocumentWasm,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> JsValue;
+
+    #[wasm_bindgen(structural, method, js_name=removeDocument)]
+    pub fn remove_document(
+        this: &ExternalStateRepositoryLike,
+        data_contract: DataContractWasm,
+        data_contract_type: String,
+        document_id: IdentifierWrapper,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> JsValue;
 }
 
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
@@ -97,28 +121,49 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_document(
         &self,
-        _document: &Document,
-        _execution_context: &StateTransitionExecutionContext,
+        document: &Document,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        let document_wasm: DocumentWasm = document.to_owned().into();
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .create_document(document_wasm, execution_context.clone().into());
+        Ok(())
     }
 
     async fn update_document(
         &self,
-        _document: &Document,
-        _execution_context: &StateTransitionExecutionContext,
+        document: &Document,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        let document_wasm: DocumentWasm = document.to_owned().into();
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .update_document(document_wasm, execution_context.clone().into());
+        Ok(())
     }
 
     async fn remove_document(
         &self,
-        _data_contract: &DataContract,
-        _data_contract_type: &str,
-        _document_id: &Identifier,
-        _execution_context: &StateTransitionExecutionContext,
+        data_contract: &DataContract,
+        data_contract_type: &str,
+        document_id: &Identifier,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        let data_contract: DataContractWasm = data_contract.to_owned().into();
+        let document_id: IdentifierWrapper = document_id.to_owned().into();
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .remove_document(
+                data_contract,
+                data_contract_type.to_owned(),
+                document_id,
+                execution_context.clone().into(),
+            );
+        Ok(())
     }
 
     async fn fetch_transaction<T>(

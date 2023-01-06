@@ -23,6 +23,7 @@ use crate::{
     utils::{ToSerdeJSONExt, WithJsError},
     DocumentWasm, IdentityPublicKeyWasm,
 };
+pub mod apply_document_batch_transition;
 pub mod document_transition;
 
 #[derive(Debug)]
