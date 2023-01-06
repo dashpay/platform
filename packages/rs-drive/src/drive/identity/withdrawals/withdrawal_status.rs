@@ -199,5 +199,41 @@ mod tests {
         }
     }
 
-    mod find_document_by_transaction_id {}
+    mod find_document_by_transaction_id {
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+
+        use super::*;
+
+        #[test]
+        fn test_find_document_by_transaction_id() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let transaction = drive.grove.start_transaction();
+
+            let data_contract = get_withdrawals_data_contract_fixture(None);
+
+            setup_system_data_contract(&drive, &data_contract, Some(&transaction));
+
+            let document = get_withdrawal_document_fixture(
+                &data_contract,
+                json!({
+                    "amount": 1000,
+                    "coreFeePerByte": 1,
+                    "pooling": Pooling::Never,
+                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                    "status": withdrawals_contract::statuses::POOLED,
+                    "transactionIndex": 1,
+                    "transactionId": (0..32).collect::<Vec<u8>>(),
+                }),
+            );
+
+            setup_document(&drive, &document, &data_contract, Some(&transaction));
+
+            let found_document = drive
+                .find_document_by_transaction_id(&(0..32).collect::<Vec<u8>>(), Some(&transaction))
+                .expect("to find document by it's transaction id");
+
+            assert_eq!(found_document.id, document.id);
+        }
+    }
 }

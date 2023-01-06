@@ -108,61 +108,54 @@ impl Drive {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         common::helpers::setup::setup_drive_with_initial_state_structure,
-//         drive::block_info::BlockInfo, fee::op::DriveOperation, fee_pools::epochs::Epoch,
-//     };
+#[cfg(test)]
+mod tests {
+    use crate::{
+        common::helpers::setup::setup_drive_with_initial_state_structure,
+        drive::{batch::DriveOperationType, block_info::BlockInfo},
+        fee_pools::epochs::Epoch,
+    };
 
-//     #[test]
-//     fn test_enqueue_and_dequeue() {
-//         let drive = setup_drive_with_initial_state_structure();
+    #[test]
+    fn test_enqueue_and_dequeue() {
+        let drive = setup_drive_with_initial_state_structure();
 
-//         let transaction = drive.grove.start_transaction();
+        let transaction = drive.grove.start_transaction();
 
-//         let withdrawals: Vec<(Vec<u8>, Vec<u8>)> = (0..17)
-//             .map(|i: u8| (i.to_be_bytes().to_vec(), vec![i; 32]))
-//             .collect();
+        let withdrawals: Vec<(Vec<u8>, Vec<u8>)> = (0..17)
+            .map(|i: u8| (i.to_be_bytes().to_vec(), vec![i; 32]))
+            .collect();
 
-//         let block_info = BlockInfo {
-//             time_ms: 1,
-//             height: 1,
-//             epoch: Epoch::new(1),
-//         };
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            epoch: Epoch::new(1),
+        };
 
-//         let mut batch: Vec<DriveOperation> = vec![];
-//         let mut result_operations = vec![];
+        let mut drive_operations: Vec<DriveOperationType> = vec![];
 
-//         drive
-//             .add_enqueue_withdrawal_transaction_operations(
-//                 &withdrawals,
-//                 &block_info,
-//                 &mut batch,
-//                 Some(&transaction),
-//             )
-//             .expect("to add operations");
+        drive.add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
 
-//         drive
-//             .apply_batch_drive_operations(None, Some(&transaction), batch, &mut result_operations)
-//             .expect("to apply batch");
+        drive
+            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+            .expect("to apply batch");
 
-//         let withdrawals = drive
-//             .dequeue_withdrawal_transactions(16, Some(&transaction))
-//             .expect("to dequeue withdrawals");
+        let withdrawals = drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .expect("to dequeue withdrawals");
 
-//         assert_eq!(withdrawals.len(), 16);
+        assert_eq!(withdrawals.len(), 16);
 
-//         let withdrawals = drive
-//             .dequeue_withdrawal_transactions(16, Some(&transaction))
-//             .expect("to dequeue withdrawals");
+        let withdrawals = drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .expect("to dequeue withdrawals");
 
-//         assert_eq!(withdrawals.len(), 1);
+        assert_eq!(withdrawals.len(), 1);
 
-//         let withdrawals = drive
-//             .dequeue_withdrawal_transactions(16, Some(&transaction))
-//             .expect("to dequeue withdrawals");
+        let withdrawals = drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .expect("to dequeue withdrawals");
 
-//         assert_eq!(withdrawals.len(), 0);
-//     }
-// }
+        assert_eq!(withdrawals.len(), 0);
+    }
+}
