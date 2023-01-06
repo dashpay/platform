@@ -35,12 +35,13 @@ fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
     Some(format!(
         "{}:{}",
         document_transition.as_object()?.get("$type")?,
-        document_transition.as_object()?.get("id")?,
+        document_transition.as_object()?.get("$id")?,
     ))
 }
 
 #[cfg(test)]
 mod test {
+    use crate::document::document_transition::{DocumentTransitionObjectLike, JsonValue};
     use crate::{
         document::document_transition::{
             DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
@@ -48,7 +49,6 @@ mod test {
         },
         tests::utils::generate_random_identifier_struct,
     };
-    use crate::document::document_transition::{DocumentTransitionObjectLike, JsonValue};
 
     use super::find_duplicates_by_id;
 
