@@ -5,7 +5,7 @@
   "browser": "browser.js",
   "main": "node.js",
   "scripts": {
-    "build": "yarn exec scripts/build.sh",
+    "build": "yarn exec scripts/build.sh && yarn exec scripts/patch-protobuf-js.sh",
     "lint": "eslint .",
     "prepublishOnly": "yarn run build",
     "test": "yarn run test:unit",
