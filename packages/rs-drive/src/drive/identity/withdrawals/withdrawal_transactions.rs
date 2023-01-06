@@ -34,23 +34,24 @@ impl Drive {
             self.fetch_latest_withdrawal_transaction_index(transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
-            let output_script = document.data.get_bytes("outputScript").map_err(|_| {
+            let output_script = document.get_data().get_bytes("outputScript").map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "Can't get outputScript from withdrawal document",
                 ))
             })?;
 
-            let amount = document.data.get_u64("amount").map_err(|_| {
+            let amount = document.get_data().get_u64("amount").map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "Can't get amount from withdrawal document",
                 ))
             })?;
 
-            let core_fee_per_byte = document.data.get_u64("coreFeePerByte").map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "Can't get coreFeePerByte from withdrawal document",
-                ))
-            })?;
+            let core_fee_per_byte =
+                document.get_data().get_u64("coreFeePerByte").map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Can't get coreFeePerByte from withdrawal document",
+                    ))
+                })?;
 
             let state_transition_size = 190;
 

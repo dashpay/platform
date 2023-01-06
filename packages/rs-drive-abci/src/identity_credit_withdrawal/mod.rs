@@ -25,6 +25,7 @@ use crate::{
 };
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
+const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u64 = 48;
 
 impl Platform {
     /// Update statuses for broadcasted withdrawals
@@ -74,34 +75,41 @@ impl Platform {
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
         for document in broadcasted_documents.iter_mut() {
-            let transaction_sign_height =
+            let transaction_sign_height = document
+                .get_data()
+                .get_u64("transactionSignHeight")
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get transactionSignHeight from withdrawal document",
+                    ))
+                })?;
+
+            let transaction_id_bytes =
                 document
-                    .data
-                    .get_u64("transactionSignHeight")
+                    .get_data()
+                    .get_bytes("transactionId")
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionSignHeight from withdrawal document",
+                            "Can't get transactionId from withdrawal document",
                         ))
                     })?;
 
-            let transaction_id_bytes = document.data.get_bytes("transactionId").map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't get transactionId from withdrawal document",
-                ))
-            })?;
-
             let transaction_id = hex::encode(transaction_id_bytes);
 
-            let transaction_index = document.data.get_u64("transactionIndex").map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't get transactionIdex from withdrawal document",
-                ))
-            })?;
+            let transaction_index =
+                document
+                    .get_data()
+                    .get_u64("transactionIndex")
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't get transactionIdex from withdrawal document",
+                        ))
+                    })?;
 
             if core_transactions.contains(&transaction_id)
                 || block_execution_context.block_info.core_chain_locked_height
                     - transaction_sign_height
-                    > 48
+                    > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
             {
                 let status = if core_transactions.contains(&transaction_id) {
                     withdrawals_contract::statuses::COMPLETE
