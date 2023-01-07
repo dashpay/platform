@@ -113,7 +113,7 @@ pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
 }
 
 /// Contract and fetch information
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct ContractFetchInfo {
     /// The contract
     pub contract: Contract,
@@ -1433,7 +1433,7 @@ mod tests {
                 )
                 .expect("expected to apply contract successfully");
 
-            let ref_contract_fetch_info_transactional = drive
+            let mut ref_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
                     Some(&Epoch::new(0)),
@@ -1443,7 +1443,7 @@ mod tests {
                 .1
                 .expect("got contract fetch info");
 
-            let deep_contract_fetch_info_transactional = drive
+            let mut deep_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
                     deep_contract.id().to_buffer(),
                     Some(&Epoch::new(0)),
@@ -1469,17 +1469,13 @@ mod tests {
              */
 
             let deep_contract_fetch_info = drive
-                .get_contract_with_fetch_info(
-                    deep_contract.id().to_buffer(),
-                    Some(&Epoch::new(0)),
-                    None,
-                )
+                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, Some(&Epoch::new(0)), None)
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1508,20 +1504,27 @@ mod tests {
              */
 
             let deep_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(
-                    deep_contract.id().to_buffer(),
-                    Some(&Epoch::new(0)),
-                    None,
-                )
+                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, Some(&Epoch::new(0)), None)
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
+
+            // Remove fees to match with fetch with epoch provided
+            let mut deep_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut deep_contract_fetch_info_transactional);
+
+            deep_contract_fetch_info_transactional_without_arc.fee = None;
+
+            let mut ref_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut ref_contract_fetch_info_transactional);
+
+            ref_contract_fetch_info_transactional_without_arc.fee = None;
 
             assert_eq!(
                 deep_contract_fetch_info_transactional,
@@ -1556,7 +1559,7 @@ mod tests {
                         BlockInfo::default(),
                         true,
                         StorageFlags::optional_default_as_ref(),
-                        None,
+                        Some(&transaction),
                     )
                     .expect("expected to apply contract successfully");
             }
@@ -1566,7 +1569,7 @@ mod tests {
              * should have the same cost as previously fetched contracts
              */
 
-            let deep_contract_fetch_info_transactional2 = drive
+            let mut deep_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
                     deep_contract.id().to_buffer(),
                     Some(&Epoch::new(0)),
@@ -1576,7 +1579,7 @@ mod tests {
                 .1
                 .expect("got contract fetch info");
 
-            let ref_contract_fetch_info_transactional2 = drive
+            let mut ref_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
                     Some(&Epoch::new(0)),
@@ -1585,6 +1588,17 @@ mod tests {
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
+
+            // Remove fees to match with fetch with epoch provided
+            let mut deep_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut deep_contract_fetch_info_transactional2);
+
+            deep_contract_fetch_info_transactional_without_arc.fee = None;
+
+            let mut ref_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut ref_contract_fetch_info_transactional2);
+
+            ref_contract_fetch_info_transactional_without_arc.fee = None;
 
             assert_eq!(
                 ref_contract_fetch_info_transactional,
