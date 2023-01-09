@@ -24,5 +24,4 @@ mod bls_adapter;
 mod buffer;
 mod conversion;
 mod lodash;
-mod slice;
 mod validation;
