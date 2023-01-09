@@ -13,6 +13,7 @@ pub mod get_binary_properties_from_schema;
 pub mod get_property_definition_by_path;
 pub mod state_transition;
 pub mod validation;
+mod data_contract_facade;
 
 pub(self) mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -24,3 +25,5 @@ pub(self) mod property_names {
     pub const DEFINITIONS: &str = "$defs";
     pub const ENTROPY: &str = "entropy";
 }
+
+pub use data_contract_facade::DataContractFacade;

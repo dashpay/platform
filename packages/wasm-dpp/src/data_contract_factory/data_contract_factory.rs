@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::sync::Arc;
 
 use dpp::{
     data_contract::{
@@ -97,11 +98,11 @@ impl DataContractFactoryWasm {
         if let Some(external_entropy_generator) = external_entropy_generator_arg {
             DataContractFactory::new_with_entropy_generator(
                 protocol_version,
-                validate_data_contract.into(),
+                Arc::new(validate_data_contract.into()),
                 Box::new(external_entropy_generator),
             )
         } else {
-            DataContractFactory::new(protocol_version, validate_data_contract.into())
+            DataContractFactory::new(protocol_version, Arc::new(validate_data_contract.into()))
         }
         .into()
     }
