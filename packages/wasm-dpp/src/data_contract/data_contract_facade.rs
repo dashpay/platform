@@ -1,4 +1,17 @@
-pub struct DataContractFacadeWasm {}
+use std::sync::Arc;
+use dpp::data_contract::DataContractFacade;
+use dpp::version::ProtocolVersionValidator;
+
+#[wasm_bindgen(js_name=DataContractFacade)]
+pub struct DataContractFacadeWasm(DataContractFacade);
+
+impl DataContractFacadeWasm {
+    pub fn new(protocol_version: u32, protocol_version_validator: Arc<ProtocolVersionValidator>) -> Self {
+        let inner = DataContractFacade::new(protocol_version, protocol_version_validator);
+
+        Self(inner)
+    }
+}
 //
 // impl DataContractFacade {
 //     /**
