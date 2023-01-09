@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use futures::future::join_all;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
@@ -54,7 +56,7 @@ where
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
-                    state_repository.fetch_documents::<Document>(
+                    state_repository.fetch_documents(
                         &data_contract.id,
                         query.document_type,
                         json!( { "where": query.where_query}),
@@ -140,11 +142,17 @@ fn build_query_for_index_definition(
 
 fn validate_uniqueness<'a>(
     futures_meta: Vec<(&'a Index, &'a DocumentTransition)>,
-    results: Vec<Result<Vec<Document>, anyhow::Error>>,
+    results: Vec<
+        Result<Vec<impl TryInto<Document, Error = impl Into<ProtocolError>>>, anyhow::Error>,
+    >,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut validation_result = ValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {
-        let documents = result?;
+        let documents: Vec<Document> = result?
+            .into_iter()
+            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+            .try_collect()?;
+
         let only_origin_document =
             documents.len() == 1 && documents[0].id == futures_meta[i].1.base().id;
         if documents.is_empty() || only_origin_document {

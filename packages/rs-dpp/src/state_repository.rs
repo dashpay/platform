@@ -1,4 +1,7 @@
-use std::convert::{Infallible, TryInto};
+use std::{
+    convert::{Infallible, TryInto},
+    fmt::Debug,
+};
 
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
@@ -19,11 +22,12 @@ impl From<Infallible> for ProtocolError {
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(any(test, feature="mocks"), automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
+#[cfg_attr(any(test, feature="mocks"), automock(type ConversionError=Infallible; type FetchDataContract=DataContract; type FetchDocument=Document; ))]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
+    type FetchDocument: TryInto<Document, Error = Self::ConversionError>;
 
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
@@ -42,15 +46,13 @@ pub trait StateRepositoryLike: Send + Sync {
 
     /// Fetch Documents by Data Contract Id and type
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
-    async fn fetch_documents<T>(
+    async fn fetch_documents(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
         where_query: JsonValue,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Vec<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Vec<Self::FetchDocument>>;
 
     /// Create Document
     async fn create_document(
@@ -167,4 +169,7 @@ pub trait StateRepositoryLike: Send + Sync {
         index: u64,
         transaction_bytes: Vec<u8>,
     ) -> AnyResult<()>;
+
+    // Fetch latest platform block time
+    async fn fetch_latest_platform_block_time(&self) -> AnyResult<u64>;
 }

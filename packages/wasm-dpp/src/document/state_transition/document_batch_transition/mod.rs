@@ -1,6 +1,8 @@
 use dpp::{
     document::{
-        state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
+        document_transition::document_base_transition,
+        state_transition::documents_batch_transition::{self, property_names},
+        DocumentsBatchTransition,
     },
     prelude::{DataContract, Document, Identifier},
     state_transition::{
@@ -8,10 +10,11 @@ use dpp::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::JsonValueExt,
+    util::json_value::{JsonValueExt, ReplaceWith},
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -21,7 +24,7 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
-    DocumentWasm, IdentityPublicKeyWasm,
+    DocumentWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;
@@ -101,11 +104,27 @@ impl DocumentsBatchTransitionWASM {
             data_contracts.push(data_contract);
         }
 
-        let documents_batch_transition = DocumentsBatchTransition::from_json_object(
-            js_raw_transition.with_serde_to_json_value()?,
-            data_contracts,
-        )
-        .with_js_error()?;
+        let mut batch_transition_value = js_raw_transition.with_serde_to_json_value()?;
+
+        // Allow to fail as, the identifier could be type of `Identifier` of `Buffer`
+        let _ = batch_transition_value.replace_identifier_paths(
+            DocumentsBatchTransition::identifiers_property_paths(),
+            ReplaceWith::Bytes,
+        );
+        if let Some(Value::Array(ref mut transitions)) =
+            batch_transition_value.get_mut(documents_batch_transition::property_names::TRANSITIONS)
+        {
+            for t in transitions {
+                let _ = t.replace_identifier_paths(
+                    document_base_transition::IDENTIFIER_FIELDS,
+                    ReplaceWith::Bytes,
+                );
+            }
+        }
+
+        let documents_batch_transition =
+            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
+                .with_js_error()?;
 
         Ok(documents_batch_transition.into())
     }
@@ -334,13 +353,13 @@ impl DocumentsBatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateExecutionContext) {
-        self.0.set_execution_context(context.into_inner());
+    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
     }
 
     #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateExecutionContext {
-        StateExecutionContext(self.0.get_execution_context().to_owned())
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().clone().into()
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
@@ -367,23 +386,6 @@ impl DocumentsBatchTransitionWASM {
         let bytes = self.0.hash(skip_signature).with_js_error()?;
 
         Ok(Buffer::from_bytes(&bytes))
-    }
-}
-
-#[wasm_bindgen(js_name=StateExecutionContext)]
-pub struct StateExecutionContext(StateTransitionExecutionContext);
-
-impl StateExecutionContext {
-    pub fn into_inner(self) -> StateTransitionExecutionContext {
-        self.0
-    }
-
-    pub fn inner(&self) -> &StateTransitionExecutionContext {
-        &self.0
-    }
-
-    pub fn inner_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.0
     }
 }
 

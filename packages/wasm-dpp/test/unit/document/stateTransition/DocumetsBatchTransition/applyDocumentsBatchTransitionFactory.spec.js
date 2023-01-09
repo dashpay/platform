@@ -1,5 +1,5 @@
-const Document = require('@dashevo/dpp/lib/document/Document');
-const DocumentsBatchTransition = require(
+const DocumentJs = require('@dashevo/dpp/lib/document/Document');
+const DocumentsBatchTransitionJs = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition',
 );
 
@@ -16,29 +16,64 @@ const getDocumentTransitionsFixture = require(
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const DocumentNotProvidedError = require('@dashevo/dpp/lib/document/errors/DocumentNotProvidedError');
+const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const DocumentNotProvidedErrorJs = require('@dashevo/dpp/lib/document/errors/DocumentNotProvidedError');
+
+const { default: loadWasmDpp } = require('../../../../../dist');
+const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
+// const { Document } = require('../../../../../dist/wasm/wasm_dpp');
+// const { DataContract } = require('../../../../../dist/wasm/wasm_dpp');
+let Document;
+let DocumentsBatchTransition;
+let DataContract;
+let StateTransitionExecutionContext;
+let applyDocumentsBatchTransition;
 
 describe('applyDocumentsBatchTransitionFactory', () => {
+  let documentsJs;
   let documents;
+  let dataContractJs;
   let dataContract;
+  let documentTransitionsJs;
   let documentTransitions;
   let ownerId;
+  let replaceDocumentJs;
   let replaceDocument;
+  let stateTransitionJs;
   let stateTransition;
+  let documentsFixtureJs;
   let documentsFixture;
-  let applyDocumentsBatchTransition;
+  let applyDocumentsBatchTransitionJs;
+  let stateRepositoryMockJs;
   let stateRepositoryMock;
   let fetchDocumentsMock;
+  let executionContextJs;
   let executionContext;
   let blockTimeMs;
 
-  beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
-    documentsFixture = getDocumentsFixture(dataContract);
+  beforeEach(async () => {
+    ({
+      DataContract, Document, DocumentsBatchTransition, StateTransitionExecutionContext, applyDocumentsBatchTransition
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(async function beforeEach() {
+    dataContractJs = getDataContractFixture();
+    dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
+
+    documentsFixtureJs = getDocumentsFixture(dataContractJs);
+    documentsFixture = documentsFixtureJs.map((d) => {
+      const doc = new Document(d.toObject(), dataContract);
+      doc.setEntropy(d.entropy);
+      return doc;
+    });
 
     ownerId = getDocumentsFixture.ownerId;
 
+    replaceDocumentJs = new DocumentJs({
+      ...documentsFixtureJs[1].toObject(),
+      lastName: 'NotSoShiny',
+    }, dataContractJs);
     replaceDocument = new Document({
       ...documentsFixture[1].toObject(),
       lastName: 'NotSoShiny',
@@ -46,114 +81,169 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     blockTimeMs = Date.now();
 
+    documentsJs = [replaceDocumentJs, documentsFixtureJs[2]];
     documents = [replaceDocument, documentsFixture[2]];
 
-    documentTransitions = getDocumentTransitionsFixture({
-      create: [documentsFixture[0]],
-      replace: [documents[0]],
-      delete: [documents[1]],
+    documentTransitionsJs = getDocumentTransitionsFixture({
+      create: [documentsFixtureJs[0]],
+      replace: [documentsJs[0]],
+      delete: [documentsJs[1]],
     });
+
+    stateTransitionJs = new DocumentsBatchTransitionJs({
+      protocolVersion: protocolVersion.latestVersion,
+      ownerId,
+      transitions: documentTransitionsJs.map((t) => t.toObject()),
+    }, [dataContractJs]);
 
     stateTransition = new DocumentsBatchTransition({
       protocolVersion: protocolVersion.latestVersion,
       ownerId,
-      transitions: documentTransitions.map((t) => t.toObject()),
+      transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
+    executionContextJs = new StateTransitionExecutionContextJs();
     executionContext = new StateTransitionExecutionContext();
 
+    stateTransitionJs.setExecutionContext(executionContextJs);
     stateTransition.setExecutionContext(executionContext);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
+    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMockJs.fetchDataContract.resolves(dataContractJs);
+    stateRepositoryMockJs.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
 
     fetchDocumentsMock = this.sinonSandbox.stub();
     fetchDocumentsMock.resolves([
-      replaceDocument,
+      replaceDocumentJs,
     ]);
 
-    applyDocumentsBatchTransition = applyDocumentsBatchTransitionFactory(
-      stateRepositoryMock,
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDataContract.returns(dataContract);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTimeMs);
+    stateRepositoryMock.updateDocument.returns(null);
+    stateRepositoryMock.removeDocument.returns(null);
+    stateRepositoryMock.createDocument.returns(null);
+    stateRepositoryMock.fetchDocuments.returns([replaceDocument]);
+
+    // fetchDocumentsMock = this.sinonSandbox.stub();
+    // fetchDocumentsMock.resolves([
+    //   replaceDocument,
+    // ]);
+
+    applyDocumentsBatchTransitionJs = applyDocumentsBatchTransitionFactory(
+      stateRepositoryMockJs,
       fetchDocumentsMock,
     );
   });
 
   it('should call `store`, `replace` and `remove` functions for specific type of transitions', async () => {
-    await applyDocumentsBatchTransition(stateTransition);
+    await applyDocumentsBatchTransitionJs(stateTransitionJs);
 
-    const replaceDocumentTransition = documentTransitions[1];
+    const replaceDocumentTransition = documentTransitionsJs[1];
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       [replaceDocumentTransition],
-      executionContext,
+      executionContextJs,
     );
 
-    expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
-    expect(stateRepositoryMock.updateDocument).to.have.been.calledOnce();
+    expect(stateRepositoryMockJs.createDocument).to.have.been.calledOnce();
+    expect(stateRepositoryMockJs.updateDocument).to.have.been.calledOnce();
 
     const callsArgs = [
-      ...stateRepositoryMock.createDocument.getCall(0).args,
-      ...stateRepositoryMock.updateDocument.getCall(0).args,
+      ...stateRepositoryMockJs.createDocument.getCall(0).args,
+      ...stateRepositoryMockJs.updateDocument.getCall(0).args,
     ];
 
     expect(callsArgs).to.have.deep.members([
-      documentsFixture[0],
-      documents[0],
-      executionContext,
-      executionContext,
+      documentsFixtureJs[0],
+      documentsJs[0],
+      executionContextJs,
+      executionContextJs,
     ]);
 
-    expect(stateRepositoryMock.removeDocument).to.have.been.calledOnceWithExactly(
-      documentTransitions[2].getDataContract(),
-      documentTransitions[2].getType(),
-      documentTransitions[2].getId(),
-      executionContext,
+    expect(stateRepositoryMockJs.removeDocument).to.have.been.calledOnceWithExactly(
+      documentTransitionsJs[2].getDataContract(),
+      documentTransitionsJs[2].getType(),
+      documentTransitionsJs[2].getId(),
+      executionContextJs,
     );
+  });
+
+  it('should call `store`, `replace` and `remove` functions for specific type of transitions - Rust', async () => {
+    await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
+
+    // const replaceDocumentTransition = documentTransitionsJs[1];
+
+    // expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
+    //   [replaceDocumentTransition],
+    //   executionContextJs,
+    // );
+
+    // expect(stateRepositoryMockJs.createDocument).to.have.been.calledOnce();
+    // expect(stateRepositoryMockJs.updateDocument).to.have.been.calledOnce();
+
+    // const callsArgs = [
+    //   ...stateRepositoryMockJs.createDocument.getCall(0).args,
+    //   ...stateRepositoryMockJs.updateDocument.getCall(0).args,
+    // ];
+
+    // expect(callsArgs).to.have.deep.members([
+    //   documentsFixtureJs[0],
+    //   documentsJs[0],
+    //   executionContextJs,
+    //   executionContextJs,
+    // ]);
+
+    // expect(stateRepositoryMockJs.removeDocument).to.have.been.calledOnceWithExactly(
+    //   documentTransitionsJs[2].getDataContract(),
+    //   documentTransitionsJs[2].getType(),
+    //   documentTransitionsJs[2].getId(),
+    //   executionContextJs,
+    // );
   });
 
   it('should throw an error if document was not provided for a replacement', async () => {
     fetchDocumentsMock.resolves([]);
 
-    const replaceDocumentTransition = documentTransitions[1];
+    const replaceDocumentTransition = documentTransitionsJs[1];
 
     try {
-      await applyDocumentsBatchTransition(stateTransition);
+      await applyDocumentsBatchTransitionJs(stateTransitionJs);
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(DocumentNotProvidedError);
+      expect(e).to.be.an.instanceOf(DocumentNotProvidedErrorJs);
       expect(e.getDocumentTransition()).to.deep.equal(replaceDocumentTransition);
     }
   });
 
   it('should call `replace` functions on dry run', async () => {
-    documentTransitions = getDocumentTransitionsFixture({
+    documentTransitionsJs = getDocumentTransitionsFixture({
       create: [],
-      replace: [documents[0]],
+      replace: [documentsJs[0]],
       delete: [],
     });
 
-    stateTransition = new DocumentsBatchTransition({
+    stateTransitionJs = new DocumentsBatchTransitionJs({
       protocolVersion: protocolVersion.latestVersion,
       ownerId,
-      transitions: documentTransitions.map((t) => t.toObject()),
-    }, [dataContract]);
+      transitions: documentTransitionsJs.map((t) => t.toObject()),
+    }, [dataContractJs]);
 
-    stateTransition.getExecutionContext().enableDryRun();
+    stateTransitionJs.getExecutionContext().enableDryRun();
 
-    await applyDocumentsBatchTransition(stateTransition);
+    await applyDocumentsBatchTransitionJs(stateTransitionJs);
 
-    stateTransition.getExecutionContext().disableDryRun();
+    stateTransitionJs.getExecutionContext().disableDryRun();
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
+    expect(stateRepositoryMockJs.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
 
-    const [documentTransition] = stateTransition.getTransitions();
-    const newDocument = new Document({
-      $protocolVersion: stateTransition.getProtocolVersion(),
+    const [documentTransition] = stateTransitionJs.getTransitions();
+    const newDocument = new DocumentJs({
+      $protocolVersion: stateTransitionJs.getProtocolVersion(),
       $id: documentTransition.getId(),
       $type: documentTransition.getType(),
       $dataContractId: documentTransition.getDataContractId(),
-      $ownerId: stateTransition.getOwnerId(),
+      $ownerId: stateTransitionJs.getOwnerId(),
       $createdAt: blockTimeMs,
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());
@@ -162,9 +252,9 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     newDocument.setData(documentTransition.getData());
     newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
 
-    expect(stateRepositoryMock.updateDocument).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMockJs.updateDocument).to.have.been.calledOnceWithExactly(
       newDocument,
-      executionContext,
+      executionContextJs,
     );
   });
 });

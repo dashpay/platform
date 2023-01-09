@@ -15,7 +15,7 @@ use super::{
     document_transition::{
         Action, DocumentCreateTransition, DocumentReplaceTransition, DocumentTransition,
     },
-    validation::state::fetch_documents::fetch_documents,
+    validation::state::fetch_documents::{self, fetch_documents},
     DocumentsBatchTransition,
 };
 
@@ -61,6 +61,8 @@ pub async fn apply_documents_batch_transition(
     )
     .await?;
 
+    // let fetched_documents: Vec<Document> = vec![];
+
     let fetched_documents_by_id: HashMap<&Identifier, &Document> =
         fetched_documents.iter().map(|dt| (&dt.id, dt)).collect();
 
@@ -76,10 +78,8 @@ pub async fn apply_documents_batch_transition(
             }
             DocumentTransition::Replace(dt) => {
                 let document = if state_transition.execution_context.is_dry_run() {
-                    let latest_platform_block: Block = state_repository
-                        .fetch_latest_platform_block_header()
-                        .await?;
-                    let timestamp_millis = (latest_platform_block.header.time * 1000) as i64;
+                    let timestamp_millis =
+                        state_repository.fetch_latest_platform_block_time().await?;
                     document_from_transition_replace(dt, state_transition, timestamp_millis)
                 } else {
                     let mut document = fetched_documents_by_id
@@ -144,7 +144,7 @@ fn document_from_transition_create(
 fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
-    created_at: i64,
+    created_at: u64,
 ) -> Document {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
@@ -160,7 +160,7 @@ fn document_from_transition_replace(
             .clone(),
         updated_at: document_replace_transition.updated_at,
         revision: document_replace_transition.revision,
-        created_at: Some(created_at),
+        created_at: Some(created_at as i64),
         metadata: None,
 
         //? In the JS implementation the `data_contract` and `entropy` properties are completely omitted, what suggest we should make
@@ -219,7 +219,7 @@ mod test {
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         state_repository
             .expect_update_document()

@@ -2,6 +2,7 @@
 
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use dpp::{
     dashcore::InstantLock,
@@ -11,10 +12,11 @@ use dpp::{
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    data_contract, identifier::IdentifierWrapper, DataContractWasm, DocumentWasm,
+    identifier::IdentifierWrapper, DataContractWasm, DocumentWasm,
     StateTransitionExecutionContextWasm,
 };
 
@@ -58,6 +60,18 @@ extern "C" {
         document_id: IdentifierWrapper,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
+
+    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockTime)]
+    pub fn fetch_latest_platform_block_time(this: &ExternalStateRepositoryLike) -> u64;
+
+    #[wasm_bindgen(structural, method, js_name=fetchDocuments)]
+    pub fn fetch_documents(
+        this: &ExternalStateRepositoryLike,
+        data_contract_id: IdentifierWrapper,
+        data_contract_type: String,
+        where_query: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> js_sys::Array;
 }
 
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
@@ -77,6 +91,7 @@ impl ExternalStateRepositoryLikeWrapper {
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
+    type FetchDocument = DocumentWasm;
 
     async fn fetch_data_contract(
         &self,
@@ -106,17 +121,32 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(())
     }
 
-    async fn fetch_documents<T>(
+    async fn fetch_documents(
         &self,
-        _contract_id: &Identifier,
-        _data_contract_type: &str,
-        _where_query: serde_json::Value,
-        _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Vec<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
+        contract_id: &Identifier,
+        data_contract_type: &str,
+        where_query: serde_json::Value,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> anyhow::Result<Vec<Self::FetchDocument>> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_documents(
+                contract_id.to_owned().into(),
+                data_contract_type.to_owned(),
+                where_query
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .map_err(|e| anyhow!("serialization error: {}", e))?,
+                execution_context.clone().into(),
+            );
+        // this is something I need to change
+
+        // this is the problem --> how we can change that???
+
+        // we unable to convert
+        // .map(Into::into)
         todo!()
+        // now the question -> how I will receive the information about the
     }
 
     async fn create_document(
@@ -270,5 +300,14 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _transaction_bytes: Vec<u8>,
     ) -> anyhow::Result<()> {
         todo!()
+    }
+
+    async fn fetch_latest_platform_block_time(&self) -> anyhow::Result<u64> {
+        let time = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_latest_platform_block_time();
+        Ok(time)
     }
 }

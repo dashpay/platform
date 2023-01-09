@@ -366,3 +366,9 @@ impl From<Document> for DocumentWasm {
         DocumentWasm(d)
     }
 }
+
+impl std::convert::Into<Document> for DocumentWasm {
+    fn into(self) -> Document {
+        self.0
+    }
+}

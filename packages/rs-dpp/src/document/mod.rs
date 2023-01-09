@@ -58,6 +58,7 @@ pub struct Document {
     pub data_contract_id: Identifier,
     #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
+    // TODO shouldn't the time be a u64?
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
