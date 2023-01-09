@@ -1,3 +1,4 @@
+const https = require('https');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
@@ -47,28 +48,16 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     Object.assign(requestOptions, { signal: controller.signal });
   }
 
-  const config = { timeout: options.timeout };
   // For NodeJS Client
   if (typeof process !== 'undefined'
     && process.versions != null
     && process.versions.node != null
     && protocol === 'https'
     && selfSigned) {
-    config.httpsAgent = new https.Agent({
+    requestOptions.agent = new https.Agent({
       rejectUnauthorized: false,
     });
   }
-
-  try {
-    response = await axios.post(
-      url,
-      payload,
-      config,
-    );
-  } catch (error) {
-    if (error.response && error.response.status >= 500) {
-      throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
-    }
 
   // eslint-disable-next-line
   const response = await fetch(url, requestOptions);

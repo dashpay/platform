@@ -9,7 +9,6 @@ describe('requestJsonRpc', () => {
   let timeout;
   let params;
   let selfSigned;
-  let axiosStub;
 
   beforeEach(function beforeEach() {
     protocol = 'http';
@@ -21,57 +20,6 @@ describe('requestJsonRpc', () => {
 
     // eslint-disable-next-line
     this.sinon.stub(globalThis, 'fetch');
-
-    const options = { timeout };
-
-    const url = `${protocol}://${host}:${port}`;
-    const payload = {
-      jsonrpc: '2.0',
-      params,
-      id: 1,
-    };
-
-    axiosStub = this.sinon.stub(axios, 'post');
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'shouldPass' },
-        options,
-      )
-      .resolves({ status: 200, data: { result: 'passed', error: null } });
-
-    axiosStub
-      .withArgs(
-        `https://${host}:${port}`,
-        { ...payload, method: 'httpsRequest' },
-        options,
-      )
-      .resolves({ status: 200, data: { result: 'passed', error: null } });
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'wrongData' },
-        options,
-      )
-      .resolves({ status: 400, data: { result: null, error: { message: 'Wrong data' } }, statusMessage: 'Status message' });
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'invalidData' },
-        options,
-      )
-      .resolves({ status: 200, data: { result: null, error: { message: 'invalid data' } } });
-
-    axiosStub
-      .withArgs(
-        url,
-        { ...payload, method: 'errorData' },
-        { timeout: undefined },
-      )
-      .resolves({ status: 200, data: { result: null, error: { message: 'Invalid data for error.data', data: 'additional data here', code: -1 } } });
   });
 
   afterEach(() => {
@@ -129,8 +77,13 @@ describe('requestJsonRpc', () => {
     protocol = 'https';
     selfSigned = true;
 
-    axiosStub
-      .resolves({ status: 200, data: { result: 'passed', error: null } });
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
 
     const result = await requestJsonRpc(
       protocol,
