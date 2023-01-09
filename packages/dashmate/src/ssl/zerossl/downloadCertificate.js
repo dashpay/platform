@@ -1,4 +1,4 @@
-const axios = require('axios');
+const fetch = require('node-fetch');
 const wait = require('../../util/wait');
 
 /**
@@ -13,9 +13,10 @@ async function downloadCertificate(id, apiKey) {
   const maxTime = 10 * 60 * 1000; // 10 minutes
   const startedAt = Date.now();
 
-  const request = {
-    method: 'get',
-    url: `https://api.zerossl.com/certificates/${id}/download/return?access_key=${apiKey}`,
+  const url = `https://api.zerossl.com/certificates/${id}/download/return?access_key=${apiKey}`;
+
+  const requestOptions = {
+    method: 'GET',
     headers: { },
   };
 
@@ -23,14 +24,20 @@ async function downloadCertificate(id, apiKey) {
 
   do {
     await wait(2000);
-    response = await axios(request);
-  } while (response.data.success === false && Date.now() - startedAt < maxTime);
+    response = await fetch(url, requestOptions);
+  } while (!response.ok && Date.now() - startedAt < maxTime);
 
-  if (!response) {
+  if (!response.ok) {
     throw new Error('Can\'t download certificate: max time limit has been reached');
   }
 
-  return `${response.data['certificate.crt']}\n${response.data['ca_bundle.crt']}`;
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error.type);
+  }
+
+  return `${data['certificate.crt']}\n${data['ca_bundle.crt']}`;
 }
 
 module.exports = downloadCertificate;
