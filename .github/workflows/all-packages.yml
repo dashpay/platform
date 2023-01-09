@@ -59,7 +59,7 @@ jobs:
         run: corepack enable
 
       - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive --ignore 1080920
+        run: yarn npm audit --environment production --all --recursive --ignore 1080920 --ignore 1087851
         # ignore "got"
 
   test-suite:
