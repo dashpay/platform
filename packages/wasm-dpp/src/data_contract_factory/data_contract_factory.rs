@@ -47,6 +47,7 @@ impl DataContractValidatorWasm {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_data_contract))?;
         let json_object = serde_json::to_value(parameters).expect("Implements Serialize");
+
         self.0
             .validate(&json_object)
             .map(Into::into)
