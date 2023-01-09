@@ -20,18 +20,24 @@ async function downloadCertificate(id, apiKey) {
     headers: { },
   };
 
-  let response;
+  let data;
+  let success = false;
 
   do {
-    await wait(2000);
-    response = await fetch(url, requestOptions);
-  } while (!response.ok && Date.now() - startedAt < maxTime);
+    try {
+      await wait(2000);
+      const response = await fetch(url, requestOptions);
+      data = await response.json();
 
-  if (!response.ok) {
+      ({ success } = data);
+    } catch (e) {
+      // do nothing
+    }
+  } while (success === false && Date.now() - startedAt < maxTime);
+
+  if (!data) {
     throw new Error('Can\'t download certificate: max time limit has been reached');
   }
-
-  const data = await response.json();
 
   if (data.error) {
     throw new Error(data.error.type);
