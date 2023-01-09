@@ -243,6 +243,6 @@ mod tests {
         let credits_match_expected = drive
             .verify_total_credits(None)
             .expect("expected to get the result of the verification");
-        assert_eq!(credits_match_expected, true);
+        assert!(credits_match_expected.ok().expect("no overflow"));
     }
 }
