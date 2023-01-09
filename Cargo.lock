@@ -574,7 +574,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
+source = "git+https://github.com/dashpay/grovedb?rev=a9e168767c318b94b6edd119c51542c43e8772b2#a9e168767c318b94b6edd119c51542c43e8772b2"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1253,8 +1253,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.9.2"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
+version = "0.9.3"
+source = "git+https://github.com/dashpay/grovedb?rev=a9e168767c318b94b6edd119c51542c43e8772b2#a9e168767c318b94b6edd119c51542c43e8772b2"
 dependencies = [
  "bincode",
  "costs",
@@ -1687,8 +1687,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "0.9.2"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
+version = "0.9.3"
+source = "git+https://github.com/dashpay/grovedb?rev=a9e168767c318b94b6edd119c51542c43e8772b2#a9e168767c318b94b6edd119c51542c43e8772b2"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2729,7 +2729,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
+source = "git+https://github.com/dashpay/grovedb?rev=a9e168767c318b94b6edd119c51542c43e8772b2#a9e168767c318b94b6edd119c51542c43e8772b2"
 dependencies = [
  "blake3",
  "costs",
@@ -3116,7 +3116,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
+source = "git+https://github.com/dashpay/grovedb?rev=a9e168767c318b94b6edd119c51542c43e8772b2#a9e168767c318b94b6edd119c51542c43e8772b2"
 dependencies = [
  "hex",
  "itertools",
