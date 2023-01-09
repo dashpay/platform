@@ -196,7 +196,12 @@ impl Drive {
         };
         let (result_items, _) = self
             .grove
-            .query_raw(&path_query, QueryElementResultType, transaction)
+            .query_raw(
+                &path_query,
+                transaction.is_some(),
+                QueryElementResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?;
 
