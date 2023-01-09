@@ -495,7 +495,6 @@ mod tests {
             let identity = Identity::random_identity(5, Some(12345));
             let query = Drive::full_identity_query(identity.id.to_buffer())
                 .expect("expected to make the query");
-            query.
         }
         #[test]
         fn test_proved_full_identity_query() {
