@@ -33,6 +33,10 @@ async function downloadCertificate(id, apiKey) {
 
   const data = await response.json();
 
+  if (data.error) {
+    throw new Error(data.error.type);
+  }
+
   return `${data['certificate.crt']}\n${data['ca_bundle.crt']}`;
 }
 
