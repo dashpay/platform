@@ -495,7 +495,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
-        let CostContext { value, cost } = self.grove.query_keys_optional(path_query, transaction);
+        let CostContext { value, cost } = self.grove.query_keys_optional(path_query, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }
@@ -509,7 +509,7 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
         let CostContext { value, cost } =
-            self.grove.query_raw_keys_optional(path_query, transaction);
+            self.grove.query_raw_keys_optional(path_query, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

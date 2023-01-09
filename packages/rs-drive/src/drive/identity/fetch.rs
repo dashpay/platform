@@ -76,7 +76,7 @@ impl Drive {
             path: balance_path,
             query: SizedQuery {
                 query,
-                limit: Some(1),
+                limit: None,
                 offset: None,
             },
         }
@@ -91,7 +91,7 @@ impl Drive {
             path: identity_path,
             query: SizedQuery {
                 query,
-                limit: Some(1),
+                limit: None,
                 offset: None,
             },
         }
@@ -271,9 +271,9 @@ impl Drive {
     pub fn full_identity_query(identity_id: [u8; 32]) -> Result<PathQuery, Error> {
         let balance_query = Self::identity_balance_query(identity_id);
         let revision_query = Self::identity_revision_query(identity_id);
-        // let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
-        // let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&balance_query, &revision_query]).map_err(Error::GroveDB)
+        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
+        let all_keys_query = key_request.into_path_query();
+        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query]).map_err(Error::GroveDB)
     }
 
     /// Fetches an identity with all its information from storage.
@@ -361,7 +361,7 @@ impl Drive {
         };
         let (result_items, _) = self
             .grove
-            .query_raw(&path_query, QueryElementResultType, transaction)
+            .query_raw(&path_query, true, QueryElementResultType, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -388,7 +388,7 @@ impl Drive {
         };
         let (result_items, _) = self
             .grove
-            .query_raw(&path_query, QueryKeyElementPairResultType, transaction)
+            .query_raw(&path_query, true, QueryKeyElementPairResultType, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -491,6 +491,13 @@ mod tests {
         use super::*;
 
         #[test]
+        fn test_full_identity_query_construction() {
+            let identity = Identity::random_identity(5, Some(12345));
+            let query = Drive::full_identity_query(identity.id.to_buffer())
+                .expect("expected to make the query");
+            query.
+        }
+        #[test]
         fn test_proved_full_identity_query() {
             let drive = setup_drive_with_initial_state_structure();
 
@@ -510,6 +517,8 @@ mod tests {
             let query = Drive::full_identity_query(identity.id.to_buffer())
                 .expect("expected to make the query");
 
+
+
             let fetched_identity = drive
                 .fetch_proved_full_identity(identity.id.to_buffer(), None)
                 .expect("should fetch an identity")
@@ -518,7 +527,8 @@ mod tests {
             let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &query)
                 .expect("expected to verify query");
 
-            assert_eq!(proof.len(), 5);
+            // We want to get a proof on the balance, the revision and 5 keys
+            assert_eq!(proof.len(), 7);
         }
     }
 }
