@@ -854,7 +854,7 @@ impl Drive {
         // As we want deterministic costs, we want the cost to always be the same for
         // fetching the contract.
         // We need to pass allow cache to false
-        let CostContext { value, cost } = self.grove.get_caching_optional(
+        let CostContext { value, cost } = self.grove.get_raw_caching_optional(
             contract_root_path(&contract_id),
             &[0],
             false,
@@ -1606,8 +1606,18 @@ mod tests {
             );
 
             assert_eq!(
-                deep_contract_fetch_info_transactional,
-                deep_contract_fetch_info_transactional2
+                deep_contract_fetch_info_transactional.contract,
+                deep_contract_fetch_info_transactional2.contract
+            );
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional.storage_flags,
+                deep_contract_fetch_info_transactional2.storage_flags
+            );
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional.cost,
+                deep_contract_fetch_info_transactional2.cost
             );
         }
     }
