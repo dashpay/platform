@@ -1,4 +1,3 @@
-const axios = require('axios');
 const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/requestJsonRpc');
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
@@ -19,6 +18,9 @@ describe('requestJsonRpc', () => {
     params = { data: 'test' };
     timeout = 1000;
     selfSigned = false;
+
+    // eslint-disable-next-line
+    this.sinon.stub(globalThis, 'fetch');
 
     const options = { timeout };
 
@@ -73,10 +75,19 @@ describe('requestJsonRpc', () => {
   });
 
   afterEach(() => {
-    axios.post.restore();
+    // eslint-disable-next-line
+    fetch.restore();
   });
 
   it('should make rpc request and return result', async () => {
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
+
     const result = await requestJsonRpc(
       protocol,
       host,
@@ -92,6 +103,14 @@ describe('requestJsonRpc', () => {
 
   it('should make https rpc request and return result', async () => {
     protocol = 'https';
+
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
 
     const result = await requestJsonRpc(
       protocol,
@@ -130,6 +149,15 @@ describe('requestJsonRpc', () => {
     const method = 'wrongData';
     const options = { timeout };
 
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: null, error: { message: 'Wrong data' } }),
+      {
+        status: 400,
+        statusText: 'Status message',
+      },
+    ));
+
     try {
       await requestJsonRpc(
         protocol,
@@ -160,6 +188,15 @@ describe('requestJsonRpc', () => {
 
   it('should throw error if there is an error object in the response body', async () => {
     try {
+      // eslint-disable-next-line
+      fetch.resolves(new Response(
+        JSON.stringify({ result: null, error: { message: 'invalid data' } }),
+        {
+          status: 200,
+          statusText: 'Status message',
+        },
+      ));
+
       await requestJsonRpc(
         protocol,
         host,
@@ -180,6 +217,15 @@ describe('requestJsonRpc', () => {
     const method = 'errorData';
 
     try {
+      // eslint-disable-next-line
+      fetch.resolves(new Response(
+        JSON.stringify({ result: null, error: { message: 'Invalid data for error.data', data: 'additional data here', code: -1 } }),
+        {
+          status: 200,
+          statusText: 'Status message',
+        },
+      ));
+
       await requestJsonRpc(
         protocol,
         host,

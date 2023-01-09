@@ -1,6 +1,3 @@
-const axios = require('axios');
-const https = require('https');
-
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
@@ -25,11 +22,6 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     id: 1,
   };
 
-  const postOptions = {};
-  if (options.timeout !== undefined) {
-    postOptions.timeout = options.timeout;
-  }
-
   const requestInfo = {
     protocol,
     host,
@@ -40,7 +32,20 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     options,
   };
 
-  let response;
+  const requestOptions = {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+
+  let requestTimeoutId;
+  if (options.timeout) {
+    const controller = new AbortController();
+    requestTimeoutId = setTimeout(() => controller.abort(), options.timeout);
+    Object.assign(requestOptions, { signal: controller.signal });
+  }
 
   const config = { timeout: options.timeout };
   // For NodeJS Client
@@ -65,14 +70,17 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
       throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
     }
 
-    throw error;
-  }
+  // eslint-disable-next-line
+  const response = await fetch(url, requestOptions);
 
-  if (response.status !== 200) {
-    throw new WrongHttpCodeError(requestInfo, response.status, response.statusMessage);
+  if (typeof requestTimeoutId !== 'undefined') {
+    clearTimeout(requestTimeoutId);
   }
+  const data = await response.json();
 
-  const { data } = response;
+  if (!response.ok) {
+    throw new WrongHttpCodeError(requestInfo, response.status, response.statusText);
+  }
 
   if (data.error) {
     throw new JsonRpcError(requestInfo, data.error);
