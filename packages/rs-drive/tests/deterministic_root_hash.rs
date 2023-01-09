@@ -44,8 +44,8 @@ use tempfile::TempDir;
 
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentAndContractInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::{Drive, RootTree};
 
 use dpp::data_contract::extra::DriveContractExt;
@@ -131,14 +131,16 @@ pub fn add_domains_to_contract(
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &document_cbor,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::genesis(),

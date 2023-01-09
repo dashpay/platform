@@ -123,6 +123,7 @@ impl Drive {
             .grove
             .query_raw(
                 &PathQuery::new_unsized(pools_vec_path(), epochs_query),
+                transaction.is_some(),
                 QueryResultType::QueryElementResultType,
                 transaction,
             )

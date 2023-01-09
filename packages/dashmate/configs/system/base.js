@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.2.0-rc.4',
+      image: 'dashpay/dashd:18.2.0',
     },
     p2p: {
       port: 20001,
@@ -43,6 +43,11 @@ module.exports = {
       port: 20002,
       user: 'dashrpc',
       password: 'rpcpassword',
+      allowIps: [
+        '127.0.0.1',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+      ],
     },
     spork: {
       address: null,
@@ -66,6 +71,10 @@ module.exports = {
       },
     },
     debug: 0,
+    logIps: 0,
+    indexes: true,
+    minimumDifficultyBlocks: 0,
+    powTargetSpacing: 150,
     reindex: {
       enable: false,
       containerId: null,
@@ -146,12 +155,7 @@ module.exports = {
           createEmptyBlocksInterval: '3m',
         },
         log: {
-          level: {
-            main: 'info',
-            state: 'info',
-            statesync: 'info',
-            '*': 'error',
-          },
+          level: 'debug',
           format: 'plain',
         },
         nodeKey: {

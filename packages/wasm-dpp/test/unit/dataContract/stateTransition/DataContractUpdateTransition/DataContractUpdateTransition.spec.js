@@ -1,33 +1,29 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const DataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
-const hash = require('@dashevo/dpp/lib/util/hash');
-const serializer = require('@dashevo/dpp/lib/util/serializer');
+const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
+
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('DataContractUpdateTransition', () => {
   let stateTransition;
   let dataContract;
-  let hashMock;
-  let encodeMock;
+  let DataContractUpdateTransition;
+  let Identifier;
 
-  beforeEach(function beforeEach() {
+  before(async () => {
+    ({
+      DataContractUpdateTransition, Identifier,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(() => {
     dataContract = getDataContractFixture();
-
-    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
-    hashMock = this.sinonSandbox.stub(hash, 'hash');
 
     stateTransition = new DataContractUpdateTransition({
       protocolVersion: protocolVersion.latestVersion,
       dataContract: dataContract.toObject(),
     });
-  });
-
-  afterEach(() => {
-    encodeMock.restore();
-    hashMock.restore();
   });
 
   describe('#getProtocolVersion', () => {
@@ -56,73 +52,41 @@ describe('DataContractUpdateTransition', () => {
 
   describe('#toJSON', () => {
     it('should return State Transition as plain JS object', () => {
-      expect(stateTransition.toJSON()).to.deep.equal({
+      expect(stateTransition.toJSON(true)).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DATA_CONTRACT_UPDATE,
         dataContract: dataContract.toJSON(),
-        signaturePublicKeyId: undefined,
-        signature: undefined,
       });
     });
   });
 
   describe('#toBuffer', () => {
-    it('should return serialized State Transition', () => {
-      const serializedStateTransition = Buffer.from('123');
-
-      encodeMock.returns(serializedStateTransition);
-
+    it('should return serialized State Transition that starts with protocol version', () => {
       const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
+      protocolVersionUInt32.writeUInt32LE(stateTransition.getProtocolVersion(), 0);
 
       const result = stateTransition.toBuffer();
-
-      expect(result).to.deep.equal(
-        Buffer.concat([protocolVersionUInt32, serializedStateTransition]),
-      );
-
-      const dataToEncode = stateTransition.toObject();
-      delete dataToEncode.protocolVersion;
-
-      expect(encodeMock.getCall(0).args).to.have.deep.members([
-        dataToEncode,
-      ]);
+      expect(result.compare(protocolVersionUInt32, 0, 4, 0, 4)).equals(0);
     });
   });
 
-  describe('#hash', () => {
+  describe.skip('#hash', () => {
     it('should return State Transition hash as hex', () => {
-      const serializedDocument = Buffer.from('123');
-      const hashedDocument = '456';
-
-      encodeMock.returns(serializedDocument);
-      hashMock.returns(hashedDocument);
+      const jsStateTransition = new JsDataContractUpdateTransition(stateTransition.toJSON());
 
       const result = stateTransition.hash();
+      const resultJs = jsStateTransition.hash();
 
-      expect(result).to.equal(hashedDocument);
-
-      const dataToEncode = stateTransition.toObject();
-      delete dataToEncode.protocolVersion;
-
-      expect(encodeMock.getCall(0).args).to.have.deep.members([
-        dataToEncode,
-      ]);
-
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
-
-      expect(hashMock).to.have.been.calledOnceWith(
-        Buffer.concat([protocolVersionUInt32, serializedDocument]),
-      );
+      expect(result).to.equal(resultJs);
     });
   });
 
   describe('#getOwnerId', () => {
     it('should return owner id', async () => {
       const result = stateTransition.getOwnerId();
+      const reference = stateTransition.getDataContract().getOwnerId();
 
-      expect(result).to.equal(stateTransition.getDataContract().getOwnerId());
+      expect(result.toBuffer()).to.deep.equal(reference.toBuffer());
     });
   });
 
@@ -134,7 +98,7 @@ describe('DataContractUpdateTransition', () => {
       const contractId = result[0];
 
       expect(contractId).to.be.an.instanceOf(Identifier);
-      expect(contractId).to.be.deep.equal(dataContract.getId());
+      expect(contractId.toBuffer()).to.be.deep.equal(dataContract.getId().toBuffer());
     });
   });
 

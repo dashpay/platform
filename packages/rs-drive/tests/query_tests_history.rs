@@ -46,8 +46,8 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
 use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentAndContractInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
@@ -210,14 +210,16 @@ pub fn setup(
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags.as_ref(),
-                        )),
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefAndSerialization((
+                                &document,
+                                &document_cbor,
+                                storage_flags.as_ref(),
+                            )),
+                            owner_id: None,
+                        },
                         contract: &contract,
                         document_type,
-                        owner_id: None,
                     },
                     true,
                     BlockInfo::default_with_time(block_time),
@@ -1028,14 +1030,16 @@ fn test_query_historical() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &person_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &person_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -1076,14 +1080,16 @@ fn test_query_historical() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &person_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &person_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
