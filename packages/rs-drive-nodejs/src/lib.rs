@@ -2100,11 +2100,14 @@ impl PlatformWrapper {
 
     fn js_grove_db_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path_query = cx.argument::<JsObject>(0)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_skip_cache = cx.argument::<JsBoolean>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
 
-        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
         let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+
+        let skip_cache = js_skip_cache.value(&mut cx);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2127,7 +2130,7 @@ impl PlatformWrapper {
 
             let result = transaction_result.and_then(|transaction_arg| {
                 grove_db
-                    .query_item_value(&path_query, transaction_arg)
+                    .query_item_value(&path_query, !skip_cache, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
                     .map_err(|err| err.to_string())
