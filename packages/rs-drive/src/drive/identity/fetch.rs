@@ -488,6 +488,7 @@ mod tests {
     }
 
     mod fetch_proved_full_identity {
+        use grovedb::query_result_type::QueryResultType;
         use super::*;
 
         #[test]
@@ -516,7 +517,8 @@ mod tests {
             let query = Drive::full_identity_query(identity.id.to_buffer())
                 .expect("expected to make the query");
 
-
+            let (elements, _) = drive.grove.query_raw(&query, true, QueryResultType::QueryPathKeyElementTrioResultType, None).unwrap().expect("expected to run the path query");
+            assert_eq!(elements.len(), 7);
 
             let fetched_identity = drive
                 .fetch_proved_full_identity(identity.id.to_buffer(), None)
