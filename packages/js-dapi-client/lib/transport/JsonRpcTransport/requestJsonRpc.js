@@ -1,8 +1,6 @@
-const axios = require('axios');
-const https = require('https');
-
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
+const https = require('https');
 
 /**
  * @typedef {requestJsonRpc}
@@ -25,11 +23,6 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     id: 1,
   };
 
-  const postOptions = {};
-  if (options.timeout !== undefined) {
-    postOptions.timeout = options.timeout;
-  }
-
   const requestInfo = {
     protocol,
     host,
@@ -40,39 +33,43 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     options,
   };
 
-  let response;
+  const requestOptions = {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
 
-  const config = { timeout: options.timeout };
+  let requestTimeoutId;
+  if (options.timeout) {
+    const controller = new AbortController();
+    requestTimeoutId = setTimeout(() => controller.abort(), options.timeout);
+    Object.assign(requestOptions, { signal: controller.signal });
+  }
+
   // For NodeJS Client
   if (typeof process !== 'undefined'
     && process.versions != null
     && process.versions.node != null
     && protocol === 'https'
     && selfSigned) {
-    config.httpsAgent = new https.Agent({
+    requestOptions.agent = new https.Agent({
       rejectUnauthorized: false,
     });
   }
 
-  try {
-    response = await axios.post(
-      url,
-      payload,
-      config,
-    );
-  } catch (error) {
-    if (error.response && error.response.status >= 500) {
-      throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
-    }
+  // eslint-disable-next-line
+  const response = await fetch(url, requestOptions);
 
-    throw error;
+  if (typeof requestTimeoutId !== 'undefined') {
+    clearTimeout(requestTimeoutId);
   }
+  const data = await response.json();
 
-  if (response.status !== 200) {
-    throw new WrongHttpCodeError(requestInfo, response.status, response.statusMessage);
+  if (!response.ok) {
+    throw new WrongHttpCodeError(requestInfo, response.status, response.statusText);
   }
-
-  const { data } = response;
 
   if (data.error) {
     throw new JsonRpcError(requestInfo, data.error);
