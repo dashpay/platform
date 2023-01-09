@@ -580,11 +580,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-<<<<<<< HEAD
 source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
-=======
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
->>>>>>> fix/deterministicContractCache
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1264,13 +1260,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-<<<<<<< HEAD
 version = "0.10.0"
 source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
-=======
-version = "0.9.2"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
->>>>>>> fix/deterministicContractCache
 dependencies = [
  "bincode",
  "costs",
@@ -1703,13 +1694,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-<<<<<<< HEAD
 version = "0.10.0"
 source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
-=======
-version = "0.9.2"
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
->>>>>>> fix/deterministicContractCache
 dependencies = [
  "blake3",
  "byteorder",
@@ -2750,11 +2736,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-<<<<<<< HEAD
 source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
-=======
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
->>>>>>> fix/deterministicContractCache
 dependencies = [
  "blake3",
  "costs",
@@ -2987,15 +2969,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-<<<<<<< HEAD
 version = "1.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d9f76183f91ecfb55e1d7d5602bd1d979e38a3a522fe900241cf195624d67ae"
-=======
-version = "1.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38a54aca0c15d014013256222ba0ebed095673f89345dd79119d912eb561b7a8"
->>>>>>> fix/deterministicContractCache
 dependencies = [
  "autocfg",
  "bytes",
@@ -3147,11 +3123,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-<<<<<<< HEAD
 source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
-=======
-source = "git+https://github.com/dashpay/grovedb?rev=af53d3729d19ad5bd1912970fbb599b264b9046b#af53d3729d19ad5bd1912970fbb599b264b9046b"
->>>>>>> fix/deterministicContractCache
 dependencies = [
  "hex",
  "itertools",
