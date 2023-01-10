@@ -6,8 +6,8 @@ mod data_contract;
 pub mod errors;
 mod state_transition;
 
-mod index;
 mod data_contract_facade;
+mod index;
 
-pub use index::*;
 pub use data_contract_facade::DataContractFacadeWasm;
+pub use index::*;

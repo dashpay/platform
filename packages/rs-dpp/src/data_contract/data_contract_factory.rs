@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use anyhow::anyhow;
 use serde_json::{json, Number, Value as JsonValue};
+use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
 
@@ -190,8 +190,9 @@ mod test {
             LATEST_VERSION,
             COMPATIBILITY_MAP.clone(),
         );
-        let data_contract_validator =
-            Arc::new(DataContractValidator::new(Arc::new(protocol_version_validator)));
+        let data_contract_validator = Arc::new(DataContractValidator::new(Arc::new(
+            protocol_version_validator,
+        )));
 
         let factory = DataContractFactory::new(1, data_contract_validator);
         TestData {

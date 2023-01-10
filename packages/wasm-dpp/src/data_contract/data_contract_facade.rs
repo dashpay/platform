@@ -1,13 +1,12 @@
-use crate::buffer::Buffer;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::{DataContractCreateTransitionWasm, DataContractWasm};
-use dpp::data_contract::{DataContract, DataContractFacade};
+use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
-use dpp::ProtocolError;
+
+use crate::validation::ValidationResultWasm;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
-use crate::validation::ValidationResultWasm;
 
 #[wasm_bindgen(js_name=DataContractFacade)]
 #[derive(Clone)]
@@ -43,26 +42,39 @@ impl DataContractFacadeWasm {
 
     /// Create Data Contract from plain object
     #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(&self, js_raw_data_contract: JsValue, skip_validation: bool) -> Result<DataContractWasm, JsValue> {
+    pub async fn create_from_object(
+        &self,
+        js_raw_data_contract: JsValue,
+        skip_validation: bool,
+    ) -> Result<DataContractWasm, JsValue> {
         let raw_data_contract = serde_wasm_bindgen::from_value(js_raw_data_contract)?;
         self.0
-            .create_from_object(raw_data_contract, skip_validation).await
+            .create_from_object(raw_data_contract, skip_validation)
+            .await
             .map(Into::into)
             .map_err(from_protocol_error)
     }
 
     /// Create Data Contract from buffer
     #[wasm_bindgen(js_name=createFromBuffer)]
-    pub async fn create_from_buffer(&self, buffer: Vec<u8>, skip_validation: bool) -> Result<DataContractWasm, JsValue> {
+    pub async fn create_from_buffer(
+        &self,
+        buffer: Vec<u8>,
+        skip_validation: bool,
+    ) -> Result<DataContractWasm, JsValue> {
         self.0
-            .create_from_buffer(buffer, skip_validation).await
+            .create_from_buffer(buffer, skip_validation)
+            .await
             .map(Into::into)
             .map_err(from_protocol_error)
     }
 
     /// Create Data Contract Create State Transition
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
-    pub fn create_data_contract_create_transition(&self, data_contract: DataContractWasm) -> Result<DataContractCreateTransitionWasm, JsValue> {
+    pub fn create_data_contract_create_transition(
+        &self,
+        data_contract: DataContractWasm,
+    ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
             .create_data_contract_create_transition(data_contract.into())
             .map(Into::into)
@@ -71,7 +83,10 @@ impl DataContractFacadeWasm {
 
     /// Create Data Contract Update State Transition
     #[wasm_bindgen(js_name=createDataContractUpdateTransition)]
-    pub fn create_dat_contract_update_transition(&self, data_contract: DataContractWasm) -> Result<DataContractCreateTransitionWasm, JsValue> {
+    pub fn create_dat_contract_update_transition(
+        &self,
+        data_contract: DataContractWasm,
+    ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
             .create_data_contract_update_transition(data_contract.into())
             .map(Into::into)
@@ -79,18 +94,16 @@ impl DataContractFacadeWasm {
     }
 
     /// Validate Data Contract
-    pub async fn validate(&self, data_contract: JsValue) -> Result<ValidationResultWasm, JsValue> {
-        let raw_data_contract = serde_wasm_bindgen::from_value(data_contract)?;
+    pub async fn validate(
+        &self,
+        data_contract_json: JsValue,
+    ) -> Result<ValidationResultWasm, JsValue> {
+        let raw_data_contract = serde_wasm_bindgen::from_value(data_contract_json)?;
 
-        self.0.validate(raw_data_contract).await.map(Into::into).map_err(from_protocol_error)
-
-        // let rawDataContract;
-        // if (dataContract instanceof DataContract) {
-        // rawDataContract = dataContract.toObject();
-        // } else {
-        // rawDataContract = dataContract;
-        // }
-        //
-        // return this.validateDataContract(rawDataContract);
+        self.0
+            .validate(raw_data_contract)
+            .await
+            .map(Into::into)
+            .map_err(from_protocol_error)
     }
 }
