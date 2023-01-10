@@ -32,7 +32,7 @@ impl DashPlatformProtocol {
         .unwrap();
 
         let data_contract_facade =
-            DataContractFacadeWasm::new(protocol_version, protocol_version_validator.clone());
+            DataContractFacadeWasm::new(protocol_version, protocol_version_validator);
 
         Self {
             _identity: identity_facade,

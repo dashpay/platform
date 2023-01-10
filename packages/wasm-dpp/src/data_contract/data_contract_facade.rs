@@ -83,7 +83,7 @@ impl DataContractFacadeWasm {
 
     /// Create Data Contract Update State Transition
     #[wasm_bindgen(js_name=createDataContractUpdateTransition)]
-    pub fn create_dat_contract_update_transition(
+    pub fn create_data_contract_update_transition(
         &self,
         data_contract: DataContractWasm,
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {

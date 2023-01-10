@@ -36,6 +36,12 @@ impl From<DataContractValidatorWasm> for DataContractValidator {
     }
 }
 
+impl Default for DataContractValidatorWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class=DataContractValidator)]
 impl DataContractValidatorWasm {
     #[wasm_bindgen(constructor)]
