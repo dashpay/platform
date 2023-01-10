@@ -74,11 +74,13 @@ pub struct Document {
 }
 
 impl Document {
+    /// Creates a Document from the json form. Json format contains strings instead of
+    /// arrays of u8 (bytes)
     pub fn from_json_document(
-        raw_document: JsonValue,
+        json_document: JsonValue,
         data_contract: DataContract,
     ) -> Result<Document, ProtocolError> {
-        let mut document = Self::from_value::<String>(raw_document, data_contract)?;
+        let mut document = Self::from_value::<String>(json_document, data_contract)?;
         let mut document_data = document.data.take();
 
         // replace only the dynamic data
@@ -109,31 +111,31 @@ impl Document {
             ..Default::default()
         };
 
-        if let Ok(value) = document_value.remove("$protocolVersion") {
+        if let Ok(value) = document_value.remove(property_names::PROTOCOL_VERSION) {
             document.protocol_version = serde_json::from_value(value)?
         }
-        if let Ok(value) = document_value.remove("$id") {
+        if let Ok(value) = document_value.remove(property_names::ID) {
             let data: S = serde_json::from_value(value)?;
             document.id = data.try_into()?;
         }
-        if let Ok(value) = document_value.remove("$type") {
+        if let Ok(value) = document_value.remove(property_names::DOCUMENT_TYPE) {
             document.document_type = serde_json::from_value(value)?
         }
-        if let Ok(value) = document_value.remove("$dataContractId") {
+        if let Ok(value) = document_value.remove(property_names::DATA_CONTRACT_ID) {
             let data: S = serde_json::from_value(value)?;
             document.data_contract_id = data.try_into()?
         }
-        if let Ok(value) = document_value.remove("$ownerId") {
+        if let Ok(value) = document_value.remove(property_names::OWNER_ID) {
             let data: S = serde_json::from_value(value)?;
             document.owner_id = data.try_into()?
         }
-        if let Ok(value) = document_value.remove("$revision") {
+        if let Ok(value) = document_value.remove(property_names::REVISION) {
             document.revision = serde_json::from_value(value)?
         }
-        if let Ok(value) = document_value.remove("$createdAt") {
+        if let Ok(value) = document_value.remove(property_names::CREATED_AT) {
             document.created_at = serde_json::from_value(value)?
         }
-        if let Ok(value) = document_value.remove("$updatedAt") {
+        if let Ok(value) = document_value.remove(property_names::UPDATED_AT) {
             document.updated_at = serde_json::from_value(value)?
         }
 
@@ -162,7 +164,10 @@ impl Document {
 
         let mut json_value = cbor_value::cbor_value_to_json_value(&cbor_value)?;
 
-        json_value.parse_and_add_protocol_version("$protocolVersion", protocol_version_bytes)?;
+        json_value.parse_and_add_protocol_version(
+            property_names::PROTOCOL_VERSION,
+            protocol_version_bytes,
+        )?;
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let document: Document = serde_json::from_value(json_value)?;
@@ -190,10 +195,10 @@ impl Document {
 
         let mut canonical_map: CborCanonicalMap = map.try_into()?;
 
-        canonical_map.remove("$protocolVersion");
+        canonical_map.remove(property_names::PROTOCOL_VERSION);
 
         if self.updated_at.is_none() {
-            canonical_map.remove("$updatedAt");
+            canonical_map.remove(property_names::UPDATED_AT);
         }
 
         let (identifier_paths, binary_paths) = self
@@ -277,7 +282,7 @@ mod test {
     use super::*;
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::assert_eq;
 
     fn init() {
         let _ = env_logger::builder()

@@ -17,9 +17,9 @@ use wasm_bindgen::prelude::*;
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
+    document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    mocks::DocumentTransitionWasm,
     utils::{ToSerdeJSONExt, WithJsError},
     DocumentWasm, IdentityPublicKeyWasm,
 };

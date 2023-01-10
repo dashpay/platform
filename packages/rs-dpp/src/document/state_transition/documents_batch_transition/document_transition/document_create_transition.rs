@@ -53,10 +53,9 @@ impl DocumentCreateTransition {
 
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
     fn from_json_object(
-        json_value: JsonValue,
+        mut json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let mut json_value = json_value;
         let document_type = json_value.get_string("$type")?;
 
         let (identifiers_paths, binary_paths) =

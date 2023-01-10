@@ -114,8 +114,7 @@ impl DataContract {
         Ok(data_contract)
     }
 
-    pub fn from_json_object(json_value: JsonValue) -> Result<DataContract, ProtocolError> {
-        let mut json_value = json_value;
+    pub fn from_json_object(mut json_value: JsonValue) -> Result<DataContract, ProtocolError> {
         json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
 
         let mut data_contract: DataContract = serde_json::from_value(json_value)?;
@@ -407,6 +406,8 @@ impl DataContract {
         let mut binary_paths: Vec<&str> = vec![];
         let mut identifiers_paths: Vec<&str> = vec![];
 
+        // At this point we don't bother about returned error from `get_binary_properties`.
+        // If document of given type isn't found, then empty vectors will be returned.
         if let Ok(binary_properties) = maybe_binary_properties {
             (binary_paths, identifiers_paths) =
                 binary_properties.iter().partition_map(|(path, v)| {

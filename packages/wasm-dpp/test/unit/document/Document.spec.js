@@ -32,13 +32,13 @@ describe('Document', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(async () => {
+  beforeEach(function beforeEach() {
     const now = new Date().getTime();
-    const id = await generateRandomIdentifierAsync();
-    const jsId = new JsIdentifier(Buffer.from(id.toBuffer()));
+    const jsId = generateRandomIdentifier();
+    const id = new Identifier(jsId.toBuffer());
 
-    const ownerId = await generateRandomIdentifierAsync();
-    const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
+    const jsOwnerId = new generateRandomIdentifier();
+    const ownerId = new Identifier(jsOwnerId.toBuffer());
 
     const jsDataContractFactory = new JsDataContractFactory(createDPPMock(), () => { });
     const dataContractValidator = new DataContractValidator();
@@ -241,198 +241,198 @@ describe('Document', () => {
 
       expect(document.getUpdatedAt()).to.equal(rawDocument.$updatedAt);
     });
+  });
 
-    describe('#getId', () => {
-      it('should return ID', async () => {
-        const id = await generateRandomIdentifierAsync();
+  describe('#getId', () => {
+    it('should return ID', async () => {
+      const id = await generateRandomIdentifierAsync();
 
-        document.setId(id.clone());
+      document.setId(id.clone());
 
-        const actualId = document.getId();
+      const actualId = document.getId();
 
-        expect(id.toBuffer()).to.deep.equal(actualId.toBuffer());
-      });
+      expect(id.toBuffer()).to.deep.equal(actualId.toBuffer());
+    });
+  });
+
+  describe('#getType', () => {
+    it('should return $type', () => {
+      expect(document.getType()).to.equal(rawDocument.$type);
+    });
+  });
+
+  describe('#getOwnerId', () => {
+    it('should return $ownerId', () => {
+      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
+    });
+  });
+
+  describe('#getDataContractId', () => {
+    it('should return $dataContractId', () => {
+      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
+    });
+  });
+
+  describe('#setRevision/#getRevision', () => {
+    it('should set $revision and get $revision', () => {
+      const revision = 5;
+
+      document.setRevision(revision);
+
+      expect(document.getRevision()).to.equal(revision);
+    });
+  });
+
+  describe('#setData/#getDAta', () => {
+    it('should call set and get for each document property', () => {
+      const data = {
+        test1: 1,
+        test2: 2,
+      };
+
+      document.setData(data);
+
+      expect(document.getData()).to.deep.equal(data);
+    });
+  });
+
+  describe('#set', () => {
+    it('should set value for specified property name', () => {
+      const path = 'test[0].$my';
+      const value = 2;
+
+      document.set(path, value);
+
+      expect(document.get(path)).to.deep.equal(2);
     });
 
-    describe('#getType', () => {
-      it('should return $type', () => {
-        expect(document.getType()).to.equal(rawDocument.$type);
-      });
+    it('should set identifier', () => {
+      const path = 'dataObject.binaryObject.identifier';
+      const buffer = Buffer.alloc(32);
+      const identifier = new Identifier(buffer);
+
+      document.set(path, identifier);
+
+      expect(document.get(path).toBuffer()).to.deep.equal(buffer);
     });
 
-    describe('#getOwnerId', () => {
-      it('should return $ownerId', () => {
-        expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
-      });
+    it('should set identifier as part of object', () => {
+      const buffer = Buffer.alloc(32, 'a');
+      const path = 'dataObject.binaryObject';
+      const identifierPath = 'dataObject.binaryObject.identifier';
+      const identifier = new Identifier(buffer);
+      const value = { identifier };
+
+      document.set(path, value);
+
+      expect(document.get(identifierPath).toBuffer()).to.deep.equal(buffer);
+    });
+  });
+
+  describe('#toJSON', () => {
+    it('should return Document as plain JS object', () => {
+      const jsonDocument = {
+        ...rawDocument,
+        $dataContractId: document.getDataContractId().toString(),
+        $id: document.getId().toString(),
+        $ownerId: document.getOwnerId().toString(),
+      };
+
+      expect(document.toJSON()).to.deep.equal(jsonDocument);
+    });
+  });
+
+  describe('#toObject', () => {
+    it('should return Document as object', () => {
+      const result = document.toObject();
+
+      expect(rawDocumentWithBuffers).to.deep.equal(result);
+    });
+  });
+
+  describe('#toBuffer', () => {
+    it('returned bytes should be the same as JS version', () => {
+      const jsBuffer = documentJs.toBuffer();
+      const buffer = document.toBuffer();
+
+      expect(jsBuffer.length).to.equal(buffer.length);
+      expect(jsBuffer).to.deep.equal(buffer);
     });
 
-    describe('#getDataContractId', () => {
-      it('should return $dataContractId', () => {
-        expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
-      });
+    it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+      const jsId = generateRandomIdentifier();
+      const id = new Identifier(jsId.toBuffer());
+      const path = 'dataObject.binaryObject.identifier';
+
+      documentJs.set(path, jsId);
+      document.set(path, id);
+
+      expect(documentJs.get(path).toBuffer()).to.deep.equal(jsId);
+      expect(document.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
+
+      const jsBuffer = documentJs.toBuffer();
+      const buffer = document.toBuffer();
+      expect(jsBuffer).to.deep.equal(buffer);
     });
 
-    describe('#setRevision/#getRevision', () => {
-      it('should set $revision and get $revision', () => {
-        const revision = 5;
+    it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
+      const data = Buffer.alloc(32);
+      const path = 'dataObject.binaryObject.binaryData';
 
-        document.setRevision(revision);
+      documentJs.set(path, data);
+      document.set(path, data);
 
-        expect(document.getRevision()).to.equal(revision);
-      });
+      const jsBuffer = documentJs.toBuffer();
+      const buffer = document.toBuffer();
+
+      expect(jsBuffer.length).to.equal(buffer.length);
+      expect(jsBuffer).to.deep.equal(buffer);
     });
+  });
 
-    describe('#setData/#getDAta', () => {
-      it('should call set and get for each document property', () => {
-        const data = {
-          test1: 1,
-          test2: 2,
-        };
-
-        document.setData(data);
-
-        expect(document.getData()).to.deep.equal(data);
-      });
+  describe('#hash', () => {
+    it('returned hash should be the same as JS version', () => {
+      expect(documentJs.hash()).to.deep.equal(document.hash());
     });
+  });
 
-    describe('#set', () => {
-      it('should set value for specified property name', () => {
-        const path = 'test[0].$my';
-        const value = 2;
+  describe('#setCreatedAt', () => {
+    it('should set $createdAt', () => {
+      const time = new Date().getTime();
 
-        document.set(path, value);
+      document.setCreatedAt(time);
 
-        expect(document.get(path)).to.deep.equal(2);
-      });
-
-      it('should set identifier', () => {
-        const path = 'dataObject.binaryObject.identifier';
-        const buffer = Buffer.alloc(32);
-        const identifier = new Identifier(buffer);
-
-        document.set(path, identifier);
-
-        expect(document.get(path).toBuffer()).to.deep.equal(buffer);
-      });
-
-      it('should set identifier as part of object', () => {
-        const buffer = Buffer.alloc(32, 'a');
-        const path = 'dataObject.binaryObject';
-        const identifierPath = 'dataObject.binaryObject.identifier';
-        const identifier = new Identifier(buffer);
-        const value = { identifier };
-
-        document.set(path, value);
-
-        expect(document.get(identifierPath).toBuffer()).to.deep.equal(buffer);
-      });
+      expect(document.getCreatedAt()).to.equal(time);
     });
+  });
 
-    describe('#toJSON', () => {
-      it('should return Document as plain JS object', () => {
-        const jsonDocument = {
-          ...rawDocument,
-          $dataContractId: document.getDataContractId().toString(),
-          $id: document.getId().toString(),
-          $ownerId: document.getOwnerId().toString(),
-        };
+  describe('#getCreatedAt', () => {
+    it('should return $createdAt', () => {
+      const time = new Date().getTime();
 
-        expect(document.toJSON()).to.deep.equal(jsonDocument);
-      });
+      document.setCreatedAt(time);
+
+      expect(document.getCreatedAt()).to.equal(time);
     });
+  });
 
-    describe('#toObject', () => {
-      it('should return Document as object', () => {
-        const result = document.toObject();
+  describe('#setUpdatedAt', () => {
+    it('should set $updatedAt', () => {
+      const time = new Date().getTime();
 
-        expect(rawDocumentWithBuffers).to.deep.equal(result);
-      });
+      document.setUpdatedAt(time);
+
+      expect(document.getUpdatedAt()).to.equal(time);
     });
+  });
 
-    describe('#toBuffer', () => {
-      it('returned bytes should be the same as JS version', () => {
-        const jsBuffer = documentJs.toBuffer();
-        const buffer = document.toBuffer();
+  describe('#getUpdatedAt', () => {
+    it('should return $updatedAt', () => {
+      const time = new Date().getTime();
 
-        expect(jsBuffer.length).to.equal(buffer.length);
-        expect(jsBuffer).to.deep.equal(buffer);
-      });
+      document.setUpdatedAt(time);
 
-      it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
-        const jsId = generateRandomIdentifier();
-        const id = new Identifier(jsId.toBuffer());
-        const path = 'dataObject.binaryObject.identifier';
-
-        documentJs.set(path, jsId);
-        document.set(path, id);
-
-        expect(documentJs.get(path).toBuffer()).to.deep.equal(jsId);
-        expect(document.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
-
-        const jsBuffer = documentJs.toBuffer();
-        const buffer = document.toBuffer();
-        expect(jsBuffer).to.deep.equal(buffer);
-      });
-
-      it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
-        const data = Buffer.alloc(32);
-        const path = 'dataObject.binaryObject.binaryData';
-
-        documentJs.set(path, data);
-        document.set(path, data);
-
-        const jsBuffer = documentJs.toBuffer();
-        const buffer = document.toBuffer();
-
-        expect(jsBuffer.length).to.equal(buffer.length);
-        expect(jsBuffer).to.deep.equal(buffer);
-      });
-    });
-
-    describe('#hash', () => {
-      it('returned hash should be the same as JS version', () => {
-        expect(documentJs.hash()).to.deep.equal(document.hash());
-      });
-    });
-
-    describe('#setCreatedAt', () => {
-      it('should set $createdAt', () => {
-        const time = new Date().getTime();
-
-        document.setCreatedAt(time);
-
-        expect(document.getCreatedAt()).to.equal(time);
-      });
-    });
-
-    describe('#getCreatedAt', () => {
-      it('should return $createdAt', () => {
-        const time = new Date().getTime();
-
-        document.setCreatedAt(time);
-
-        expect(document.getCreatedAt()).to.equal(time);
-      });
-    });
-
-    describe('#setUpdatedAt', () => {
-      it('should set $updatedAt', () => {
-        const time = new Date().getTime();
-
-        document.setUpdatedAt(time);
-
-        expect(document.getUpdatedAt()).to.equal(time);
-      });
-    });
-
-    describe('#getUpdatedAt', () => {
-      it('should return $updatedAt', () => {
-        const time = new Date().getTime();
-
-        document.setUpdatedAt(time);
-
-        expect(document.getUpdatedAt()).to.equal(time);
-      });
+      expect(document.getUpdatedAt()).to.equal(time);
     });
   });
 });

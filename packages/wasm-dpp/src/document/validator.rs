@@ -4,7 +4,7 @@ use dpp::document::document_validator::DocumentValidator;
 
 use wasm_bindgen::prelude::*;
 
-use crate::validators::ProtocolVersionValidatorWasm;
+use crate::version::ProtocolVersionValidatorWasm;
 
 #[wasm_bindgen(js_name = DocumentValidator)]
 pub struct DocumentValidatorWasm(DocumentValidator);

@@ -14,10 +14,9 @@ pub mod errors;
 mod identifier;
 mod identity;
 mod metadata;
-pub mod mocks;
 mod state_repository;
 mod state_transition;
-mod validators;
+mod version;
 
 mod utils;
 
