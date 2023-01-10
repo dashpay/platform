@@ -1,11 +1,10 @@
-const { AsyncLocalStorage } = require('node:async_hooks');
-
 /**
  * Add consensus logger to an error (factory)
  *
+ * @param {AsyncLocalStorage} abciAsyncLocalStorage
  * @return {enrichErrorWithContextLogger}
  */
-function enrichErrorWithContextLoggerFactory() {
+function enrichErrorWithContextLoggerFactory(abciAsyncLocalStorage) {
   /**
    * Add consensus logger to an error
    *
@@ -20,14 +19,16 @@ function enrichErrorWithContextLoggerFactory() {
      * @param {*[]} args
      */
     async function methodHandler(...args) {
-      const asyncLocalStorage = new AsyncLocalStorage();
 
-      return asyncLocalStorage.run(new Map(), () => method(...args).catch((error) => {
-        // eslint-disable-next-line no-param-reassign
-        error.contextLogger = asyncLocalStorage.getStore().get('logger');
+      return abciAsyncLocalStorage.run(
+        new Map(),
+        () => method(...args).catch((error) => {
+          // eslint-disable-next-line no-param-reassign
+          error.contextLogger = abciAsyncLocalStorage.getStore().get('logger');
 
-        return Promise.reject(error);
-      }));
+          return Promise.reject(error);
+        }),
+      );
     }
 
     return methodHandler;

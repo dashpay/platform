@@ -1,25 +1,26 @@
+const { AsyncLocalStorage } = require('node:async_hooks');
 const enrichErrorWithContextLoggerFactory = require('../../../../lib/abci/errors/enrichErrorWithContextLoggerFactory');
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('enrichErrorWithContextLoggerFactory', () => {
-  let blockExecutionContextMock;
   let enrichErrorWithContextLogger;
   let loggerMock;
+  let asyncLocalStorage;
 
   beforeEach(function beforeEach() {
     loggerMock = new LoggerMock(this.sinon);
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.contextLogger = loggerMock;
+    asyncLocalStorage = new AsyncLocalStorage();
 
-    enrichErrorWithContextLogger = enrichErrorWithContextLoggerFactory();
+    enrichErrorWithContextLogger = enrichErrorWithContextLoggerFactory(asyncLocalStorage);
   });
 
   it('should add contextLogger from BlockExecutionContext to thrown error', async () => {
-    const error = new Error();
+    const error = new Error('my error');
 
-    const method = () => {
+    const method = async () => {
+      asyncLocalStorage.getStore().set('logger', loggerMock);
+
       throw error;
     };
 
