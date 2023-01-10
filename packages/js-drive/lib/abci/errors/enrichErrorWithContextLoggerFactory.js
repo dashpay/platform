@@ -19,7 +19,6 @@ function enrichErrorWithContextLoggerFactory(abciAsyncLocalStorage) {
      * @param {*[]} args
      */
     async function methodHandler(...args) {
-
       return abciAsyncLocalStorage.run(
         new Map(),
         () => method(...args).catch((error) => {
