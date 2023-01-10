@@ -16,12 +16,12 @@ impl From<&DuplicatedIdentityPublicKeyIdError> for DuplicatedIdentityPublicKeyId
 #[wasm_bindgen(js_class=DuplicatedIdentityPublicKeyIdError)]
 impl DuplicatedIdentityPublicKeyIdErrorWasm {
     #[wasm_bindgen(js_name=getDuplicatedIds)]
-    pub fn duplicated_ids(&self) -> Vec<u32> {
+    pub fn duplicated_ids(&self) -> js_sys::Array {
         // TODO: key ids probably should be u32
         self.inner
             .duplicated_ids()
             .iter()
-            .map(|id| *id as u32)
+            .map(|id| JsValue::from(*id as u32))
             .collect()
     }
 

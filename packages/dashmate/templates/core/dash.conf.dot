@@ -5,15 +5,15 @@ logtimestamps=1
 maxconnections=256
 printtoconsole=1
 debug={{=it.core.debug }}
+logips={{=it.core.logIps }}
 
 # JSONRPC
 server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
 
-rpcallowip=127.0.0.1
-rpcallowip=172.16.0.0/12
-rpcallowip=192.168.0.0/16
+{{~it.core.rpc.allowIps :host}}
+rpcallowip={{=host}}{{~}}
 
 rpcworkqueue=64
 rpcthreads=16
@@ -27,7 +27,7 @@ externalip={{=it.externalIp}}
 whitelist={{=it.externalIp}}
 {{?}}
 
-{{? it.network !== 'mainnet'}}# Indices
+{{? it.core.indexes }}# Indices
 txindex=1
 addressindex=1
 timestampindex=1
@@ -51,23 +51,27 @@ masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
-sporkaddr={{=it.core.spork.address}}
+{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
-{{~it.core.p2p.seeds :seed}}
-addnode={{=seed.host}}:{{=seed.port}}{{~}}
+
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnetName}}
+[devnet]
+{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
+{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
+
+# devnet-specific
+powtargetspacing={{=it.core.powTargetSpacing}}
+minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
+highsubsidyblocks=500
+highsubsidyfactor=10
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
-[devnet]
+llmqinstantsenddip0024=llmq_devnet_dip0024{{?}}
+
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
-
-sporkaddr={{=it.core.spork.address}}
-minimumdifficultyblocks=1000
-highsubsidyblocks=500
-highsubsidyfactor=10{{?}}
 
 # network
 port={{=it.core.p2p.port}}

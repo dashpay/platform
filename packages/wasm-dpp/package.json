@@ -3,7 +3,7 @@
   "version": "0.24.0-dev.11",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/lib/index.d.ts",
   "scripts": {
     "build": "yarn exec scripts/build.sh && webpack",
     "test": "yarn run test:node && yarn run test:browsers",
@@ -53,7 +53,7 @@
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "events": "^3.3.0",
-    "fast-json-patch": "^3.1.0",
+    "fast-json-patch": "^3.1.1",
     "https-browserify": "^1.0.0",
     "json-schema-diff-validator": "^0.4.1",
     "karma": "^6.4.1",

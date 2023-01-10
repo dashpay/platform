@@ -31,14 +31,16 @@ use crate::contract::document::Document;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentAndContractInfo;
-use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use crate::drive::object_size_info::DocumentInfo::{
+    DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+};
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::DriveContractExt;
+use dpp::data_contract::extra::{DocumentType, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -125,6 +127,41 @@ impl DriveOperationConverter for ContractOperationType<'_> {
     }
 }
 
+/// A wrapper for an update operation
+pub struct UpdateOperationInfo<'a> {
+    /// The document to update
+    document: &'a Document,
+    /// The document in pre-serialized form
+    serialized_document: Option<&'a [u8]>,
+    /// The owner id, if none is specified will try to recover from serialized document
+    owner_id: Option<[u8; 32]>,
+    /// Add storage flags (like epoch, owner id, etc)
+    storage_flags: Option<&'a StorageFlags>,
+}
+
+/// A wrapper for a document operation
+pub enum DocumentOperation<'a> {
+    /// An add operation
+    AddOperation {
+        /// Document info with maybe the owner id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Should we override the document if one already exists?
+        override_document: bool,
+    },
+    /// An update operation
+    UpdateOperation(UpdateOperationInfo<'a>),
+}
+
+/// Document and contract info
+pub struct DocumentOperationsForContractDocumentType<'a> {
+    /// Document info
+    pub operations: Vec<DocumentOperation<'a>>,
+    /// Contract
+    pub contract: &'a Contract,
+    /// Document type
+    pub document_type: &'a DocumentType,
+}
+
 /// Operations on Documents
 pub enum DocumentOperationType<'a> {
     /// Deserializes a document and a contract and adds the document to the contract.
@@ -163,6 +200,11 @@ pub enum DocumentOperationType<'a> {
         document_and_contract_info: DocumentAndContractInfo<'a>,
         /// Should we override the document if one already exists?
         override_document: bool,
+    },
+    /// Adds a document to a contract.
+    MultipleDocumentOperationsForSameContractDocumentType {
+        /// The document operations
+        document_operations: DocumentOperationsForContractDocumentType<'a>,
     },
     /// Deletes a document and returns the associated fee.
     DeleteDocumentForContract {
@@ -260,15 +302,18 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
-                    document_info,
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id,
                 };
                 drive.add_document_for_contract_operations(
                     document_and_contract_info,
                     override_document,
                     block_info,
+                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -289,15 +334,18 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
-                    document_info,
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id,
+                    },
                     contract,
                     document_type,
-                    owner_id,
                 };
                 drive.add_document_for_contract_operations(
                     document_and_contract_info,
                     override_document,
                     block_info,
+                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -309,6 +357,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 document_and_contract_info,
                 override_document,
                 block_info,
+                &mut None,
                 estimated_costs_only_with_layer_info,
                 transaction,
             ),
@@ -322,6 +371,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 contract,
                 document_type_name,
                 owner_id,
+                None,
                 estimated_costs_only_with_layer_info,
                 transaction,
             ),
@@ -337,6 +387,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                     &contract,
                     document_type_name,
                     owner_id,
+                    None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -358,14 +409,17 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
-                    document_info,
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id,
                 };
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
+                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -385,14 +439,17 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
-                    document_info,
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id,
+                    },
                     contract,
                     document_type,
-                    owner_id,
                 };
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
+                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
@@ -411,17 +468,90 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
-                    document_info,
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id,
+                    },
                     contract,
                     document_type,
-                    owner_id,
                 };
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
+                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
+            }
+            DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations,
+            } => {
+                let DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract,
+                    document_type,
+                } = document_operations;
+
+                let mut drive_operations = vec![];
+                for document_operation in operations {
+                    match document_operation {
+                        DocumentOperation::AddOperation {
+                            owned_document_info,
+                            override_document,
+                        } => {
+                            let document_and_contract_info = DocumentAndContractInfo {
+                                owned_document_info,
+                                contract,
+                                document_type,
+                            };
+                            let mut operations = drive.add_document_for_contract_operations(
+                                document_and_contract_info,
+                                override_document,
+                                block_info,
+                                &mut Some(&mut drive_operations),
+                                estimated_costs_only_with_layer_info,
+                                transaction,
+                            )?;
+                            drive_operations.append(&mut operations);
+                        }
+                        DocumentOperation::UpdateOperation(update_operation) => {
+                            let UpdateOperationInfo {
+                                document,
+                                serialized_document,
+                                owner_id,
+                                storage_flags,
+                            } = update_operation;
+
+                            let document_info =
+                                if let Some(serialized_document) = serialized_document {
+                                    DocumentRefAndSerialization((
+                                        document,
+                                        serialized_document,
+                                        storage_flags,
+                                    ))
+                                } else {
+                                    DocumentRefWithoutSerialization((document, storage_flags))
+                                };
+                            let document_and_contract_info = DocumentAndContractInfo {
+                                owned_document_info: OwnedDocumentInfo {
+                                    document_info,
+                                    owner_id,
+                                },
+                                contract,
+                                document_type,
+                            };
+                            let mut operations = drive.update_document_for_contract_operations(
+                                document_and_contract_info,
+                                block_info,
+                                &mut Some(&mut drive_operations),
+                                estimated_costs_only_with_layer_info,
+                                transaction,
+                            )?;
+                            drive_operations.append(&mut operations);
+                        }
+                    }
+                }
+                Ok(drive_operations)
             }
         }
     }
@@ -550,10 +680,14 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use crate::common::json_document_to_cbor;
+    use crate::common::{json_document_to_cbor, setup_contract};
+    use crate::drive::batch::drive_op_batch::DocumentOperation::{AddOperation, UpdateOperation};
     use crate::drive::batch::ContractOperationType::ApplyContractWithSerialization;
-    use crate::drive::batch::DocumentOperationType::AddSerializedDocumentForContract;
+    use crate::drive::batch::DocumentOperationType::{
+        AddSerializedDocumentForContract, MultipleDocumentOperationsForSameContractDocumentType,
+    };
     use crate::drive::batch::DriveOperationType::{ContractOperation, DocumentOperation};
+    use crate::drive::config::DriveConfig;
     use crate::drive::contract::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
@@ -632,6 +766,826 @@ mod tests {
             "limit": 100,
             "orderBy": [
                 ["$ownerId", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 1);
+    }
+
+    #[test]
+    fn test_add_multiple_dashpay_documents_individually_should_fail() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let mut drive_operations = vec![];
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            Some(crate::drive::defaults::PROTOCOL_VERSION),
+        );
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("contract should be deserialized");
+        let serialized_contract =
+            DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
+
+        let _document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        drive_operations.push(ContractOperation(ApplyContractWithSerialization {
+            contract: &contract,
+            serialized_contract: serialized_contract.clone(),
+            storage_flags: None,
+        }));
+
+        let dashpay_cr_serialized_document = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(1),
+        );
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        drive_operations.push(DocumentOperation(AddSerializedDocumentForContract {
+            serialized_document: dashpay_cr_serialized_document.as_slice(),
+            contract: &contract,
+            document_type_name: "contactRequest",
+            owner_id: Some(random_owner_id),
+            override_document: false,
+            storage_flags: StorageFlags::optional_default_as_ref(),
+        }));
+
+        let dashpay_cr_serialized_document2 = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(1),
+        );
+
+        drive_operations.push(DocumentOperation(AddSerializedDocumentForContract {
+            serialized_document: dashpay_cr_serialized_document2.as_slice(),
+            contract: &contract,
+            document_type_name: "contactRequest",
+            owner_id: Some(random_owner_id),
+            override_document: false,
+            storage_flags: StorageFlags::optional_default_as_ref(),
+        }));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect_err("expected to not be able to insert documents");
+    }
+
+    #[test]
+    fn test_add_multiple_dashpay_documents() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(
+            tmp_dir,
+            Some(DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            }),
+        )
+        .expect("expected to open Drive successfully");
+
+        let mut drive_operations = vec![];
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            Some(crate::drive::defaults::PROTOCOL_VERSION),
+        );
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("contract should be deserialized");
+        let serialized_contract =
+            DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        drive_operations.push(ContractOperation(ApplyContractWithSerialization {
+            contract: &contract,
+            serialized_contract: serialized_contract.clone(),
+            storage_flags: None,
+        }));
+
+        let dashpay_cr_serialized_document0 = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(1),
+        );
+
+        let dashpay_cr_serialized_document1 = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(1),
+        );
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let mut operations = vec![];
+
+        let document0 = Document::from_cbor(
+            dashpay_cr_serialized_document0.as_slice(),
+            None,
+            Some(random_owner_id),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document0,
+                        dashpay_cr_serialized_document0.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id),
+            },
+            override_document: false,
+        });
+
+        let document1 = Document::from_cbor(
+            dashpay_cr_serialized_document1.as_slice(),
+            None,
+            Some(random_owner_id),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document1,
+                        dashpay_cr_serialized_document1.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id),
+            },
+            override_document: false,
+        });
+
+        drive_operations.push(DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
+                },
+            },
+        ));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to insert documents");
+
+        let element = drive
+            .grove
+            .get(
+                contract_root_path(&contract.id.buffer),
+                &[0],
+                Some(&db_transaction),
+            )
+            .unwrap()
+            .expect("expected to get contract back");
+
+        assert_eq!(element, Element::Item(serialized_contract, None));
+
+        let query_value = json!({
+            "where": [
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["$ownerId", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 2);
+    }
+
+    #[test]
+    fn test_add_multiple_family_documents() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(
+            tmp_dir,
+            Some(DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            }),
+        )
+        .expect("expected to open Drive successfully");
+
+        let mut drive_operations = vec![];
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let person_serialized_document0 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(1),
+        );
+
+        let person_serialized_document1 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person3.json",
+            Some(1),
+        );
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let mut operations = vec![];
+
+        let document0 = Document::from_cbor(
+            person_serialized_document0.as_slice(),
+            None,
+            Some(random_owner_id0),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document0,
+                        person_serialized_document0.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id0),
+            },
+            override_document: false,
+        });
+
+        let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document1 = Document::from_cbor(
+            person_serialized_document1.as_slice(),
+            None,
+            Some(random_owner_id1),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document1,
+                        person_serialized_document0.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id1),
+            },
+            override_document: false,
+        });
+
+        drive_operations.push(DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
+                },
+            },
+        ));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to insert documents");
+
+        let query_value = json!({
+            "where": [
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["$ownerId", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 2);
+    }
+
+    #[test]
+    fn test_update_multiple_family_documents() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(
+            tmp_dir,
+            Some(DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            }),
+        )
+        .expect("expected to open Drive successfully");
+
+        let mut drive_operations = vec![];
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-only-age-index.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let person_serialized_document0 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(1),
+        );
+
+        let person_serialized_document1 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person3.json",
+            Some(1),
+        );
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let mut operations = vec![];
+
+        let document0 = Document::from_cbor(
+            person_serialized_document0.as_slice(),
+            None,
+            Some(random_owner_id0),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document0,
+                        person_serialized_document0.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id0),
+            },
+            override_document: false,
+        });
+
+        let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document1 = Document::from_cbor(
+            person_serialized_document1.as_slice(),
+            None,
+            Some(random_owner_id1),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document1,
+                        person_serialized_document1.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id1),
+            },
+            override_document: false,
+        });
+
+        drive_operations.push(DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
+                },
+            },
+        ));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to insert documents");
+
+        // This was the setup now let's do the update
+
+        drive_operations = vec![];
+
+        let person_serialized_document0 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person0-older.json",
+            Some(1),
+        );
+
+        let person_serialized_document1 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person3-older.json",
+            Some(1),
+        );
+
+        let mut operations = vec![];
+
+        let document0 = Document::from_cbor(
+            person_serialized_document0.as_slice(),
+            None,
+            Some(random_owner_id0),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(UpdateOperation(UpdateOperationInfo {
+            document: &document0,
+            serialized_document: Some(person_serialized_document0.as_slice()),
+            owner_id: Some(random_owner_id0),
+            storage_flags: None,
+        }));
+
+        let document1 = Document::from_cbor(
+            person_serialized_document1.as_slice(),
+            None,
+            Some(random_owner_id1),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(UpdateOperation(UpdateOperationInfo {
+            document: &document1,
+            serialized_document: Some(person_serialized_document1.as_slice()),
+            owner_id: Some(random_owner_id1),
+            storage_flags: None,
+        }));
+
+        drive_operations.push(DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
+                },
+            },
+        ));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to update documents");
+
+        let query_value = json!({
+            "where": [
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["age", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 2);
+
+        let query_value = json!({
+            "where": [
+                ["age", "==", 35]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["age", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 0);
+
+        let query_value = json!({
+            "where": [
+                ["age", "==", 36]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["age", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 2);
+    }
+
+    #[test]
+    fn test_update_multiple_family_documents_with_index_being_removed_and_added() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(
+            tmp_dir,
+            Some(DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            }),
+        )
+        .expect("expected to open Drive successfully");
+
+        let mut drive_operations = vec![];
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-only-age-index.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let person_serialized_document0 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(1),
+        );
+
+        let person_serialized_document1 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person3-older.json",
+            Some(1),
+        );
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let mut operations = vec![];
+
+        let document0 = Document::from_cbor(
+            person_serialized_document0.as_slice(),
+            None,
+            Some(random_owner_id0),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document0,
+                        person_serialized_document0.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id0),
+            },
+            override_document: false,
+        });
+
+        let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document1 = Document::from_cbor(
+            person_serialized_document1.as_slice(),
+            None,
+            Some(random_owner_id1),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(AddOperation {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefAndSerialization {
+                    0: (
+                        &document1,
+                        person_serialized_document1.as_slice(),
+                        StorageFlags::optional_default_as_ref(),
+                    ),
+                },
+                owner_id: Some(random_owner_id1),
+            },
+            override_document: false,
+        });
+
+        drive_operations.push(DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
+                },
+            },
+        ));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to insert documents");
+
+        // This was the setup now let's do the update
+
+        drive_operations = vec![];
+
+        let person_serialized_document0 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person0-older.json",
+            Some(1),
+        );
+
+        let person_serialized_document1 = json_document_to_cbor(
+            "tests/supporting_files/contract/family/person3.json",
+            Some(1),
+        );
+
+        let mut operations = vec![];
+
+        let document0 = Document::from_cbor(
+            person_serialized_document0.as_slice(),
+            None,
+            Some(random_owner_id0),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(UpdateOperation(UpdateOperationInfo {
+            document: &document0,
+            serialized_document: Some(person_serialized_document0.as_slice()),
+            owner_id: Some(random_owner_id0),
+            storage_flags: None,
+        }));
+
+        let document1 = Document::from_cbor(
+            person_serialized_document1.as_slice(),
+            None,
+            Some(random_owner_id1),
+        )
+        .expect("expected to deserialize contact request");
+
+        operations.push(UpdateOperation(UpdateOperationInfo {
+            document: &document1,
+            serialized_document: Some(person_serialized_document1.as_slice()),
+            owner_id: Some(random_owner_id1),
+            storage_flags: None,
+        }));
+
+        drive_operations.push(DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
+                },
+            },
+        ));
+
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&db_transaction),
+            )
+            .expect("expected to be able to update documents");
+
+        let query_value = json!({
+            "where": [
+                ["age", ">=", 5]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["age", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 2);
+
+        let query_value = json!({
+            "where": [
+                ["age", "==", 35]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["age", "asc"],
+            ]
+        });
+        let where_cbor = common::value_to_cbor(query_value, None);
+
+        let (docs, _, _) = drive
+            .query_documents_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 1);
+
+        let query_value = json!({
+            "where": [
+                ["age", "==", 36]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["age", "asc"],
             ]
         });
         let where_cbor = common::value_to_cbor(query_value, None);
