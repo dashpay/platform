@@ -138,6 +138,9 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   });
 
   it('should call `store`, `replace` and `remove` functions for specific type of transitions', async () => {
+    console.log("befoooore: original test::: documentJs-----------------");
+    console.log(documentsJs[0]);
+
     await applyDocumentsBatchTransitionJs(stateTransitionJs);
 
     const replaceDocumentTransition = documentTransitionsJs[1];
@@ -154,6 +157,12 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ...stateRepositoryMockJs.createDocument.getCall(0).args,
       ...stateRepositoryMockJs.updateDocument.getCall(0).args,
     ];
+
+    console.log(callsArgs);
+    console.log("fixtureJs-----------------");
+    console.log(documentsFixtureJs[0]);
+    console.log("original test::: documentJs-----------------");
+    console.log(documentsJs[0]);
 
     expect(callsArgs).to.have.deep.members([
       documentsFixtureJs[0],
@@ -190,7 +199,11 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
 
     expect(createDocument.toObject()).to.deep.equal(documentsFixtureJs[0].toObject());
+    console.log(documentsFixtureJs[0]);
+
     // expect(updateDocument.toObject()).to.deep.equal(replaceDocument.toObject());
+    console.log("documents of JS ------------------>")
+    console.log(documentsJs[0]);
 
     // const callsArgs = [
     //   ...stateRepositoryMockJs.createDocument.getCall(0).args,
