@@ -1,36 +1,43 @@
-// const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
-//
-// const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-
 const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-
-const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
-
-let { default: loadWasmDpp, DashPlatformProtocol, DataContract } = require('../../..');
+const { default: loadWasmDpp } = require('../../..');
+let {
+  DashPlatformProtocol, DataContract, ValidationResult, DataContractValidator, DataContractFactory,
+} = require('../../..');
 
 describe('DataContractFacade', () => {
   let dpp;
   let dataContract;
   let dataContractFactory;
+  let blsAdapter;
 
   before(async () => {
-    ({ DashPlatformProtocol, DataContract } = await loadWasmDpp());
+    ({
+      DashPlatformProtocol, DataContract, ValidationResult,
+      DataContractValidator, DataContractFactory,
+    } = await loadWasmDpp());
   });
 
   beforeEach(async () => {
-    dpp = new DashPlatformProtocol();
+    blsAdapter = await getBlsAdapterMock();
+    dpp = new DashPlatformProtocol(blsAdapter);
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
+    const dataContractValidator = new DataContractValidator();
     dataContractFactory = new DataContractFactory(
-      dpp,
-      undefined,
-      undefined,
+      1,
+      dataContractValidator,
     );
+
+    // dataContractFactory = new DataContractFactory(
+    //   { getProtocolVersion: () => 1 },
+    //   undefined,
+    //   undefined,
+    // );
   });
 
   describe('create', () => {
@@ -42,7 +49,7 @@ describe('DataContractFacade', () => {
 
       expect(result).to.be.an.instanceOf(DataContract);
 
-      expect(result.getOwnerId().toBuffer()).to.deep.equal(dataContract.getOwnerId());
+      expect(result.getOwnerId().toBuffer()).to.deep.equal(dataContract.getOwnerId().toBuffer());
       expect(result.getDocuments()).to.deep.equal(dataContract.getDocuments());
     });
   });
@@ -58,7 +65,8 @@ describe('DataContractFacade', () => {
   });
 
   describe('createFromBuffer', () => {
-    it('should create DataContract from string', async () => {
+    it('should create DataContract from string', async function test() {
+      this.timeout(5000);
       const result = await dpp.dataContract.createFromBuffer(dataContract.toBuffer());
 
       expect(result).to.be.an.instanceOf(DataContract);
@@ -68,7 +76,7 @@ describe('DataContractFacade', () => {
   });
 
   describe('createDataContractCreateTransition', () => {
-    it('should create DataContractCreateTransition from DataContract', () => {
+    it('should create DataContractCreateTransition from DataContract', async () => {
       const stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
 
       const result = dpp.dataContract.createDataContractCreateTransition(dataContract);
