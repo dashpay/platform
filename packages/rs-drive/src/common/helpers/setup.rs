@@ -32,11 +32,9 @@
 //! Defines helper functions pertinent to setting up Drive.
 //!
 
-
-
+use crate::drive::block_info::BlockInfo;
 use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
-use crate::drive::{block_info::BlockInfo};
 use crate::fee_pools::epochs::Epoch;
 
 use dpp::{

@@ -1043,10 +1043,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document0,
-                        dashpay_cr_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document0,
+                    dashpay_cr_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id),
             },
             override_document: false,
@@ -1062,10 +1062,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document1,
-                        dashpay_cr_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document1,
+                    dashpay_cr_serialized_document1.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id),
             },
             override_document: false,
@@ -1178,10 +1178,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document0,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document0,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id0),
             },
             override_document: false,
@@ -1199,10 +1199,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document1,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document1,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id1),
             },
             override_document: false,
@@ -1303,10 +1303,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document0,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document0,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id0),
             },
             override_document: false,
@@ -1324,10 +1324,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document1,
-                        person_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document1,
+                    person_serialized_document1.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id1),
             },
             override_document: false,
@@ -1535,10 +1535,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document0,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document0,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id0),
             },
             override_document: false,
@@ -1556,10 +1556,10 @@ mod tests {
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
                 document_info: DocumentRefAndSerialization((
-                        &document1,
-                        person_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
-                    )),
+                    &document1,
+                    person_serialized_document1.as_slice(),
+                    StorageFlags::optional_default_as_ref(),
+                )),
                 owner_id: Some(random_owner_id1),
             },
             override_document: false,

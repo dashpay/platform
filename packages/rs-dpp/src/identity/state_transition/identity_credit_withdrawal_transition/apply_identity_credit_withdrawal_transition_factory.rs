@@ -7,12 +7,13 @@ use crate::{
     contracts::withdrawals_contract,
     data_contract::DataContract,
     document::Document,
+    identity::state_transition::identity_credit_withdrawal_transition::Pooling,
     prelude::Identifier,
     prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionConvert,
     state_transition::StateTransitionLike,
-    util::{entropy_generator::generate, json_value::JsonValueExt, string_encoding::Encoding}, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
+    util::{entropy_generator::generate, json_value::JsonValueExt, string_encoding::Encoding},
 };
 
 use super::IdentityCreditWithdrawalTransition;
