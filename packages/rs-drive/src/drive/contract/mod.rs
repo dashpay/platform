@@ -35,6 +35,7 @@
 mod estimation_costs;
 pub(crate) mod paths;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -144,7 +145,7 @@ impl Drive {
         if contract.keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
-                StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
+                StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -157,7 +158,7 @@ impl Drive {
             self.batch_insert_empty_tree(
                 contract_root_path,
                 KeyRef(&[0]),
-                storage_flags.as_ref(),
+                storage_flags.as_ref().map(|flags| flags.as_ref()),
                 insert_operations,
             )?;
             let encoded_time = encode_u64(block_info.time_ms)?;
@@ -312,7 +313,7 @@ impl Drive {
         let mut batch_operations: Vec<DriveOperation> = vec![];
 
         let storage_flags =
-            StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
+            StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
@@ -592,7 +593,7 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let storage_flags = StorageFlags::from_some_element_flags_ref(&element_flags)?;
+        let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
         for (type_key, document_type) in contract.document_types() {
@@ -639,7 +640,7 @@ impl Drive {
                     if !index_cache.contains(index_bytes) {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,
                             &mut None,
@@ -653,7 +654,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     contract_documents_path,
                     KeyRef(type_key.as_bytes()),
-                    storage_flags.as_ref(),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
                     &mut batch_operations,
                 )?;
 
@@ -668,7 +669,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     type_path,
                     KeyRef(&[0]),
-                    storage_flags.as_ref(),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
                     &mut batch_operations,
                 )?;
 
@@ -681,7 +682,7 @@ impl Drive {
                         self.batch_insert_empty_tree(
                             type_path,
                             KeyRef(index.name.as_bytes()),
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -699,7 +700,7 @@ impl Drive {
         contract_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
@@ -881,7 +882,7 @@ impl Drive {
 
                 let storage_flags = cost_return_on_error_no_add!(
                     &cost,
-                    StorageFlags::from_some_element_flags_ref(&element_flag)
+                    StorageFlags::map_some_element_flags_ref(&element_flag)
                 );
                 let contract_fetch_info = Arc::new(ContractFetchInfo {
                     contract,
@@ -913,7 +914,7 @@ impl Drive {
         contract_serialization: Vec<u8>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut cost_operations = vec![];
@@ -953,7 +954,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -997,7 +998,7 @@ impl Drive {
 
         let contract_element = Element::Item(
             contract_serialization,
-            StorageFlags::map_to_some_element_flags(storage_flags),
+            StorageFlags::map_cow_to_some_element_flags(storage_flags),
         );
 
         if already_exists {
@@ -1068,7 +1069,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1096,7 +1097,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1121,7 +1122,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1134,7 +1135,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update initial contract");
@@ -1154,7 +1155,7 @@ mod tests {
 
         assert!(nested_value.is_some());
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1164,7 +1165,7 @@ mod tests {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
                             document.to_cbor().as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
                     },
@@ -1193,7 +1194,7 @@ mod tests {
 
         assert!(ref_value.is_some());
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1203,7 +1204,7 @@ mod tests {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
                             document.to_cbor().as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
                     },
@@ -1239,7 +1240,7 @@ mod tests {
                 contract_cbor,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1267,7 +1268,7 @@ mod tests {
                 contract_cbor,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1296,7 +1297,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1412,7 +1413,7 @@ mod tests {
                         ref_contract_cbor,
                         BlockInfo::default(),
                         true,
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                         Some(&transaction),
                     )
                     .expect("expected to apply contract successfully");
@@ -1429,7 +1430,7 @@ mod tests {
                     contract_cbor,
                     BlockInfo::default(),
                     true,
-                    StorageFlags::optional_default_as_ref(),
+                    StorageFlags::optional_default_as_cow(),
                     Some(&transaction),
                 )
                 .expect("expected to apply contract successfully");
@@ -1559,7 +1560,7 @@ mod tests {
                         ref_contract_cbor,
                         BlockInfo::default(),
                         true,
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                         Some(&transaction),
                     )
                     .expect("expected to apply contract successfully");

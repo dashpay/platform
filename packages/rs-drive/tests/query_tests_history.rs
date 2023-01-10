@@ -30,6 +30,7 @@
 //! Query Tests History
 //!
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::option::Option::None;
@@ -201,7 +202,7 @@ pub fn setup(
                 .document_type_for_name("person")
                 .expect("expected to get document type");
 
-            let storage_flags = Some(StorageFlags::SingleEpoch(0));
+            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
             // if block_time == 100 && i == 9 {
             //     dbg!("block time {} {} {:#?}",block_time, i, person);
@@ -214,7 +215,7 @@ pub fn setup(
                             document_info: DocumentRefAndSerialization((
                                 &document,
                                 &document_cbor,
-                                storage_flags.as_ref(),
+                                storage_flags,
                             )),
                             owner_id: None,
                         },
@@ -1025,7 +1026,7 @@ fn test_query_historical() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -1034,7 +1035,7 @@ fn test_query_historical() {
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &person_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -1075,7 +1076,7 @@ fn test_query_historical() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -1084,7 +1085,7 @@ fn test_query_historical() {
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &person_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -1447,7 +1448,7 @@ fn test_query_historical() {
             None,
             BlockInfo::genesis(),
             true,
-            StorageFlags::optional_default_as_ref(),
+            StorageFlags::optional_default_as_cow(),
             Some(&db_transaction),
         )
         .expect("expected to apply contract successfully");

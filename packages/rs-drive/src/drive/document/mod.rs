@@ -33,6 +33,7 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
+use std::borrow::Cow;
 use crate::contract::document::Document;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
@@ -234,7 +235,7 @@ pub(crate) mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");

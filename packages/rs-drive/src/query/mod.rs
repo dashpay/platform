@@ -1316,6 +1316,7 @@ impl<'a> DriveQuery<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use serde_json::json;
     use std::option::Option::None;
     use tempfile::TempDir;
@@ -1348,14 +1349,14 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1378,14 +1379,14 @@ mod tests {
         let contract_cbor = json_document_to_cbor(contract_path, Some(1));
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 None,
             )
             .expect("expected to apply contract successfully");

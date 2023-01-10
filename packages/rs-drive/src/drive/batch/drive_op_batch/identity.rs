@@ -10,6 +10,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// Operations on Identities
+#[derive(Clone, Debug)]
 pub enum IdentityOperationType {
     /// Inserts a new identity to the `Identities` subtree.
     AddNewIdentity {

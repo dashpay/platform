@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
@@ -11,6 +12,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// Operations on Contracts
+#[derive(Clone, Debug)]
 pub enum ContractOperationType<'a> {
     /// Deserializes a contract from CBOR and applies it.
     ApplyContractCbor {
@@ -19,7 +21,7 @@ pub enum ContractOperationType<'a> {
         /// The contract id, if it is not present will try to recover it from the contract
         contract_id: Option<[u8; 32]>,
         /// Storage flags for the contract
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
@@ -29,7 +31,7 @@ pub enum ContractOperationType<'a> {
         /// The serialized contract
         serialized_contract: Vec<u8>,
         /// Storage flags for the contract
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
 }
 

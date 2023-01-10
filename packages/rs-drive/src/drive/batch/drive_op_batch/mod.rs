@@ -73,6 +73,7 @@ pub trait DriveOperationConverter {
 }
 
 /// All types of Drive Operations
+#[derive(Clone, Debug)]
 pub enum DriveOperationType<'a> {
     /// A contract operation
     ContractOperation(ContractOperationType<'a>),
@@ -257,7 +258,7 @@ mod tests {
             document_type_name: "contactRequest",
             owner_id: Some(random_owner_id),
             override_document: false,
-            storage_flags: StorageFlags::optional_default_as_ref(),
+            storage_flags: StorageFlags::optional_default_as_cow(),
         }));
 
         drive
@@ -347,7 +348,7 @@ mod tests {
             document_type_name: "contactRequest",
             owner_id: Some(random_owner_id),
             override_document: false,
-            storage_flags: StorageFlags::optional_default_as_ref(),
+            storage_flags: StorageFlags::optional_default_as_cow(),
         }));
 
         let dashpay_cr_serialized_document2 = json_document_to_cbor(
@@ -361,7 +362,7 @@ mod tests {
             document_type_name: "contactRequest",
             owner_id: Some(random_owner_id),
             override_document: false,
-            storage_flags: StorageFlags::optional_default_as_ref(),
+            storage_flags: StorageFlags::optional_default_as_cow(),
         }));
 
         drive
@@ -439,7 +440,7 @@ mod tests {
                     0: (
                         &document0,
                         dashpay_cr_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id),
@@ -460,7 +461,7 @@ mod tests {
                     0: (
                         &document1,
                         dashpay_cr_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id),
@@ -578,7 +579,7 @@ mod tests {
                     0: (
                         &document0,
                         person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id0),
@@ -601,7 +602,7 @@ mod tests {
                     0: (
                         &document1,
                         person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id1),
@@ -707,7 +708,7 @@ mod tests {
                     0: (
                         &document0,
                         person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id0),
@@ -730,7 +731,7 @@ mod tests {
                     0: (
                         &document1,
                         person_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id1),
@@ -943,7 +944,7 @@ mod tests {
                     0: (
                         &document0,
                         person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id0),
@@ -966,7 +967,7 @@ mod tests {
                     0: (
                         &document1,
                         person_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                     ),
                 },
                 owner_id: Some(random_owner_id1),

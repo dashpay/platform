@@ -32,6 +32,7 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use grovedb::batch::key_info::KeyInfo;
@@ -83,7 +84,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
@@ -112,7 +113,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -169,7 +170,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
@@ -197,7 +198,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -295,7 +296,7 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
 
-        if let DocumentRefAndSerialization((document, _serialized_document, storage_flags)) =
+        if let DocumentRefAndSerialization((document, _serialized_document, ref storage_flags)) =
             document_and_contract_info.owned_document_info.document_info
         {
             // we need to construct the path for documents on the contract
@@ -314,7 +315,7 @@ impl Drive {
             let document_reference = make_document_reference(
                 document,
                 document_and_contract_info.document_type,
-                storage_flags,
+                storage_flags.as_ref().map(|flags| flags.as_ref()),
             );
 
             // next we need to get the old document from storage
@@ -360,9 +361,10 @@ impl Drive {
                 {
                     let document =
                         Document::from_cbor(old_serialized_document.as_slice(), None, owner_id)?;
+                    let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
                     Ok(DocumentWithoutSerialization((
                         document,
-                        StorageFlags::from_some_element_flags_ref(&element_flags)?,
+                        storage_flags.map(|s| Cow::Owned(s)),
                     )))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
@@ -427,7 +429,7 @@ impl Drive {
                                 index_path.clone(),
                                 document_top_field.as_slice(),
                             )),
-                            storage_flags,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
                             previous_batch_operations,
@@ -492,7 +494,7 @@ impl Drive {
                                     index_path.clone(),
                                     index_property.name.as_bytes(),
                                 )),
-                                storage_flags,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
                                 previous_batch_operations,
@@ -523,7 +525,7 @@ impl Drive {
                                     index_path.clone(),
                                     document_index_field.as_slice(),
                                 )),
-                                storage_flags,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
                                 previous_batch_operations,
@@ -596,7 +598,7 @@ impl Drive {
                         // here we are inserting an empty tree that will have a subtree of all other index properties
                         self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
-                            storage_flags,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
                             previous_batch_operations,
@@ -688,7 +690,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -706,7 +708,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should create alice profile");
@@ -723,7 +725,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should update alice profile");
@@ -748,7 +750,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -764,7 +766,7 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -773,7 +775,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &alice_profile,
                             alice_profile_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -808,7 +810,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update alice profile");
@@ -841,7 +843,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -857,7 +859,7 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -866,7 +868,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &alice_profile,
                             alice_profile_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -915,7 +917,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should update alice profile");
@@ -954,7 +956,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -970,7 +972,7 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -979,7 +981,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &alice_profile,
                             alice_profile_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1057,7 +1059,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should update alice profile");
@@ -1113,7 +1115,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should create a contract");
@@ -1144,7 +1146,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should add document");
@@ -1174,7 +1176,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update document");
@@ -1234,7 +1236,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1247,7 +1249,7 @@ mod tests {
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to update a non mutable document");
@@ -1261,7 +1263,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to override a non mutable document");
@@ -1305,7 +1307,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1318,7 +1320,7 @@ mod tests {
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to update a document with history successfully");
@@ -2028,13 +2030,13 @@ mod tests {
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get document type");
-        let storage_flags = Some(StorageFlags::SingleEpochOwned(
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
             person
                 .owner_id
                 .try_into()
                 .expect("expected to get owner_id"),
-        ));
+        )));
 
         drive
             .add_document_for_contract(
@@ -2043,7 +2045,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             document_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -2332,7 +2334,7 @@ mod tests {
                 contract_cbor.clone(),
                 block_info.clone(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should apply contract");
@@ -2368,7 +2370,7 @@ mod tests {
 
         let document_cbor = document.to_cbor().expect("should encode to cbor");
 
-        let storage_flags = StorageFlags::SingleEpochOwned(0, owner_id.to_buffer());
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id.to_buffer())));
 
         let create_fees = drive
             .add_serialized_document_for_contract(
@@ -2379,7 +2381,7 @@ mod tests {
                 false,
                 block_info,
                 true,
-                Some(&storage_flags),
+                storage_flags.clone(),
                 None,
             )
             .expect("should create document");
@@ -2404,7 +2406,7 @@ mod tests {
                 Some(owner_id.to_buffer()),
                 block_info,
                 false,
-                Some(&storage_flags),
+                storage_flags,
                 None,
             )
             .expect("should update document");

@@ -8,7 +8,7 @@ use drive::grovedb::Transaction;
 use crate::abci::handlers::TenderdashAbci;
 use crate::abci::messages::{AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees};
 use crate::error::Error;
-use crate::execution::engine::ExecutionEvent::FreeDriveEvent;
+use crate::execution::engine::ExecutionEvent::{FreeDriveEvent, PaidDriveEvent};
 use crate::platform::Platform;
 
 /// An execution event
@@ -17,6 +17,8 @@ pub enum ExecutionEvent<'a> {
     PaidDriveEvent {
         /// The identity requesting the event
         identity: Identity,
+        /// Verify with dry run
+        verify_balance_with_dry_run: bool,
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperationType<'a>>
     },
@@ -29,6 +31,14 @@ pub enum ExecutionEvent<'a> {
 
 impl <'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
+    pub fn new_document_operation(identity: Identity, operation: DriveOperationType<'a>) -> Self {
+        PaidDriveEvent {
+            identity,
+            verify_balance_with_dry_run: true,
+            operations: vec![operation],
+        }
+    }
+    /// Creates a new identity Insertion Event
     pub fn new_identity_insertion(operations: Vec<DriveOperationType<'a>>) -> Self {
         FreeDriveEvent { operations }
     }
@@ -39,17 +49,26 @@ impl Platform {
         let mut total_fees = FeeResult::default();
         for event in events {
             match event {
-                ExecutionEvent::PaidDriveEvent { identity, operations } => {
-                    let individual_fee_result = self.drive.apply_drive_operations(operations, true, block_info, Some(transaction)).map_err(Error::Drive)?;
-                    self.drive.remove_from_identity_balance(
-                        identity.id.to_buffer(),
-                        individual_fee_result.required_removed_balance(),
-                        individual_fee_result.desired_removed_balance(),
-                        block_info,
-                        true,
-                        Some(transaction),
-                    )?;
-                    total_fees.checked_add_assign(individual_fee_result).map_err(Error::Drive)?;
+                ExecutionEvent::PaidDriveEvent { identity, verify_balance_with_dry_run, operations } => {
+                    let mut enough_balance = true;
+                    if verify_balance_with_dry_run {
+                        let estimated_fee_result = self.drive.apply_drive_operations(operations.clone(), false, block_info, Some(transaction)).map_err(Error::Drive)?;
+                        if identity.balance < estimated_fee_result.total_fee() {
+                            enough_balance = false
+                        }
+                    }
+                    if enough_balance {
+                        let individual_fee_result = self.drive.apply_drive_operations(operations, true, block_info, Some(transaction)).map_err(Error::Drive)?;
+                        self.drive.remove_from_identity_balance(
+                            identity.id.to_buffer(),
+                            individual_fee_result.required_removed_balance(),
+                            individual_fee_result.desired_removed_balance(),
+                            block_info,
+                            true,
+                            Some(transaction),
+                        )?;
+                        total_fees.checked_add_assign(individual_fee_result).map_err(Error::Drive)?;
+                    }
                 }
                 ExecutionEvent::FreeDriveEvent { operations } => {
                     self.drive.apply_drive_operations(operations, true, block_info, Some(transaction)).map_err(Error::Drive)?;

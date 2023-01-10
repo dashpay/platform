@@ -32,6 +32,7 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
+use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
@@ -694,7 +695,7 @@ impl Drive {
             } else if let Some(document_element) = &document_element {
                 if let Element::Item(data, element_flags) = document_element {
                     let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
-                    let storage_flags = StorageFlags::from_some_element_flags_ref(element_flags)?;
+                    let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                     DocumentWithoutSerialization((document, storage_flags))
                 } else {
                     return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
@@ -739,6 +740,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use rand::Rng;
     use serde_json::json;
     use std::option::Option::None;
@@ -791,7 +793,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -800,7 +802,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -888,7 +890,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -897,7 +899,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1001,7 +1003,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1010,7 +1012,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1039,7 +1041,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1048,7 +1050,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1186,7 +1188,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1195,7 +1197,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1224,7 +1226,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1233,7 +1235,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1298,7 +1300,7 @@ mod tests {
             Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1307,7 +1309,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1398,7 +1400,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1447,7 +1449,7 @@ mod tests {
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, random_owner_id)));
         let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_profile_serialized_document,
@@ -1457,7 +1459,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                Some(&storage_flags),
+                storage_flags,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1522,7 +1524,7 @@ mod tests {
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, random_owner_id)));
         let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_profile_serialized_document,
@@ -1532,7 +1534,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                Some(&storage_flags),
+                storage_flags,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1591,7 +1593,7 @@ mod tests {
             "01000000aa6324696458208d2a661748268018725cf0dc612c74cf1e8621dc86c5e9cc64d2bbe17a2f855a6524747970656c6e696365446f63756d656e74656f726465720468246f776e657249645820cac675648b485d2606a53fca9942cb7bfdf34e08cee1ebe6e0e74e8502ac6c80686c6173744e616d65674b656e6e65647969247265766973696f6e016966697273744e616d65644c656f6e6a246372656174656441741b0000017f933437206a247570646174656441741b0000017f933437206f2464617461436f6e747261637449645820e8f72680f2e3910c95e1497a2b0029d9f7374891ac1f39ab1cfe3ae63336b9a9"
         ];
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let documents: Vec<Document> = document_hexes
             .iter()
@@ -1612,7 +1614,7 @@ mod tests {
                                 document_info: DocumentRefAndSerialization((
                                     &document,
                                     &serialized_document,
-                                    storage_flags.as_ref(),
+                                    storage_flags.clone(),
                                 )),
                                 owner_id: None,
                             },

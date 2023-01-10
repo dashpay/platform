@@ -30,11 +30,12 @@
 //! Execution Tests
 //!
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use chrono::{Duration, Utc};
-use drive::common::helpers::identities::create_test_masternode_identities;
+use drive::common::helpers::identities::{create_test_masternode_identities, create_test_masternode_identities_with_rng};
 use drive::dpp::identity::{Identity, KeyID};
-use drive::drive::batch::{DriveOperationType, GroveDbOpBatch, IdentityOperationType, SystemOperationType};
+use drive::drive::batch::{DocumentOperationType, DriveOperationType, GroveDbOpBatch, IdentityOperationType, SystemOperationType};
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::grovedb::{Transaction, TransactionArg};
@@ -58,7 +59,7 @@ use drive::drive::{block_info, Drive};
 use drive::drive::flags::StorageFlags;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefWithoutSerialization, DocumentWithoutSerialization};
 use drive::fee::result::FeeResult;
 use drive_abci::execution::engine::ExecutionEvent;
 
@@ -106,10 +107,10 @@ impl Strategy {
     fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
         for (op, _) in &self.operations {
             let serialize = op.contract.to_cbor().expect("expected to serialize");
-            drive.apply_contract(&op.contract, serialize, BlockInfo::default(), true, Some(&SingleEpoch(0)), None).expect("expected to be able to add contract");
+            drive.apply_contract(&op.contract, serialize, BlockInfo::default(), true, Some(Cow::Owned(SingleEpoch(0))), None).expect("expected to be able to add contract");
         }
     }
-    fn identity_operations_for_block(&self, rng: &mut StdRng) -> Vec<(Identity, Vec<DriveOperationType>)> {
+    fn identity_operations_for_block<'a, 'b>(&'a self, rng: &'b mut StdRng) -> Vec<(Identity, Vec<DriveOperationType>)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
@@ -120,178 +121,141 @@ impl Strategy {
     }
 
     fn document_operations_for_block(
-        &mut self,
-        cuurent_identities: &Vec<Identity>,
+        &self,
+        block_info: &BlockInfo,
+        current_identities: &Vec<Identity>,
         rng: &mut StdRng,
-    ) {
+    ) -> Vec<(Identity, DriveOperationType)> {
+        let mut operations = vec![];
         for (op, frequency) in &self.operations {
             if frequency.check_hit(rng) {
                 let count = rng.gen_range(frequency.times_per_block_range.clone());
-                let documents = op.document_type.random_documents(count as u32, None);
-                for document in &documents {
-                    let i = rng.gen();
-                    let identity = self.current_identities.values().get(i);
-                    let serialization = document
-                        .serialize(&op.document_type)
-                        .expect("expected to serialize document");
+                let documents = op.document_type.random_documents_with_rng(count as u32, rng);
+                for document in documents {
+                    let identity_num = rng.gen_range(0..current_identities.len());
+                    let identity = current_identities.get(identity_num).unwrap().clone();
 
-                    let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id));
+                    let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id.to_buffer()));
 
-                    let estimated_document_fee_result = drive
-                        .add_document_for_contract(
-                            DocumentAndContractInfo {
-                                owned_document_info: OwnedDocumentInfo {
-                                    document_info: DocumentRefAndSerialization((
-                                        document,
-                                        serialization.as_slice(),
-                                        storage_flags.as_ref(),
-                                    )),
-                                    owner_id: None
-                                },
-                                contract: &op.contract,
-                                document_type: &op.document_type,
-                            },
-                            false,
-                            block_info.clone(),
-                            false,
-                            Some(transaction),
-                        )
-                        .expect("expected to add document");
-
-                    // does the identity have enough balance?
-
-                    let balance = drive.fetch_identity_balance(identity.id, true, Some(transaction)).expect("expected to fetch identity balance").expect("expected to get balance");
-
-                    if balance >= estimated_document_fee_result.total_fee() {
-                        // then do the real operation
-                        let fee_result = drive
-                            .add_document_for_contract(
-                                DocumentAndContractInfo {
-                                    owned_document_info: OwnedDocumentInfo {
-                                        document_info: DocumentRefAndSerialization((
-                                            document,
-                                            serialization.as_slice(),
-                                            storage_flags.as_ref(),
-                                        )),
-                                        owner_id: None
-                                    },
-                                    contract: &op.contract,
-                                    document_type: &op.document_type,
-                                },
-                                false,
-                                block_info.clone(),
-                                false,
-                                Some(transaction),
-                            )
-                            .expect("expected to add document");
-
-                        drive.remove_from_identity_balance(identity.id, fee_result.required_removed_balance(), fee_result.desired_removed_balance(), block_info, true, Some(transaction)).expect("expected to pay for operation");
-                    }
+                    let insert_op = DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {
+                        document_and_contract_info: DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo { document_info: DocumentWithoutSerialization((document, Some(Cow::Owned(storage_flags)))), owner_id: None },
+                            contract: &op.contract,
+                            document_type: &op.document_type,
+                        },
+                        override_document: false,
+                    });
+                    operations.push((identity, insert_op));
                 }
             }
         }
+        operations
+    }
 
-    fn state_transitions_for_block_with_new_identities(&self, rng: &mut StdRng) -> (Vec<ExecutionEvent>, Vec<Identity>) {
+    fn state_transitions_for_block_with_new_identities(&self, block_info: &BlockInfo, current_identities: &Vec<Identity>,  rng: &mut StdRng) -> (Vec<ExecutionEvent>, Vec<Identity>) {
         let (identities, operations) : (Vec<Identity>, Vec<Vec<DriveOperationType>>) = self.identity_operations_for_block(rng).into_iter().unzip();
-        let execution_events = operations.into_iter().map(|operation| ExecutionEvent::new_identity_insertion(operation)).collect();
+        let mut document_execution_events: Vec<ExecutionEvent> = self.document_operations_for_block(block_info, current_identities, rng).into_iter().map(|(identity, operation)| ExecutionEvent::new_document_operation(identity, operation)).collect();;
+        let identity_execution_events: Vec<ExecutionEvent> = operations.into_iter().map(|operation| ExecutionEvent::new_identity_insertion(operation)).collect();
+        let mut execution_events = identity_execution_events;
+        execution_events.append(&mut document_execution_events);
         (execution_events, identities)
     }
 }
 
 impl TestParams {
-
-    fn execute_block_document_operations(
-        &mut self,
-        drive: &Drive,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        rng: &mut StdRng,
-    ) {
-        for (op, frequency) in &self.strategy.operations {
-            if frequency.check_hit(rng) {
-                let count = rng.gen_range(frequency.times_per_block_range.clone());
-                let documents = op.document_type.random_documents(count as u32, None);
-                for document in &documents {
-                    let i = rng.gen();
-                    let identity = self.current_identities.values().get(i);
-                    let serialization = document
-                        .serialize(&op.document_type)
-                        .expect("expected to serialize document");
-
-                    let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id));
-
-                    let estimated_document_fee_result = drive
-                        .add_document_for_contract(
-                            DocumentAndContractInfo {
-                                owned_document_info: OwnedDocumentInfo {
-                                    document_info: DocumentRefAndSerialization((
-                                        document,
-                                        serialization.as_slice(),
-                                        storage_flags.as_ref(),
-                                    )),
-                                    owner_id: None
-                                },
-                                contract: &op.contract,
-                                document_type: &op.document_type,
-                            },
-                            false,
-                            block_info.clone(),
-                            false,
-                            Some(transaction),
-                        )
-                        .expect("expected to add document");
-
-                    // does the identity have enough balance?
-
-                    let balance = drive.fetch_identity_balance(identity.id, true, Some(transaction)).expect("expected to fetch identity balance").expect("expected to get balance");
-
-                    if balance >= estimated_document_fee_result.total_fee() {
-                        // then do the real operation
-                        let fee_result = drive
-                            .add_document_for_contract(
-                                DocumentAndContractInfo {
-                                    owned_document_info: OwnedDocumentInfo {
-                                        document_info: DocumentRefAndSerialization((
-                                            document,
-                                            serialization.as_slice(),
-                                            storage_flags.as_ref(),
-                                        )),
-                                        owner_id: None
-                                    },
-                                    contract: &op.contract,
-                                    document_type: &op.document_type,
-                                },
-                                false,
-                                block_info.clone(),
-                                false,
-                                Some(transaction),
-                            )
-                            .expect("expected to add document");
-
-                        drive.remove_from_identity_balance(identity.id, fee_result.required_removed_balance(), fee_result.desired_removed_balance(), block_info, true, Some(transaction)).expect("expected to pay for operation");
-                    }
-                }
-            }
-        }
-    }
-
-    fn execute_block(
-        &mut self,
-        drive: &Drive,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        rng: &mut StdRng,
-    ) {
-        self.execute_block_identity_operations(drive, block_info, transaction, rng);
-        self.execute_block_document_operations(drive, block_info, transaction, rng);
-    }
+    //
+    // fn execute_block_document_operations(
+    //     &mut self,
+    //     drive: &Drive,
+    //     block_info: &BlockInfo,
+    //     transaction: &Transaction,
+    //     rng: &mut StdRng,
+    // ) {
+    //     for (op, frequency) in &self.strategy.operations {
+    //         if frequency.check_hit(rng) {
+    //             let count = rng.gen_range(frequency.times_per_block_range.clone());
+    //             let documents = op.document_type.random_documents(count as u32, None);
+    //             for document in &documents {
+    //                 let i = rng.gen();
+    //                 let identity = self.current_identities.get(i);
+    //                 let serialization = document
+    //                     .serialize(&op.document_type)
+    //                     .expect("expected to serialize document");
+    //
+    //                 let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id));
+    //
+    //                 let estimated_document_fee_result = drive
+    //                     .add_document_for_contract(
+    //                         DocumentAndContractInfo {
+    //                             owned_document_info: OwnedDocumentInfo {
+    //                                 document_info: DocumentRefAndSerialization((
+    //                                     document,
+    //                                     serialization.as_slice(),
+    //                                     storage_flags.as_ref(),
+    //                                 )),
+    //                                 owner_id: None
+    //                             },
+    //                             contract: &op.contract,
+    //                             document_type: &op.document_type,
+    //                         },
+    //                         false,
+    //                         block_info.clone(),
+    //                         false,
+    //                         Some(transaction),
+    //                     )
+    //                     .expect("expected to add document");
+    //
+    //                 // does the identity have enough balance?
+    //
+    //                 let balance = drive.fetch_identity_balance(identity.id, true, Some(transaction)).expect("expected to fetch identity balance").expect("expected to get balance");
+    //
+    //                 if balance >= estimated_document_fee_result.total_fee() {
+    //                     // then do the real operation
+    //                     let fee_result = drive
+    //                         .add_document_for_contract(
+    //                             DocumentAndContractInfo {
+    //                                 owned_document_info: OwnedDocumentInfo {
+    //                                     document_info: DocumentRefAndSerialization((
+    //                                         document,
+    //                                         serialization.as_slice(),
+    //                                         storage_flags.as_ref(),
+    //                                     )),
+    //                                     owner_id: None
+    //                                 },
+    //                                 contract: &op.contract,
+    //                                 document_type: &op.document_type,
+    //                             },
+    //                             false,
+    //                             block_info.clone(),
+    //                             false,
+    //                             Some(transaction),
+    //                         )
+    //                         .expect("expected to add document");
+    //
+    //                     drive.remove_from_identity_balance(identity.id, fee_result.required_removed_balance(), fee_result.desired_removed_balance(), block_info, true, Some(transaction)).expect("expected to pay for operation");
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+    //
+    // fn execute_block(
+    //     &mut self,
+    //     drive: &Drive,
+    //     block_info: &BlockInfo,
+    //     transaction: &Transaction,
+    //     rng: &mut StdRng,
+    // ) {
+    //     self.execute_block_identity_operations(drive, block_info, transaction, rng);
+    //     self.execute_block_document_operations(drive, block_info, transaction, rng);
+    // }
 }
 
-fn create_identities_operations(
+fn create_identities_operations<'a>(
     count: u16,
     key_count: KeyID,
     rng: &mut StdRng,
-) -> Vec<(Identity, Vec<DriveOperationType>)> {
+) -> Vec<(Identity, Vec<DriveOperationType<'a>>)> {
     let identities = Identity::random_identities_with_rng(count, key_count, rng);
     identities.into_iter().map(|identity| {
         let insert_op = DriveOperationType::IdentityOperation(IdentityOperationType::AddNewIdentity { identity: identity.clone() });
@@ -337,16 +301,29 @@ fn run_chain_for_strategy(block_count: u64, block_spacing_ms: u64,  strategy: St
     let mut rng = StdRng::seed_from_u64(seed);
     let mut platform = setup_platform_raw(Some(config));
     let mut current_time_ms = 0;
+    let mut current_identities = vec![];
+    let quorum_size = 100;
+    let mut i = 0;
+
+    platform.create_mn_shares_contract(None);
+
+    let proposers =
+        create_test_masternode_identities_with_rng(&platform.drive, quorum_size, &mut rng, None);
+
     for block_height in 0..block_count {
         let block_info = BlockInfo {
             time_ms: current_time_ms,
             height: block_height,
             epoch: Default::default(),
         };
-        let state_transitions = strategy.get_state_transitions(&mut rng);
+        let proposer= proposers.get(i as usize).unwrap();
+        let (state_transitions, mut new_identities) = strategy.state_transitions_for_block_with_new_identities(&block_info, &mut current_identities, &mut rng);
 
-        platform.execute_block(proposer, &block_info, state_transitions).expect("expected to execute a block");
+        platform.execute_block(*proposer, &block_info, state_transitions).expect("expected to execute a block");
+        current_identities.append(&mut new_identities);
         current_time_ms += block_spacing_ms;
+        i += 1;
+        i %= quorum_size;
     }
 
 }

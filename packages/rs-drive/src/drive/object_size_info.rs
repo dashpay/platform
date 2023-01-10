@@ -32,6 +32,7 @@
 //! This module defines enums and implements functions relevant to the sizes of objects.
 //!
 
+use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -506,6 +507,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
 }
 
 /// Document and contract info
+#[derive(Clone, Debug)]
 pub struct OwnedDocumentInfo<'a> {
     /// Document info
     pub document_info: DocumentInfo<'a>,
@@ -514,6 +516,7 @@ pub struct OwnedDocumentInfo<'a> {
 }
 
 /// Document and contract info
+#[derive(Clone, Debug)]
 pub struct DocumentAndContractInfo<'a> {
     /// Document info
     pub owned_document_info: OwnedDocumentInfo<'a>,
@@ -527,11 +530,11 @@ pub struct DocumentAndContractInfo<'a> {
 #[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
     /// The borrowed document and it's serialized form
-    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<&'a StorageFlags>)),
+    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<Cow<'a, StorageFlags>>)),
     /// The borrowed document without it's serialized form
-    DocumentRefWithoutSerialization((&'a Document, Option<&'a StorageFlags>)),
+    DocumentRefWithoutSerialization((&'a Document, Option<Cow<'a, StorageFlags>>)),
     /// The document without it's serialized form
-    DocumentWithoutSerialization((Document, Option<StorageFlags>)),
+    DocumentWithoutSerialization((Document, Option<Cow<'a, StorageFlags>>)),
     /// An element size
     DocumentEstimatedAverageSize(u32),
 }
@@ -676,9 +679,9 @@ impl<'a> DocumentInfo<'a> {
     pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
-            | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags)) => *storage_flags,
-            DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
-                storage_flags.as_ref()
+            | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags))
+            | DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
+                storage_flags.as_ref().map(|flags| flags.as_ref())
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => {
                 StorageFlags::optional_default_as_ref()

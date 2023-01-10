@@ -125,12 +125,21 @@ pub fn create_test_masternode_identities(
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
+    create_test_masternode_identities_with_rng(drive, count, &mut rng, transaction)
+}
+
+/// Creates a list of test Masternode identities of size `count` with random data
+pub fn create_test_masternode_identities_with_rng(
+    drive: &Drive,
+    count: u16,
+    rng: &mut StdRng,
+    transaction: TransactionArg,
+) -> Vec<[u8; 32]> {
     let mut identity_ids: Vec<[u8; 32]> = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
         let proposer_pro_tx_hash = rng.gen::<[u8; 32]>();
-
-        create_test_identity(drive, proposer_pro_tx_hash, &mut rng, transaction);
+        create_test_identity(drive, proposer_pro_tx_hash, rng, transaction);
 
         identity_ids.push(proposer_pro_tx_hash);
     }

@@ -37,6 +37,7 @@
 //! For example, the address of someone who manages the masternode for the owner.
 //!
 
+use std::borrow::Cow;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::common::value_to_cbor;
@@ -95,7 +96,7 @@ impl Platform {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         self.drive
             .apply_contract(
@@ -103,7 +104,7 @@ impl Platform {
                 contract_cbor,
                 BlockInfo::genesis(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 transaction,
             )
             .expect("expected to apply contract successfully");

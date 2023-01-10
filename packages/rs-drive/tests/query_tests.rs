@@ -30,6 +30,7 @@
 //! Query Tests
 //!
 
+use std::borrow::Cow;
 use grovedb::TransactionArg;
 use std::collections::HashMap;
 use std::fs::File;
@@ -197,7 +198,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -206,7 +207,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -273,7 +274,7 @@ pub fn setup_family_tests_with_nulls(
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -282,7 +283,7 @@ pub fn setup_family_tests_with_nulls(
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -350,7 +351,7 @@ pub fn setup_family_tests_only_first_name_index(
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -359,7 +360,7 @@ pub fn setup_family_tests_only_first_name_index(
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -456,7 +457,7 @@ pub fn add_domains_to_contract(
             .document_type_for_name("domain")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -465,7 +466,7 @@ pub fn add_domains_to_contract(
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -553,7 +554,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
                 .document_type_for_name("domain")
                 .expect("expected to get document type");
 
-            let storage_flags = Some(StorageFlags::SingleEpoch(0));
+            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
             drive
                 .add_document_for_contract(
@@ -562,7 +563,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
                             document_info: DocumentRefAndSerialization((
                                 &domain,
                                 &domain_cbor,
-                                storage_flags.as_ref(),
+                                storage_flags,
                             )),
                             owner_id: None,
                         },
@@ -603,7 +604,7 @@ fn test_query_many() {
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -612,7 +613,7 @@ fn test_query_many() {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1515,7 +1516,7 @@ fn test_family_basic_queries() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -1524,7 +1525,7 @@ fn test_family_basic_queries() {
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &person_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -1564,7 +1565,7 @@ fn test_family_basic_queries() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -1573,7 +1574,7 @@ fn test_family_basic_queries() {
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &person_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -1836,7 +1837,7 @@ fn test_family_basic_queries() {
             None,
             BlockInfo::genesis(),
             true,
-            StorageFlags::optional_default_as_ref(),
+            StorageFlags::optional_default_as_cow(),
             Some(&db_transaction),
         )
         .expect("expected to apply contract successfully");
@@ -3394,7 +3395,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3403,7 +3404,7 @@ fn test_dpns_query_start_at_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document0,
                         &document_cbor0,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3438,7 +3439,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -3446,7 +3447,7 @@ fn test_dpns_query_start_at_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document1,
                         &document_cbor1,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3590,7 +3591,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3599,7 +3600,7 @@ fn test_dpns_query_start_after_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document0,
                         &document_cbor0,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3634,7 +3635,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3643,7 +3644,7 @@ fn test_dpns_query_start_after_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document1,
                         &document_cbor1,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3789,7 +3790,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3798,7 +3799,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
                     document_info: DocumentRefAndSerialization((
                         &document0,
                         &document_cbor0,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3833,7 +3834,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3842,7 +3843,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
                     document_info: DocumentRefAndSerialization((
                         &document1,
                         &document_cbor1,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -4135,7 +4136,7 @@ fn test_query_a_b_c_d_e_contract() {
             contract_cbor,
             block_info,
             true,
-            StorageFlags::optional_default_as_ref(),
+            StorageFlags::optional_default_as_cow(),
             None,
         )
         .expect("should apply contract");

@@ -30,6 +30,7 @@
 //! Fee ops
 //!
 
+use std::borrow::Cow;
 use crate::drive::batch::GroveDbOpBatch;
 use costs::storage_cost::removal::Identifier;
 use costs::storage_cost::removal::StorageRemovedBytes::{

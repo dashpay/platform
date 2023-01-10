@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::contract::document::Document;
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
@@ -16,6 +17,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// A wrapper for a document operation
+#[derive(Clone, Debug)]
 pub enum DocumentOperation<'a> {
     /// An add operation
     AddOperation {
@@ -29,6 +31,7 @@ pub enum DocumentOperation<'a> {
 }
 
 /// Document and contract info
+#[derive(Clone, Debug)]
 pub struct DocumentOperationsForContractDocumentType<'a> {
     /// Document info
     pub operations: Vec<DocumentOperation<'a>>,
@@ -39,6 +42,7 @@ pub struct DocumentOperationsForContractDocumentType<'a> {
 }
 
 /// Operations on Documents
+#[derive(Clone, Debug)]
 pub enum DocumentOperationType<'a> {
     /// Deserializes a document and a contract and adds the document to the contract.
     AddSerializedDocumentForSerializedContract {
@@ -53,7 +57,7 @@ pub enum DocumentOperationType<'a> {
         /// Should we override the document if one already exists?
         override_document: bool,
         /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
     /// Deserializes a document and adds it to a contract.
     AddSerializedDocumentForContract {
@@ -68,7 +72,7 @@ pub enum DocumentOperationType<'a> {
         /// Should we override the document if one already exists?
         override_document: bool,
         /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
     /// Adds a document to a contract.
     AddDocumentForContract {
@@ -116,7 +120,7 @@ pub enum DocumentOperationType<'a> {
         /// The owner id, if none is specified will try to recover from serialized document
         owner_id: Option<[u8; 32]>,
         /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
     /// Updates a serialized document and returns the associated fee.
     UpdateSerializedDocumentForContract {
@@ -129,7 +133,7 @@ pub enum DocumentOperationType<'a> {
         /// The owner id, if none is specified will try to recover from serialized document
         owner_id: Option<[u8; 32]>,
         /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
     /// Updates a document and returns the associated fee.
     UpdateDocumentForContract {
@@ -144,7 +148,7 @@ pub enum DocumentOperationType<'a> {
         /// The owner id, if none is specified will try to recover from serialized document
         owner_id: Option<[u8; 32]>,
         /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<&'a StorageFlags>,
+        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
 }
 
@@ -434,6 +438,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
 }
 
 /// A wrapper for an update operation
+#[derive(Clone, Debug)]
 pub struct UpdateOperationInfo<'a> {
     /// The document to update
     pub document: &'a Document,
@@ -442,5 +447,5 @@ pub struct UpdateOperationInfo<'a> {
     /// The owner id, if none is specified will try to recover from serialized document
     pub owner_id: Option<[u8; 32]>,
     /// Add storage flags (like epoch, owner id, etc)
-    pub storage_flags: Option<&'a StorageFlags>,
+    pub storage_flags: Option<Cow<'a, StorageFlags>>,
 }

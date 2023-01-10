@@ -32,6 +32,7 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -182,7 +183,7 @@ impl Drive {
                     DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                         let element = Element::Item(
                             serialized_document.to_vec(),
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -201,7 +202,7 @@ impl Drive {
                             document.serialize(document_and_contract_info.document_type)?;
                         let element = Element::Item(
                             serialized_document,
-                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -220,7 +221,7 @@ impl Drive {
                             document.serialize(document_and_contract_info.document_type)?;
                         let element = Element::Item(
                             serialized_document,
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -302,7 +303,7 @@ impl Drive {
                 DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(
                         serialized_document.to_vec(),
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
@@ -311,7 +312,7 @@ impl Drive {
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
                         serialized_document,
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
@@ -328,7 +329,7 @@ impl Drive {
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
                         serialized_document,
-                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
@@ -342,7 +343,7 @@ impl Drive {
                 DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(
                         serialized_document.to_vec(),
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
@@ -351,7 +352,7 @@ impl Drive {
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
                         serialized_document,
-                        StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
@@ -360,7 +361,7 @@ impl Drive {
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
                         serialized_document,
-                        StorageFlags::map_to_some_element_flags(*storage_flags),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
@@ -411,7 +412,7 @@ impl Drive {
         override_document: bool,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
@@ -449,7 +450,7 @@ impl Drive {
         override_document: bool,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
@@ -485,7 +486,7 @@ impl Drive {
         override_document: bool,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -672,7 +673,7 @@ impl Drive {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            *storage_flags,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
@@ -680,7 +681,7 @@ impl Drive {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
@@ -711,7 +712,7 @@ impl Drive {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            *storage_flags,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((&[0], document_reference))
                     }
@@ -719,7 +720,7 @@ impl Drive {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((&[0], document_reference))
                     }
@@ -1214,7 +1215,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1228,7 +1229,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -1242,7 +1243,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to override a document successfully");
@@ -1281,7 +1282,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1295,7 +1296,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -1309,7 +1310,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to override a document successfully");
@@ -1354,7 +1355,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1402,7 +1403,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1450,7 +1451,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1494,7 +1495,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to get back fee for document insertion successfully");
@@ -1508,7 +1509,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1543,12 +1544,12 @@ mod tests {
         let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
             .expect("expected to deserialize document successfully");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let document_info = DocumentRefAndSerialization((
             &document,
             &dashpay_cr_serialized_document,
-            storage_flags.as_ref(),
+            storage_flags,
         ));
 
         let document_type = contract
@@ -1646,7 +1647,7 @@ mod tests {
             .document_type_for_name("domain")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let FeeResult {
             storage_fee,
@@ -1660,7 +1661,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &dpns_domain_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1713,7 +1714,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1726,7 +1727,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1739,7 +1740,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1769,7 +1770,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1782,7 +1783,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect_err(
@@ -1809,7 +1810,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -1827,7 +1828,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should create dash tld");
@@ -1853,7 +1854,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should add random tld");

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use crate::fee::credits::Credits;
 
 /// Operations on the System
+#[derive(Clone, Debug)]
 pub enum SystemOperationType {
     /// We want to add credits to the system.
     AddToSystemCredits {
