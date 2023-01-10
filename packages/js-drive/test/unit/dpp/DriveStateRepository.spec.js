@@ -681,6 +681,7 @@ describe('DriveStateRepository', () => {
       ).to.have.been.calledOnceWithExactly(
         index,
         transactionBytes,
+        blockInfo,
         repositoryOptions.useTransaction,
       );
     });

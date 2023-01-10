@@ -64,7 +64,7 @@ jobs:
       - name: Enable Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - run: cargo check --package=${{ inputs.package }}
+      - run: cargo check --package=${{ inputs.package }} --all-features
 
   test:
     name: Tests
