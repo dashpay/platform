@@ -21,13 +21,13 @@ const DocumentNotProvidedErrorJs = require('@dashevo/dpp/lib/document/errors/Doc
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
-// const { Document } = require('../../../../../dist/wasm/wasm_dpp');
-// const { DataContract } = require('../../../../../dist/wasm/wasm_dpp');
+const { CONSOLE_APPENDER } = require('karma/lib/constants');
 let Document;
 let DocumentsBatchTransition;
 let DataContract;
 let StateTransitionExecutionContext;
 let applyDocumentsBatchTransition;
+let Lab;
 
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documentsJs;
@@ -53,7 +53,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
   beforeEach(async () => {
     ({
-      DataContract, Document, DocumentsBatchTransition, StateTransitionExecutionContext, applyDocumentsBatchTransition
+      DataContract, Document, DocumentsBatchTransition, StateTransitionExecutionContext, applyDocumentsBatchTransition,
     } = await loadWasmDpp());
   });
 
@@ -74,6 +74,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ...documentsFixtureJs[1].toObject(),
       lastName: 'NotSoShiny',
     }, dataContractJs);
+
     replaceDocument = new Document({
       ...documentsFixture[1].toObject(),
       lastName: 'NotSoShiny',
@@ -172,15 +173,24 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   it('should call `store`, `replace` and `remove` functions for specific type of transitions - Rust', async () => {
     await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
 
-    // const replaceDocumentTransition = documentTransitionsJs[1];
 
-    // expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-    //   [replaceDocumentTransition],
-    //   executionContextJs,
-    // );
+    // In case of imported Objects from WASM we cannot compare structures
+    expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
 
-    // expect(stateRepositoryMockJs.createDocument).to.have.been.calledOnce();
-    // expect(stateRepositoryMockJs.updateDocument).to.have.been.calledOnce();
+    const [fetchContractId, fetchDocumentType] = stateRepositoryMock.fetchDocuments.getCall(0).args;
+    expect(fetchContractId.toBuffer()).to.deep.equal(documentTransitionsJs[1].getDataContractId())
+    expect(fetchDocumentType).to.equal(documentTransitionsJs[1].getType())
+
+
+    expect(stateRepositoryMock.updateDocument).to.have.been.calledOnce();
+    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
+
+
+    const [createDocument] = stateRepositoryMock.createDocument.getCall(0).args;
+    const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
+
+    expect(createDocument.toObject()).to.deep.equal(documentsFixtureJs[0].toObject());
+    // expect(updateDocument.toObject()).to.deep.equal(replaceDocument.toObject());
 
     // const callsArgs = [
     //   ...stateRepositoryMockJs.createDocument.getCall(0).args,

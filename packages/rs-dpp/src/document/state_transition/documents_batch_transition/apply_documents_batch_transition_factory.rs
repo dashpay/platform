@@ -61,8 +61,6 @@ pub async fn apply_documents_batch_transition(
     )
     .await?;
 
-    // let fetched_documents: Vec<Document> = vec![];
-
     let fetched_documents_by_id: HashMap<&Identifier, &Document> =
         fetched_documents.iter().map(|dt| (&dt.id, dt)).collect();
 

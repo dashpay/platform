@@ -1,5 +1,6 @@
 const path = require('path');
 const webpack = require('webpack');
+const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = {
   entry: './lib/index.ts',
@@ -15,6 +16,14 @@ module.exports = {
     globalObject: 'this',
   },
   mode: 'production',
+  optimization: {
+    minimize: true,
+    minimizer: [new TerserPlugin({
+      terserOptions: {
+        keep_classnames: true,
+      },
+    })],
+  },
   module: {
     rules: [
       {

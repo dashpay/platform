@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
-    document::Document,
+    document::{errors::DocumentError, Document},
     prelude::{Identifier, Identity},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -16,7 +16,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    identifier::IdentifierWrapper, DataContractWasm, DocumentWasm,
+    console_log, identifier::IdentifierWrapper, utils::IntoWasm, DataContractWasm, DocumentWasm,
     StateTransitionExecutionContextWasm,
 };
 
@@ -128,7 +128,8 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         where_query: serde_json::Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Vec<Self::FetchDocument>> {
-        self.0
+        let js_documents = self
+            .0
             .lock()
             .expect("unexpected concurrency issue!")
             .fetch_documents(
@@ -139,14 +140,16 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                     .map_err(|e| anyhow!("serialization error: {}", e))?,
                 execution_context.clone().into(),
             );
-        // this is something I need to change
 
-        // this is the problem --> how we can change that???
-
-        // we unable to convert
-        // .map(Into::into)
-        todo!()
-        // now the question -> how I will receive the information about the
+        let mut documents: Vec<DocumentWasm> = vec![];
+        for js_document in js_documents.iter() {
+            let document = js_document
+                .to_wasm::<DocumentWasm>("Document")
+                .map_err(|e| anyhow!("{e:#?}"))?;
+            documents.push(document.to_owned());
+        }
+        console_log!("returned {} documents", documents.len());
+        Ok(documents)
     }
 
     async fn create_document(

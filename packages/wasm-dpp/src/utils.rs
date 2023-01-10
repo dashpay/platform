@@ -121,3 +121,47 @@ impl<T> WithJsError<T> for Result<T, serde_json::Error> {
         }
     }
 }
+
+pub trait IntoWasm {
+    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str)
+        -> Result<T::Anchor, JsValue>;
+}
+
+impl IntoWasm for JsValue {
+    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(
+        &self,
+        class_name: &str,
+    ) -> Result<T::Anchor, JsValue> {
+        generic_of_js_val::<T>(self, class_name)
+    }
+}
+
+pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
+    js_value: &JsValue,
+    class_name: &str,
+) -> Result<T::Anchor, JsValue> {
+    if !js_value.is_object() {
+        return Err(JsValue::from_str(
+            format!("Value supplied as {} is not an object", class_name).as_str(),
+        ));
+    }
+
+    let ctor_name = js_sys::Object::get_prototype_of(js_value)
+        .constructor()
+        .name();
+
+    if ctor_name == class_name {
+        let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("ptr"))?;
+        let ptr_u32: u32 =
+            ptr.as_f64()
+                .ok_or_else(|| JsValue::from("Invalid JS object pointer"))? as u32;
+        let reference = unsafe { T::ref_from_abi(ptr_u32) };
+        Ok(reference)
+    } else {
+        let error_string = format!(
+            "JS object constructor name mismatch. Expected {}, provided {}.",
+            class_name, ctor_name
+        );
+        Err(JsValue::from(&error_string))
+    }
+}

@@ -3,7 +3,7 @@ use std::{
     convert::TryInto,
 };
 
-use futures::future::join_all;
+use futures::{future::join_all, FutureExt};
 use itertools::Itertools;
 use serde_json::json;
 
@@ -39,8 +39,7 @@ pub async fn fetch_documents(
         }
     }
 
-    // let mut fetch_documents_futures = vec![];
-    let mut documents = vec![];
+    let mut fetch_documents_futures = vec![];
     for (_, dts) in transitions_by_contracts_and_types {
         let ids: Vec<String> = dts
             .iter()
@@ -52,37 +51,26 @@ pub async fn fetch_documents(
             "orderBy" : [[ "$id", "asc"]],
         });
 
-        // let future = state_repository.fetch_documents(
-        //     get_from_transition!(dts[0], data_contract_id),
-        //     get_from_transition!(dts[0], document_type),
-        //     options,
-        //     execution_context,
-        // );
-        // fetch_documents_futures.push(future);
-        let current_documents_data = state_repository
-            .fetch_documents(
-                get_from_transition!(dts[0], data_contract_id),
-                get_from_transition!(dts[0], document_type),
-                options,
-                execution_context,
-            )
-            .await?;
-        let current_documents: Vec<Document> = current_documents_data
+        let future = state_repository.fetch_documents(
+            get_from_transition!(dts[0], data_contract_id),
+            get_from_transition!(dts[0], document_type),
+            options,
+            execution_context,
+        );
+
+        fetch_documents_futures.push(future);
+    }
+    let results = join_all(fetch_documents_futures).await;
+
+    let mut documents = vec![];
+    for result in results.into_iter() {
+        let result = result?;
+        let documents_from_fetch: Vec<Document> = result
             .into_iter()
             .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
             .try_collect()?;
-
-        documents.extend(current_documents);
-        // fetch_documents_futures.push(future);
+        documents.extend(documents_from_fetch)
     }
 
-    // let results: Result<Vec<Vec<Document>>, anyhow::Error> = join_all(fetch_documents_futures)
-    //     .await
-    //     .into_iter()
-    //     .collect();
-
-    // let documents = results?.into_iter().flatten().collect();
     Ok(documents)
 }
-
-//  TODO spec for fetchDocumentsFactory
