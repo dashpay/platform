@@ -12,6 +12,7 @@ describe('queryHandlerFactory', () => {
   let request;
   let routeMock;
   let loggerMock;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     request = {
@@ -32,10 +33,13 @@ describe('queryHandlerFactory', () => {
       find: this.sinon.stub().returns(routeMock),
     };
 
+    createContextLoggerMock = this.sinon.stub();
+
     queryHandler = queryHandlerFactory(
       queryHandlerRouterMock,
       sanitizeUrlMock,
       loggerMock,
+      createContextLoggerMock,
     );
   });
 
@@ -118,5 +122,8 @@ describe('queryHandlerFactory', () => {
     expect(queryHandlerRouterMock.find).to.be.calledOnceWith('GET', sanitizedUrl);
     expect(routeMock.handler).to.be.calledOnceWith(routeMock.params, encodedData, request);
     expect(result).to.equal(data);
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      abciMethod: 'query',
+    });
   });
 });

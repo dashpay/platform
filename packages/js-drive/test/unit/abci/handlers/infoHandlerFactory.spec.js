@@ -28,6 +28,7 @@ describe('infoHandlerFactory', () => {
   let blockExecutionContextMock;
   let blockExecutionContextRepositoryMock;
   let groveDBStoreMock;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
@@ -51,6 +52,8 @@ describe('infoHandlerFactory', () => {
 
     groveDBStoreMock.getRootHash.resolves(lastBlockAppHash);
 
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
+
     infoHandler = infoHandlerFactory(
       blockExecutionContextMock,
       blockExecutionContextRepositoryMock,
@@ -58,11 +61,12 @@ describe('infoHandlerFactory', () => {
       updateSimplifiedMasternodeListMock,
       loggerMock,
       groveDBStoreMock,
+      createContextLoggerMock,
     );
   });
 
   it('should return respond with genesis heights and app hash on the first run', async () => {
-    blockExecutionContextRepositoryMock.fetch.resolves(null);
+    blockExecutionContextRepositoryMock.fetch.resolves(blockExecutionContextMock);
     blockExecutionContextMock.getHeight.returns(null);
     blockExecutionContextMock.isEmpty.returns(true);
 
@@ -83,6 +87,11 @@ describe('infoHandlerFactory', () => {
     expect(blockExecutionContextMock.getCoreChainLockedHeight).to.not.be.called();
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
     expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        abciMethod: 'info',
+      },
+    );
   });
 
   it('should populate context and update SML on subsequent runs', async () => {
@@ -103,6 +112,17 @@ describe('infoHandlerFactory', () => {
       lastCoreChainLockedHeight,
       {
         logger: loggerMock,
+      },
+    );
+    expect(createContextLoggerMock).to.be.calledTwice();
+    expect(createContextLoggerMock.getCall(0)).to.be.calledWithExactly(
+      loggerMock, {
+        abciMethod: 'info',
+      },
+    );
+    expect(createContextLoggerMock.getCall(1)).to.be.calledWithExactly(
+      loggerMock, {
+        height: lastBlockHeight.toString(),
       },
     );
   });
