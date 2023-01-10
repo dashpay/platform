@@ -1360,7 +1360,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((3247, 2492520), (added_bytes, processing_fee));
+        assert_eq!((3247, 2838400), (added_bytes, processing_fee));
     }
 
     #[test]
@@ -1408,7 +1408,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1428, 1600590), (added_bytes, processing_fee));
+        assert_eq!((1428, 1865400), (added_bytes, processing_fee));
     }
 
     #[test]
@@ -1675,7 +1675,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1986, 2255870), (added_bytes, processing_fee));
+        assert_eq!((1986, 2556600), (added_bytes, processing_fee));
 
         drive
             .grove

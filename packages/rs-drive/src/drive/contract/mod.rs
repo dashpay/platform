@@ -855,7 +855,7 @@ impl Drive {
         // As we want deterministic costs, we want the cost to always be the same for
         // fetching the contract.
         // We need to pass allow cache to false
-        let CostContext { value, cost } = self.grove.get_caching_optional(
+        let CostContext { value, cost } = self.grove.get_raw_caching_optional(
             contract_root_path(&contract_id),
             &[0],
             false,

@@ -24,6 +24,7 @@ use drive_abci::abci::messages::{
 use drive_abci::platform::Platform;
 use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;
+use drive_abci::config::PlatformConfig;
 
 type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
 type UnitCallback = Box<dyn FnOnce(&Channel) + Send>;
@@ -101,8 +102,13 @@ impl PlatformWrapper {
                 ..Default::default()
             };
 
+            let platform_config = PlatformConfig {
+                drive_config,
+                verify_sum_trees: true,
+            };
+
             // TODO: think how to pass this error to JS
-            let platform: Platform = Platform::open(path, Some(drive_config)).unwrap();
+            let platform: Platform = Platform::open(path, Some(platform_config)).unwrap();
 
             let mut maybe_transaction: Option<Transaction> = None;
 
