@@ -59,6 +59,7 @@ impl Drive {
             .grove
             .query_raw(
                 &path_query,
+                transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )

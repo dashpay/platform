@@ -35,6 +35,7 @@ impl Drive {
             .grove
             .query_raw(
                 &expired_index_query,
+                transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )
