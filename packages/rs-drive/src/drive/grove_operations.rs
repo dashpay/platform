@@ -381,7 +381,9 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let CostContext { value, cost } = self.grove.query_item_value(path_query, transaction);
+        let CostContext { value, cost } =
+            self.grove
+                .query_item_value(path_query, transaction.is_some(), transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }
@@ -396,7 +398,8 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
         let CostContext { value, cost } =
-            self.grove.query_raw(path_query, result_type, transaction);
+            self.grove
+                .query_raw(path_query, transaction.is_some(), result_type, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }
