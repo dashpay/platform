@@ -117,12 +117,12 @@ jobs:
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
+        env:
+          CARGO_BUILD_PROFILE: test
 
       - name: Build SDK
         run: yarn build --filter "+dash"
         if: ${{ inputs.start-local-network }}
-        env:
-          CARGO_BUILD_PROFILE: test
 
       - name: Create necessary dotenv files
         run: |
