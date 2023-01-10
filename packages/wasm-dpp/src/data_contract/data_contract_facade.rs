@@ -1,5 +1,5 @@
 use crate::errors::protocol_error::from_protocol_error;
-use crate::{DataContractCreateTransitionWasm, DataContractWasm};
+use crate::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm, DataContractWasm};
 use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
@@ -86,7 +86,7 @@ impl DataContractFacadeWasm {
     pub fn create_dat_contract_update_transition(
         &self,
         data_contract: DataContractWasm,
-    ) -> Result<DataContractCreateTransitionWasm, JsValue> {
+    ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
             .create_data_contract_update_transition(data_contract.into())
             .map(Into::into)

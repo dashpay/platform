@@ -10,7 +10,7 @@ use dpp::version::ProtocolVersionValidator;
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocol {
-    identity: IdentityFacade<BlsAdapter>,
+    _identity: IdentityFacade<BlsAdapter>,
     data_contract: DataContractFacadeWasm,
 }
 
@@ -35,7 +35,7 @@ impl DashPlatformProtocol {
             DataContractFacadeWasm::new(protocol_version, protocol_version_validator.clone());
 
         Self {
-            identity: identity_facade,
+            _identity: identity_facade,
             data_contract: data_contract_facade,
         }
     }
