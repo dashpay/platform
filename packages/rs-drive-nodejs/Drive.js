@@ -361,11 +361,12 @@ class Drive {
    *
    * @returns {Promise<void>}
    */
-  async enqueueWithdrawalTransaction(index, transactionBytes, useTransaction = false) {
+  async enqueueWithdrawalTransaction(index, transactionBytes, blockInfo, useTransaction = false) {
     return driveEnqueueWithdrawalTransactionAsync.call(
       this.drive,
       index,
       transactionBytes,
+      blockInfo,
       useTransaction,
     );
   }

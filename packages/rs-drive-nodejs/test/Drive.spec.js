@@ -517,7 +517,7 @@ describe('Drive', function main() {
     });
 
     it('should enqueue withdrawal transaction into the queue', async () => {
-      await drive.enqueueWithdrawalTransaction(1, Buffer.alloc(32, 1));
+      await drive.enqueueWithdrawalTransaction(1, Buffer.alloc(32, 1), blockInfo);
 
       const result = await drive.fetchLatestWithdrawalTransactionIndex();
 
