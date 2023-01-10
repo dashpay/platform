@@ -33,7 +33,7 @@ struct TxOutJS {
 #[derive(Serialize)]
 struct TxOutSerdeHelper<'a>(#[serde(with = "TxOutJS")] &'a TxOut);
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[wasm_bindgen(js_name=InstantAssetLockProof)]
 pub struct InstantAssetLockProofWasm(InstantAssetLockProof);
 
