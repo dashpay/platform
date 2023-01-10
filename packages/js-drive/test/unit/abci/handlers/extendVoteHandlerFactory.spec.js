@@ -63,6 +63,6 @@ describe('extendVoteHandlerFactory', () => {
 
     expect(createContextLoggerMock).to.be.calledOnceWith(loggerMock, {
       abciMethod: 'extendVote',
-    })
+    });
   });
 });
