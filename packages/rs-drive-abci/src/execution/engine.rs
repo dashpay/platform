@@ -92,12 +92,9 @@ impl Platform {
 
         let block_begin_response = self
             .block_begin(block_begin_request, Some(&transaction))
-            .unwrap_or_else(|_| {
-                panic!(
-                    "should begin process block #{} at time #{}",
-                    block_info.height, block_info.time_ms
-                )
-            });
+            .expect(
+                    format!("should begin process block #{} at time #{}",
+                    block_info.height, block_info.time_ms).as_str());
 
         let total_fees = self.run_events(state_transitions, block_info, &transaction)?;
 

@@ -44,7 +44,7 @@ use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
 };
 use drive_abci::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
-use drive_abci::common::helpers::setup::setup_platform_raw;
+use drive_abci::common::helpers::setup::{setup_platform_raw, setup_platform_with_initial_state_structure};
 use drive_abci::config::PlatformConfig;
 use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
@@ -78,7 +78,11 @@ impl Frequency {
     }
 
     fn events(&self, rng: &mut StdRng) -> u16 {
-        rng.gen_range(self.times_per_block_range.clone())
+        if self.times_per_block_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(self.times_per_block_range.clone())
+        }
     }
 }
 
@@ -304,13 +308,19 @@ fn run_chain_for_strategy(block_count: u64, block_spacing_ms: u64,  strategy: St
     let mut current_identities = vec![];
     let quorum_size = 100;
     let mut i = 0;
+    // init chain
+    let init_chain_request = InitChainRequest {};
+
+    platform
+        .init_chain(init_chain_request, None)
+        .expect("should init chain");
 
     platform.create_mn_shares_contract(None);
 
     let proposers =
         create_test_masternode_identities_with_rng(&platform.drive, quorum_size, &mut rng, None);
 
-    for block_height in 0..block_count {
+    for block_height in 1..=block_count {
         let block_info = BlockInfo {
             time_ms: current_time_ms,
             height: block_height,
