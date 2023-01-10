@@ -12,7 +12,7 @@ describe('IdentityCreateTransition', () => {
   let KeyPurpose;
   let KeySecurityLevel;
   let IdentityPublicKey;
-  let AssetLockProof;
+  let ChainAssetLockProof;
 
   const mockRawPublicKey = (params = {}) => ({
     id: 0,
@@ -28,7 +28,7 @@ describe('IdentityCreateTransition', () => {
   before(async () => {
     ({
       IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
-      AssetLockProof,
+      ChainAssetLockProof,
     } = await loadWasmDpp());
   });
 
@@ -68,7 +68,7 @@ describe('IdentityCreateTransition', () => {
   describe('#setAssetLockProof', () => {
     let assetLockProofObject;
     beforeEach(() => {
-      const assetLockProof = new AssetLockProof(getChainAssetLockProofFixture().toObject());
+      const assetLockProof = new ChainAssetLockProof(getChainAssetLockProofFixture().toObject());
       assetLockProofObject = assetLockProof.toObject();
       stateTransition.setAssetLockProof(assetLockProof);
     });

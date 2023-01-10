@@ -125,7 +125,7 @@ pub fn create_asset_lock_proof_instance(raw_parameters: JsValue) -> Result<JsVal
     }
 }
 
-fn create_asset_lock_proof_from_wasm_instance(
+pub fn create_asset_lock_proof_from_wasm_instance(
     js_value: &JsValue,
 ) -> Result<AssetLockProof, JsValue> {
     let default_error: UnknownAssetLockProofTypeErrorWasm =

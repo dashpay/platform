@@ -8,6 +8,7 @@ use crate::identity::state_transition::AssetLockProofWasm;
 
 use crate::{
     buffer::Buffer,
+    create_asset_lock_proof_from_wasm_instance,
     errors::RustConversionError,
     identity::{
         state_transition::asset_lock_proof::{ChainAssetLockProofWasm, InstantAssetLockProofWasm},
@@ -83,25 +84,33 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
-    pub fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProofWasm,
-    ) -> Result<(), JsValue> {
+    pub fn set_asset_lock_proof(&mut self, asset_lock_proof: JsValue) -> Result<(), JsValue> {
+        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
+
         self.0
-            .set_asset_lock_proof(asset_lock_proof.into())
+            .set_asset_lock_proof(asset_lock_proof)
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         Ok(())
     }
 
     #[wasm_bindgen(getter, js_name=assetLockProof)]
-    pub fn asset_lock_proof(&self) -> AssetLockProofWasm {
+    pub fn asset_lock_proof(&self) -> JsValue {
         self.get_asset_lock_proof()
     }
 
     #[wasm_bindgen(js_name=getAssetLockProof)]
-    pub fn get_asset_lock_proof(&self) -> AssetLockProofWasm {
-        self.0.get_asset_lock_proof().to_owned().into()
+    pub fn get_asset_lock_proof(&self) -> JsValue {
+        let asset_lock_proof = self.0.get_asset_lock_proof().to_owned();
+
+        match asset_lock_proof {
+            AssetLockProof::Chain(chain_asset_lock_proof) => {
+                ChainAssetLockProofWasm::from(chain_asset_lock_proof).into()
+            }
+            AssetLockProof::Instant(instant_asset_lock_proof) => {
+                InstantAssetLockProofWasm::from(instant_asset_lock_proof).into()
+            }
+        }
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]

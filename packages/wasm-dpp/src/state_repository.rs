@@ -17,6 +17,7 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::buffer::Buffer;
 use crate::{
     identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
@@ -69,9 +70,30 @@ extern "C" {
     #[wasm_bindgen(structural, method, js_name=verifyInstantLock)]
     pub fn verify_instant_lock(
         this: &ExternalStateRepositoryLike,
-        instant_lock: Vec<u8>, // TODO: replace with Vec<u8> to ensure that memory won't get allocated to something different
+        instant_lock: Vec<u8>,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> bool;
+
+    #[wasm_bindgen(structural, method, js_name=createIdentity)]
+    pub fn create_identity(
+        this: &ExternalStateRepositoryLike,
+        identity: IdentityWasm,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=storeIdentityPublicKeyHashes)]
+    pub fn store_identity_public_key_hashes(
+        this: &ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        public_key_hashes: Vec<Buffer>,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=markAssetLockTransactionOutPointAsUsed)]
+    pub fn mark_asset_lock_transaction_out_point_as_used(
+        this: &ExternalStateRepositoryLike,
+        out_point_buffer: Vec<u8>,
+    );
 
     // TODO add missing declarations
 }
@@ -220,11 +242,24 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn store_identity_public_key_hashes(
         &self,
-        _identity_id: &Identifier,
-        _public_key_hashes: Vec<Vec<u8>>,
-        _execution_context: &StateTransitionExecutionContext,
+        identity_id: &Identifier,
+        public_key_hashes: Vec<Vec<u8>>,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        let hashes = public_key_hashes
+            .iter()
+            .map(|hash| Buffer::from_bytes(hash.as_slice()))
+            .collect();
+
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .store_identity_public_key_hashes(
+                identity_id.clone().into(),
+                hashes,
+                execution_context.clone().into(),
+            ))
     }
 
     async fn fetch_identity_by_public_key_hashes<T>(
@@ -286,9 +321,13 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
-        _out_point_buffer: &[u8],
+        out_point_buffer: &[u8],
     ) -> anyhow::Result<()> {
-        todo!()
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .mark_asset_lock_transaction_out_point_as_used(out_point_buffer.to_owned()))
     }
 
     async fn fetch_sml_store<T>(&self) -> anyhow::Result<T>
@@ -300,10 +339,14 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_identity(
         &self,
-        _identity: &Identity,
-        _execution_context: &StateTransitionExecutionContext,
+        identity: &Identity,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .create_identity(identity.clone().into(), execution_context.clone().into()))
     }
 
     async fn update_identity(

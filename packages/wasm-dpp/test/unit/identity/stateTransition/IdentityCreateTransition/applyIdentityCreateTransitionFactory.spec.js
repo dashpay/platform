@@ -1,9 +1,3 @@
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-
-const applyIdentityCreateTransitionFactory = require(
-  '@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/applyIdentityCreateTransitionFactory',
-);
-
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsConverter');
@@ -11,21 +5,36 @@ const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsCo
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
   let applyIdentityCreateTransition;
   let stateRepositoryMock;
-  let fetchAssetLockTransactionOutputMock;
   let output;
   let executionContext;
+
+  let StateTransitionExecutionContext;
+  let IdentityCreateTransition;
+  let Identity;
+
+  let applyIdentityCreateTransitionDPP;
+
+  before(async () => {
+    ({
+      StateTransitionExecutionContext,
+      IdentityCreateTransition,
+      applyIdentityCreateTransition: applyIdentityCreateTransitionDPP,
+      Identity,
+    } = await loadWasmDpp());
+  });
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    stateTransition = getIdentityCreateTransitionFixture();
+    const stateTransitionJS = getIdentityCreateTransitionFixture();
+    stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -33,19 +42,13 @@ describe('applyIdentityCreateTransitionFactory', () => {
 
     output = stateTransition.getAssetLockProof().getOutput();
 
-    fetchAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
-
-    applyIdentityCreateTransition = applyIdentityCreateTransitionFactory(
+    applyIdentityCreateTransition = (st) => applyIdentityCreateTransitionDPP(
       stateRepositoryMock,
-      fetchAssetLockTransactionOutputMock,
+      st,
     );
   });
 
   it('should store identity created from state transition', async () => {
-    executionContext.addOperation(
-      new ReadOperation(1),
-    );
-
     await applyIdentityCreateTransition(stateTransition);
 
     const balance = convertSatoshiToCredits(
@@ -60,31 +63,25 @@ describe('applyIdentityCreateTransitionFactory', () => {
       revision: 0,
     });
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(
-      identity,
-      executionContext,
-    );
+    const { args: createIdentityArgs } = stateRepositoryMock.createIdentity.firstCall;
+
+    expect(createIdentityArgs[0].toObject()).to.deep.equal(identity.toObject());
+    expect(createIdentityArgs[1]).to.be.instanceOf(StateTransitionExecutionContext);
 
     const publicKeyHashes = identity
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
-      executionContext,
-    );
+    const { args: storePublicKeyHashesArgs } = stateRepositoryMock
+      .storeIdentityPublicKeyHashes.firstCall;
+    expect(storePublicKeyHashesArgs[0].toBuffer()).to.deep.equal(identity.getId().toBuffer());
+    expect(storePublicKeyHashesArgs[1]).to.deep.equal(publicKeyHashes);
+    expect(storePublicKeyHashesArgs[2]).to.be.instanceOf(StateTransitionExecutionContext);
 
-    expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
-      .calledOnceWithExactly(
-        stateTransition.getAssetLockProof().getOutPoint(),
-        executionContext,
-      );
+    const { args: markAsUsedArgs } = stateRepositoryMock
+      .markAssetLockTransactionOutPointAsUsed.firstCall;
 
-    expect(fetchAssetLockTransactionOutputMock)
-      .to.be.calledOnceWithExactly(
-        stateTransition.getAssetLockProof(),
-        executionContext,
-      );
+    expect(markAsUsedArgs[0]).to
+      .deep.equal(stateTransition.getAssetLockProof().getOutPoint());
   });
 });

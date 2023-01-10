@@ -34,6 +34,12 @@ impl From<IdentityWasm> for Identity {
     }
 }
 
+impl From<Identity> for IdentityWasm {
+    fn from(identity: Identity) -> Self {
+        Self(identity)
+    }
+}
+
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
