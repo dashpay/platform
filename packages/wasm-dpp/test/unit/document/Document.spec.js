@@ -26,20 +26,18 @@ describe('Document', () => {
   let rawDocumentJs;
   let rawDocumentWithBuffers;
 
-  beforeEach(async () => {
+  // eslint-disable-next-line prefer-arrow-callback
+  beforeEach(async function beforeEach() {
     ({
       Identifier, Document, DataContractFactory, DataContractValidator,
     } = await loadWasmDpp());
-  });
 
-  beforeEach(function beforeEach() {
     const now = new Date().getTime();
-    const jsId = generateRandomIdentifier();
-    const id = new Identifier(jsId.toBuffer());
+    const id = await generateRandomIdentifierAsync();
+    const jsId = new JsIdentifier(Buffer.from(id.toBuffer()));
 
-    const jsOwnerId = new generateRandomIdentifier();
-    const ownerId = new Identifier(jsOwnerId.toBuffer());
-
+    const ownerId = await generateRandomIdentifierAsync();
+    const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
     const jsDataContractFactory = new JsDataContractFactory(createDPPMock(), () => { });
     const dataContractValidator = new DataContractValidator();
     const dataContractFactory = new DataContractFactory(1, dataContractValidator);
