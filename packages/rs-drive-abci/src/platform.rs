@@ -37,6 +37,7 @@ use drive::drive::Drive;
 use std::cell::RefCell;
 use std::path::Path;
 use serde_json::ser::State;
+use drive::drive::block_info::BlockInfo;
 use crate::config::PlatformConfig;
 use crate::state::PlatformState;
 
@@ -57,7 +58,9 @@ impl Platform {
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
-        let state = PlatformState{};
+        let state = PlatformState{
+            last_block_info: None,
+        };
         Ok(Platform {
             drive,
             state,

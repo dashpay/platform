@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use chrono::{Duration, Utc};
 use drive::common::helpers::identities::create_test_masternode_identities;
 use drive::dpp::identity::{Identity, KeyID};
-use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::batch::{DriveOperationType, GroveDbOpBatch, IdentityOperationType, SystemOperationType};
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::grovedb::{Transaction, TransactionArg};
@@ -49,15 +49,18 @@ use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
 use rust_decimal::prelude::ToPrimitive;
 use std::ops::{Div, Range};
-use rand::Rng;
+use base64::Config;
+use rand::{Rng, SeedableRng};
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::identifier::Identifier;
+use drive::dpp::identity;
 use drive::drive::{block_info, Drive};
 use drive::drive::flags::StorageFlags;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use drive::fee::result::FeeResult;
+use drive_abci::execution::engine::ExecutionEvent;
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -106,22 +109,96 @@ impl Strategy {
             drive.apply_contract(&op.contract, serialize, BlockInfo::default(), true, Some(&SingleEpoch(0)), None).expect("expected to be able to add contract");
         }
     }
+    fn identity_operations_for_block(&self, rng: &mut StdRng) -> Vec<(Identity, Vec<DriveOperationType>)> {
+        let frequency = &self.identities_inserts;
+        if frequency.check_hit(rng) {
+            let count = frequency.events(rng);
+            create_identities_operations(count, 5, rng)
+        } else {
+            vec![]
+        }
+    }
+
+    fn document_operations_for_block(
+        &mut self,
+        cuurent_identities: &Vec<Identity>,
+        rng: &mut StdRng,
+    ) {
+        for (op, frequency) in &self.operations {
+            if frequency.check_hit(rng) {
+                let count = rng.gen_range(frequency.times_per_block_range.clone());
+                let documents = op.document_type.random_documents(count as u32, None);
+                for document in &documents {
+                    let i = rng.gen();
+                    let identity = self.current_identities.values().get(i);
+                    let serialization = document
+                        .serialize(&op.document_type)
+                        .expect("expected to serialize document");
+
+                    let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id));
+
+                    let estimated_document_fee_result = drive
+                        .add_document_for_contract(
+                            DocumentAndContractInfo {
+                                owned_document_info: OwnedDocumentInfo {
+                                    document_info: DocumentRefAndSerialization((
+                                        document,
+                                        serialization.as_slice(),
+                                        storage_flags.as_ref(),
+                                    )),
+                                    owner_id: None
+                                },
+                                contract: &op.contract,
+                                document_type: &op.document_type,
+                            },
+                            false,
+                            block_info.clone(),
+                            false,
+                            Some(transaction),
+                        )
+                        .expect("expected to add document");
+
+                    // does the identity have enough balance?
+
+                    let balance = drive.fetch_identity_balance(identity.id, true, Some(transaction)).expect("expected to fetch identity balance").expect("expected to get balance");
+
+                    if balance >= estimated_document_fee_result.total_fee() {
+                        // then do the real operation
+                        let fee_result = drive
+                            .add_document_for_contract(
+                                DocumentAndContractInfo {
+                                    owned_document_info: OwnedDocumentInfo {
+                                        document_info: DocumentRefAndSerialization((
+                                            document,
+                                            serialization.as_slice(),
+                                            storage_flags.as_ref(),
+                                        )),
+                                        owner_id: None
+                                    },
+                                    contract: &op.contract,
+                                    document_type: &op.document_type,
+                                },
+                                false,
+                                block_info.clone(),
+                                false,
+                                Some(transaction),
+                            )
+                            .expect("expected to add document");
+
+                        drive.remove_from_identity_balance(identity.id, fee_result.required_removed_balance(), fee_result.desired_removed_balance(), block_info, true, Some(transaction)).expect("expected to pay for operation");
+                    }
+                }
+            }
+        }
+
+    fn state_transitions_for_block_with_new_identities(&self, rng: &mut StdRng) -> (Vec<ExecutionEvent>, Vec<Identity>) {
+        let (identities, operations) : (Vec<Identity>, Vec<Vec<DriveOperationType>>) = self.identity_operations_for_block(rng).into_iter().unzip();
+        let execution_events = operations.into_iter().map(|operation| ExecutionEvent::new_identity_insertion(operation)).collect();
+        (execution_events, identities)
+    }
 }
 
 impl TestParams {
-    fn execute_block_identity_operations(
-        &mut self,
-        drive: &Drive,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        rng: &mut StdRng,
-    ) {
-        let frequency = &self.strategy.identities_inserts;
-        if frequency.check_hit(rng) {
-            let count = frequency.events(rng);
-            create_identities(drive, block_info, count, 5, Some(transaction),rng: &mut StdRng)
-        }
-    }
 
     fn execute_block_document_operations(
         &mut self,
@@ -210,176 +287,79 @@ impl TestParams {
     }
 }
 
-fn create_identities(
-    drive: &Drive,
-    block_info: &BlockInfo,
+fn create_identities_operations(
     count: u16,
     key_count: KeyID,
-    transaction: TransactionArg,
     rng: &mut StdRng,
-) -> Vec<Identity> {
+) -> Vec<(Identity, Vec<DriveOperationType>)> {
     let identities = Identity::random_identities_with_rng(count, key_count, rng);
-    for identity in identities.clone() {
-        let balance = identity.balance;
-        drive
-            .add_new_identity(identity, block_info, true, transaction)
-            .expect("expected to add an identity");
-        drive.add_to_system_credits(balance, transaction).expect("added to system credits")
+    identities.into_iter().map(|identity| {
+        let insert_op = DriveOperationType::IdentityOperation(IdentityOperationType::AddNewIdentity { identity: identity.clone() });
+        let system_credits_op = DriveOperationType::SystemOperation(SystemOperationType::AddToSystemCredits { amount: identity.balance});
+        let ops = vec![insert_op,system_credits_op];
+        (identity.clone(), ops)
+    }).collect()
+}
+
+
+// fn run_chain(platform: &Platform, days: u32, blocks_per_day: u32, block_interval_s: u32,
+//              mut test_params: TestParams, rng: &mut StdRng) {
+//
+//     let mut quorum_members = test_params.quorum_members.clone();
+//     let genesis_time = Utc::now();
+//     let mut block_height = 0;
+//     // process blocks
+//     for day in 0..days {
+//         for block_num in 0..blocks_per_day {
+//             let block_time = if day == 0 && block_num == 0 {
+//                 genesis_time
+//             } else {
+//                 genesis_time
+//                     + Duration::days(day as i64)
+//                     + Duration::seconds(block_interval_s as i64 * block_num as i64)
+//             };
+//             let block_info = BlockInfo {
+//                 time_ms: block_time.timestamp_millis() as u64,
+//                 height: block_height,
+//                 epoch: Default::default(),
+//             };
+//
+//             let proposer = quorum_members.remove(0).unwrap();
+//             run_block(platform, proposer, &block_info, &mut test_params, rng);
+//             quorum_members.push_back(proposer);
+//             block_height += 1;
+//         }
+//     }
+// }
+
+
+fn run_chain_for_strategy(block_count: u64, block_spacing_ms: u64,  strategy: Strategy, config: PlatformConfig, seed: u64) {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut platform = setup_platform_raw(Some(config));
+    let mut current_time_ms = 0;
+    for block_height in 0..block_count {
+        let block_info = BlockInfo {
+            time_ms: current_time_ms,
+            height: block_height,
+            epoch: Default::default(),
+        };
+        let state_transitions = strategy.get_state_transitions(&mut rng);
+
+        platform.execute_block(proposer, &block_info, state_transitions).expect("expected to execute a block");
+        current_time_ms += block_spacing_ms;
     }
-    identities
+
 }
 
-fn run_block(platform: &Platform, proposer: [u8;32], block_info: &BlockInfo, test_params: &mut TestParams, rng: &mut StdRng) {
-
-    let transaction = platform.drive.grove.start_transaction();
-    // Processing block
-    let block_begin_request = BlockBeginRequest {
-        block_height: block_info.height,
-        block_time_ms: block_info.time_ms,
-        previous_block_time_ms,
-        proposer_pro_tx_hash: proposers[block_height as usize % (proposers_count as usize)],
-        validator_set_quorum_hash: Default::default(),
-    };
-
-    let block_begin_response = platform
-        .block_begin(block_begin_request, Some(&transaction))
-        .unwrap_or_else(|_| {
-            panic!(
-                "should begin process block #{} for day #{}",
-                block_height, day
-            )
-        });
-
-    test_params.execute_block(&platform.drive, block_info, &transaction, rng);
-
-    let block_end_request = BlockEndRequest {
-        fees: BlockFees {
-            storage_fee: storage_fees_per_block,
-            processing_fee: 1600,
-            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
-        },
-    };
-
-    let block_end_response = platform
-        .block_end(block_end_request, Some(&transaction))
-        .expect(
-            format!(
-                "should end process block #{} for day #{}",
-                block_height, day
-            )
-                .as_str(),
-        );
-
-    let after_finalize_block_request = AfterFinalizeBlockRequest {
-        updated_data_contract_ids: Vec::new(),
-    };
-
-    platform
-        .after_finalize_block(after_finalize_block_request)
-        .unwrap_or_else(|_| {
-            panic!(
-                "should begin process block #{} for day #{}",
-                block_height, day
-            )
-        });
-}
-
-fn run_chain(platform: &Platform, days: u32, blocks_per_day: u32, block_interval_s: u32,
-             mut test_params: TestParams, rng: &mut StdRng) {
-
-    let mut quorum_members = test_params.quorum_members.clone();
-    let genesis_time = Utc::now();
-    let mut block_height = 0;
-    // process blocks
-    for day in 0..days {
-        for block_num in 0..blocks_per_day {
-            let block_time = if day == 0 && block_num == 0 {
-                genesis_time
-            } else {
-                genesis_time
-                    + Duration::days(day as i64)
-                    + Duration::seconds(block_interval_s as i64 * block_num as i64)
-            };
-            let block_info = BlockInfo {
-                time_ms: block_time.timestamp_millis() as u64,
-                height: block_height,
-                epoch: Default::default(),
-            };
-
-            let proposer = quorum_members.remove(0).unwrap();
-            run_block(platform, proposer, &block_info, &mut test_params, rng);
-            quorum_members.push_back(proposer);
-            block_height += 1;
-        }
-    }
-}
-
-//todo redo
 #[test]
-fn play_chain() {
-    let platform = setup_platform_raw(Some(PlatformConfig {
+fn run_chain_nothing_happening() {
+    let strategy = Strategy {
+        operations: vec![],
+        identities_inserts: Frequency { times_per_block_range: Default::default(), chance_per_block: None },
+    };
+    let config = PlatformConfig {
         drive_config: Default::default(),
-        verify_sum_trees: false,
-    }));
-    let transaction = platform.drive.grove.start_transaction();
-
-    // init chain
-    let init_chain_request = InitChainRequest {};
-
-    platform
-        .init_chain(init_chain_request, Some(&transaction))
-        .expect("should init chain");
-
-    // Init withdrawal requests
-    let withdrawals = (0..16)
-        .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
-        .collect();
-
-    let mut batch = GroveDbOpBatch::new();
-
-    platform
-        .drive
-        .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
-
-    platform
-        .drive
-        .grove_apply_batch(batch, true, Some(&transaction))
-        .expect("to apply batch");
-
-    // setup the contract
-    let contract = platform.create_mn_shares_contract(Some(&transaction));
-
-    let genesis_time = Utc::now();
-
-    let total_days = 29;
-
-    let epoch_1_start_day = 18;
-
-    let blocks_per_day = 50i64;
-
-    let epoch_1_start_block = 13;
-
-    let proposers_count = 50u16;
-
-    let storage_fees_per_block = 42000;
-
-    // and create masternode identities
-    let proposers = create_test_masternode_identities(
-        &platform.drive,
-        proposers_count,
-        Some(51),
-        Some(&transaction),
-    );
-
-    create_test_masternode_share_identities_and_documents(
-        &platform.drive,
-        &contract,
-        &proposers,
-        Some(53),
-        Some(&transaction),
-    );
-
-    let block_interval = 86400i64.div(blocks_per_day);
-
-    let mut previous_block_time_ms: Option<u64> = None;
+        verify_sum_trees: true,
+    };
+    run_chain_for_strategy(10000, 3000, strategy, config, 15);
 }

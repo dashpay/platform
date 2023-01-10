@@ -41,7 +41,7 @@ use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 
 use crate::abci::messages::BlockFees;
-use crate::block::BlockInfo;
+use crate::block::BlockStateInfo;
 use crate::error::Error;
 use crate::execution::fee_pools::distribute_storage_pool::DistributionStorageFeeResult;
 use crate::execution::fee_pools::epoch::EpochInfo;
@@ -82,7 +82,7 @@ impl Platform {
     /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
     fn add_process_epoch_change_operations(
         &self,
-        block_info: &BlockInfo,
+        block_info: &BlockStateInfo,
         epoch_info: &EpochInfo,
         block_fees: &BlockFees,
         transaction: TransactionArg,
@@ -137,7 +137,7 @@ impl Platform {
     /// Returns `ProcessedBlockFeesResult`.
     pub fn process_block_fees(
         &self,
-        block_info: &BlockInfo,
+        block_info: &BlockStateInfo,
         epoch_info: &EpochInfo,
         block_fees: BlockFees,
         transaction: TransactionArg,
@@ -266,7 +266,7 @@ mod tests {
                 previous_block_time_ms: Option<u64>,
                 should_distribute: bool,
                 transaction: TransactionArg,
-            ) -> BlockInfo {
+            ) -> BlockStateInfo {
                 let current_epoch = Epoch::new(epoch_index);
 
                 // Add some storage fees to distribute next time
@@ -298,7 +298,7 @@ mod tests {
 
                 let block_time_ms = genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS;
 
-                let block_info = BlockInfo {
+                let block_info = BlockStateInfo {
                     block_height,
                     block_time_ms,
                     previous_block_time_ms,
@@ -457,13 +457,13 @@ mod tests {
                 previous_block_time_ms: Option<u64>,
                 proposer_pro_tx_hash: [u8; 32],
                 transaction: TransactionArg,
-            ) -> BlockInfo {
+            ) -> BlockStateInfo {
                 let current_epoch = Epoch::new(epoch_index);
 
                 let block_time_ms =
                     genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS + block_height;
 
-                let block_info = BlockInfo {
+                let block_info = BlockStateInfo {
                     block_height,
                     block_time_ms,
                     previous_block_time_ms,

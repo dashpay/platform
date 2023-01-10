@@ -36,7 +36,7 @@ use crate::abci::messages::{
     AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest, BlockBeginResponse,
     BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
 };
-use crate::block::{BlockExecutionContext, BlockInfo};
+use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use drive::grovedb::TransactionArg;
 
@@ -111,7 +111,7 @@ impl TenderdashAbci for Platform {
         };
 
         // Init block execution context
-        let block_info = BlockInfo::from_block_begin_request(&request);
+        let block_info = BlockStateInfo::from_block_begin_request(&request);
 
         let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
 

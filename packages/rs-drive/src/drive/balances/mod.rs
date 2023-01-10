@@ -31,9 +31,10 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
+use grovedb::batch::GroveDbOp;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::grove_operations::{DirectQueryType, QueryType};
-use crate::drive::system::misc_path;
+use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -41,6 +42,8 @@ use grovedb::operations::insert::InsertOptions;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 use integer_encoding::VarInt;
+use crate::fee::op::DriveOperation;
+use crate::fee::op::DriveOperation::GroveOperation;
 
 /// Storage fee pool key
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
@@ -101,6 +104,23 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let mut drive_operations = vec![];
+        let batch_operations = self.add_to_system_credits_operation(amount, transaction)?;
+        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        self.grove_apply_batch_with_add_costs(
+            grove_db_operations,
+            false,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// The operations to add to system credits
+    pub(crate) fn add_to_system_credits_operation(
+        &self,
+        amount: u64,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
@@ -118,18 +138,10 @@ impl Drive {
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "trying to add an amount that would overflow credits",
             )))?;
-        self.grove_insert(
-            path_holding_total_credits,
-            TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
-            Item(new_total.encode_var_vec(), None),
-            transaction,
-            Some(InsertOptions {
-                validate_insertion_does_not_override: false,
-                validate_insertion_does_not_override_tree: false,
-                base_root_storage_is_free: true,
-            }),
-            &mut drive_operations,
-        )
+        let path_holding_total_credits_vec = misc_path_vec();
+        let replace_op = GroveDbOp::replace_op(path_holding_total_credits_vec, TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(), Item(new_total.encode_var_vec(), None));
+        drive_operations.push(GroveOperation(replace_op));
+        Ok(drive_operations)
     }
 
     /// We remove from system credits when:
@@ -139,6 +151,24 @@ impl Drive {
         amount: u64,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
+        let mut drive_operations = vec![];
+        let batch_operations = self.remove_from_system_credits_operations(amount, transaction)?;
+        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        self.grove_apply_batch_with_add_costs(
+            grove_db_operations,
+            false,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// We remove from system credits when:
+    /// - an identity withdraws some of their balance
+    pub fn remove_from_system_credits_operations(
+        &self,
+        amount: u64,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
@@ -157,18 +187,10 @@ impl Drive {
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "trying to remove an amount that would underflow credits",
             )))?;
-        self.grove_insert(
-            path_holding_total_credits,
-            TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
-            Item(new_total.encode_var_vec(), None),
-            transaction,
-            Some(InsertOptions {
-                validate_insertion_does_not_override: false,
-                validate_insertion_does_not_override_tree: false,
-                base_root_storage_is_free: true,
-            }),
-            &mut drive_operations,
-        )
+        let path_holding_total_credits_vec = misc_path_vec();
+        let replace_op = GroveDbOp::replace_op(path_holding_total_credits_vec, TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(), Item(new_total.encode_var_vec(), None));
+        drive_operations.push(GroveOperation(replace_op));
+        Ok(drive_operations)
     }
 
     /// Verify that the sum tree identity credits + pool credits are equal to the

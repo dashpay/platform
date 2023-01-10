@@ -30,6 +30,7 @@
 mod contract;
 mod document;
 mod identity;
+mod system;
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
@@ -55,6 +56,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 pub use identity::IdentityOperationType;
 use itertools::Itertools;
 use std::collections::HashMap;
+pub use system::SystemOperationType;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveOperationConverter {
@@ -78,6 +80,8 @@ pub enum DriveOperationType<'a> {
     DocumentOperation(DocumentOperationType<'a>),
     /// An identity operation
     IdentityOperation(IdentityOperationType),
+    /// A system operation
+    SystemOperation(SystemOperationType)
 }
 
 impl DriveOperationConverter for DriveOperationType<'_> {
@@ -109,6 +113,14 @@ impl DriveOperationConverter for DriveOperationType<'_> {
             }
             DriveOperationType::IdentityOperation(identity_operation_type) => {
                 identity_operation_type.to_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                )
+            }
+            DriveOperationType::SystemOperation(system_operation_type) => {
+                system_operation_type.to_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,

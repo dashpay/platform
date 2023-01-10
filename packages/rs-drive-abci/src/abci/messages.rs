@@ -39,6 +39,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
 use drive::fee::epoch::CreditsPerEpoch;
 use serde::{Deserialize, Serialize};
+use drive::fee::result::FeeResult;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -104,6 +105,14 @@ impl BlockFees {
             storage_fee,
             processing_fee,
             ..Default::default()
+        }
+    }
+    /// Get block fees from fee results
+    pub fn from_fee_result(fee_result: FeeResult) -> Self {
+        Self {
+            storage_fee: fee_result.storage_fee,
+            processing_fee: fee_result.processing_fee,
+            fee_refunds: fee_result.fee_refunds.sum_per_epoch()
         }
     }
 }
