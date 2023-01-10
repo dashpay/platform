@@ -48,10 +48,10 @@ pub(crate) struct DataContractParameters {
         rename = "$defs"
     )]
     defs: serde_json::Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    protocol_version: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    version: Option<u32>,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
+    protocol_version: serde_json::Value,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
+    version: serde_json::Value,
 }
 
 #[wasm_bindgen(js_class=DataContract)]

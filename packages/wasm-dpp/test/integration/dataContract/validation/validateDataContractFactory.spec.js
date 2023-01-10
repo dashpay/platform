@@ -71,41 +71,32 @@ describe('validateDataContractFactory', () => {
       expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
-    // it('should be an integer', async () => {
-    //   rawDataContract.protocolVersion = '1';
+    it('should be an integer', async () => {
+      const rawDataContract = dataContract.toObject();
 
-    //   const result = await validateDataContract(rawDataContract);
+      rawDataContract.protocolVersion = '1';
 
-    //   expectJsonSchemaError(result);
+      const result = await validateDataContract(rawDataContract);
 
-    //   const [error] = result.getErrors();
+      expectJsonSchemaError(result);
 
-    //   expect(error.getInstancePath()).to.equal('/protocolVersion');
-    //   expect(error.getKeyword()).to.equal('type');
-    // });
+      const [error] = result.getErrors();
 
-    // it('should be valid', async () => {
-    //   rawDataContract.protocolVersion = -1;
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-    //   const protocolVersionError = new SomeConsensusError('test');
-    //   const protocolVersionResult = new ValidationResult([
-    //     protocolVersionError,
-    //   ]);
+    it('should be valid', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.protocolVersion = -1;
 
-    //   validateProtocolVersionMock.returns(protocolVersionResult);
-
-    //   const result = await validateDataContract(rawDataContract);
-
-    //   expectValidationError(result, SomeConsensusError);
-
-    //   const [error] = result.getErrors();
-
-    //   expect(error).to.equal(protocolVersionError);
-
-    //   expect(validateProtocolVersionMock).to.be.calledOnceWith(
-    //     rawDataContract.protocolVersion,
-    //   );
-    // });
+      try {
+        const result = await validateDataContract(rawDataContract);
+        expect.fail("Should throw an error");
+      } catch (e) {
+        expect(e.message).to.have.string('protocolVersion isn\'t unsigned integer');
+      }
+    });
   });
 
   // describe('$schema', () => {
