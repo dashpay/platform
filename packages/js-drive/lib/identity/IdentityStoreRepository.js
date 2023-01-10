@@ -159,7 +159,9 @@ class IdentityStoreRepository {
       query: {
         query: {
           items,
-          subqueryKey: IdentityStoreRepository.IDENTITY_KEY,
+          subqueryPath: [
+            IdentityStoreRepository.IDENTITY_KEY,
+          ],
         },
       },
     }, options);

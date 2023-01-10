@@ -34,12 +34,10 @@ fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
 
 #[cfg(test)]
 mod test {
-    use serde_json::Value;
-
+    use crate::document::document_transition::DocumentTransitionObjectLike;
     use crate::{
         document::document_transition::{
             DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-            DocumentTransition, DocumentTransitionObjectLike,
         },
         tests::utils::generate_random_identifier_struct,
     };
@@ -62,17 +60,19 @@ mod test {
         dt_delete.base.id = generate_random_identifier_struct();
         dt_delete.base.document_type = String::from("c");
 
-        let input: Vec<Value> = [
-            DocumentTransition::Create(dt_create),
-            DocumentTransition::Create(dt_create_duplicate),
-            DocumentTransition::Replace(dt_replace),
-            DocumentTransition::Delete(dt_delete),
-        ]
-        .iter()
-        .map(|t| t.to_object().unwrap())
-        .collect();
+        let create_json = dt_create.to_json().unwrap();
+        let dt_create_duplicate_json = dt_create_duplicate.to_json().unwrap();
+        let dt_replace_json = dt_replace.to_json().unwrap();
+        let dt_delete_json = dt_delete.to_json().unwrap();
 
-        let duplicates = find_duplicates_by_id(&input).unwrap();
+        let input = vec![
+            create_json,
+            dt_create_duplicate_json,
+            dt_replace_json,
+            dt_delete_json,
+        ];
+
+        let duplicates = find_duplicates_by_id(input.iter()).unwrap();
         assert_eq!(duplicates.len(), 1);
     }
 }

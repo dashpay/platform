@@ -127,6 +127,25 @@ function configureCoreTaskFactory(
               }),
             },
             {
+              title: 'Create wallet',
+              task: async () => {
+                const disablePrivateKeys = false;
+                const createBlankWallet = false;
+                const walletPassphrase = '';
+                const avoidReuse = false;
+                const loadOnStartup = true;
+
+                await ctx.coreService.getRpcClient().createWallet(
+                  'main',
+                  disablePrivateKeys,
+                  createBlankWallet,
+                  walletPassphrase,
+                  avoidReuse,
+                  loadOnStartup,
+                );
+              },
+            },
+            {
               title: 'Generating funds to use as a collateral for masternodes',
               task: () => {
                 const amount = MASTERNODE_DASH_AMOUNT * configGroup.length;

@@ -1,4 +1,5 @@
-const axios = require('axios');
+const fetch = require('node-fetch');
+
 const qs = require('qs');
 
 /**
@@ -10,26 +11,29 @@ const qs = require('qs');
  * @return {Promise<Object>}
  */
 async function verifyDomain(id, apiKey) {
-  const data = qs.stringify({
+  const body = qs.stringify({
     validation_method: 'HTTP_CSR_HASH',
   });
 
-  const request = {
-    method: 'post',
-    url: `https://api.zerossl.com/certificates/${id}/challenges?access_key=${apiKey}`,
+  const url = `https://api.zerossl.com/certificates/${id}/challenges?access_key=${apiKey}`;
+
+  const requestOptions = {
+    method: 'POST',
+    body,
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    data,
   };
 
-  const response = await axios(request);
+  const response = await fetch(url, requestOptions);
 
-  if (response.data.error) {
-    throw new Error(response.data.error.type);
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error.type);
   }
 
-  return response.data;
+  return data;
 }
 
 module.exports = verifyDomain;
