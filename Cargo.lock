@@ -483,7 +483,7 @@ dependencies = [
 [[package]]
 name = "ciborium"
 version = "0.2.0"
-source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#7cd5b47eed68fe42ad2e94a8546a1a98f7cfc9a7"
+source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
 dependencies = [
  "ciborium-io",
  "ciborium-ll",
@@ -493,12 +493,12 @@ dependencies = [
 [[package]]
 name = "ciborium-io"
 version = "0.2.0"
-source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#7cd5b47eed68fe42ad2e94a8546a1a98f7cfc9a7"
+source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
 
 [[package]]
 name = "ciborium-ll"
 version = "0.2.0"
-source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#7cd5b47eed68fe42ad2e94a8546a1a98f7cfc9a7"
+source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
 dependencies = [
  "ciborium-io",
  "half",
