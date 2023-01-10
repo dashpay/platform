@@ -2252,8 +2252,9 @@ impl PlatformWrapper {
     fn js_enqueue_withdrawal_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_index = cx.argument::<JsNumber>(0)?;
         let js_core_transaction = cx.argument::<JsBuffer>(1)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
-        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
         let db = cx
             .this()
@@ -2262,6 +2263,7 @@ impl PlatformWrapper {
         let index = js_index.value(&mut cx);
         let transaction_bytes = converter::js_buffer_to_vec_u8(js_core_transaction, &mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
+        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2274,37 +2276,16 @@ impl PlatformWrapper {
                 Ok(None)
             };
 
-            let block_info = drive::drive::block_info::BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            };
-
-            let mut drive_operations = vec![];
-
-            let index_bytes = (index as u64).to_be_bytes().to_vec();
-
-            let withdrawals = vec![(index_bytes, transaction_bytes)];
-
             let execution_function = |transaction: TransactionArg| -> Result<(), String> {
                 platform
                     .drive
-                    .add_enqueue_withdrawal_transaction_operations(
-                        &withdrawals,
-                        &mut drive_operations,
-                    );
-
-                platform
-                    .drive
-                    .add_update_withdrawal_index_counter_operation(
+                    .enqueue_withdrawal_transaction(
                         index as u64,
-                        &mut drive_operations,
-                    );
-
-                platform
-                    .drive
-                    .apply_drive_operations(drive_operations, true, &block_info, transaction)
-                    .map_err(|err| err.to_string())?;
+                        transaction_bytes,
+                        &block_info,
+                        transaction,
+                    )
+                    .map_err(|e| e.to_string())?;
 
                 Ok(())
             };

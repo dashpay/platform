@@ -8,6 +8,7 @@ use grovedb::{
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
+        block_info::BlockInfo,
         grove_operations::BatchDeleteApplyType,
         Drive,
     },
@@ -106,6 +107,29 @@ impl Drive {
         }
 
         Ok(withdrawals)
+    }
+
+    /// Enqueue single withdrawal transaction
+    pub fn enqueue_withdrawal_transaction(
+        &self,
+        index: u64,
+        transaction_bytes: Vec<u8>,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        let mut drive_operations = vec![];
+
+        let index_bytes = (index as u64).to_be_bytes().to_vec();
+
+        let withdrawals = vec![(index_bytes, transaction_bytes)];
+
+        self.add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
+
+        self.add_update_withdrawal_index_counter_operation(index, &mut drive_operations);
+
+        self.apply_drive_operations(drive_operations, true, &block_info, transaction)?;
+
+        Ok(())
     }
 }
 
