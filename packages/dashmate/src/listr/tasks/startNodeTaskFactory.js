@@ -79,10 +79,6 @@ function startNodeTaskFactory(
           if (await dockerCompose.isServiceRunning(config.toEnvs())) {
             const error = 'Running services detected. Please ensure all services are stopped for this config before starting'
 
-            if (flags.format === OUTPUT_FORMATS.JSON) {
-              return printObject({error}, flags.format);
-            }
-
             // eslint-disable-next-line no-console
             console.log(error);
             this.exit();
