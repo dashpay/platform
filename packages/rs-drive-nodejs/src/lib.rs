@@ -3,12 +3,12 @@ mod fee;
 
 use drive_abci::config::{CoreConfig, CoreRpcConfig, PlatformConfig};
 use std::num::ParseIntError;
-use std::ops::Deref;
+
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::fee::result::FeeResultWrapper;
 use drive::dpp::identity::Identity;
-use drive::drive::batch::GroveDbOpBatch;
+
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::error::Error;

@@ -1249,7 +1249,7 @@ impl<'a> DriveQuery<'a> {
 
         let proof =
             drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
-        let (root_hash, mut key_value_elements) =
+        let (root_hash, key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
         let mut values = vec![];
