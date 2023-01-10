@@ -4,8 +4,7 @@ const path = require('path');
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
-const { NETWORK_LOCAL, OUTPUT_FORMATS} = require('../../constants');
-const printObject = require("../../printers/printObject");
+const { NETWORK_LOCAL } = require('../../constants');
 
 /**
  *
@@ -22,7 +21,6 @@ function startNodeTaskFactory(
   waitForMasternodesSync,
   createRpcClient,
   buildServicesTask,
-  flags,
 ) {
   /**
    * @typedef {startNodeTask}
