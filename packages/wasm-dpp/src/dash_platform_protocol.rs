@@ -36,8 +36,8 @@ impl DashPlatformProtocol {
         }
     }
 
-    #[wasm_bindgen(getter, js_name=dataContract)]
-    pub fn data_contract(&self) -> &DataContractFacadeWasm {
-        &self.data_contract
+    #[wasm_bindgen(getter = dataContract)]
+    pub fn data_contract(&self) -> DataContractFacadeWasm {
+        self.data_contract.clone()
     }
 }
