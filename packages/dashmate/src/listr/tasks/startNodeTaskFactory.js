@@ -4,7 +4,8 @@ const path = require('path');
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
-const { NETWORK_LOCAL } = require('../../constants');
+const { NETWORK_LOCAL, OUTPUT_FORMATS} = require('../../constants');
+const printObject = require("../../printers/printObject");
 
 /**
  *
@@ -21,6 +22,7 @@ function startNodeTaskFactory(
   waitForMasternodesSync,
   createRpcClient,
   buildServicesTask,
+  flags,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -30,7 +32,8 @@ function startNodeTaskFactory(
   function startNodeTask(config) {
     // check core is not reindexing
     if (config.get('core.reindex.enable', true)) {
-      throw new Error(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
+      console.log(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
+      this.exit()
     }
 
     // Check external IP is set
@@ -74,7 +77,15 @@ function startNodeTaskFactory(
         title: 'Check node is not started',
         task: async () => {
           if (await dockerCompose.isServiceRunning(config.toEnvs())) {
-            throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
+            const error = 'Running services detected. Please ensure all services are stopped for this config before starting'
+
+            if (flags.format === OUTPUT_FORMATS.JSON) {
+              return printObject({error}, flags.format);
+            }
+
+            // eslint-disable-next-line no-console
+            console.log(error);
+            this.exit();
           }
         },
       },
