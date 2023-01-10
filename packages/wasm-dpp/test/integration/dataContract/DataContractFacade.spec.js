@@ -1,6 +1,6 @@
-const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
-
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+// const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
+//
+// const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
 const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
@@ -10,14 +10,19 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
 
+let { default: loadWasmDpp, DashPlatformProtocol, DataContract } = require('../../..');
+
 describe('DataContractFacade', () => {
   let dpp;
   let dataContract;
   let dataContractFactory;
 
+  before(async () => {
+    ({ DashPlatformProtocol, DataContract } = await loadWasmDpp());
+  });
+
   beforeEach(async () => {
     dpp = new DashPlatformProtocol();
-    await dpp.initialize();
 
     dataContract = getDataContractFixture();
 
@@ -37,8 +42,8 @@ describe('DataContractFacade', () => {
 
       expect(result).to.be.an.instanceOf(DataContract);
 
-      expect(result.getOwnerId()).to.deep.equal(dataContract.getOwnerId());
-      expect(result.getDocuments()).to.equal(dataContract.getDocuments());
+      expect(result.getOwnerId().toBuffer()).to.deep.equal(dataContract.getOwnerId());
+      expect(result.getDocuments()).to.deep.equal(dataContract.getDocuments());
     });
   });
 
@@ -76,7 +81,7 @@ describe('DataContractFacade', () => {
 
   describe('validate', () => {
     it('should validate DataContract', async () => {
-      const result = await dpp.dataContract.validate(dataContract);
+      const result = await dpp.dataContract.validate(dataContract.toObject());
 
       expect(result).to.be.an.instanceOf(ValidationResult);
     });
