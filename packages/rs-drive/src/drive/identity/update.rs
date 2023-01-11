@@ -413,6 +413,7 @@ impl Drive {
         let batch_operations = self.add_new_keys_to_identity_operations(
             identity_id,
             keys_to_add,
+            true,
             &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
@@ -433,6 +434,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,
+        with_references: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -451,6 +453,7 @@ impl Drive {
             self.insert_new_unique_key_operations(
                 identity_id,
                 key,
+                with_references,
                 &StorageFlags::SingleEpoch(epoch.index),
                 estimated_costs_only_with_layer_info,
                 transaction,

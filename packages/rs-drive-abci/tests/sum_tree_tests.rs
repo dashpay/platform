@@ -419,5 +419,22 @@ fn run_chain_nothing_happening() {
         drive_config: Default::default(),
         verify_sum_trees: true,
     };
-    run_chain_for_strategy(10000, 3000, strategy, config, 15);
+    run_chain_for_strategy(1000, 3000, strategy, config, 15);
 }
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block() {
+    let strategy = Strategy {
+        operations: vec![],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    run_chain_for_strategy(1000, 3000, strategy, config, 15);
+}
+

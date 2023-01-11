@@ -2,17 +2,13 @@ use crate::drive::defaults::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
-use crate::drive::identity::{
-    identity_key_location_within_identity_vec, identity_key_path_vec, identity_key_tree_path,
-    identity_key_tree_path_vec, identity_path, identity_query_keys_full_tree_path,
-    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
-};
+use crate::drive::identity::IdentityRootStructure::{IdentityContractInfo, IdentityTreeKeyReferences, IdentityTreeKeys};
+use crate::drive::identity::{identity_contract_info_root_path_vec, identity_key_location_within_identity_vec, identity_key_path_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path, identity_path_vec, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path, identity_query_keys_tree_path};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
-use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
+use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo, PathKeyInfo};
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -28,6 +24,12 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
+use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
+use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
+
+pub enum ContractApplyInfo {
+    Keys(Vec<IdentityPublicKey>)
+}
 
 impl Drive {
     pub(crate) fn insert_key_to_storage_operations(
@@ -118,9 +120,9 @@ impl Drive {
                 );
 
                 let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                    BatchInsertTreeApplyType::StatefulBatchInsert
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree
                 } else {
-                    BatchInsertTreeApplyType::StatelessBatchInsert {
+                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
                         in_tree_using_sums: false,
                         is_sum_tree: false,
                         flags_len: SINGLE_EPOCH_FLAGS_SIZE,
@@ -164,6 +166,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
+        with_references: bool,
         storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -189,15 +192,18 @@ impl Drive {
             drive_operations,
         )?;
 
-        self.insert_key_searchable_references_operations(
-            identity_id,
-            &identity_key,
-            key_id_bytes.as_slice(),
-            storage_flags,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            drive_operations,
-        )
+        if with_references {
+            self.insert_key_searchable_references_operations(
+                identity_id,
+                &identity_key,
+                key_id_bytes.as_slice(),
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+            )?;
+        }
+        Ok(())
     }
 
     pub(crate) fn create_key_tree_with_keys_operations(
@@ -237,6 +243,7 @@ impl Drive {
             self.insert_new_unique_key_operations(
                 identity_id,
                 key,
+                true,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,

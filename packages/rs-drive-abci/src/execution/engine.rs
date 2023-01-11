@@ -9,6 +9,7 @@ use drive::dpp::identity::Identity;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::drive::DriveError;
+use drive::error::Error::GroveDB;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
@@ -151,6 +152,8 @@ impl Platform {
                 .as_str(),
             );
 
+        self.drive.grove.commit_transaction(transaction).unwrap().map_err(|e|Error::Drive(GroveDB(e)))?;
+
         let after_finalize_block_request = AfterFinalizeBlockRequest {
             updated_data_contract_ids: Vec::new(),
         };
@@ -164,6 +167,7 @@ impl Platform {
             });
 
         self.state.last_block_info = Some(block_info.clone());
+
         Ok(())
     }
 }

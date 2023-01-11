@@ -124,6 +124,7 @@ impl DriveOperationConverter for IdentityOperationType {
             } => drive.add_new_keys_to_identity_operations(
                 identity_id,
                 keys_to_add,
+                true,
                 &block_info.epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

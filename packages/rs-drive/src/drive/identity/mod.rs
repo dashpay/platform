@@ -46,6 +46,7 @@ mod insert;
 mod key;
 mod update;
 mod withdrawal_queue;
+mod contract_info;
 
 pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 
@@ -59,6 +60,31 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         Into::<&[u8; 1]>::into(RootTree::Identities).to_vec(),
         identity_id.to_vec(),
+    ]
+}
+
+pub(crate) fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id, Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo)]
+}
+
+pub(crate) fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+    ]
+}
+
+pub(crate) fn identity_contract_info_path<'a>(identity_id: &'a [u8], contract_id: &'a [u8]) -> [&'a [u8]; 4] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id, Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo), contract_id]
+}
+
+pub(crate) fn identity_contract_info_path_vec(identity_id: &[u8], contract_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+        contract_id.to_vec(),
     ]
 }
 
@@ -148,6 +174,8 @@ pub enum IdentityRootStructure {
     IdentityTreeKeyReferences = 2,
     /// Owed processing fees
     IdentityTreeNegativeCredit = 3,
+    /// Identity contract information
+    IdentityContractInfo = 4,
 }
 
 impl IdentityRootStructure {
@@ -175,6 +203,7 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
             IdentityRootStructure::IdentityTreeKeys => &[1],
             IdentityRootStructure::IdentityTreeKeyReferences => &[2],
             IdentityRootStructure::IdentityTreeNegativeCredit => &[3],
+            IdentityRootStructure::IdentityContractInfo => &[4],
         }
     }
 }

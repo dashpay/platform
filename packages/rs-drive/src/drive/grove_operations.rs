@@ -120,18 +120,18 @@ pub enum BatchDeleteUpTreeApplyType {
 
 #[derive(Clone, Copy)]
 pub enum BatchInsertTreeApplyType {
-    StatelessBatchInsert {
+    StatelessBatchInsertTree {
         in_tree_using_sums: bool,
         is_sum_tree: bool,
         flags_len: FlagsLen,
     },
-    StatefulBatchInsert,
+    StatefulBatchInsertTree,
 }
 
 impl BatchInsertTreeApplyType {
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums,
                 is_sum_tree,
                 flags_len,
@@ -139,7 +139,7 @@ impl BatchInsertTreeApplyType {
                 in_tree_using_sums: *in_tree_using_sums,
                 query_target: QueryTarget::QueryTargetTree(*flags_len, *is_sum_tree),
             },
-            BatchInsertTreeApplyType::StatefulBatchInsert => DirectQueryType::StatefulDirectQuery,
+            BatchInsertTreeApplyType::StatefulBatchInsertTree => DirectQueryType::StatefulDirectQuery,
         }
     }
 }

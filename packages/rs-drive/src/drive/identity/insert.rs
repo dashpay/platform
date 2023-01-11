@@ -107,9 +107,9 @@ impl Drive {
         } = identity;
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsert
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
                 flags_len: storage_flags.serialized_size(),

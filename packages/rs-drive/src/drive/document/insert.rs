@@ -158,9 +158,9 @@ impl Drive {
                 )
             };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                BatchInsertTreeApplyType::StatefulBatchInsert
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
-                BatchInsertTreeApplyType::StatelessBatchInsert {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
                     in_tree_using_sums: false,
                     is_sum_tree: false,
                     flags_len: storage_flags
@@ -626,9 +626,9 @@ impl Drive {
             let path_key_info = key_path_info.add_path_info(index_path_info.clone());
 
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                BatchInsertTreeApplyType::StatefulBatchInsert
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
-                BatchInsertTreeApplyType::StatelessBatchInsert {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
                     in_tree_using_sums: false,
                     is_sum_tree: false,
                     flags_len: storage_flags
@@ -822,9 +822,9 @@ impl Drive {
         }
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsert
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
                 flags_len: storage_flags
@@ -986,9 +986,9 @@ impl Drive {
         }
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsert
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
                 flags_len: storage_flags
