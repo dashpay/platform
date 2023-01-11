@@ -37,7 +37,10 @@ function wrapInErrorHandlerFactory(logger, isProductionEnvironment) {
         if (abciError instanceof InternalAbciError) {
           const originalError = abciError.getError();
 
-          (originalError.contextLogger || logger).error(
+          const preferredLogger = originalError.contextLogger || logger;
+          delete originalError.contextLogger;
+
+          preferredLogger.error(
             { err: originalError },
             originalError.message,
           );

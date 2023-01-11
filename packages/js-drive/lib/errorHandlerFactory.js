@@ -36,8 +36,11 @@ function errorHandlerFactory(logger, container, closeAbciServer) {
         // eslint-disable-next-line no-console
         console.log(printErrorFace());
 
+        const preferredLogger = error.contextLogger || logger;
+
         errors.forEach((e) => {
-          (error.contextLogger || logger).fatal({ err: e }, e.message);
+          delete e.contextLogger;
+          preferredLogger.fatal({ err: e }, e.message);
         });
       } finally {
         await container.dispose();
