@@ -38,11 +38,9 @@ pub enum IdentityOperationType {
     RemoveFromIdentityBalance {
         /// The identity id of the identity
         identity_id: [u8; 32],
-        /// The required removed balance, this is generally for storage
-        /// It can also be for credit transfer
-        required_removed_balance: u64,
-        /// The total desired removed balance, this includes processing fees
-        total_desired_removed_balance: u64,
+        /// The balance that will be removed from the identity
+        /// This needs to be verified in advance
+        balance_to_remove: u64,
     },
     /// Adds an array of keys to the identity
     AddNewKeysToIdentity {
@@ -109,12 +107,10 @@ impl DriveOperationConverter for IdentityOperationType {
             ),
             IdentityOperationType::RemoveFromIdentityBalance {
                 identity_id,
-                required_removed_balance,
-                total_desired_removed_balance,
+                balance_to_remove,
             } => drive.remove_from_identity_balance_operations(
                 identity_id,
-                required_removed_balance,
-                total_desired_removed_balance,
+                balance_to_remove,
                 estimated_costs_only_with_layer_info,
                 transaction,
             ),

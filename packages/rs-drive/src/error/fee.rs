@@ -6,6 +6,10 @@ pub enum FeeError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    /// The user does not have enough balance
+    #[error("insufficient balance error: {0}")]
+    InsufficientBalance(&'static str),
+
     /// Corrupted estimated layer info missing error
     #[error("corrupted estimated layer info missing error: {0}")]
     CorruptedEstimatedLayerInfoMissing(String),

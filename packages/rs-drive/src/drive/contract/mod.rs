@@ -48,6 +48,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use serde::Serialize;
 
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
@@ -922,7 +923,7 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
-        let batch_operations = self.apply_contract_operations(
+        let batch_operations = self.apply_contract_with_serialization_operations(
             contract,
             contract_serialization,
             &block_info,
@@ -946,6 +947,31 @@ impl Drive {
     /// If the contract already exists, we get operations for an update
     /// Otherwise we get operations for an insert
     pub(crate) fn apply_contract_operations(
+        &self,
+        contract: &Contract,
+        block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        //todo: change this from cbor
+        let serialized_contract = contract.to_cbor().map_err(Error::Protocol)?;
+        self.apply_contract_with_serialization_operations(
+            contract,
+            serialized_contract,
+            block_info,
+            estimated_costs_only_with_layer_info,
+            storage_flags,
+            transaction,
+        )
+    }
+
+    /// Gets the operations for applying a contract with it's serialization
+    /// If the contract already exists, we get operations for an update
+    /// Otherwise we get operations for an insert
+    pub(crate) fn apply_contract_with_serialization_operations(
         &self,
         contract: &Contract,
         contract_serialization: Vec<u8>,

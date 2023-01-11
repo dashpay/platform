@@ -42,6 +42,14 @@ impl<'a> ExecutionEvent<'a> {
         }
     }
     /// Creates a new identity Insertion Event
+    pub fn new_contract_operation(identity: Identity, operation: DriveOperationType<'a>) -> Self {
+        PaidDriveEvent {
+            identity,
+            verify_balance_with_dry_run: true,
+            operations: vec![operation],
+        }
+    }
+    /// Creates a new identity Insertion Event
     pub fn new_identity_insertion(operations: Vec<DriveOperationType<'a>>) -> Self {
         FreeDriveEvent { operations }
     }
@@ -73,7 +81,7 @@ impl Platform {
                                 Some(transaction),
                             )
                             .map_err(Error::Drive)?;
-                        if identity.balance < estimated_fee_result.total_fee() {
+                        if identity.balance < estimated_fee_result.total_base_fee() {
                             enough_balance = false
                         }
                     }
@@ -82,12 +90,16 @@ impl Platform {
                             .drive
                             .apply_drive_operations(operations, true, block_info, Some(transaction))
                             .map_err(Error::Drive)?;
-                        self.drive.remove_from_identity_balance(
+                        //todo: verify this is the right epoch
+                        let fee_change = individual_fee_result
+                            .to_fee_change(identity.id.to_buffer(), block_info.epoch.index)
+                            .map_err(Error::Drive)?;
+                        let outcome = self.drive.apply_balance_change_from_fee_to_identity(
                             identity.id.to_buffer(),
-                            individual_fee_result.required_removed_balance(),
-                            individual_fee_result.desired_removed_balance(),
+                            fee_change,
                             block_info,
                             true,
+                            false,
                             Some(transaction),
                         )?;
                         total_fees
@@ -152,7 +164,11 @@ impl Platform {
                 .as_str(),
             );
 
-        self.drive.grove.commit_transaction(transaction).unwrap().map_err(|e|Error::Drive(GroveDB(e)))?;
+        self.drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         let after_finalize_block_request = AfterFinalizeBlockRequest {
             updated_data_contract_ids: Vec::new(),

@@ -35,15 +35,18 @@ use chrono::{Duration, Utc};
 use drive::common::helpers::identities::{
     create_test_masternode_identities, create_test_masternode_identities_with_rng,
 };
+use drive::common::{json_document_to_cbor, setup_contract};
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
+use drive::dpp::data_contract::extra::DriveContractExt;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity;
 use drive::dpp::identity::{Identity, KeyID};
 use drive::drive::batch::{
-    DocumentOperationType, DriveOperationType, GroveDbOpBatch, IdentityOperationType,
-    SystemOperationType,
+    ContractOperationType, DocumentOperationType, DriveOperationType, GroveDbOpBatch,
+    IdentityOperationType, SystemOperationType,
 };
 use drive::drive::block_info::BlockInfo;
+use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::object_size_info::DocumentInfo::{
@@ -105,6 +108,7 @@ pub type ProTxHash = [u8; 32];
 
 #[derive(Clone, Debug)]
 struct Strategy {
+    contracts: Vec<Contract>,
     operations: Vec<(DocumentOp, Frequency)>,
     identities_inserts: Frequency,
 }
@@ -132,9 +136,9 @@ impl Strategy {
                 .expect("expected to be able to add contract");
         }
     }
-    fn identity_operations_for_block<'a, 'b>(
-        &'a self,
-        rng: &'b mut StdRng,
+    fn identity_operations_for_block(
+        &self,
+        rng: &mut StdRng,
     ) -> Vec<(Identity, Vec<DriveOperationType>)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
@@ -143,6 +147,18 @@ impl Strategy {
         } else {
             vec![]
         }
+    }
+
+    fn contract_operations(&self) -> Vec<DriveOperationType> {
+        self.contracts
+            .iter()
+            .map(|contract| {
+                DriveOperationType::ContractOperation(ContractOperationType::ApplyContract {
+                    contract,
+                    storage_flags: None,
+                })
+            })
+            .collect()
     }
 
     fn document_operations_for_block(
@@ -196,8 +212,29 @@ impl Strategy {
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
     ) -> (Vec<ExecutionEvent>, Vec<Identity>) {
+        let mut execution_events = vec![];
         let (identities, operations): (Vec<Identity>, Vec<Vec<DriveOperationType>>) =
             self.identity_operations_for_block(rng).into_iter().unzip();
+        let mut identity_execution_events: Vec<ExecutionEvent> = operations
+            .into_iter()
+            .map(|operation| ExecutionEvent::new_identity_insertion(operation))
+            .collect();
+        execution_events.append(&mut identity_execution_events);
+
+        if block_info.height == 1 {
+            // add contracts on block 1
+            let mut contract_execution_events = self
+                .contract_operations()
+                .into_iter()
+                .map(|operation| {
+                    let identity_num = rng.gen_range(0..identities.len());
+                    let an_identity = identities.get(identity_num).unwrap().clone();
+                    ExecutionEvent::new_contract_operation(an_identity, operation)
+                })
+                .collect();
+            execution_events.append(&mut contract_execution_events);
+        }
+
         let mut document_execution_events: Vec<ExecutionEvent> = self
             .document_operations_for_block(block_info, current_identities, rng)
             .into_iter()
@@ -205,11 +242,7 @@ impl Strategy {
                 ExecutionEvent::new_document_operation(identity, operation)
             })
             .collect();
-        let identity_execution_events: Vec<ExecutionEvent> = operations
-            .into_iter()
-            .map(|operation| ExecutionEvent::new_identity_insertion(operation))
-            .collect();
-        let mut execution_events = identity_execution_events;
+
         execution_events.append(&mut document_execution_events);
         (execution_events, identities)
     }
@@ -409,6 +442,7 @@ fn run_chain_for_strategy(
 #[test]
 fn run_chain_nothing_happening() {
     let strategy = Strategy {
+        contracts: vec![],
         operations: vec![],
         identities_inserts: Frequency {
             times_per_block_range: Default::default(),
@@ -425,6 +459,7 @@ fn run_chain_nothing_happening() {
 #[test]
 fn run_chain_insert_one_new_identity_per_block() {
     let strategy = Strategy {
+        contracts: vec![],
         operations: vec![],
         identities_inserts: Frequency {
             times_per_block_range: 1..2,
@@ -435,6 +470,53 @@ fn run_chain_insert_one_new_identity_per_block() {
         drive_config: Default::default(),
         verify_sum_trees: true,
     };
-    run_chain_for_strategy(1000, 3000, strategy, config, 15);
+    run_chain_for_strategy(100, 3000, strategy, config, 15);
 }
 
+#[test]
+fn run_chain_insert_one_new_identity_and_a_contract() {
+    let contract_cbor = json_document_to_cbor(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        Some(PROTOCOL_VERSION),
+    );
+    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+        .expect("contract should be deserialized");
+
+    let strategy = Strategy {
+        contracts: vec![contract],
+        operations: vec![],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    run_chain_for_strategy(1, 3000, strategy, config, 15);
+}
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
+    let contract_cbor = json_document_to_cbor(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        Some(PROTOCOL_VERSION),
+    );
+    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+        .expect("contract should be deserialized");
+
+    let strategy = Strategy {
+        contracts: vec![contract],
+        operations: vec![],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    run_chain_for_strategy(100, 3000, strategy, config, 15);
+}

@@ -38,7 +38,14 @@
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
+use crate::fee::epoch::distribution::calculate_storage_fee_distribution_amount_and_leftovers;
+use crate::fee::epoch::{CreditsPerEpoch, EpochIndex};
 use crate::fee::result::refunds::FeeRefunds;
+use crate::fee::result::BalanceChangeForIdentity::{
+    AddBalanceChange, NoBalanceChange, RemoveBalanceChange,
+};
+use costs::storage_cost::removal::Identifier;
+use std::cmp::Ordering;
 
 pub mod refunds;
 
@@ -55,20 +62,192 @@ pub struct FeeResult {
     pub removed_bytes_from_system: u32,
 }
 
+/// The balance change for an identity
+pub enum BalanceChangeForIdentity {
+    /// Add Balance
+    AddBalanceChange {
+        /// the balance to add
+        balance_to_add: Credits,
+    },
+    /// Remove Balance
+    RemoveBalanceChange {
+        /// the required removed balance
+        required_removed_balance: Credits,
+        /// the desired removed balance
+        desired_removed_balance: Credits,
+    },
+    /// There was no balance change
+    NoBalanceChange,
+}
+
+/// The fee expense for the identity from a fee result
+pub struct FeeChangeForIdentity {
+    /// The identifier of the identity
+    pub identifier: Identifier,
+    /// Storage fee
+    pub storage_fee: Credits,
+    /// Processing fee
+    pub processing_fee: Credits,
+    /// identity refund
+    pub fee_refunds_per_epoch: Option<CreditsPerEpoch>,
+    /// the balance change
+    pub balance_change: BalanceChangeForIdentity,
+    /// Credits to refund to other identities
+    pub other_fee_refunds: FeeRefunds,
+    /// Removed bytes not needing to be refunded to identities
+    pub removed_bytes_from_system: u32,
+}
+
+impl FeeChangeForIdentity {
+    /// Convert into a fee result
+    pub fn into_fee_result(self) -> FeeResult {
+        let FeeChangeForIdentity {
+            identifier,
+            storage_fee,
+            processing_fee,
+            fee_refunds_per_epoch,
+            balance_change: _,
+            mut other_fee_refunds,
+            removed_bytes_from_system,
+        } = self;
+        if let Some(fee_refunds_per_epoch) = fee_refunds_per_epoch {
+            other_fee_refunds
+                .0
+                .insert(identifier, fee_refunds_per_epoch);
+        }
+        FeeResult {
+            storage_fee,
+            processing_fee,
+            fee_refunds: other_fee_refunds,
+            removed_bytes_from_system,
+        }
+    }
+
+    /// Convert into a fee result minus some processing
+    fn into_fee_result_less_processing_debt(self, processing_debt: u64) -> FeeResult {
+        let FeeChangeForIdentity {
+            identifier,
+            storage_fee,
+            processing_fee,
+            fee_refunds_per_epoch,
+            balance_change: _,
+            mut other_fee_refunds,
+            removed_bytes_from_system,
+        } = self;
+        if let Some(fee_refunds_per_epoch) = fee_refunds_per_epoch {
+            other_fee_refunds
+                .0
+                .insert(identifier, fee_refunds_per_epoch);
+        }
+        FeeResult {
+            storage_fee,
+            processing_fee: processing_fee - processing_debt,
+            fee_refunds: other_fee_refunds,
+            removed_bytes_from_system,
+        }
+    }
+
+    /// The fee result outcome based on user balance
+    pub fn fee_result_outcome(self, user_balance: u64) -> Result<FeeResult, Error> {
+        match self.balance_change {
+            AddBalanceChange { .. } => {
+                // when we add balance we are sure that all the storage fee and processing fee has
+                // been payed
+                Ok(self.into_fee_result())
+            }
+            RemoveBalanceChange {
+                required_removed_balance,
+                desired_removed_balance,
+            } => {
+                if user_balance >= desired_removed_balance {
+                    Ok(self.into_fee_result())
+                } else if user_balance >= required_removed_balance {
+                    Ok(self.into_fee_result_less_processing_debt(
+                        desired_removed_balance - user_balance,
+                    ))
+                } else {
+                    // The user could not pay for required storage space
+                    Err(Error::Fee(FeeError::InsufficientBalance(
+                        "user does not have enough balance",
+                    )))
+                }
+            }
+            NoBalanceChange => {
+                // while there might be no balance change we still need to deal with refunds
+                Ok(self.into_fee_result())
+            }
+        }
+    }
+}
+
 impl FeeResult {
     /// Convenience method to get total fee
-    pub fn total_fee(&self) -> Credits {
+    pub fn total_base_fee(&self) -> Credits {
         self.storage_fee + self.processing_fee
     }
 
     /// Convenience method to get required removed balance
-    pub fn required_removed_balance(&self) -> Credits {
-        self.storage_fee
-    }
+    pub fn to_fee_change(
+        &self,
+        identity_id: [u8; 32],
+        current_epoch_index: EpochIndex,
+    ) -> Result<FeeChangeForIdentity, Error> {
+        let mut fee_refunds = self.fee_refunds.clone();
+        // First we need to get the fee refunds
+        let fee_refunds_per_epoch = fee_refunds.0.remove(identity_id.as_slice());
+        // Then for each epoch we need to calculate the leftovers
+        let storage_credits_returned = if let Some(refunds_per_epoch) = &fee_refunds_per_epoch {
+            refunds_per_epoch
+                .into_iter()
+                .map(|(epoch, credits)| {
+                    let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
+                        *credits,
+                        *epoch,
+                        current_epoch_index + 1,
+                    )?;
+                    Ok(amount)
+                })
+                .sum::<Result<u64, Error>>()?
+        } else {
+            0
+        };
 
-    /// Convenience method to get required removed balance
-    pub fn desired_removed_balance(&self) -> Credits {
-        self.storage_fee
+        let base_required_removed_balance = self.storage_fee;
+        let base_desired_removed_balance = self.storage_fee + self.processing_fee;
+
+        let balance_change = match storage_credits_returned.cmp(&base_desired_removed_balance) {
+            Ordering::Less => {
+                //we should remove balance
+                let required_removed_balance =
+                    if base_required_removed_balance >= storage_credits_returned {
+                        0
+                    } else {
+                        storage_credits_returned - base_required_removed_balance
+                    };
+                let desired_removed_balance =
+                    base_desired_removed_balance - storage_credits_returned;
+                RemoveBalanceChange {
+                    required_removed_balance,
+                    desired_removed_balance,
+                }
+            }
+            Ordering::Equal => NoBalanceChange,
+            Ordering::Greater => {
+                // Credits returned are greater than our spend
+                let balance_to_add = storage_credits_returned - base_desired_removed_balance;
+                AddBalanceChange { balance_to_add }
+            }
+        };
+
+        Ok(FeeChangeForIdentity {
+            identifier: identity_id,
+            storage_fee: self.storage_fee,
+            processing_fee: self.processing_fee,
+            fee_refunds_per_epoch,
+            balance_change,
+            other_fee_refunds: fee_refunds,
+            removed_bytes_from_system: self.removed_bytes_from_system,
+        })
     }
 
     /// Creates a FeeResult instance with specified storage and processing fees

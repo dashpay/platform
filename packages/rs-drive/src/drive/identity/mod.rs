@@ -39,6 +39,7 @@ use dpp::identity::KeyID;
 
 use integer_encoding::VarInt;
 
+mod balance;
 mod contract_info;
 mod estimation_costs;
 mod fetch;

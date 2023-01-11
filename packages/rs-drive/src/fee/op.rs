@@ -35,7 +35,6 @@ use costs::storage_cost::removal::Identifier;
 use costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
-use std::borrow::Cow;
 
 use costs::OperationCost;
 use enum_map::Enum;

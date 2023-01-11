@@ -9,10 +9,10 @@ pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 impl Identity {
     pub fn random_identity_with_rng(key_count: KeyCount, rng: &mut StdRng) -> Self {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
-        let revision = rng.gen::<u64>();
+        let revision = rng.gen_range(0..100);
         // balance must be in i64 (that would be >> 2)
         // but let's make it smaller
-        let balance = rng.gen::<u64>() >> 4;
+        let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max
         let public_keys = IdentityPublicKey::random_keys_with_rng(key_count, rng)
             .into_iter()
             .map(|key| (key.id, key))

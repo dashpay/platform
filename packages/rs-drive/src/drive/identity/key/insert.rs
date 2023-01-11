@@ -116,35 +116,32 @@ impl Drive {
         // Now lets add in references so we can query keys.
         // We assume the following, the identity already has a the basic Query Tree
 
-        if purpose != Purpose::AUTHENTICATION {
-            // Not authentication
-            if security_level != SecurityLevel::MEDIUM {
-                // Not Medium (Medium is already pre-inserted)
+        if !(purpose == Purpose::AUTHENTICATION && security_level == SecurityLevel::MEDIUM) {
+            // Not Medium (Medium is already pre-inserted)
 
-                let purpose_path = identity_query_keys_purpose_tree_path(
-                    identity_id.as_slice(),
-                    purpose_vec.as_slice(),
-                );
+            let purpose_path = identity_query_keys_purpose_tree_path(
+                identity_id.as_slice(),
+                purpose_vec.as_slice(),
+            );
 
-                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                    BatchInsertTreeApplyType::StatefulBatchInsertTree
-                } else {
-                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        in_tree_using_sums: false,
-                        is_sum_tree: false,
-                        flags_len: SINGLE_EPOCH_FLAGS_SIZE,
-                    }
-                };
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_using_sums: false,
+                    is_sum_tree: false,
+                    flags_len: SINGLE_EPOCH_FLAGS_SIZE,
+                }
+            };
 
-                // We need to insert the security level if it doesn't yet exist
-                self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
-                    PathFixedSizeKey((purpose_path, vec![security_level as u8])),
-                    Some(storage_flags),
-                    apply_type,
-                    transaction,
-                    drive_operations,
-                )?;
-            }
+            // We need to insert the security level if it doesn't yet exist
+            self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                PathFixedSizeKey((purpose_path, vec![security_level as u8])),
+                Some(storage_flags),
+                apply_type,
+                transaction,
+                drive_operations,
+            )?;
         }
 
         // Now let's set the reference

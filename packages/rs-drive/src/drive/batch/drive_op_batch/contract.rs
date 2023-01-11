@@ -33,6 +33,13 @@ pub enum ContractOperationType<'a> {
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
+    /// Applies a contract without serialization.
+    ApplyContract {
+        /// The contract
+        contract: &'a Contract,
+        /// Storage flags for the contract
+        storage_flags: Option<Cow<'a, StorageFlags>>,
+    },
 }
 
 impl DriveOperationConverter for ContractOperationType<'_> {
@@ -55,7 +62,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 let contract =
                     <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
-                drive.apply_contract_operations(
+                drive.apply_contract_with_serialization_operations(
                     &contract,
                     contract_cbor,
                     block_info,
@@ -68,9 +75,19 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 contract,
                 serialized_contract: contract_serialization,
                 storage_flags,
-            } => drive.apply_contract_operations(
+            } => drive.apply_contract_with_serialization_operations(
                 contract,
                 contract_serialization,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                storage_flags,
+                transaction,
+            ),
+            ContractOperationType::ApplyContract {
+                contract,
+                storage_flags,
+            } => drive.apply_contract_operations(
+                contract,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 storage_flags,
