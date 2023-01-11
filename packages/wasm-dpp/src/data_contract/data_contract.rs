@@ -34,8 +34,12 @@ impl std::convert::Into<DataContract> for DataContractWasm {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DataContractParameters {
-    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
-    schema: Option<String>,
+    #[serde(
+        rename = "$schema",
+        skip_serializing_if = "serde_json::Value::is_null",
+        default
+    )]
+    schema: serde_json::Value,
     #[serde(rename = "$id", skip_serializing_if = "Option::is_none")]
     id: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]

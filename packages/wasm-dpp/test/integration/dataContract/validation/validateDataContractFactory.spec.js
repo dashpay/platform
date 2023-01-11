@@ -99,161 +99,169 @@ describe('validateDataContractFactory', () => {
     });
   });
 
-  // describe('$schema', () => {
-  //   it('should be present', async () => {
-  //     delete rawDataContract.$schema;
+  describe('$schema', () => {
+    it('should be present', async () => {
+      const rawDataContract = dataContract.toObject();
+      delete rawDataContract.$schema;
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('$schema');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('$schema');
+    });
 
-  //   it('should be a string', async () => {
-  //     rawDataContract.$schema = 1;
+    it('should be a string', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.$schema = 1;
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/$schema');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
+      expect(error.getInstancePath()).to.equal('/$schema');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-  //   it('should be a particular url', async () => {
-  //     rawDataContract.$schema = 'wrong';
+    it('should be a particular url', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.$schema = 'wrong';
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getKeyword()).to.equal('const');
-  //     expect(error.getInstancePath()).to.equal('/$schema');
-  //   });
-  // });
+      expect(error.getKeyword()).to.equal('const');
+      expect(error.getInstancePath()).to.equal('/$schema');
+    });
+  });
 
-  // describe('ownerId', () => {
-  //   it('should be present', async () => {
-  //     delete rawDataContract.ownerId;
+  describe('ownerId', () => {
+    it('should be present', async () => {
+      const rawDataContract = dataContract.toObject();
+      delete rawDataContract.ownerId;
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('ownerId');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('ownerId');
+    });
 
-  //   it('should be a byte array', async () => {
-  //     rawDataContract.ownerId = new Array(32).fill('string');
+    it('should be a byte array', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.ownerId = new Array(32).fill('string');
 
-  //     const result = await validateDataContract(rawDataContract);
+      // We decided to keep protocol error because of failed parse rather than doing hacks
+      // too keep it until validator will refuse it
+      try {
+        await validateDataContract(rawDataContract);
+        expect.fail("Should throw an error");
+      } catch (e) {
+        expect(e).to.have.string('invalid type: string');
+      }
+    });
 
-  //     expectJsonSchemaError(result, 2);
+    it('should be no less than 32 bytes', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.ownerId = Buffer.alloc(31);
 
-  //     const [error, byteArrayError] = result.getErrors();
+      const result = await validateDataContract(rawDataContract);
 
-  //     expect(error.getInstancePath()).to.equal('/ownerId/0');
-  //     expect(error.getKeyword()).to.equal('type');
+      expectJsonSchemaError(result);
 
-  //     expect(byteArrayError.getKeyword()).to.equal('byteArray');
-  //   });
+      const [error] = result.getErrors();
 
-  //   it('should be no less than 32 bytes', async () => {
-  //     rawDataContract.ownerId = Buffer.alloc(31);
+      expect(error.getInstancePath()).to.equal('/ownerId');
+      expect(error.getKeyword()).to.equal('minItems');
+    });
 
-  //     const result = await validateDataContract(rawDataContract);
+    it('should be no longer than 32 bytes', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.ownerId = Buffer.alloc(33);
 
-  //     expectJsonSchemaError(result);
+      const result = await validateDataContract(rawDataContract);
 
-  //     const [error] = result.getErrors();
+      expectJsonSchemaError(result);
 
-  //     expect(error.getInstancePath()).to.equal('/ownerId');
-  //     expect(error.getKeyword()).to.equal('minItems');
-  //   });
+      const [error] = result.getErrors();
 
-  //   it('should be no longer than 32 bytes', async () => {
-  //     rawDataContract.ownerId = Buffer.alloc(33);
+      expect(error.getInstancePath()).to.equal('/ownerId');
+      expect(error.getKeyword()).to.equal('maxItems');
+    });
+  });
 
-  //     const result = await validateDataContract(rawDataContract);
 
-  //     expectJsonSchemaError(result);
+  describe('$id', () => {
+    it('should be present', async () => {
+      const rawDataContract = dataContract.toObject();      
+      delete rawDataContract.$id;
 
-  //     const [error] = result.getErrors();
+      const result = await validateDataContract(rawDataContract);
 
-  //     expect(error.getInstancePath()).to.equal('/ownerId');
-  //     expect(error.getKeyword()).to.equal('maxItems');
-  //   });
-  // });
+      expectJsonSchemaError(result);
 
-  // describe('$id', () => {
-  //   it('should be present', async () => {
-  //     delete rawDataContract.$id;
+      const [error] = result.getErrors();
 
-  //     const result = await validateDataContract(rawDataContract);
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('$id');
+    });
 
-  //     expectJsonSchemaError(result);
+    it('should be a byte array', async () => {
+      const rawDataContract = dataContract.toObject();      
+      rawDataContract.$id = new Array(32).fill('string');
 
-  //     const [error] = result.getErrors();
+      // We decided to keep protocol error because of failed parse rather than doing hacks
+      // too keep it until validator will refuse it
+      try {
+        await validateDataContract(rawDataContract);
+        expect.fail("Should throw an error");
+      } catch (e) {
+        expect(e).to.have.string('invalid type: string');
+      }
+    });
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('$id');
-  //   });
+    it('should be no less than 32 bytes', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.$id = Buffer.alloc(31);
 
-  //   it('should be a byte array', async () => {
-  //     rawDataContract.$id = new Array(32).fill('string');
+      const result = await validateDataContract(rawDataContract);
 
-  //     const result = await validateDataContract(rawDataContract);
+      expectJsonSchemaError(result);
 
-  //     expectJsonSchemaError(result, 2);
+      const [error] = result.getErrors();
 
-  //     const [error, byteArrayError] = result.getErrors();
+      expect(error.getInstancePath()).to.equal('/$id');
+      expect(error.getKeyword()).to.equal('minItems');
+    });
 
-  //     expect(error.getInstancePath()).to.equal('/$id/0');
-  //     expect(error.getKeyword()).to.equal('type');
+    it('should be no longer than 32 bytes', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.$id = Buffer.alloc(33);
 
-  //     expect(byteArrayError.getKeyword()).to.equal('byteArray');
-  //   });
+      const result = await validateDataContract(rawDataContract);
 
-  //   it('should be no less than 32 bytes', async () => {
-  //     rawDataContract.$id = Buffer.alloc(31);
+      expectJsonSchemaError(result);
 
-  //     const result = await validateDataContract(rawDataContract);
+      const [error] = result.getErrors();
 
-  //     expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getInstancePath()).to.equal('/$id');
-  //     expect(error.getKeyword()).to.equal('minItems');
-  //   });
-
-  //   it('should be no longer than 32 bytes', async () => {
-  //     rawDataContract.$id = Buffer.alloc(33);
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getInstancePath()).to.equal('/$id');
-  //     expect(error.getKeyword()).to.equal('maxItems');
-  //   });
-  // });
+      expect(error.getInstancePath()).to.equal('/$id');
+      expect(error.getKeyword()).to.equal('maxItems');
+    });
+  });
 
   // describe('$defs', () => {
   //   it('may not be present', async () => {
