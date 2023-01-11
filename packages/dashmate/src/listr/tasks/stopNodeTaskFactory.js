@@ -23,8 +23,7 @@ function stopNodeTaskFactory(
         skip: (ctx) => ctx.isForce,
         task: async () => {
           if (!await dockerCompose.isServiceRunning(config.toEnvs())) {
-            console.log(`Node is not running`);
-            this.exit()
+            throw new Error('Node is not running');
           }
         },
       },

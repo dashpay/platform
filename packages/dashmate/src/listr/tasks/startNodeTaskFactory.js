@@ -75,11 +75,7 @@ function startNodeTaskFactory(
         title: 'Check node is not started',
         task: async () => {
           if (await dockerCompose.isServiceRunning(config.toEnvs())) {
-            const error = 'Running services detected. Please ensure all services are stopped for this config before starting'
-
-            // eslint-disable-next-line no-console
-            console.log(error);
-            return
+            throw new Error('Running services detected. Please ensure all services are stopped for this config before starting')
           }
         },
       },
