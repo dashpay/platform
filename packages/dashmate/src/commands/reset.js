@@ -28,7 +28,7 @@ class ResetCommand extends ConfigBaseCommand {
     config,
     resetNodeTask,
   ) {
-    if (isHardReset && !isSystemConfig(config.getName())) {
+    if (isHardReset && (!isSystemConfig(config.getName()) && config.get('network') !== 'devnet')) {
       throw new Error(`Cannot hard reset non-system config "${config.getName()}"`);
     }
 
