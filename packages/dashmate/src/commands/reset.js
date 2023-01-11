@@ -5,6 +5,7 @@ const { Flags } = require('@oclif/core');
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+const {NETWORKS} = require("../constants");
 
 class ResetCommand extends ConfigBaseCommand {
   /**
@@ -28,7 +29,7 @@ class ResetCommand extends ConfigBaseCommand {
     config,
     resetNodeTask,
   ) {
-    if (isHardReset && (!isSystemConfig(config.getName()) && config.get('network') !== 'devnet')) {
+    if (isHardReset && (!isSystemConfig(config.getName()) && config.get('network') !== NETWORKS.NETWORK_DEVNET)) {
       throw new Error(`Cannot hard reset non-system config "${config.getName()}"`);
     }
 
