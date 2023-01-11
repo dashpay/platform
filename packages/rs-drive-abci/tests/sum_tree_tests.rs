@@ -461,3 +461,49 @@ fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
     };
     run_chain_for_strategy(100, 3000, strategy, config, 15);
 }
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
+    let contract_cbor = json_document_to_cbor(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        Some(PROTOCOL_VERSION),
+    );
+    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+        .expect("contract should be deserialized");
+
+    let document_op = DocumentOp {
+        contract: contract.clone(),
+        document_type: contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let strategy = Strategy {
+        contracts: vec![contract],
+        operations: vec![(
+            document_op,
+            Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+        )],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    let day_in_ms = 1000 * 60 * 60 * 24;
+    let outcome = run_chain_for_strategy(100, day_in_ms, strategy, config, 15);
+    assert_eq!(outcome.identities.len(), 100);
+    assert_eq!(outcome.masternode_identity_balances.len(), 100);
+    let all_have_balances = outcome
+        .masternode_identity_balances
+        .iter()
+        .all(|(_, balance)| *balance != 0);
+    assert!(all_have_balances, "all masternodes should have a balance");
+}
