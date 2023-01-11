@@ -39,6 +39,7 @@ use dpp::identity::KeyID;
 
 use integer_encoding::VarInt;
 
+mod contract_info;
 mod estimation_costs;
 mod fetch;
 mod fetch_by_public_key_hashes;
@@ -46,7 +47,6 @@ mod insert;
 mod key;
 mod update;
 mod withdrawal_queue;
-mod contract_info;
 
 pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 
@@ -64,7 +64,11 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
 }
 
 pub(crate) fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
-    [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id, Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo)]
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo),
+    ]
 }
 
 pub(crate) fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
@@ -75,11 +79,22 @@ pub(crate) fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Ve
     ]
 }
 
-pub(crate) fn identity_contract_info_path<'a>(identity_id: &'a [u8], contract_id: &'a [u8]) -> [&'a [u8]; 4] {
-    [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id, Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo), contract_id]
+pub(crate) fn identity_contract_info_path<'a>(
+    identity_id: &'a [u8],
+    contract_id: &'a [u8],
+) -> [&'a [u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo),
+        contract_id,
+    ]
 }
 
-pub(crate) fn identity_contract_info_path_vec(identity_id: &[u8], contract_id: &[u8]) -> Vec<Vec<u8>> {
+pub(crate) fn identity_contract_info_path_vec(
+    identity_id: &[u8],
+    contract_id: &[u8],
+) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),

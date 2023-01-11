@@ -1,9 +1,18 @@
 use crate::drive::defaults::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
+use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
+use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::identity::IdentityRootStructure::{IdentityContractInfo, IdentityTreeKeyReferences, IdentityTreeKeys};
-use crate::drive::identity::{identity_contract_info_root_path_vec, identity_key_location_within_identity_vec, identity_key_path_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path, identity_path_vec, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path, identity_query_keys_tree_path};
+use crate::drive::identity::IdentityRootStructure::{
+    IdentityContractInfo, IdentityTreeKeyReferences, IdentityTreeKeys,
+};
+use crate::drive::identity::{
+    identity_contract_info_root_path_vec, identity_key_location_within_identity_vec,
+    identity_key_path_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path,
+    identity_path_vec, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
+    identity_query_keys_tree_path,
+};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize,
 };
@@ -24,11 +33,9 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
-use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
-use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
 
 pub enum ContractApplyInfo {
-    Keys(Vec<IdentityPublicKey>)
+    Keys(Vec<IdentityPublicKey>),
 }
 
 impl Drive {

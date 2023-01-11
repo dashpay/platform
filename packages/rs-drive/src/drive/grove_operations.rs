@@ -139,7 +139,9 @@ impl BatchInsertTreeApplyType {
                 in_tree_using_sums: *in_tree_using_sums,
                 query_target: QueryTarget::QueryTargetTree(*flags_len, *is_sum_tree),
             },
-            BatchInsertTreeApplyType::StatefulBatchInsertTree => DirectQueryType::StatefulDirectQuery,
+            BatchInsertTreeApplyType::StatefulBatchInsertTree => {
+                DirectQueryType::StatefulDirectQuery
+            }
         }
     }
 }
