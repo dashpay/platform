@@ -123,10 +123,15 @@ impl FeeRefunds {
     pub fn sum_per_epoch(self) -> CreditsPerEpoch {
         let mut summed_credits = CreditsPerEpoch::default();
 
-        self.into_iter().for_each(|(_,credits_per_epoch)| {
-            credits_per_epoch.into_iter().for_each(|(epoch_index, credits)| {
-                summed_credits.entry(epoch_index).and_modify(|base_credits| *base_credits += credits).or_insert(credits);
-            });
+        self.into_iter().for_each(|(_, credits_per_epoch)| {
+            credits_per_epoch
+                .into_iter()
+                .for_each(|(epoch_index, credits)| {
+                    summed_credits
+                        .entry(epoch_index)
+                        .and_modify(|base_credits| *base_credits += credits)
+                        .or_insert(credits);
+                });
         });
         summed_credits
     }

@@ -312,8 +312,7 @@ impl Drive {
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
 
-        let storage_flags =
-            StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
+        let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],

@@ -51,7 +51,7 @@ impl Epoch {
     }
 
     /// Get the path to the proposers tree of this epoch as a vector
-    pub fn get_proposers_vec_path(&self) -> Vec<Vec<u8>> {
+    pub fn get_proposers_path_vec(&self) -> Vec<Vec<u8>> {
         vec![
             vec![RootTree::Pools as u8],
             self.key.to_vec(),
@@ -65,7 +65,7 @@ impl Epoch {
     }
 
     /// Get the path to this epoch as a vector
-    pub fn get_vec_path(&self) -> Vec<Vec<u8>> {
+    pub fn get_path_vec(&self) -> Vec<Vec<u8>> {
         vec![vec![RootTree::Pools as u8], self.key.to_vec()]
     }
 }

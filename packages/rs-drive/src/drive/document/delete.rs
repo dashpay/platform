@@ -32,9 +32,9 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
-use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
+use std::borrow::Cow;
 
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
@@ -689,24 +689,25 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let document_info =
-            if let DirectQueryType::StatelessDirectQuery { query_target, .. } = direct_query_type {
-                DocumentEstimatedAverageSize(query_target.len())
-            } else if let Some(document_element) = &document_element {
-                if let Element::Item(data, element_flags) = document_element {
-                    let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
-                    let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
-                    DocumentWithoutSerialization((document, storage_flags))
-                } else {
-                    return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
-                        "document being deleted is not an item",
-                    )));
-                }
+        let document_info = if let DirectQueryType::StatelessDirectQuery { query_target, .. } =
+            direct_query_type
+        {
+            DocumentEstimatedAverageSize(query_target.len())
+        } else if let Some(document_element) = &document_element {
+            if let Element::Item(data, element_flags) = document_element {
+                let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
+                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
+                DocumentWithoutSerialization((document, storage_flags))
             } else {
-                return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
-                    "document being deleted does not exist",
+                return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
+                    "document being deleted is not an item",
                 )));
-            };
+            }
+        } else {
+            return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
+                "document being deleted does not exist",
+            )));
+        };
 
         // third we need to delete the document for it's primary key
         self.remove_document_from_primary_storage(
@@ -740,9 +741,9 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
     use rand::Rng;
     use serde_json::json;
+    use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
 
@@ -1449,7 +1450,10 @@ mod tests {
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, random_owner_id)));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+            0,
+            random_owner_id,
+        )));
         let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_profile_serialized_document,
@@ -1524,7 +1528,10 @@ mod tests {
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, random_owner_id)));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+            0,
+            random_owner_id,
+        )));
         let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_profile_serialized_document,

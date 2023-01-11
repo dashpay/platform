@@ -30,38 +30,47 @@
 //! Execution Tests
 //!
 
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use base64::Config;
 use chrono::{Duration, Utc};
-use drive::common::helpers::identities::{create_test_masternode_identities, create_test_masternode_identities_with_rng};
+use drive::common::helpers::identities::{
+    create_test_masternode_identities, create_test_masternode_identities_with_rng,
+};
+use drive::contract::{Contract, CreateRandomDocument, DocumentType};
+use drive::dpp::identifier::Identifier;
+use drive::dpp::identity;
 use drive::dpp::identity::{Identity, KeyID};
-use drive::drive::batch::{DocumentOperationType, DriveOperationType, GroveDbOpBatch, IdentityOperationType, SystemOperationType};
+use drive::drive::batch::{
+    DocumentOperationType, DriveOperationType, GroveDbOpBatch, IdentityOperationType,
+    SystemOperationType,
+};
 use drive::drive::block_info::BlockInfo;
+use drive::drive::flags::StorageFlags;
+use drive::drive::flags::StorageFlags::SingleEpoch;
+use drive::drive::object_size_info::DocumentInfo::{
+    DocumentRefAndSerialization, DocumentRefWithoutSerialization, DocumentWithoutSerialization,
+};
+use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use drive::drive::{block_info, Drive};
 use drive::fee::epoch::CreditsPerEpoch;
+use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
 };
 use drive_abci::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
-use drive_abci::common::helpers::setup::{setup_platform_raw, setup_platform_with_initial_state_structure};
+use drive_abci::common::helpers::setup::{
+    setup_platform_raw, setup_platform_with_initial_state_structure,
+};
 use drive_abci::config::PlatformConfig;
+use drive_abci::execution::engine::ExecutionEvent;
 use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
-use rust_decimal::prelude::ToPrimitive;
-use std::ops::{Div, Range};
-use base64::Config;
 use rand::{Rng, SeedableRng};
-use drive::contract::{Contract, CreateRandomDocument, DocumentType};
-use drive::dpp::identifier::Identifier;
-use drive::dpp::identity;
-use drive::drive::{block_info, Drive};
-use drive::drive::flags::StorageFlags;
-use drive::drive::flags::StorageFlags::SingleEpoch;
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use drive::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefWithoutSerialization, DocumentWithoutSerialization};
-use drive::fee::result::FeeResult;
-use drive_abci::execution::engine::ExecutionEvent;
+use rust_decimal::prelude::ToPrimitive;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::ops::{Div, Range};
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -92,7 +101,7 @@ pub struct DocumentOp {
     pub document_type: DocumentType,
 }
 
-pub type ProTxHash = [u8;32];
+pub type ProTxHash = [u8; 32];
 
 #[derive(Clone, Debug)]
 struct Strategy {
@@ -104,17 +113,29 @@ struct Strategy {
 struct TestParams {
     strategy: Strategy,
     quorum_members: VecDeque<ProTxHash>,
-    current_identities: BTreeMap<Identifier, Identity>
+    current_identities: BTreeMap<Identifier, Identity>,
 }
 
 impl Strategy {
     fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
         for (op, _) in &self.operations {
             let serialize = op.contract.to_cbor().expect("expected to serialize");
-            drive.apply_contract(&op.contract, serialize, BlockInfo::default(), true, Some(Cow::Owned(SingleEpoch(0))), None).expect("expected to be able to add contract");
+            drive
+                .apply_contract(
+                    &op.contract,
+                    serialize,
+                    BlockInfo::default(),
+                    true,
+                    Some(Cow::Owned(SingleEpoch(0))),
+                    None,
+                )
+                .expect("expected to be able to add contract");
         }
     }
-    fn identity_operations_for_block<'a, 'b>(&'a self, rng: &'b mut StdRng) -> Vec<(Identity, Vec<DriveOperationType>)> {
+    fn identity_operations_for_block<'a, 'b>(
+        &'a self,
+        rng: &'b mut StdRng,
+    ) -> Vec<(Identity, Vec<DriveOperationType>)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
@@ -134,21 +155,34 @@ impl Strategy {
         for (op, frequency) in &self.operations {
             if frequency.check_hit(rng) {
                 let count = rng.gen_range(frequency.times_per_block_range.clone());
-                let documents = op.document_type.random_documents_with_rng(count as u32, rng);
+                let documents = op
+                    .document_type
+                    .random_documents_with_rng(count as u32, rng);
                 for document in documents {
                     let identity_num = rng.gen_range(0..current_identities.len());
                     let identity = current_identities.get(identity_num).unwrap().clone();
 
-                    let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id.to_buffer()));
+                    let storage_flags = StorageFlags::new_single_epoch(
+                        block_info.epoch.index,
+                        Some(identity.id.to_buffer()),
+                    );
 
-                    let insert_op = DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {
-                        document_and_contract_info: DocumentAndContractInfo {
-                            owned_document_info: OwnedDocumentInfo { document_info: DocumentWithoutSerialization((document, Some(Cow::Owned(storage_flags)))), owner_id: None },
-                            contract: &op.contract,
-                            document_type: &op.document_type,
+                    let insert_op = DriveOperationType::DocumentOperation(
+                        DocumentOperationType::AddDocumentForContract {
+                            document_and_contract_info: DocumentAndContractInfo {
+                                owned_document_info: OwnedDocumentInfo {
+                                    document_info: DocumentWithoutSerialization((
+                                        document,
+                                        Some(Cow::Owned(storage_flags)),
+                                    )),
+                                    owner_id: None,
+                                },
+                                contract: &op.contract,
+                                document_type: &op.document_type,
+                            },
+                            override_document: false,
                         },
-                        override_document: false,
-                    });
+                    );
                     operations.push((identity, insert_op));
                 }
             }
@@ -156,10 +190,25 @@ impl Strategy {
         operations
     }
 
-    fn state_transitions_for_block_with_new_identities(&self, block_info: &BlockInfo, current_identities: &Vec<Identity>,  rng: &mut StdRng) -> (Vec<ExecutionEvent>, Vec<Identity>) {
-        let (identities, operations) : (Vec<Identity>, Vec<Vec<DriveOperationType>>) = self.identity_operations_for_block(rng).into_iter().unzip();
-        let mut document_execution_events: Vec<ExecutionEvent> = self.document_operations_for_block(block_info, current_identities, rng).into_iter().map(|(identity, operation)| ExecutionEvent::new_document_operation(identity, operation)).collect();;
-        let identity_execution_events: Vec<ExecutionEvent> = operations.into_iter().map(|operation| ExecutionEvent::new_identity_insertion(operation)).collect();
+    fn state_transitions_for_block_with_new_identities(
+        &self,
+        block_info: &BlockInfo,
+        current_identities: &Vec<Identity>,
+        rng: &mut StdRng,
+    ) -> (Vec<ExecutionEvent>, Vec<Identity>) {
+        let (identities, operations): (Vec<Identity>, Vec<Vec<DriveOperationType>>) =
+            self.identity_operations_for_block(rng).into_iter().unzip();
+        let mut document_execution_events: Vec<ExecutionEvent> = self
+            .document_operations_for_block(block_info, current_identities, rng)
+            .into_iter()
+            .map(|(identity, operation)| {
+                ExecutionEvent::new_document_operation(identity, operation)
+            })
+            .collect();
+        let identity_execution_events: Vec<ExecutionEvent> = operations
+            .into_iter()
+            .map(|operation| ExecutionEvent::new_identity_insertion(operation))
+            .collect();
         let mut execution_events = identity_execution_events;
         execution_events.append(&mut document_execution_events);
         (execution_events, identities)
@@ -261,14 +310,22 @@ fn create_identities_operations<'a>(
     rng: &mut StdRng,
 ) -> Vec<(Identity, Vec<DriveOperationType<'a>>)> {
     let identities = Identity::random_identities_with_rng(count, key_count, rng);
-    identities.into_iter().map(|identity| {
-        let insert_op = DriveOperationType::IdentityOperation(IdentityOperationType::AddNewIdentity { identity: identity.clone() });
-        let system_credits_op = DriveOperationType::SystemOperation(SystemOperationType::AddToSystemCredits { amount: identity.balance});
-        let ops = vec![insert_op,system_credits_op];
-        (identity.clone(), ops)
-    }).collect()
+    identities
+        .into_iter()
+        .map(|identity| {
+            let insert_op =
+                DriveOperationType::IdentityOperation(IdentityOperationType::AddNewIdentity {
+                    identity: identity.clone(),
+                });
+            let system_credits_op =
+                DriveOperationType::SystemOperation(SystemOperationType::AddToSystemCredits {
+                    amount: identity.balance,
+                });
+            let ops = vec![insert_op, system_credits_op];
+            (identity.clone(), ops)
+        })
+        .collect()
 }
-
 
 // fn run_chain(platform: &Platform, days: u32, blocks_per_day: u32, block_interval_s: u32,
 //              mut test_params: TestParams, rng: &mut StdRng) {
@@ -300,8 +357,13 @@ fn create_identities_operations<'a>(
 //     }
 // }
 
-
-fn run_chain_for_strategy(block_count: u64, block_spacing_ms: u64,  strategy: Strategy, config: PlatformConfig, seed: u64) {
+fn run_chain_for_strategy(
+    block_count: u64,
+    block_spacing_ms: u64,
+    strategy: Strategy,
+    config: PlatformConfig,
+    seed: u64,
+) {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut platform = setup_platform_raw(Some(config));
     let mut current_time_ms = 0;
@@ -326,23 +388,32 @@ fn run_chain_for_strategy(block_count: u64, block_spacing_ms: u64,  strategy: St
             height: block_height,
             epoch: Default::default(),
         };
-        let proposer= proposers.get(i as usize).unwrap();
-        let (state_transitions, mut new_identities) = strategy.state_transitions_for_block_with_new_identities(&block_info, &mut current_identities, &mut rng);
+        let proposer = proposers.get(i as usize).unwrap();
+        let (state_transitions, mut new_identities) = strategy
+            .state_transitions_for_block_with_new_identities(
+                &block_info,
+                &mut current_identities,
+                &mut rng,
+            );
 
-        platform.execute_block(*proposer, &block_info, state_transitions).expect("expected to execute a block");
+        platform
+            .execute_block(*proposer, &block_info, state_transitions)
+            .expect("expected to execute a block");
         current_identities.append(&mut new_identities);
         current_time_ms += block_spacing_ms;
         i += 1;
         i %= quorum_size;
     }
-
 }
 
 #[test]
 fn run_chain_nothing_happening() {
     let strategy = Strategy {
         operations: vec![],
-        identities_inserts: Frequency { times_per_block_range: Default::default(), chance_per_block: None },
+        identities_inserts: Frequency {
+            times_per_block_range: Default::default(),
+            chance_per_block: None,
+        },
     };
     let config = PlatformConfig {
         drive_config: Default::default(),

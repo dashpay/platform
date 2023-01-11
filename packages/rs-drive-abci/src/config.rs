@@ -1,6 +1,6 @@
 use drive::drive::config::DriveConfig;
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 /// Platform configuration struct
 pub struct PlatformConfig {
     /// The underlying drive configuration

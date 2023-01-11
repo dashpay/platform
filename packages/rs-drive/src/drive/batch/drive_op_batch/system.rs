@@ -2,13 +2,13 @@ use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::fee::credits::Credits;
 use crate::fee::op::DriveOperation;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use crate::fee::credits::Credits;
 
 /// Operations on the System
 #[derive(Clone, Debug)]
@@ -36,11 +36,9 @@ impl DriveOperationConverter for SystemOperationType {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         match self {
-            SystemOperationType::AddToSystemCredits { amount } => drive
-                .add_to_system_credits_operation(
-                    amount,
-                    transaction,
-                ),
+            SystemOperationType::AddToSystemCredits { amount } => {
+                drive.add_to_system_credits_operation(amount, transaction)
+            }
             SystemOperationType::RemoveFromSystemCredits { amount } => {
                 drive.remove_from_system_credits_operations(amount, transaction)
             }

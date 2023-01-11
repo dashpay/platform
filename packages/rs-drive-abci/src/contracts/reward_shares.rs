@@ -37,7 +37,6 @@
 //! For example, the address of someone who manages the masternode for the owner.
 //!
 
-use std::borrow::Cow;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::common::value_to_cbor;
@@ -48,6 +47,7 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::grovedb::TransactionArg;
 use serde_json::json;
+use std::borrow::Cow;
 
 /// Masternode reward shares contract ID
 pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [

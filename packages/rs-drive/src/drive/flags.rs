@@ -30,7 +30,6 @@
 //! Flags
 //!
 
-use std::borrow::Cow;
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
 use crate::drive::flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
@@ -40,6 +39,7 @@ use costs::storage_cost::removal::{StorageRemovalPerEpochByIdentifier, StorageRe
 use grovedb::ElementFlags;
 use integer_encoding::VarInt;
 use intmap::IntMap;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -567,10 +567,14 @@ impl StorageFlags {
     }
 
     /// Create Storage flags from optional element flags ref
-    pub fn map_cow_some_element_flags_ref(data: &Option<ElementFlags>) -> Result<Option<Cow<Self>>, Error> {
+    pub fn map_cow_some_element_flags_ref(
+        data: &Option<ElementFlags>,
+    ) -> Result<Option<Cow<Self>>, Error> {
         match data {
             None => Ok(None),
-            Some(data) => Self::from_slice(data.as_slice()).map(|option| option.map(|s| Cow::Owned(s))),
+            Some(data) => {
+                Self::from_slice(data.as_slice()).map(|option| option.map(|s| Cow::Owned(s)))
+            }
         }
     }
 
@@ -587,14 +591,19 @@ impl StorageFlags {
     }
 
     /// Map to optional element flags
-    pub fn map_cow_to_some_element_flags(maybe_storage_flags: Option<Cow<Self>>) -> Option<ElementFlags> {
+    pub fn map_cow_to_some_element_flags(
+        maybe_storage_flags: Option<Cow<Self>>,
+    ) -> Option<ElementFlags> {
         maybe_storage_flags.map(|storage_flags| storage_flags.serialize())
     }
 
-
     /// Map to optional element flags
-    pub fn map_borrowed_cow_to_some_element_flags(maybe_storage_flags: &Option<Cow<Self>>) -> Option<ElementFlags> {
-        maybe_storage_flags.as_ref().map(|storage_flags| storage_flags.serialize())
+    pub fn map_borrowed_cow_to_some_element_flags(
+        maybe_storage_flags: &Option<Cow<Self>>,
+    ) -> Option<ElementFlags> {
+        maybe_storage_flags
+            .as_ref()
+            .map(|storage_flags| storage_flags.serialize())
     }
 
     /// Creates optional element flags

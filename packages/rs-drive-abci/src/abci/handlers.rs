@@ -198,7 +198,10 @@ mod tests {
 
         #[test]
         fn test_abci_flow() {
-            let platform = setup_platform_raw(Some(PlatformConfig{ drive_config: Default::default(), verify_sum_trees: false }));
+            let platform = setup_platform_raw(Some(PlatformConfig {
+                drive_config: Default::default(),
+                verify_sum_trees: false,
+            }));
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
@@ -370,10 +373,12 @@ mod tests {
 
                     let block_end_response = platform
                         .block_end(block_end_request, Some(&transaction))
-                        .expect(format!(
+                        .expect(
+                            format!(
                                 "should end process block #{} for day #{}",
                                 block_height, day
-                            ).as_str()
+                            )
+                            .as_str(),
                         );
 
                     let after_finalize_block_request = AfterFinalizeBlockRequest {
@@ -411,7 +416,10 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let platform = setup_platform_raw(Some(PlatformConfig{ drive_config: Default::default(), verify_sum_trees: false }));
+            let platform = setup_platform_raw(Some(PlatformConfig {
+                drive_config: Default::default(),
+                verify_sum_trees: false,
+            }));
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain

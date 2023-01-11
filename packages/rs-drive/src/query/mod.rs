@@ -1316,8 +1316,8 @@ impl<'a> DriveQuery<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
     use serde_json::json;
+    use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
 

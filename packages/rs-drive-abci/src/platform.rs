@@ -31,15 +31,15 @@
 //!
 
 use crate::block::BlockExecutionContext;
+use crate::config::PlatformConfig;
 use crate::error::Error;
+use crate::state::PlatformState;
+use drive::drive::block_info::BlockInfo;
 use drive::drive::config::DriveConfig;
 use drive::drive::Drive;
+use serde_json::ser::State;
 use std::cell::RefCell;
 use std::path::Path;
-use serde_json::ser::State;
-use drive::drive::block_info::BlockInfo;
-use crate::config::PlatformConfig;
-use crate::state::PlatformState;
 
 /// Platform
 pub struct Platform {
@@ -58,7 +58,7 @@ impl Platform {
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
-        let state = PlatformState{
+        let state = PlatformState {
             last_block_info: None,
         };
         Ok(Platform {

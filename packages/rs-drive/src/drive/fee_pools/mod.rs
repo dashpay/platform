@@ -158,7 +158,7 @@ impl Drive {
             }
 
             batch.add_insert(
-                Epoch::new(epoch_index).get_vec_path(),
+                Epoch::new(epoch_index).get_path_vec(),
                 KEY_POOL_STORAGE_FEES.to_vec(),
                 Element::new_sum_item(credits_to_update),
             );
@@ -249,7 +249,7 @@ mod tests {
 
                 assert_eq!(
                     operation.path.to_path(),
-                    Epoch::new(i as EpochIndex).get_vec_path()
+                    Epoch::new(i as EpochIndex).get_path_vec()
                 );
 
                 let Op::Insert{ element: Element::SumItem (credits, _)} = operation.op else {

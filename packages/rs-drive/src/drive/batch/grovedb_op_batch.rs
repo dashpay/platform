@@ -32,10 +32,10 @@
 //! This module defines the GroveDbOpBatch struct and implements its functions.
 //!
 
-use std::borrow::Cow;
 use crate::drive::flags::StorageFlags;
 use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults};
 use grovedb::Element;
+use std::borrow::Cow;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
@@ -99,7 +99,9 @@ impl GroveDbOpBatch {
         self.operations.push(GroveDbOp::insert_op(
             path,
             key,
-            Element::empty_tree_with_flags(StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags)),
+            Element::empty_tree_with_flags(StorageFlags::map_borrowed_cow_to_some_element_flags(
+                storage_flags,
+            )),
         ))
     }
 
@@ -119,9 +121,9 @@ impl GroveDbOpBatch {
         self.operations.push(GroveDbOp::insert_op(
             path,
             key,
-            Element::empty_sum_tree_with_flags(StorageFlags::map_borrowed_cow_to_some_element_flags(
-                storage_flags,
-            )),
+            Element::empty_sum_tree_with_flags(
+                StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+            ),
         ))
     }
 

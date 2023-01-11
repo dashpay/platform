@@ -273,7 +273,8 @@ impl Drive {
         let revision_query = Self::identity_revision_query(identity_id);
         let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
         let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query]).map_err(Error::GroveDB)
+        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
+            .map_err(Error::GroveDB)
     }
 
     /// Fetches an identity with all its information from storage.
@@ -388,7 +389,12 @@ impl Drive {
         };
         let (result_items, _) = self
             .grove
-            .query_raw(&path_query, true, QueryKeyElementPairResultType, transaction)
+            .query_raw(
+                &path_query,
+                true,
+                QueryKeyElementPairResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -488,8 +494,8 @@ mod tests {
     }
 
     mod fetch_proved_full_identity {
-        use grovedb::query_result_type::QueryResultType;
         use super::*;
+        use grovedb::query_result_type::QueryResultType;
 
         #[test]
         fn test_full_identity_query_construction() {
@@ -517,7 +523,16 @@ mod tests {
             let query = Drive::full_identity_query(identity.id.to_buffer())
                 .expect("expected to make the query");
 
-            let (elements, _) = drive.grove.query_raw(&query, true, QueryResultType::QueryPathKeyElementTrioResultType, None).unwrap().expect("expected to run the path query");
+            let (elements, _) = drive
+                .grove
+                .query_raw(
+                    &query,
+                    true,
+                    QueryResultType::QueryPathKeyElementTrioResultType,
+                    None,
+                )
+                .unwrap()
+                .expect("expected to run the path query");
             assert_eq!(elements.len(), 7);
 
             let fetched_identity = drive

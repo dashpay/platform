@@ -2370,7 +2370,10 @@ mod tests {
 
         let document_cbor = document.to_cbor().expect("should encode to cbor");
 
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id.to_buffer())));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+            0,
+            owner_id.to_buffer(),
+        )));
 
         let create_fees = drive
             .add_serialized_document_for_contract(

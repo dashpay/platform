@@ -32,7 +32,6 @@
 //! Defines and implements in Drive functions pertinent to groveDB operations.
 //!
 
-use std::borrow::Cow;
 use crate::drive::batch::GroveDbOpBatch;
 use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use costs::storage_cost::transition::OperationStorageTransitionType;
@@ -40,6 +39,7 @@ use costs::CostContext;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op};
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::drive::flags::StorageFlags;
@@ -496,7 +496,9 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
-        let CostContext { value, cost } = self.grove.query_keys_optional(path_query, true, transaction);
+        let CostContext { value, cost } =
+            self.grove
+                .query_keys_optional(path_query, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }
@@ -510,7 +512,8 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
         let CostContext { value, cost } =
-            self.grove.query_raw_keys_optional(path_query, true, transaction);
+            self.grove
+                .query_raw_keys_optional(path_query, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

@@ -42,6 +42,7 @@ use drive::grovedb::TransactionArg;
 
 use crate::abci::messages::BlockFees;
 use crate::block::BlockStateInfo;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::fee_pools::distribute_storage_pool::DistributionStorageFeeResult;
 use crate::execution::fee_pools::epoch::EpochInfo;
@@ -49,7 +50,6 @@ use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayout
 use crate::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
-use crate::error::execution::ExecutionError;
 
 /// From the Dash Improvement Proposal:
 
@@ -228,12 +228,20 @@ impl Platform {
 
         if self.config.verify_sum_trees {
             // Verify sum trees
-            let credits_verified = self.drive.verify_total_credits(transaction).map_err(Error::Drive)?;
+            let credits_verified = self
+                .drive
+                .verify_total_credits(transaction)
+                .map_err(Error::Drive)?;
 
             if credits_verified.ok()? {
                 Ok(outcome)
             } else {
-                Err(Error::Execution(ExecutionError::CorruptedCreditsNotBalanced(format!("credits are not balanced after block execution {:?}",credits_verified))))
+                Err(Error::Execution(
+                    ExecutionError::CorruptedCreditsNotBalanced(format!(
+                        "credits are not balanced after block execution {:?}",
+                        credits_verified
+                    )),
+                ))
             }
         } else {
             Ok(outcome)

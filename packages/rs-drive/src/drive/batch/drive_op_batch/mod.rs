@@ -82,7 +82,7 @@ pub enum DriveOperationType<'a> {
     /// An identity operation
     IdentityOperation(IdentityOperationType),
     /// A system operation
-    SystemOperation(SystemOperationType)
+    SystemOperation(SystemOperationType),
 }
 
 impl DriveOperationConverter for DriveOperationType<'_> {
@@ -120,14 +120,13 @@ impl DriveOperationConverter for DriveOperationType<'_> {
                     transaction,
                 )
             }
-            DriveOperationType::SystemOperation(system_operation_type) => {
-                system_operation_type.to_drive_operations(
+            DriveOperationType::SystemOperation(system_operation_type) => system_operation_type
+                .to_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                )
-            }
+                ),
         }
     }
 }

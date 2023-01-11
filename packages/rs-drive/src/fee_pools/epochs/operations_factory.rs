@@ -115,9 +115,9 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start time.
-    pub fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp {
+    pub(crate) fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
-            self.get_vec_path(),
+            self.get_path_vec(),
             KEY_START_TIME.to_vec(),
             Element::Item(time_ms.to_be_bytes().to_vec(), None),
         )
@@ -126,16 +126,16 @@ impl Epoch {
     /// Returns a groveDB op which updates the epoch start block height.
     pub fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
-            self.get_vec_path(),
+            self.get_path_vec(),
             KEY_START_BLOCK_HEIGHT.to_vec(),
             Element::Item(start_block_height.to_be_bytes().to_vec(), None),
         )
     }
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
-    pub fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
+    pub(crate) fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
         GroveDbOp::insert_op(
-            self.get_vec_path(),
+            self.get_path_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
             Element::Item(multiplier.to_be_bytes().to_vec(), None),
         )
@@ -147,7 +147,7 @@ impl Epoch {
         processing_fee: Credits,
     ) -> Result<GroveDbOp, Error> {
         Ok(GroveDbOp::insert_op(
-            self.get_vec_path(),
+            self.get_path_vec(),
             KEY_POOL_PROCESSING_FEES.to_vec(),
             Element::new_sum_item(processing_fee.to_signed()?),
         ))
@@ -155,7 +155,7 @@ impl Epoch {
 
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
     pub fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_op(self.get_vec_path(), KEY_POOL_PROCESSING_FEES.to_vec())
+        GroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_PROCESSING_FEES.to_vec())
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
@@ -164,7 +164,7 @@ impl Epoch {
         storage_fee: Credits,
     ) -> Result<GroveDbOp, Error> {
         Ok(GroveDbOp::insert_op(
-            self.get_vec_path(),
+            self.get_path_vec(),
             KEY_POOL_STORAGE_FEES.to_vec(),
             Element::new_sum_item(storage_fee.to_signed()?),
         ))
@@ -172,7 +172,7 @@ impl Epoch {
 
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
     pub fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_op(self.get_vec_path(), KEY_POOL_STORAGE_FEES.to_vec())
+        GroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_STORAGE_FEES.to_vec())
     }
 
     /// Returns a groveDB op which updates the given epoch proposer's block count.
@@ -182,24 +182,24 @@ impl Epoch {
         block_count: u64,
     ) -> GroveDbOp {
         GroveDbOp::insert_op(
-            self.get_proposers_vec_path(),
+            self.get_proposers_path_vec(),
             proposer_pro_tx_hash.to_vec(),
             Element::Item(block_count.to_be_bytes().to_vec(), None),
         )
     }
 
     /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
-    pub fn init_proposers_tree_operation(&self) -> GroveDbOp {
+    pub(crate) fn init_proposers_tree_operation(&self) -> GroveDbOp {
         GroveDbOp::insert_op(
-            self.get_vec_path(),
+            self.get_path_vec(),
             KEY_PROPOSERS.to_vec(),
             Element::empty_tree(),
         )
     }
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
-    pub fn delete_proposers_tree_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_tree_op(self.get_vec_path(), KEY_PROPOSERS.to_vec(), false)
+    pub(crate) fn delete_proposers_tree_operation(&self) -> GroveDbOp {
+        GroveDbOp::delete_tree_op(self.get_path_vec(), KEY_PROPOSERS.to_vec(), false)
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
@@ -209,7 +209,7 @@ impl Epoch {
         batch: &mut GroveDbOpBatch,
     ) {
         for pro_tx_hash in pro_tx_hashes.into_iter() {
-            batch.add_delete(self.get_proposers_vec_path(), pro_tx_hash);
+            batch.add_delete(self.get_proposers_path_vec(), pro_tx_hash);
         }
     }
 }

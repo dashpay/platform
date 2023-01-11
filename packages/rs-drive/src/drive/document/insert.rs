@@ -32,7 +32,6 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
-use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -41,6 +40,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::option::Option::None;
 

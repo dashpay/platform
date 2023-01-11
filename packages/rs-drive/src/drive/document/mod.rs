@@ -33,7 +33,6 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
-use std::borrow::Cow;
 use crate::contract::document::Document;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
@@ -43,6 +42,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::Element;
+use std::borrow::Cow;
 
 mod delete;
 mod estimation_costs;

@@ -32,11 +32,11 @@
 //! This module defines enums and implements functions relevant to the sizes of objects.
 //!
 
-use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element;
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use storage::worst_case_costs::WorstKeyLength;

@@ -32,14 +32,15 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
+use crate::config::PlatformConfig;
 use crate::platform::Platform;
 use tempfile::TempDir;
-use crate::config::PlatformConfig;
 
 /// A function which sets up Platform.
 pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
     let tmp_dir = TempDir::new().unwrap();
-    let drive: Platform = Platform::open(tmp_dir, config).expect("should open Platform successfully");
+    let drive: Platform =
+        Platform::open(tmp_dir, config).expect("should open Platform successfully");
 
     drive
 }

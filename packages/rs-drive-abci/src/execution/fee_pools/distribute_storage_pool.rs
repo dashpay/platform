@@ -79,7 +79,7 @@ impl Platform {
         let refunds = self.drive.fetch_pending_updates(transaction)?;
         let refunded_epochs_count = refunds.len();
 
-        // TODO Better to use iterator do not load everything into memory
+        // todo: Better to use iterator do not load everything into memory
         for (epoch_index, credits) in refunds {
             distribute_refunds_to_epochs_collection(
                 &mut credits_per_epochs,

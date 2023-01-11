@@ -31,19 +31,19 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
-use grovedb::batch::GroveDbOp;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::grove_operations::{DirectQueryType, QueryType};
 use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::op::DriveOperation;
+use crate::fee::op::DriveOperation::GroveOperation;
+use grovedb::batch::GroveDbOp;
 use grovedb::operations::insert::InsertOptions;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 use integer_encoding::VarInt;
-use crate::fee::op::DriveOperation;
-use crate::fee::op::DriveOperation::GroveOperation;
 
 /// Storage fee pool key
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
@@ -139,7 +139,11 @@ impl Drive {
                 "trying to add an amount that would overflow credits",
             )))?;
         let path_holding_total_credits_vec = misc_path_vec();
-        let replace_op = GroveDbOp::replace_op(path_holding_total_credits_vec, TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(), Item(new_total.encode_var_vec(), None));
+        let replace_op = GroveDbOp::replace_op(
+            path_holding_total_credits_vec,
+            TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
+            Item(new_total.encode_var_vec(), None),
+        );
         drive_operations.push(GroveOperation(replace_op));
         Ok(drive_operations)
     }
@@ -188,7 +192,11 @@ impl Drive {
                 "trying to remove an amount that would underflow credits",
             )))?;
         let path_holding_total_credits_vec = misc_path_vec();
-        let replace_op = GroveDbOp::replace_op(path_holding_total_credits_vec, TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(), Item(new_total.encode_var_vec(), None));
+        let replace_op = GroveDbOp::replace_op(
+            path_holding_total_credits_vec,
+            TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
+            Item(new_total.encode_var_vec(), None),
+        );
         drive_operations.push(GroveOperation(replace_op));
         Ok(drive_operations)
     }

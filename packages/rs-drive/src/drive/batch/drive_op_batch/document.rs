@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use crate::contract::document::Document;
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
@@ -14,6 +13,7 @@ use dpp::data_contract::extra::{DocumentType, DriveContractExt};
 use dpp::data_contract::DataContract as Contract;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// A wrapper for a document operation
