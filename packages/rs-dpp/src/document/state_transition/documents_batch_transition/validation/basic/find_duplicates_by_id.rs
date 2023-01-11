@@ -35,7 +35,7 @@ fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
     Some(format!(
         "{}:{}",
         document_transition.as_object()?.get("$type")?,
-        document_transition.as_object()?.get("id")?,
+        document_transition.as_object()?.get("$id")?,
     ))
 }
 
