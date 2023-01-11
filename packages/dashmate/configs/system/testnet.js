@@ -52,9 +52,9 @@ module.exports = lodashMerge({}, baseConfig, {
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-16',
+          chain_id: 'dash-testnet-17',
           initial_height: '0',
-          initial_core_chain_locked_height: 801340,
+          initial_core_chain_locked_height: 814320,
           initial_proposal_core_chain_lock: null,
           consensus_params: {
             block: {
