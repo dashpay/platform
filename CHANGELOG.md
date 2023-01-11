@@ -3,7 +3,9 @@
 
 ### ⚠ BREAKING CHANGES
 
-* credit refunds (#662)
+* AbstractStateTransition#calculateFees removed
+* State transition fees are calculated differently so previous block data is not valid anymore
+* Added new tree to initial structure so previous state is not valid anymore
 
 ### Features
 
