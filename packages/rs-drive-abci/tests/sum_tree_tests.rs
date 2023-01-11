@@ -54,8 +54,10 @@ use drive::drive::object_size_info::DocumentInfo::{
 };
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::{block_info, Drive};
+use drive::fee::credits::Credits;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
+use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{Transaction, TransactionArg};
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
@@ -111,13 +113,6 @@ struct Strategy {
     contracts: Vec<Contract>,
     operations: Vec<(DocumentOp, Frequency)>,
     identities_inserts: Frequency,
-}
-
-#[derive(Clone, Debug)]
-struct TestParams {
-    strategy: Strategy,
-    quorum_members: VecDeque<ProTxHash>,
-    current_identities: BTreeMap<Identifier, Identity>,
 }
 
 impl Strategy {
@@ -209,12 +204,13 @@ impl Strategy {
     fn state_transitions_for_block_with_new_identities(
         &self,
         block_info: &BlockInfo,
-        current_identities: &Vec<Identity>,
+        current_identities: &mut Vec<Identity>,
         rng: &mut StdRng,
     ) -> (Vec<ExecutionEvent>, Vec<Identity>) {
         let mut execution_events = vec![];
-        let (identities, operations): (Vec<Identity>, Vec<Vec<DriveOperationType>>) =
+        let (mut identities, operations): (Vec<Identity>, Vec<Vec<DriveOperationType>>) =
             self.identity_operations_for_block(rng).into_iter().unzip();
+        current_identities.append(&mut identities);
         let mut identity_execution_events: Vec<ExecutionEvent> = operations
             .into_iter()
             .map(|operation| ExecutionEvent::new_identity_insertion(operation))
@@ -227,8 +223,8 @@ impl Strategy {
                 .contract_operations()
                 .into_iter()
                 .map(|operation| {
-                    let identity_num = rng.gen_range(0..identities.len());
-                    let an_identity = identities.get(identity_num).unwrap().clone();
+                    let identity_num = rng.gen_range(0..current_identities.len());
+                    let an_identity = current_identities.get(identity_num).unwrap().clone();
                     ExecutionEvent::new_contract_operation(an_identity, operation)
                 })
                 .collect();
@@ -246,95 +242,6 @@ impl Strategy {
         execution_events.append(&mut document_execution_events);
         (execution_events, identities)
     }
-}
-
-impl TestParams {
-    //
-    // fn execute_block_document_operations(
-    //     &mut self,
-    //     drive: &Drive,
-    //     block_info: &BlockInfo,
-    //     transaction: &Transaction,
-    //     rng: &mut StdRng,
-    // ) {
-    //     for (op, frequency) in &self.strategy.operations {
-    //         if frequency.check_hit(rng) {
-    //             let count = rng.gen_range(frequency.times_per_block_range.clone());
-    //             let documents = op.document_type.random_documents(count as u32, None);
-    //             for document in &documents {
-    //                 let i = rng.gen();
-    //                 let identity = self.current_identities.get(i);
-    //                 let serialization = document
-    //                     .serialize(&op.document_type)
-    //                     .expect("expected to serialize document");
-    //
-    //                 let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity.id));
-    //
-    //                 let estimated_document_fee_result = drive
-    //                     .add_document_for_contract(
-    //                         DocumentAndContractInfo {
-    //                             owned_document_info: OwnedDocumentInfo {
-    //                                 document_info: DocumentRefAndSerialization((
-    //                                     document,
-    //                                     serialization.as_slice(),
-    //                                     storage_flags.as_ref(),
-    //                                 )),
-    //                                 owner_id: None
-    //                             },
-    //                             contract: &op.contract,
-    //                             document_type: &op.document_type,
-    //                         },
-    //                         false,
-    //                         block_info.clone(),
-    //                         false,
-    //                         Some(transaction),
-    //                     )
-    //                     .expect("expected to add document");
-    //
-    //                 // does the identity have enough balance?
-    //
-    //                 let balance = drive.fetch_identity_balance(identity.id, true, Some(transaction)).expect("expected to fetch identity balance").expect("expected to get balance");
-    //
-    //                 if balance >= estimated_document_fee_result.total_fee() {
-    //                     // then do the real operation
-    //                     let fee_result = drive
-    //                         .add_document_for_contract(
-    //                             DocumentAndContractInfo {
-    //                                 owned_document_info: OwnedDocumentInfo {
-    //                                     document_info: DocumentRefAndSerialization((
-    //                                         document,
-    //                                         serialization.as_slice(),
-    //                                         storage_flags.as_ref(),
-    //                                     )),
-    //                                     owner_id: None
-    //                                 },
-    //                                 contract: &op.contract,
-    //                                 document_type: &op.document_type,
-    //                             },
-    //                             false,
-    //                             block_info.clone(),
-    //                             false,
-    //                             Some(transaction),
-    //                         )
-    //                         .expect("expected to add document");
-    //
-    //                     drive.remove_from_identity_balance(identity.id, fee_result.required_removed_balance(), fee_result.desired_removed_balance(), block_info, true, Some(transaction)).expect("expected to pay for operation");
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    //
-    // fn execute_block(
-    //     &mut self,
-    //     drive: &Drive,
-    //     block_info: &BlockInfo,
-    //     transaction: &Transaction,
-    //     rng: &mut StdRng,
-    // ) {
-    //     self.execute_block_identity_operations(drive, block_info, transaction, rng);
-    //     self.execute_block_document_operations(drive, block_info, transaction, rng);
-    // }
 }
 
 fn create_identities_operations<'a>(
@@ -360,35 +267,12 @@ fn create_identities_operations<'a>(
         .collect()
 }
 
-// fn run_chain(platform: &Platform, days: u32, blocks_per_day: u32, block_interval_s: u32,
-//              mut test_params: TestParams, rng: &mut StdRng) {
-//
-//     let mut quorum_members = test_params.quorum_members.clone();
-//     let genesis_time = Utc::now();
-//     let mut block_height = 0;
-//     // process blocks
-//     for day in 0..days {
-//         for block_num in 0..blocks_per_day {
-//             let block_time = if day == 0 && block_num == 0 {
-//                 genesis_time
-//             } else {
-//                 genesis_time
-//                     + Duration::days(day as i64)
-//                     + Duration::seconds(block_interval_s as i64 * block_num as i64)
-//             };
-//             let block_info = BlockInfo {
-//                 time_ms: block_time.timestamp_millis() as u64,
-//                 height: block_height,
-//                 epoch: Default::default(),
-//             };
-//
-//             let proposer = quorum_members.remove(0).unwrap();
-//             run_block(platform, proposer, &block_info, &mut test_params, rng);
-//             quorum_members.push_back(proposer);
-//             block_height += 1;
-//         }
-//     }
-// }
+struct ChainExecutionOutcome {
+    platform: Platform,
+    masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
+    identities: Vec<Identity>,
+    end_epoch_index: u16,
+}
 
 fn run_chain_for_strategy(
     block_count: u64,
@@ -396,7 +280,7 @@ fn run_chain_for_strategy(
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
-) {
+) -> ChainExecutionOutcome {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut platform = setup_platform_raw(Some(config));
     let mut current_time_ms = 0;
@@ -437,6 +321,22 @@ fn run_chain_for_strategy(
         i += 1;
         i %= quorum_size;
     }
+    let masternode_identity_balances = platform
+        .drive
+        .fetch_identities_balances(&proposers, None)
+        .expect("expected to get balances");
+    let end_epoch_index = platform
+        .block_execution_context
+        .take()
+        .expect("expected context")
+        .epoch_info
+        .current_epoch_index;
+    ChainExecutionOutcome {
+        platform,
+        masternode_identity_balances,
+        identities: current_identities,
+        end_epoch_index,
+    }
 }
 
 #[test]
@@ -470,7 +370,34 @@ fn run_chain_insert_one_new_identity_per_block() {
         drive_config: Default::default(),
         verify_sum_trees: true,
     };
-    run_chain_for_strategy(100, 3000, strategy, config, 15);
+    let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
+
+    assert_eq!(outcome.identities.len(), 100);
+}
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
+    let strategy = Strategy {
+        contracts: vec![],
+        operations: vec![],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    let day_in_ms = 1000 * 60 * 60 * 24;
+    let outcome = run_chain_for_strategy(100, day_in_ms, strategy, config, 15);
+    assert_eq!(outcome.identities.len(), 100);
+    assert_eq!(outcome.masternode_identity_balances.len(), 100);
+    let all_have_balances = outcome
+        .masternode_identity_balances
+        .iter()
+        .all(|(_, balance)| *balance != 0);
+    assert!(all_have_balances, "all masternodes should have a balance");
 }
 
 #[test]
@@ -506,9 +433,23 @@ fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
     let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
         .expect("contract should be deserialized");
 
+    let document_op = DocumentOp {
+        contract: contract.clone(),
+        document_type: contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
     let strategy = Strategy {
         contracts: vec![contract],
-        operations: vec![],
+        operations: vec![(
+            document_op,
+            Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+        )],
         identities_inserts: Frequency {
             times_per_block_range: 1..2,
             chance_per_block: None,
