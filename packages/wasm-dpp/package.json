@@ -30,7 +30,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@dashevo/bls": "~1.0.0-beta.2"
+    "@dashevo/bls": "~1.0.0-beta.2",
+    "lodash": "^4.17.21"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",

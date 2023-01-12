@@ -2,6 +2,8 @@ use anyhow::{anyhow, bail};
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
 
+use crate::identifier;
+
 pub use super::index::Index;
 use super::index::IndexWithRawProperties;
 
@@ -20,6 +22,8 @@ pub trait JsonSchemaExt {
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
     /// returns the indexes from Json Schema
     fn get_indices(&self) -> Result<Vec<Index>, anyhow::Error>;
+    /// returns true if json value contains property `contentMediaType` and it equals to Identifier
+    fn is_type_of_identifier(&self) -> bool;
 }
 
 impl JsonSchemaExt for JsonValue {
@@ -100,6 +104,15 @@ impl JsonSchemaExt for JsonValue {
 
             None => Ok(vec![]),
         }
+    }
+
+    fn is_type_of_identifier(&self) -> bool {
+        if let JsonValue::Object(ref map) = self {
+            if let Some(JsonValue::String(media_type)) = map.get("contentMediaType") {
+                return media_type == identifier::MEDIA_TYPE;
+            }
+        }
+        false
     }
 }
 

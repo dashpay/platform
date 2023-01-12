@@ -1,7 +1,8 @@
+use anyhow::Context;
 use getrandom::getrandom;
 
-pub fn generate() -> [u8; 32] {
+pub fn generate() -> Result<[u8; 32], anyhow::Error> {
     let mut buffer = [0u8; 32];
-    let _ = getrandom(&mut buffer);
-    buffer
+    getrandom(&mut buffer).context("generating entropy failed")?;
+    Ok(buffer)
 }
