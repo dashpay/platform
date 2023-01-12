@@ -103,7 +103,7 @@ impl Platform {
                             Some(transaction),
                         )?;
                         total_fees
-                            .checked_add_assign(individual_fee_result)
+                            .checked_add_assign(outcome.actual_fee_paid)
                             .map_err(Error::Drive)?;
                     }
                 }

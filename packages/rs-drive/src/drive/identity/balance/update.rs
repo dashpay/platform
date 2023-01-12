@@ -17,9 +17,9 @@ use std::collections::HashMap;
 /// The outcome of paying for a fee
 pub struct FeeRemovalOutcome {
     /// The cost of the removal
-    cost_of_removal: Option<FeeResult>,
+    pub cost_of_removal: Option<FeeResult>,
     /// The actual fee paid by the identity
-    actual_fee_paid: FeeResult,
+    pub actual_fee_paid: FeeResult,
 }
 
 impl Drive {
