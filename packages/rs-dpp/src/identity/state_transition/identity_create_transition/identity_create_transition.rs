@@ -10,7 +10,8 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
-    StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
+    state_transition_helpers, StateTransition, StateTransitionConvert, StateTransitionLike,
+    StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;
@@ -176,6 +177,11 @@ impl IdentityCreateTransition {
     ) -> Result<JsonValue, SerdeParsingError> {
         let mut json_map = JsonValue::Object(Default::default());
 
+        json_map.insert(
+            property_names::TRANSITION_TYPE.to_string(),
+            serde_json::Value::from(Self::get_type() as u8),
+        )?;
+
         if !options.skip_signature {
             let sig = self.signature.iter().map(|num| JsonValue::from(*num));
             json_map.insert(
@@ -244,23 +250,36 @@ impl StateTransitionConvert for IdentityCreateTransition {
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+        // The [state_transition_helpers::to_object] doesn't  convert the `public_keys` property.
+        // The property must be serialized manually
+        let mut public_keys: Vec<JsonValue> = vec![];
+        for key in self.public_keys.iter() {
+            public_keys.push(key.to_raw_json_object(skip_signature)?);
         }
 
-        Ok(json_value)
+        let mut raw_object: JsonValue = state_transition_helpers::to_object(
+            self,
+            Self::signature_property_paths(),
+            Self::identifiers_property_paths(),
+            skip_signature,
+        )?;
+        raw_object.insert(
+            property_names::PUBLIC_KEYS.to_owned(),
+            JsonValue::Array(public_keys),
+        )?;
+
+        Ok(raw_object)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json = serde_json::Value::Object(Default::default());
 
         // TODO: super.toJSON()
+
+        json.insert(
+            property_names::TRANSITION_TYPE.to_string(),
+            serde_json::Value::from(Self::get_type() as u8),
+        )?;
 
         json.insert(
             property_names::ASSET_LOCK_PROOF.to_string(),

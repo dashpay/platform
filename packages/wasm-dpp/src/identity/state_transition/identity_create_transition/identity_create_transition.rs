@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,8 @@ use crate::{
     with_js_error,
 };
 
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 use dpp::{
     identifier::Identifier,
@@ -335,5 +338,27 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=setExecutionContext)]
     pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=signByPrivateKey)]
+    pub fn sign_by_private_key(
+        &mut self,
+        private_key: Vec<u8>,
+        key_type: u8,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+        let key_type = key_type
+            .try_into()
+            .map_err(|e: anyhow::Error| e.to_string())?;
+
+        self.0
+            .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
+            .map_err(from_dpp_err)
+    }
+
+    #[wasm_bindgen(js_name=getSignature)]
+    pub fn get_signature(&self) -> Buffer {
+        Buffer::from_bytes(self.0.get_signature().as_slice())
     }
 }
