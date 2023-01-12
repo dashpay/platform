@@ -411,822 +411,828 @@ describe('validateDataContractFactory', () => {
     });
   });
 
-  // describe('documents', () => {
-  //   it('should be present', async () => {
-  //     delete rawDataContract.documents;
+  describe('documents', () => {
+    it('should be present', async () => {
+      const rawDataContract = dataContract.toObject();
+      delete rawDataContract.documents;
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     await expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('documents');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('documents');
+    });
 
-  //   it('should be an object', async () => {
-  //     rawDataContract.documents = 1;
+    it('should be an object', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents = 1;
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     await expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/documents');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
+      expect(error.getInstancePath()).to.equal('/documents');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-  //   it('should not be empty', async () => {
-  //     rawDataContract.documents = {};
+    it('should not be empty', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents = {};
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     await expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/documents');
-  //     expect(error.getKeyword()).to.equal('minProperties');
-  //   });
+      expect(error.getInstancePath()).to.equal('/documents');
+      expect(error.getKeyword()).to.equal('minProperties');
+    });
 
-  //   it('should have valid property names (document types)', async () => {
-  //     const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
-  //       'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+    it('should have valid property names (document types)', async () => {
+      const rawDataContract = dataContract.toObject();
+      const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
+        'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
-  //     await Promise.all(
-  //       validNames.map(async (name) => {
-  //         const clonedDataContract = lodashCloneDeep(rawDataContract);
+      await Promise.all(
+        validNames.map(async (name) => {
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //         clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
+          clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
 
-  //         const result = await validateDataContract(clonedDataContract);
+          const result = await validateDataContract(clonedDataContract);
 
-  //         await expectJsonSchemaError(result, 0);
-  //       }),
-  //     );
-  //   });
+          await expectJsonSchemaError(result, 0);
+        }),
+      );
+    });
 
-  //   it('should return an invalid result if a property (document type) has invalid format', async () => {
-  //     const invalidNames = ['*(*&^', '$test', '.', '.a'];
+    it('should return an invalid result if a property (document type) has invalid format', async () => {
+      const rawDataContract = dataContract.toObject();
+      const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
-  //     await Promise.all(
-  //       invalidNames.map(async (name) => {
-  //         const clonedDataContract = lodashCloneDeep(rawDataContract);
+      await Promise.all(
+        invalidNames.map(async (name) => {
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //         clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
+          clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
 
-  //         const result = await validateDataContract(clonedDataContract);
+          const result = await validateDataContract(clonedDataContract);
 
-  //         await expectJsonSchemaError(result, 2);
+          await expectJsonSchemaError(result);
 
-  //         const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-  //         expect(error.getInstancePath()).to.equal('/documents');
-  //         expect(error.getKeyword()).to.equal('pattern');
-  //       }),
-  //     );
-  //   });
+          expect(error.getInstancePath()).to.equal('/documents');
+          expect(error.getKeyword()).to.equal('propertyNames');
+        }),
+      );
+    });
 
-  //   it('should have no more than 100 properties', async () => {
-  //     const niceDocumentDefinition = rawDataContract.documents.niceDocument;
+    it('should have no more than 100 properties', async () => {
+      const rawDataContract = dataContract.toObject();
+      const niceDocumentDefinition = rawDataContract.documents.niceDocument;
 
-  //     rawDataContract.documents = {};
+      rawDataContract.documents = {};
 
-  //     Array(101).fill(niceDocumentDefinition).forEach((item, i) => {
-  //       rawDataContract.documents[i] = item;
-  //     });
+      Array(101).fill(niceDocumentDefinition).forEach((item, i) => {
+        rawDataContract.documents[i] = item;
+      });
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     await expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/documents');
-  //     expect(error.getKeyword()).to.equal('maxProperties');
-  //   });
+      expect(error.getInstancePath()).to.equal('/documents');
+      expect(error.getKeyword()).to.equal('maxProperties');
+    });
 
-  //   describe('Document schema', () => {
-  //     it('should not be empty', async () => {
-  //       rawDataContract.documents.niceDocument.properties = {};
+    // describe('Document schema', () => {
+    //   it('should not be empty', async () => {
+    //     rawDataContract.documents.niceDocument.properties = {};
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result, 2);
+    //     await expectJsonSchemaError(result, 2);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument/properties');
-  //       expect(error.getKeyword()).to.equal('minProperties');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties');
+    //     expect(error.getKeyword()).to.equal('minProperties');
+    //   });
 
-  //     it('should have type "object"', async () => {
-  //       rawDataContract.documents.niceDocument.type = 'string';
+    //   it('should have type "object"', async () => {
+    //     rawDataContract.documents.niceDocument.type = 'string';
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+    //     await expectJsonSchemaError(result);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument/type');
-  //       expect(error.getKeyword()).to.equal('const');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument/type');
+    //     expect(error.getKeyword()).to.equal('const');
+    //   });
 
-  //     it('should have "properties"', async () => {
-  //       delete rawDataContract.documents.niceDocument.properties;
+    //   it('should have "properties"', async () => {
+    //     delete rawDataContract.documents.niceDocument.properties;
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+    //     await expectJsonSchemaError(result);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('properties');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('properties');
+    //   });
 
-  //     it('should have nested "properties"', async () => {
-  //       rawDataContract.documents.niceDocument.properties.object = {
-  //         type: 'array',
-  //         prefixItems: [
-  //           {
-  //             type: 'object',
-  //             properties: {
-  //               something: {
-  //                 type: 'object',
-  //               },
-  //             },
-  //             additionalProperties: false,
-  //           },
-  //         ],
-  //         items: false,
-  //       };
+    //   it('should have nested "properties"', async () => {
+    //     rawDataContract.documents.niceDocument.properties.object = {
+    //       type: 'array',
+    //       prefixItems: [
+    //         {
+    //           type: 'object',
+    //           properties: {
+    //             something: {
+    //               type: 'object',
+    //             },
+    //           },
+    //           additionalProperties: false,
+    //         },
+    //       ],
+    //       items: false,
+    //     };
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result, 3);
+    //     await expectJsonSchemaError(result, 3);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0/properties/something');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('properties');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0/properties/something');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('properties');
+    //   });
 
-  //     it('should have valid property names', async () => {
-  //       const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
-  //         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+    //   it('should have valid property names', async () => {
+    //     const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
+    //       'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
-  //       await Promise.all(
-  //         validNames.map(async (name) => {
-  //           const clonedDataContract = lodashCloneDeep(rawDataContract);
+    //     await Promise.all(
+    //       validNames.map(async (name) => {
+    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //           clonedDataContract.documents.niceDocument.properties[name] = {
-  //             type: 'string',
-  //           };
+    //         clonedDataContract.documents.niceDocument.properties[name] = {
+    //           type: 'string',
+    //         };
 
-  //           const result = await validateDataContract(clonedDataContract);
+    //         const result = await validateDataContract(clonedDataContract);
 
-  //           await expectJsonSchemaError(result, 0);
-  //         }),
-  //       );
-  //     });
+    //         await expectJsonSchemaError(result, 0);
+    //       }),
+    //     );
+    //   });
 
-  //     it('should have valid nested property names', async () => {
-  //       const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
-  //         'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+    //   it('should have valid nested property names', async () => {
+    //     const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
+    //       'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
-  //       rawDataContract.documents.niceDocument.properties.something = {
-  //         type: 'object',
-  //         properties: {},
-  //         additionalProperties: false,
-  //       };
+    //     rawDataContract.documents.niceDocument.properties.something = {
+    //       type: 'object',
+    //       properties: {},
+    //       additionalProperties: false,
+    //     };
 
-  //       await Promise.all(
-  //         validNames.map(async (name) => {
-  //           const clonedDataContract = lodashCloneDeep(rawDataContract);
+    //     await Promise.all(
+    //       validNames.map(async (name) => {
+    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //           clonedDataContract.documents.niceDocument.properties.something.properties[name] = {
-  //             type: 'string',
-  //           };
+    //         clonedDataContract.documents.niceDocument.properties.something.properties[name] = {
+    //           type: 'string',
+    //         };
 
-  //           const result = await validateDataContract(clonedDataContract);
+    //         const result = await validateDataContract(clonedDataContract);
 
-  //           await expectJsonSchemaError(result, 0);
-  //         }),
-  //       );
-  //     });
+    //         await expectJsonSchemaError(result, 0);
+    //       }),
+    //     );
+    //   });
 
-  //     it('should return an invalid result if a property has invalid format', async () => {
-  //       const invalidNames = ['*(*&^', '$test', '.', '.a'];
+    //   it('should return an invalid result if a property has invalid format', async () => {
+    //     const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
-  //       await Promise.all(
-  //         invalidNames.map(async (name) => {
-  //           const clonedDataContract = lodashCloneDeep(rawDataContract);
+    //     await Promise.all(
+    //       invalidNames.map(async (name) => {
+    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //           clonedDataContract.documents.niceDocument.properties[name] = {};
+    //         clonedDataContract.documents.niceDocument.properties[name] = {};
 
-  //           const result = await validateDataContract(clonedDataContract);
+    //         const result = await validateDataContract(clonedDataContract);
 
-  //           await expectJsonSchemaError(result, 3);
+    //         await expectJsonSchemaError(result, 3);
 
-  //           const errors = result.getErrors();
+    //         const errors = result.getErrors();
 
-  //           expect(errors[0].instancePath).to.equal('/documents/niceDocument/properties');
-  //           expect(errors[0].keyword).to.equal('pattern');
-  //           expect(errors[1].instancePath).to.equal('/documents/niceDocument/properties');
-  //           expect(errors[1].keyword).to.equal('propertyNames');
-  //         }),
-  //       );
-  //     });
+    //         expect(errors[0].instancePath).to.equal('/documents/niceDocument/properties');
+    //         expect(errors[0].keyword).to.equal('pattern');
+    //         expect(errors[1].instancePath).to.equal('/documents/niceDocument/properties');
+    //         expect(errors[1].keyword).to.equal('propertyNames');
+    //       }),
+    //     );
+    //   });
 
-  //     it('should return an invalid result if a nested property has invalid format', async () => {
-  //       const invalidNames = ['*(*&^', '$test', '.', '.a'];
+    //   it('should return an invalid result if a nested property has invalid format', async () => {
+    //     const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
-  //       rawDataContract.documents.niceDocument.properties.something = {
-  //         properties: {},
-  //         additionalProperties: false,
-  //       };
+    //     rawDataContract.documents.niceDocument.properties.something = {
+    //       properties: {},
+    //       additionalProperties: false,
+    //     };
 
-  //       await Promise.all(
-  //         invalidNames.map(async (name) => {
-  //           const clonedDataContract = lodashCloneDeep(rawDataContract);
+    //     await Promise.all(
+    //       invalidNames.map(async (name) => {
+    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //           clonedDataContract.documents.niceDocument.properties.something.properties[name] = {};
+    //         clonedDataContract.documents.niceDocument.properties.something.properties[name] = {};
 
-  //           const result = await validateDataContract(clonedDataContract);
+    //         const result = await validateDataContract(clonedDataContract);
 
-  //           await expectJsonSchemaError(result, 4);
+    //         await expectJsonSchemaError(result, 4);
 
-  //           const errors = result.getErrors();
+    //         const errors = result.getErrors();
 
-  //           expect(errors[0].instancePath).to.equal(
-  //             '/documents/niceDocument/properties/something/properties',
-  //           );
-  //           expect(errors[0].keyword).to.equal('pattern');
-  //           expect(errors[1].instancePath).to.equal(
-  //             '/documents/niceDocument/properties/something/properties',
-  //           );
-  //           expect(errors[1].keyword).to.equal('propertyNames');
-  //         }),
-  //       );
-  //     });
+    //         expect(errors[0].instancePath).to.equal(
+    //           '/documents/niceDocument/properties/something/properties',
+    //         );
+    //         expect(errors[0].keyword).to.equal('pattern');
+    //         expect(errors[1].instancePath).to.equal(
+    //           '/documents/niceDocument/properties/something/properties',
+    //         );
+    //         expect(errors[1].keyword).to.equal('propertyNames');
+    //       }),
+    //     );
+    //   });
 
-  //     it('should have "additionalProperties" defined', async () => {
-  //       delete rawDataContract.documents.niceDocument.additionalProperties;
+    //   it('should have "additionalProperties" defined', async () => {
+    //     delete rawDataContract.documents.niceDocument.additionalProperties;
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+    //     await expectJsonSchemaError(result);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('additionalProperties');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('additionalProperties');
+    //   });
 
-  //     it('should have "additionalProperties" defined to false', async () => {
-  //       rawDataContract.documents.niceDocument.additionalProperties = true;
+    //   it('should have "additionalProperties" defined to false', async () => {
+    //     rawDataContract.documents.niceDocument.additionalProperties = true;
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+    //     await expectJsonSchemaError(result);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument/additionalProperties');
-  //       expect(error.getKeyword()).to.equal('const');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument/additionalProperties');
+    //     expect(error.getKeyword()).to.equal('const');
+    //   });
 
-  //     it('should have nested "additionalProperties" defined', async () => {
-  //       rawDataContract.documents.niceDocument.properties.object = {
-  //         type: 'array',
-  //         prefixItems: [
-  //           {
-  //             type: 'object',
-  //             properties: {
-  //               something: {
-  //                 type: 'string',
-  //               },
-  //             },
-  //           },
-  //         ],
-  //         items: false,
-  //       };
+    //   it('should have nested "additionalProperties" defined', async () => {
+    //     rawDataContract.documents.niceDocument.properties.object = {
+    //       type: 'array',
+    //       prefixItems: [
+    //         {
+    //           type: 'object',
+    //           properties: {
+    //             something: {
+    //               type: 'string',
+    //             },
+    //           },
+    //         },
+    //       ],
+    //       items: false,
+    //     };
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result, 2);
+    //     await expectJsonSchemaError(result, 2);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('additionalProperties');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('additionalProperties');
+    //   });
 
-  //     it('should return invalid result if there are additional properties', async () => {
-  //       rawDataContract.additionalProperty = { };
+    //   it('should return invalid result if there are additional properties', async () => {
+    //     rawDataContract.additionalProperty = { };
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+    //     await expectJsonSchemaError(result);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('');
-  //       expect(error.getKeyword()).to.equal('additionalProperties');
-  //     });
+    //     expect(error.instancePath).to.equal('');
+    //     expect(error.getKeyword()).to.equal('additionalProperties');
+    //   });
 
-  //     it('should have no more than 100 properties', async () => {
-  //       const propertyDefinition = { };
+    //   it('should have no more than 100 properties', async () => {
+    //     const propertyDefinition = { };
 
-  //       rawDataContract.documents.niceDocument.properties = {};
+    //     rawDataContract.documents.niceDocument.properties = {};
 
-  //       Array(101).fill(propertyDefinition).forEach((item, i) => {
-  //         rawDataContract.documents.niceDocument.properties[i] = item;
-  //       });
+    //     Array(101).fill(propertyDefinition).forEach((item, i) => {
+    //       rawDataContract.documents.niceDocument.properties[i] = item;
+    //     });
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result, 2);
+    //     await expectJsonSchemaError(result, 2);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/niceDocument/properties');
-  //       expect(error.getKeyword()).to.equal('maxProperties');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties');
+    //     expect(error.getKeyword()).to.equal('maxProperties');
+    //   });
+
+    //   it('should have defined items for arrays', async () => {
+    //     rawDataContract.documents.new = {
+    //       properties: {
+    //         something: {
+    //           type: 'array',
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
 
-  //     it('should have defined items for arrays', async () => {
-  //       rawDataContract.documents.new = {
-  //         properties: {
-  //           something: {
-  //             type: 'array',
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     await expectJsonSchemaError(result, 2);
 
-  //       await expectJsonSchemaError(result, 2);
+    //     const [error] = result.getErrors();
 
-  //       const [error] = result.getErrors();
+    //     expect(error.instancePath).to.equal('/documents/new/properties/something');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('items');
+    //   });
 
-  //       expect(error.instancePath).to.equal('/documents/new/properties/something');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('items');
-  //     });
+    //   it('should have sub schema in items for arrays', async () => {
+    //     rawDataContract.documents.new = {
+    //       properties: {
+    //         something: {
+    //           type: 'array',
+    //           items: [
+    //             {
+    //               type: 'string',
+    //             },
+    //             {
+    //               type: 'number',
+    //             },
+    //           ],
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
 
-  //     it('should have sub schema in items for arrays', async () => {
-  //       rawDataContract.documents.new = {
-  //         properties: {
-  //           something: {
-  //             type: 'array',
-  //             items: [
-  //               {
-  //                 type: 'string',
-  //               },
-  //               {
-  //                 type: 'number',
-  //               },
-  //             ],
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     await expectJsonSchemaError(result, 3);
 
-  //       await expectJsonSchemaError(result, 3);
+    //     const [error] = result.getErrors();
 
-  //       const [error] = result.getErrors();
+    //     expect(error.instancePath).to.equal('/documents/new/properties/something/items');
+    //     expect(error.getKeyword()).to.equal('type');
+    //     expect(error.getParams().type).to.equal('object');
+    //   });
 
-  //       expect(error.instancePath).to.equal('/documents/new/properties/something/items');
-  //       expect(error.getKeyword()).to.equal('type');
-  //       expect(error.getParams().type).to.equal('object');
-  //     });
+    //   it('should have items if prefixItems is used for arrays', async () => {
+    //     rawDataContract.documents.new = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'array',
+    //           prefixItems: [
+    //             {
+    //               type: 'string',
+    //             },
+    //             {
+    //               type: 'number',
+    //             },
+    //           ],
+    //           minItems: 2,
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
 
-  //     it('should have items if prefixItems is used for arrays', async () => {
-  //       rawDataContract.documents.new = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'array',
-  //             prefixItems: [
-  //               {
-  //                 type: 'string',
-  //               },
-  //               {
-  //                 type: 'number',
-  //               },
-  //             ],
-  //             minItems: 2,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     await expectJsonSchemaError(result, 2);
 
-  //       await expectJsonSchemaError(result, 2);
+    //     const [error] = result.getErrors();
 
-  //       const [error] = result.getErrors();
+    //     expect(error.instancePath).to.equal('/documents/new/properties/something');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('items');
+    //   });
 
-  //       expect(error.instancePath).to.equal('/documents/new/properties/something');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('items');
-  //     });
+    //   it('should not have items disabled if prefixItems is used for arrays', async () => {
+    //     rawDataContract.documents.new = {
+    //       properties: {
+    //         something: {
+    //           type: 'array',
+    //           prefixItems: [
+    //             {
+    //               type: 'string',
+    //             },
+    //             {
+    //               type: 'number',
+    //             },
+    //           ],
+    //           items: true,
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/new/properties/something/items');
+    //     expect(error.getKeyword()).to.equal('const');
+    //     expect(error.getParams().allowedValue).to.equal(false);
+    //   });
+
+    //   it('should return invalid result if "default" keyword is used', async () => {
+    //     rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/firstName');
+    //     expect(error.getKeyword()).to.equal('unevaluatedProperties');
+    //   });
+
+    //   it.skip('should return invalid result if remote `$ref` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       $ref: 'http://remote.com/schema#',
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/$ref');
+    //     expect(error.getKeyword()).to.equal('pattern');
+    //   });
+
+    //   it('should not have `propertyNames`', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //         },
+    //       },
+    //       propertyNames: {
+    //         pattern: 'abc',
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument');
+    //     expect(error.getKeyword()).to.equal('unevaluatedProperties');
+    //     expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
+    //   });
+
+    //   it('should have `maxItems` if `uniqueItems` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'array',
+    //           uniqueItems: true,
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('items');
+    //   });
+
+    //   it('should have `maxItems` no bigger than 100000 if `uniqueItems` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'array',
+    //           uniqueItems: true,
+    //           maxItems: 200000,
+    //           items: {
+    //             type: 'object',
+    //             properties: {
+    //               property: {
+    //                 type: 'string',
+    //               },
+    //             },
+    //             additionalProperties: false,
+    //           },
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxItems');
+    //     expect(error.getKeyword()).to.equal('maximum');
+    //   });
+
+    //   it('should return invalid result if document JSON Schema is not valid', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //           format: 'lalala',
+    //           maxLength: 100,
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     expectValidationError(result, JsonSchemaCompilationError);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.getCode()).to.equal(1004);
+
+    //     expect(error.message).to.be.a('string').and.satisfy((msg) => (
+    //       msg.startsWith('unknown format "lalala" ignored in schema')
+    //     ));
+    //   });
+
+    //   it('should have `maxLength` if `pattern` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //           pattern: 'a',
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('maxLength');
+    //   });
+
+    //   it('should have `maxLength` no bigger than 50000 if `pattern` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //           pattern: 'a',
+    //           maxLength: 60000,
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
+    //     expect(error.getKeyword()).to.equal('maximum');
+    //   });
+
+    //   it('should have `maxLength` if `format` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //           format: 'url',
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
+
+    //     const result = await validateDataContract(rawDataContract);
+
+    //     await expectJsonSchemaError(result, 2);
+
+    //     const [error] = result.getErrors();
+
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getKeyword()).to.equal('required');
+    //     expect(error.getParams().missingProperty).to.equal('maxLength');
+    //   });
 
-  //     it('should not have items disabled if prefixItems is used for arrays', async () => {
-  //       rawDataContract.documents.new = {
-  //         properties: {
-  //           something: {
-  //             type: 'array',
-  //             prefixItems: [
-  //               {
-  //                 type: 'string',
-  //               },
-  //               {
-  //                 type: 'number',
-  //               },
-  //             ],
-  //             items: true,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
+    //   it('should have `maxLength` no bigger than 50000 if `format` is used', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //           format: 'url',
+    //           maxLength: 60000,
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
 
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/new/properties/something/items');
-  //       expect(error.getKeyword()).to.equal('const');
-  //       expect(error.getParams().allowedValue).to.equal(false);
-  //     });
-
-  //     it('should return invalid result if "default" keyword is used', async () => {
-  //       rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
-
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
+    //     await expectJsonSchemaError(result, 2);
 
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/firstName');
-  //       expect(error.getKeyword()).to.equal('unevaluatedProperties');
-  //     });
-
-  //     it.skip('should return invalid result if remote `$ref` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         $ref: 'http://remote.com/schema#',
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/$ref');
-  //       expect(error.getKeyword()).to.equal('pattern');
-  //     });
-
-  //     it('should not have `propertyNames`', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //           },
-  //         },
-  //         propertyNames: {
-  //           pattern: 'abc',
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument');
-  //       expect(error.getKeyword()).to.equal('unevaluatedProperties');
-  //       expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
-  //     });
-
-  //     it('should have `maxItems` if `uniqueItems` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'array',
-  //             uniqueItems: true,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('items');
-  //     });
-
-  //     it('should have `maxItems` no bigger than 100000 if `uniqueItems` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'array',
-  //             uniqueItems: true,
-  //             maxItems: 200000,
-  //             items: {
-  //               type: 'object',
-  //               properties: {
-  //                 property: {
-  //                   type: 'string',
-  //                 },
-  //               },
-  //               additionalProperties: false,
-  //             },
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxItems');
-  //       expect(error.getKeyword()).to.equal('maximum');
-  //     });
-
-  //     it('should return invalid result if document JSON Schema is not valid', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //             format: 'lalala',
-  //             maxLength: 100,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, JsonSchemaCompilationError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1004);
-
-  //       expect(error.message).to.be.a('string').and.satisfy((msg) => (
-  //         msg.startsWith('unknown format "lalala" ignored in schema')
-  //       ));
-  //     });
-
-  //     it('should have `maxLength` if `pattern` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //             pattern: 'a',
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('maxLength');
-  //     });
-
-  //     it('should have `maxLength` no bigger than 50000 if `pattern` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //             pattern: 'a',
-  //             maxLength: 60000,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
-  //       expect(error.getKeyword()).to.equal('maximum');
-  //     });
-
-  //     it('should have `maxLength` if `format` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //             format: 'url',
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const result = await validateDataContract(rawDataContract);
+    //     const [error] = result.getErrors();
 
-  //       await expectJsonSchemaError(result, 2);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
-  //       expect(error.getKeyword()).to.equal('required');
-  //       expect(error.getParams().missingProperty).to.equal('maxLength');
-  //     });
+    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
+    //     expect(error.getKeyword()).to.equal('maximum');
+    //   });
 
-  //     it('should have `maxLength` no bigger than 50000 if `format` is used', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //             format: 'url',
-  //             maxLength: 60000,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
+    //   it('should not have incompatible patterns', async () => {
+    //     rawDataContract.documents.indexedDocument = {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //           maxLength: 100,
+    //           pattern: '^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$',
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     };
 
-  //       const result = await validateDataContract(rawDataContract);
+    //     const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result, 2);
+    //     expectValidationError(result, IncompatibleRe2PatternError);
 
-  //       const [error] = result.getErrors();
+    //     const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
-  //       expect(error.getKeyword()).to.equal('maximum');
-  //     });
+    //     expect(error.getCode()).to.equal(1009);
+    //     expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
+    //     expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getPatternError()).to.be.instanceOf(Error);
+    //   });
 
-  //     it('should not have incompatible patterns', async () => {
-  //       rawDataContract.documents.indexedDocument = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //             maxLength: 100,
-  //             pattern: '^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$',
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
+    //   describe('byteArray', () => {
+    //     it('should be a boolean', async () => {
+    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = 1;
 
-  //       const result = await validateDataContract(rawDataContract);
+    //       const result = await validateDataContract(rawDataContract);
 
-  //       expectValidationError(result, IncompatibleRe2PatternError);
+    //       await expectJsonSchemaError(result, 2);
 
-  //       const [error] = result.getErrors();
+    //       const [error] = result.getErrors();
 
-  //       expect(error.getCode()).to.equal(1009);
-  //       expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
-  //       expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
-  //       expect(error.getPatternError()).to.be.instanceOf(Error);
-  //     });
+    //       expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
+    //       expect(error.getKeyword()).to.equal('type');
+    //       expect(error.getParams().type).to.equal('boolean');
+    //     });
 
-  //     describe('byteArray', () => {
-  //       it('should be a boolean', async () => {
-  //         rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = 1;
+    //     it('should equal to true', async () => {
+    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = false;
 
-  //         const result = await validateDataContract(rawDataContract);
+    //       const result = await validateDataContract(rawDataContract);
 
-  //         await expectJsonSchemaError(result, 2);
+    //       await expectJsonSchemaError(result, 2);
 
-  //         const [error] = result.getErrors();
+    //       const [error] = result.getErrors();
 
-  //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
-  //         expect(error.getKeyword()).to.equal('type');
-  //         expect(error.getParams().type).to.equal('boolean');
-  //       });
+    //       expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
+    //       expect(error.getKeyword()).to.equal('const');
+    //       expect(error.getParams().allowedValue).to.equal(true);
+    //     });
 
-  //       it('should equal to true', async () => {
-  //         rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = false;
+    //     it('should be used with type `array`', async () => {
+    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.type = 'string';
 
-  //         const result = await validateDataContract(rawDataContract);
+    //       const result = await validateDataContract(rawDataContract);
 
-  //         await expectJsonSchemaError(result, 2);
+    //       await expectJsonSchemaError(result, 2);
 
-  //         const [error] = result.getErrors();
+    //       const [error] = result.getErrors();
 
-  //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
-  //         expect(error.getKeyword()).to.equal('const');
-  //         expect(error.getParams().allowedValue).to.equal(true);
-  //       });
+    //       expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
+    //       expect(error.getKeyword()).to.equal('const');
+    //     });
 
-  //       it('should be used with type `array`', async () => {
-  //         rawDataContract.documents.withByteArrays.properties.byteArrayField.type = 'string';
+    //     it('should not be used with `items`', async () => {
+    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.items = {
+    //         type: 'string',
+    //       };
 
-  //         const result = await validateDataContract(rawDataContract);
+    //       const result = await validateDataContract(rawDataContract);
 
-  //         await expectJsonSchemaError(result, 2);
+    //       expectValidationError(result, JsonSchemaCompilationError);
 
-  //         const [error] = result.getErrors();
+    //       const [error] = result.getErrors();
 
-  //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
-  //         expect(error.getKeyword()).to.equal('const');
-  //       });
+    //       expect(error.getCode()).to.equal(1004);
+    //       expect(error.message).to.equal("'byteArray' should not be used with 'items'");
+    //     });
+    //   });
 
-  //       it('should not be used with `items`', async () => {
-  //         rawDataContract.documents.withByteArrays.properties.byteArrayField.items = {
-  //           type: 'string',
-  //         };
+    //   describe('contentMediaType', () => {
+    //     describe('application/x.dash.dpp.identifier', () => {
+    //       it('should be used with byte array only', async () => {
+    //         delete rawDataContract.documents.withByteArrays.properties.identifierField.byteArray;
 
-  //         const result = await validateDataContract(rawDataContract);
+    //         const result = await validateDataContract(rawDataContract);
 
-  //         expectValidationError(result, JsonSchemaCompilationError);
+    //         await expectJsonSchemaError(result, 2);
 
-  //         const [error] = result.getErrors();
+    //         const [error] = result.getErrors();
 
-  //         expect(error.getCode()).to.equal(1004);
-  //         expect(error.message).to.equal("'byteArray' should not be used with 'items'");
-  //       });
-  //     });
+    //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField');
+    //         expect(error.getKeyword()).to.equal('required');
+    //       });
 
-  //     describe('contentMediaType', () => {
-  //       describe('application/x.dash.dpp.identifier', () => {
-  //         it('should be used with byte array only', async () => {
-  //           delete rawDataContract.documents.withByteArrays.properties.identifierField.byteArray;
+    //       it('should be used with byte array not shorter than 32 bytes', async () => {
+    //         rawDataContract.documents.withByteArrays.properties.identifierField.minItems = 31;
 
-  //           const result = await validateDataContract(rawDataContract);
+    //         const result = await validateDataContract(rawDataContract);
 
-  //           await expectJsonSchemaError(result, 2);
+    //         await expectJsonSchemaError(result, 2);
 
-  //           const [error] = result.getErrors();
+    //         const [error] = result.getErrors();
 
-  //           expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField');
-  //           expect(error.getKeyword()).to.equal('required');
-  //         });
+    //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
+    //         expect(error.getKeyword()).to.equal('const');
+    //       });
 
-  //         it('should be used with byte array not shorter than 32 bytes', async () => {
-  //           rawDataContract.documents.withByteArrays.properties.identifierField.minItems = 31;
+    //       it('should be used with byte array not longer than 32 bytes', async () => {
+    //         rawDataContract.documents.withByteArrays.properties.identifierField.maxItems = 31;
 
-  //           const result = await validateDataContract(rawDataContract);
+    //         const result = await validateDataContract(rawDataContract);
 
-  //           await expectJsonSchemaError(result, 2);
+    //         await expectJsonSchemaError(result, 2);
 
-  //           const [error] = result.getErrors();
+    //         const [error] = result.getErrors();
 
-  //           expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
-  //           expect(error.getKeyword()).to.equal('const');
-  //         });
-
-  //         it('should be used with byte array not longer than 32 bytes', async () => {
-  //           rawDataContract.documents.withByteArrays.properties.identifierField.maxItems = 31;
-
-  //           const result = await validateDataContract(rawDataContract);
-
-  //           await expectJsonSchemaError(result, 2);
-
-  //           const [error] = result.getErrors();
-
-  //           expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
-  //           expect(error.getKeyword()).to.equal('const');
-  //         });
-  //       });
-  //     });
-  //   });
-  // });
+    //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
+    //         expect(error.getKeyword()).to.equal('const');
+    //       });
+    //     });
+    //   });
+    // });
+  });
 
   // describe('indices', () => {
   //   it('should be an array', async () => {
