@@ -24,6 +24,7 @@ use drive_abci::abci::messages::{
 use drive_abci::platform::Platform;
 use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;
+use drive::drive::query::QueryDocumentsOutcome;
 use drive_abci::config::PlatformConfig;
 
 type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
@@ -1484,7 +1485,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents(
+                        .query_documents_cbor_with_document_type_lookup(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -1498,9 +1499,9 @@ impl PlatformWrapper {
                     let callback = js_callback.into_inner(&mut task_context);
                     let this = task_context.undefined();
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((value, skipped, cost)) => {
+                        Ok(QueryDocumentsOutcome{ items, skipped, cost }) => {
                             let js_array: Handle<JsArray> = task_context.empty_array();
-                            let js_vecs = converter::nested_vecs_to_js(&mut task_context, value)?;
+                            let js_vecs = converter::nested_vecs_to_js(&mut task_context, items)?;
                             let js_num = task_context.number(skipped).upcast::<JsValue>();
                             let js_cost = task_context.number(cost as f64).upcast::<JsValue>();
 

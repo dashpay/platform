@@ -32,6 +32,7 @@
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
+use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
 use crate::contract::Contract;
@@ -47,16 +48,85 @@ use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::extra::DriveContractExt;
 
+/// The outcome of a query
+pub struct QueryDocumentsOutcome {
+    /// returned items
+    pub items: Vec<Vec<u8>>,
+    /// skipped item count
+    pub skipped: u16,
+    /// the processing cost
+    pub cost: u64,
+}
+
+/// The outcome of a query
+pub struct QueryDocumentIdsOutcome {
+    /// returned items
+    pub items: Vec<Key>,
+    /// skipped item count
+    pub skipped: u16,
+    /// the processing cost
+    pub cost: u64,
+}
+
 impl Drive {
-    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    /// Performs and returns the result of the specified query along with skipped items
+    /// and the cost.
     pub fn query_documents(
+        &self,
+        query: DriveQuery,
+        epoch: Option<&Epoch>,
+        transaction: TransactionArg,
+    ) -> Result<QueryDocumentsOutcome, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let (items, skipped) = query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+
+        Ok(QueryDocumentsOutcome {
+            items,
+            skipped,
+            cost,
+        })
+    }
+
+    /// Performs and returns the result as ids of the specified query
+    /// along with skipped items and the cost.
+    pub fn query_document_ids(
+        &self,
+        query: DriveQuery,
+        epoch: Option<&Epoch>,
+        transaction: TransactionArg,
+    ) -> Result<QueryDocumentIdsOutcome, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let (items, skipped) = query.execute_no_proof_internal(self, QueryResultType::QueryKeyElementPairResultType, transaction, &mut drive_operations)?;
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+
+        let keys = items.to_key_elements().into_iter().map(|(key, element)| key).collect();
+
+        Ok(QueryDocumentIdsOutcome {
+            items: keys,
+            skipped,
+            cost,
+        })
+    }
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    pub fn query_documents_cbor_with_document_type_lookup(
         &self,
         query_cbor: &[u8],
         contract_id: [u8; 32],
         document_type_name: &str,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+    ) -> Result<QueryDocumentsOutcome, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let contract = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -71,29 +141,18 @@ impl Drive {
         let document_type = contract
             .contract
             .document_type_for_name(document_type_name)?;
-        let (items, skipped) = self.query_documents_from_contract_internal(
-            &contract.contract,
-            document_type,
-            query_cbor,
-            transaction,
-            &mut drive_operations,
-        )?;
-        let cost = if let Some(epoch) = epoch {
-            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
-            fee_result.processing_fee
-        } else {
-            0
-        };
 
-        Ok((items, skipped, cost))
+        let query = DriveQuery::from_cbor(query_cbor, &contract.contract, document_type)?;
+
+        self.query_documents(query, epoch, transaction)
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_from_contract_cbor(
         &self,
+        query_cbor: &[u8],
         contract_cbor: &[u8],
         document_type_name: String,
-        query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
@@ -102,7 +161,7 @@ impl Drive {
         //todo cbor cost
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 
-        let (items, skipped) = self.query_documents_from_contract_internal(
+        let (items, skipped) = self.query_documents_for_cbor_query_internal(
             &contract,
             document_type,
             query_cbor,
@@ -119,7 +178,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    pub fn query_documents_from_contract(
+    pub fn query_documents_cbor_from_contract(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -128,7 +187,33 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let (items, skipped) = self.query_documents_from_contract_internal(
+        let (items, skipped) = self.query_documents_for_cbor_query_internal(
+            contract,
+            document_type,
+            query_cbor,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let cost = if let Some(block_info) = block_info {
+            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+        Ok((items, skipped, cost))
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    pub fn query_documentss_from_contract(
+        &self,
+        contract: &Contract,
+        document_type: &DocumentType,
+        query_cbor: &[u8],
+        block_info: Option<BlockInfo>,
+        transaction: TransactionArg,
+    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
             document_type,
             query_cbor,
@@ -145,7 +230,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items.
-    pub(crate) fn query_documents_from_contract_internal(
+    pub(crate) fn query_documents_for_cbor_query_internal(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -155,7 +240,7 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
-        query.execute_no_proof_internal(self, transaction, drive_operations)
+        query.execute_serialized_no_proof_internal(self, transaction, drive_operations)
     }
 
     /// Performs and returns the result of the specified query along with the fee.

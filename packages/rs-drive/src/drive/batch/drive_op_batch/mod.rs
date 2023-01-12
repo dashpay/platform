@@ -292,7 +292,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -510,7 +510,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -639,7 +639,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -831,7 +831,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -853,7 +853,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -875,7 +875,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1068,7 +1068,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1090,7 +1090,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1112,7 +1112,7 @@ mod tests {
         let where_cbor = common::value_to_cbor(query_value, None);
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),

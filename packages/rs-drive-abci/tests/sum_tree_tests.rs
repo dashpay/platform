@@ -30,6 +30,7 @@
 //! Execution Tests
 //!
 
+use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use base64::Config;
 use chrono::{Duration, Utc};
 use drive::common::helpers::identities::{
@@ -59,6 +60,7 @@ use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{Transaction, TransactionArg};
+use drive::query::DriveQuery;
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
@@ -76,7 +78,6 @@ use rust_decimal::prelude::ToPrimitive;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Div, Range};
-use crate::DocumentAction::DocumentActionInsert;
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -166,6 +167,7 @@ impl Strategy {
 
     fn document_operations_for_block(
         &self,
+        platform: &Platform,
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
@@ -174,35 +176,62 @@ impl Strategy {
         for (op, frequency) in &self.operations {
             if frequency.check_hit(rng) {
                 let count = rng.gen_range(frequency.times_per_block_range.clone());
-                let documents = op
-                    .document_type
-                    .random_documents_with_rng(count as u32, rng);
-                for document in documents {
-                    let identity_num = rng.gen_range(0..current_identities.len());
-                    let identity = current_identities.get(identity_num).unwrap().clone();
+                match op.action {
+                    DocumentActionInsert => {
+                        let documents = op
+                            .document_type
+                            .random_documents_with_rng(count as u32, rng);
+                        for document in documents {
+                            let identity_num = rng.gen_range(0..current_identities.len());
+                            let identity = current_identities.get(identity_num).unwrap().clone();
 
-                    let storage_flags = StorageFlags::new_single_epoch(
-                        block_info.epoch.index,
-                        Some(identity.id.to_buffer()),
-                    );
+                            let storage_flags = StorageFlags::new_single_epoch(
+                                block_info.epoch.index,
+                                Some(identity.id.to_buffer()),
+                            );
 
-                    let insert_op = DriveOperationType::DocumentOperation(
-                        DocumentOperationType::AddDocumentForContract {
-                            document_and_contract_info: DocumentAndContractInfo {
-                                owned_document_info: OwnedDocumentInfo {
-                                    document_info: DocumentWithoutSerialization((
-                                        document,
-                                        Some(Cow::Owned(storage_flags)),
-                                    )),
+                            let insert_op = DriveOperationType::DocumentOperation(
+                                DocumentOperationType::AddDocumentForContract {
+                                    document_and_contract_info: DocumentAndContractInfo {
+                                        owned_document_info: OwnedDocumentInfo {
+                                            document_info: DocumentWithoutSerialization((
+                                                document,
+                                                Some(Cow::Owned(storage_flags)),
+                                            )),
+                                            owner_id: None,
+                                        },
+                                        contract: &op.contract,
+                                        document_type: &op.document_type,
+                                    },
+                                    override_document: false,
+                                },
+                            );
+                            operations.push((identity, insert_op));
+                        }
+                    }
+                    DocumentActionDelete => {
+                        let any_item_query =
+                            DriveQuery::any_item_query(&op.contract, &op.document_type);
+                        let mut items = platform
+                            .drive
+                            .query_document_ids(any_item_query, Some(&block_info.epoch), None)
+                            .expect("expect to execute query")
+                            .items;
+                        if !items.is_empty() {
+                            let insert_op = DriveOperationType::DocumentOperation(
+                                DocumentOperationType::DeleteDocumentForContract {
+                                    document_id: items
+                                        .remove(0)
+                                        .as_slice()
+                                        .try_into()
+                                        .expect("expected 32 byte id"),
+                                    contract: &op.contract,
+                                    document_type: &op.document_type,
                                     owner_id: None,
                                 },
-                                contract: &op.contract,
-                                document_type: &op.document_type,
-                            },
-                            override_document: false,
-                        },
-                    );
-                    operations.push((identity, insert_op));
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -211,6 +240,7 @@ impl Strategy {
 
     fn state_transitions_for_block_with_new_identities(
         &self,
+        platform: &Platform,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         rng: &mut StdRng,
@@ -240,7 +270,7 @@ impl Strategy {
         }
 
         let mut document_execution_events: Vec<ExecutionEvent> = self
-            .document_operations_for_block(block_info, current_identities, rng)
+            .document_operations_for_block(platform, block_info, current_identities, rng)
             .into_iter()
             .map(|(identity, operation)| {
                 ExecutionEvent::new_document_operation(identity, operation)
@@ -316,6 +346,7 @@ fn run_chain_for_strategy(
         let proposer = proposers.get(i as usize).unwrap();
         let (state_transitions, mut new_identities) = strategy
             .state_transitions_for_block_with_new_identities(
+                &platform,
                 &block_info,
                 &mut current_identities,
                 &mut rng,
@@ -498,6 +529,74 @@ fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change(
                 chance_per_block: None,
             },
         )],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    let day_in_ms = 1000 * 60 * 60 * 24;
+    let block_count = 120;
+    let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+    assert_eq!(outcome.identities.len() as u64, block_count);
+    assert_eq!(outcome.masternode_identity_balances.len(), 100);
+    dbg!(&outcome.masternode_identity_balances);
+    let all_have_balances = outcome
+        .masternode_identity_balances
+        .iter()
+        .all(|(_, balance)| *balance != 0);
+    assert!(all_have_balances, "all masternodes should have a balance");
+}
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change()
+{
+    let contract_cbor = json_document_to_cbor(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        Some(PROTOCOL_VERSION),
+    );
+    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+        .expect("contract should be deserialized");
+
+    let document_insertion_op = DocumentOp {
+        contract: contract.clone(),
+        action: DocumentActionInsert,
+        document_type: contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let document_deletion_op = DocumentOp {
+        contract: contract.clone(),
+        action: DocumentActionDelete,
+        document_type: contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let strategy = Strategy {
+        contracts: vec![contract],
+        operations: vec![
+            (
+                document_insertion_op,
+                Frequency {
+                    times_per_block_range: 1..20,
+                    chance_per_block: None,
+                },
+            ),
+            (
+                document_deletion_op,
+                Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: None,
+                },
+            ),
+        ],
         identities_inserts: Frequency {
             times_per_block_range: 1..2,
             chance_per_block: None,

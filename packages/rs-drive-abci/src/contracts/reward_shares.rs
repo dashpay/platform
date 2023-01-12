@@ -45,6 +45,7 @@ use drive::contract::Contract;
 use drive::dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
+use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use serde_json::json;
 use std::borrow::Cow;
@@ -73,15 +74,16 @@ impl Platform {
 
         let query_cbor = value_to_cbor(query_json, None);
 
-        let (document_cbors, _, _) = self.drive.query_documents(
-            &query_cbor,
-            MN_REWARD_SHARES_CONTRACT_ID,
-            MN_REWARD_SHARES_DOCUMENT_TYPE,
-            None,
-            transaction,
-        )?;
+        let QueryDocumentsOutcome { items, .. } =
+            self.drive.query_documents_cbor_with_document_type_lookup(
+                &query_cbor,
+                MN_REWARD_SHARES_CONTRACT_ID,
+                MN_REWARD_SHARES_DOCUMENT_TYPE,
+                None,
+                transaction,
+            )?;
 
-        document_cbors
+        items
             .iter()
             .map(|cbor| Document::from_cbor(cbor, None, None).map_err(Error::Drive))
             .collect::<Result<Vec<Document>, Error>>()

@@ -38,6 +38,7 @@ use dpp::data_contract::extra::{encode_float, Index, IndexProperty};
 pub use grovedb::{
     Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
 };
+use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 
 use indexmap::IndexMap;
 use integer_encoding::VarInt;
@@ -219,6 +220,20 @@ pub struct DriveQuery<'a> {
 }
 
 impl<'a> DriveQuery<'a> {
+    /// Returns any item
+    pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentType) -> Self {
+        DriveQuery {
+            contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: 0,
+            limit: 1,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time: None,
+        }
+    }
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -1272,7 +1287,7 @@ impl<'a> DriveQuery<'a> {
     }
 
     /// Executes a query with no proof and returns the items, skipped items, and fee.
-    pub fn execute_no_proof(
+    pub fn execute_serialized_no_proof(
         &self,
         drive: &Drive,
         block_info: Option<BlockInfo>,
@@ -1280,7 +1295,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations = vec![];
         let (items, skipped) =
-            self.execute_no_proof_internal(drive, transaction, &mut drive_operations)?;
+            self.execute_serialized_no_proof_internal(drive, transaction, &mut drive_operations)?;
         let cost = if let Some(block_info) = block_info {
             let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
             fee_result.processing_fee
@@ -1291,7 +1306,7 @@ impl<'a> DriveQuery<'a> {
     }
 
     /// Executes an internal query with no proof and returns the values and skipped items.
-    pub(crate) fn execute_no_proof_internal(
+    pub(crate) fn execute_serialized_no_proof_internal(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
@@ -1299,11 +1314,35 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        let query_result = drive.grove_get_path_query(&path_query, transaction, drive_operations);
+        let query_result = drive.grove_get_path_query_serialized_results(&path_query, transaction, drive_operations);
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            _ => {
+                let (data, skipped) = query_result?;
+                {
+                    Ok((data, skipped))
+                }
+            }
+        }
+    }
+
+    /// Executes an internal query with no proof and returns the values and skipped items.
+    pub(crate) fn execute_no_proof_internal(
+        &self,
+        drive: &Drive,
+        result_type: QueryResultType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(QueryResultElements, u16), Error> {
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+        let query_result = drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
+        match query_result {
+            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((QueryResultElements::new(), 0)),
             _ => {
                 let (data, skipped) = query_result?;
                 {
@@ -1526,7 +1565,7 @@ mod tests {
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("fields of queries length must be under 256 bytes long");
     }
 
@@ -1607,7 +1646,7 @@ mod tests {
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("a Null value doesn't make sense for a float");
     }
 
@@ -1634,7 +1673,7 @@ mod tests {
             .expect("query should be valid for empty array");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute for empty array");
     }
 
@@ -1665,7 +1704,7 @@ mod tests {
             .expect("query is valid for too many elements");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute with too many elements");
     }
 
@@ -1696,7 +1735,7 @@ mod tests {
             .expect("the query should be created");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("there should be no duplicates values for In query");
     }
 

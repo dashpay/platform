@@ -295,7 +295,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -331,7 +331,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -359,7 +359,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -402,7 +402,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -432,7 +432,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -470,7 +470,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -497,7 +497,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -527,7 +527,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -572,7 +572,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -613,7 +613,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -688,7 +688,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 3);
 
@@ -737,7 +737,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -780,7 +780,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -817,7 +817,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -889,7 +889,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -938,7 +938,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1113,7 +1113,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1138,7 +1138,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1164,7 +1164,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1192,7 +1192,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1232,7 +1232,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1268,7 +1268,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1294,7 +1294,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1345,7 +1345,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1398,7 +1398,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1427,7 +1427,7 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1464,9 +1464,9 @@ fn test_query_historical() {
 
     let (results, _, _) = drive
         .query_documents_from_contract_cbor(
+            query_cbor.as_slice(),
             contract_cbor.as_slice(),
             String::from("contact"),
-            query_cbor.as_slice(),
             None,
             Some(&db_transaction),
         )
@@ -1491,7 +1491,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let result = drive.query_documents_from_contract(
+    let result = drive.query_documents_cbor_from_contract(
         &contract,
         person_document_type,
         query_cbor.as_slice(),
@@ -1520,7 +1520,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let result = drive.query_documents_from_contract(
+    let result = drive.query_documents_cbor_from_contract(
         &contract,
         person_document_type,
         query_cbor.as_slice(),

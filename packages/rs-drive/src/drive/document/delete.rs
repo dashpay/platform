@@ -189,7 +189,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let batch_operations = self.delete_document_for_contract_operations(
+        let batch_operations = self.delete_document_for_contract_with_named_type_operations(
             document_id,
             contract,
             document_type_name,
@@ -628,7 +628,7 @@ impl Drive {
     }
 
     /// Prepares the operations for deleting a document.
-    pub(crate) fn delete_document_for_contract_operations(
+    pub(crate) fn delete_document_for_contract_with_named_type_operations(
         &self,
         document_id: [u8; 32],
         contract: &Contract,
@@ -640,8 +640,24 @@ impl Drive {
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
         let document_type = contract.document_type_for_name(document_type_name)?;
+        self.delete_document_for_contract_operations(document_id, contract, document_type, owner_id, previous_batch_operations, estimated_costs_only_with_layer_info, transaction)
+    }
+
+    /// Prepares the operations for deleting a document.
+    pub(crate) fn delete_document_for_contract_operations(
+        &self,
+        document_id: [u8; 32],
+        contract: &Contract,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
 
         if !document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
@@ -663,7 +679,7 @@ impl Drive {
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
         let contract_documents_primary_key_path =
-            contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
+            contract_documents_primary_key_path(contract.id.as_bytes(), document_type.name.as_str());
 
         let direct_query_type = if let Some(estimated_costs_only_with_layer_info) =
             estimated_costs_only_with_layer_info
@@ -822,13 +838,13 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -852,7 +868,7 @@ mod tests {
             .expect("expected to be able to delete the document");
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -925,7 +941,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -933,7 +949,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -965,7 +981,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1076,7 +1092,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1113,7 +1129,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1150,7 +1166,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1261,7 +1277,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1376,7 +1392,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1656,7 +1672,7 @@ mod tests {
             .expect("unable to commit transaction");
 
         let (results, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
@@ -1690,7 +1706,7 @@ mod tests {
         let query_cbor = value_to_cbor(query_json, None);
 
         let (results, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),

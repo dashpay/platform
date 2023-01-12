@@ -87,13 +87,24 @@ pub enum DocumentOperationType<'a> {
         document_operations: DocumentOperationsForContractDocumentType<'a>,
     },
     /// Deletes a document and returns the associated fee.
-    DeleteDocumentForContract {
+    DeleteDocumentOfNamedTypeForContract {
         /// The document id
         document_id: [u8; 32],
         /// The contract
         contract: &'a Contract,
         /// The name of the document type
         document_type_name: &'a str,
+        /// The owner id, if none is specified will try to recover from serialized document
+        owner_id: Option<[u8; 32]>,
+    },
+    /// Deletes a document and returns the associated fee.
+    DeleteDocumentForContract {
+        /// The document id
+        document_id: [u8; 32],
+        /// The contract
+        contract: &'a Contract,
+        /// The name of the document type
+        document_type: &'a DocumentType,
         /// The owner id, if none is specified will try to recover from serialized document
         owner_id: Option<[u8; 32]>,
     },
@@ -244,9 +255,23 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
             DocumentOperationType::DeleteDocumentForContract {
                 document_id,
                 contract,
-                document_type_name,
+                document_type,
                 owner_id,
             } => drive.delete_document_for_contract_operations(
+                document_id,
+                contract,
+                document_type,
+                owner_id,
+                None,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            DocumentOperationType::DeleteDocumentOfNamedTypeForContract {
+                document_id,
+                contract,
+                document_type_name,
+                owner_id,
+            } => drive.delete_document_for_contract_with_named_type_operations(
                 document_id,
                 contract,
                 document_type_name,
@@ -262,7 +287,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
             } => {
                 let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
-                drive.delete_document_for_contract_operations(
+                drive.delete_document_for_contract_with_named_type_operations(
                     document_id,
                     &contract,
                     document_type_name,

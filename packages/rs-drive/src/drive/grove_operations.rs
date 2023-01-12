@@ -477,7 +477,7 @@ impl Drive {
 
     /// Gets the return value and the cost of a groveDB path query.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_get_path_query(
+    pub(crate) fn grove_get_path_query_serialized_results(
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,
@@ -486,6 +486,22 @@ impl Drive {
         let CostContext { value, cost } =
             self.grove
                 .query_item_value(path_query, transaction.is_some(), transaction);
+        drive_operations.push(CalculatedCostOperation(cost));
+        value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
+    pub(crate) fn grove_get_path_query(
+        &self,
+        path_query: &PathQuery,
+        transaction: TransactionArg,
+        result_type: QueryResultType,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(QueryResultElements, u16), Error> {
+        let CostContext { value, cost } =
+            self.grove
+                .query(path_query, transaction.is_some(), result_type, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

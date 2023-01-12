@@ -450,8 +450,8 @@ mod tests {
     mod process_block_fees {
         use super::*;
 
-        use drive::common::helpers::identities::create_test_masternode_identities;
         use crate::config::PlatformConfig;
+        use drive::common::helpers::identities::create_test_masternode_identities;
 
         mod helpers {
             use super::*;
