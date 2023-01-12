@@ -56,6 +56,12 @@ describe('validateDataContractFactory', () => {
     validateDataContract = (contract) => dataContractValidator.validate(contract);
   });
 
+  it('should pass validation if created from a fixture', () => {
+    const rawDataContract = dataContract.toObject();
+    const result = validateDataContract(rawDataContract);
+    expect(result.isValid()).to.be.true();
+  });
+
   describe('protocolVersion', () => {
     it('should be present', async () => {
       const rawDataContract = dataContract.toObject();
@@ -515,118 +521,124 @@ describe('validateDataContractFactory', () => {
       expect(error.getKeyword()).to.equal('maxProperties');
     });
 
-    // describe('Document schema', () => {
-    //   it('should not be empty', async () => {
-    //     rawDataContract.documents.niceDocument.properties = {};
+    describe('Document schema', () => {
+      it('should not be empty', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.niceDocument.properties = {};
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result, 2);
+        await expectJsonSchemaError(result, 2);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties');
-    //     expect(error.getKeyword()).to.equal('minProperties');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties');
+        expect(error.getKeyword()).to.equal('minProperties');
+      });
 
-    //   it('should have type "object"', async () => {
-    //     rawDataContract.documents.niceDocument.type = 'string';
+      it('should have type "object"', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.niceDocument.type = 'string';
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument/type');
-    //     expect(error.getKeyword()).to.equal('const');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument/type');
+        expect(error.getKeyword()).to.equal('const');
+      });
 
-    //   it('should have "properties"', async () => {
-    //     delete rawDataContract.documents.niceDocument.properties;
+      it('should have "properties"', async () => {
+        const rawDataContract = dataContract.toObject();
+        delete rawDataContract.documents.niceDocument.properties;
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('properties');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('properties');
+      });
 
-    //   it('should have nested "properties"', async () => {
-    //     rawDataContract.documents.niceDocument.properties.object = {
-    //       type: 'array',
-    //       prefixItems: [
-    //         {
-    //           type: 'object',
-    //           properties: {
-    //             something: {
-    //               type: 'object',
-    //             },
-    //           },
-    //           additionalProperties: false,
-    //         },
-    //       ],
-    //       items: false,
-    //     };
+      it('should have nested "properties"', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.niceDocument.properties.object = {
+          type: 'array',
+          prefixItems: [
+            {
+              type: 'object',
+              properties: {
+                something: {
+                  type: 'object',
+                },
+              },
+              additionalProperties: false,
+            },
+          ],
+          items: false,
+        };
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result, 3);
+        await expectJsonSchemaError(result, 8);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0/properties/something');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('properties');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties/object/prefixItems/0/properties/something');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('properties');
+      });
 
-    //   it('should have valid property names', async () => {
-    //     const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
-    //       'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+      it('should have valid property names', async () => {
+        const rawDataContract = dataContract.toObject();
+        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
+          'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
-    //     await Promise.all(
-    //       validNames.map(async (name) => {
-    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
+        await Promise.all(
+          validNames.map(async (name) => {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-    //         clonedDataContract.documents.niceDocument.properties[name] = {
-    //           type: 'string',
-    //         };
+            clonedDataContract.documents.niceDocument.properties[name] = {
+              type: 'string',
+            };
 
-    //         const result = await validateDataContract(clonedDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
-    //         await expectJsonSchemaError(result, 0);
-    //       }),
-    //     );
-    //   });
+            await expectJsonSchemaError(result, 0);
+          }),
+        );
+      });
 
-    //   it('should have valid nested property names', async () => {
-    //     const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
-    //       'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+      it('should have valid nested property names', async () => {
+        const rawDataContract = dataContract.toObject();
+        const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123bc', 'abc123', 'ValidName', 'validName',
+          'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
-    //     rawDataContract.documents.niceDocument.properties.something = {
-    //       type: 'object',
-    //       properties: {},
-    //       additionalProperties: false,
-    //     };
+        rawDataContract.documents.niceDocument.properties.something = {
+          type: 'object',
+          properties: {},
+          additionalProperties: false,
+        };
 
-    //     await Promise.all(
-    //       validNames.map(async (name) => {
-    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
+        await Promise.all(
+          validNames.map(async (name) => {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-    //         clonedDataContract.documents.niceDocument.properties.something.properties[name] = {
-    //           type: 'string',
-    //         };
+            clonedDataContract.documents.niceDocument.properties.something.properties[name] = {
+              type: 'string',
+            };
 
-    //         const result = await validateDataContract(clonedDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
-    //         await expectJsonSchemaError(result, 0);
-    //       }),
-    //     );
-    //   });
+            await expectJsonSchemaError(result, 0);
+          }),
+        );
+      });
 
     //   it('should return an invalid result if a property has invalid format', async () => {
     //     const invalidNames = ['*(*&^', '$test', '.', '.a'];
@@ -643,9 +655,9 @@ describe('validateDataContractFactory', () => {
 
     //         const errors = result.getErrors();
 
-    //         expect(errors[0].instancePath).to.equal('/documents/niceDocument/properties');
+    //         expect(errors[0].getInstancePath()).to.equal('/documents/niceDocument/properties');
     //         expect(errors[0].keyword).to.equal('pattern');
-    //         expect(errors[1].instancePath).to.equal('/documents/niceDocument/properties');
+    //         expect(errors[1].getInstancePath()).to.equal('/documents/niceDocument/properties');
     //         expect(errors[1].keyword).to.equal('propertyNames');
     //       }),
     //     );
@@ -671,11 +683,11 @@ describe('validateDataContractFactory', () => {
 
     //         const errors = result.getErrors();
 
-    //         expect(errors[0].instancePath).to.equal(
+    //         expect(errors[0].getInstancePath()).to.equal(
     //           '/documents/niceDocument/properties/something/properties',
     //         );
     //         expect(errors[0].keyword).to.equal('pattern');
-    //         expect(errors[1].instancePath).to.equal(
+    //         expect(errors[1].getInstancePath()).to.equal(
     //           '/documents/niceDocument/properties/something/properties',
     //         );
     //         expect(errors[1].keyword).to.equal('propertyNames');
@@ -692,7 +704,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument');
+    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('additionalProperties');
     //   });
@@ -706,7 +718,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument/additionalProperties');
+    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/additionalProperties');
     //     expect(error.getKeyword()).to.equal('const');
     //   });
 
@@ -732,7 +744,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
+    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('additionalProperties');
     //   });
@@ -746,7 +758,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('');
+    //     expect(error.getInstancePath()).to.equal('');
     //     expect(error.getKeyword()).to.equal('additionalProperties');
     //   });
 
@@ -765,7 +777,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/niceDocument/properties');
+    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties');
     //     expect(error.getKeyword()).to.equal('maxProperties');
     //   });
 
@@ -785,7 +797,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/new/properties/something');
+    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('items');
     //   });
@@ -814,7 +826,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/new/properties/something/items');
+    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something/items');
     //     expect(error.getKeyword()).to.equal('type');
     //     expect(error.getParams().type).to.equal('object');
     //   });
@@ -845,7 +857,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/new/properties/something');
+    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('items');
     //   });
@@ -875,7 +887,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/new/properties/something/items');
+    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something/items');
     //     expect(error.getKeyword()).to.equal('const');
     //     expect(error.getParams().allowedValue).to.equal(false);
     //   });
@@ -889,7 +901,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/firstName');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName');
     //     expect(error.getKeyword()).to.equal('unevaluatedProperties');
     //   });
 
@@ -904,7 +916,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/$ref');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/$ref');
     //     expect(error.getKeyword()).to.equal('pattern');
     //   });
 
@@ -928,7 +940,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument');
     //     expect(error.getKeyword()).to.equal('unevaluatedProperties');
     //     expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
     //   });
@@ -951,7 +963,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('items');
     //   });
@@ -984,7 +996,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxItems');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxItems');
     //     expect(error.getKeyword()).to.equal('maximum');
     //   });
 
@@ -1032,7 +1044,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('maxLength');
     //   });
@@ -1056,7 +1068,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxLength');
     //     expect(error.getKeyword()).to.equal('maximum');
     //   });
 
@@ -1078,7 +1090,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
     //     expect(error.getKeyword()).to.equal('required');
     //     expect(error.getParams().missingProperty).to.equal('maxLength');
     //   });
@@ -1102,7 +1114,7 @@ describe('validateDataContractFactory', () => {
 
     //     const [error] = result.getErrors();
 
-    //     expect(error.instancePath).to.equal('/documents/indexedDocument/properties/something/maxLength');
+    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxLength');
     //     expect(error.getKeyword()).to.equal('maximum');
     //   });
 
@@ -1141,7 +1153,7 @@ describe('validateDataContractFactory', () => {
 
     //       const [error] = result.getErrors();
 
-    //       expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
+    //       expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
     //       expect(error.getKeyword()).to.equal('type');
     //       expect(error.getParams().type).to.equal('boolean');
     //     });
@@ -1155,7 +1167,7 @@ describe('validateDataContractFactory', () => {
 
     //       const [error] = result.getErrors();
 
-    //       expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
+    //       expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
     //       expect(error.getKeyword()).to.equal('const');
     //       expect(error.getParams().allowedValue).to.equal(true);
     //     });
@@ -1169,7 +1181,7 @@ describe('validateDataContractFactory', () => {
 
     //       const [error] = result.getErrors();
 
-    //       expect(error.instancePath).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
+    //       expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
     //       expect(error.getKeyword()).to.equal('const');
     //     });
 
@@ -1200,7 +1212,7 @@ describe('validateDataContractFactory', () => {
 
     //         const [error] = result.getErrors();
 
-    //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField');
+    //         expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField');
     //         expect(error.getKeyword()).to.equal('required');
     //       });
 
@@ -1213,7 +1225,7 @@ describe('validateDataContractFactory', () => {
 
     //         const [error] = result.getErrors();
 
-    //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
+    //         expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
     //         expect(error.getKeyword()).to.equal('const');
     //       });
 
@@ -1226,12 +1238,12 @@ describe('validateDataContractFactory', () => {
 
     //         const [error] = result.getErrors();
 
-    //         expect(error.instancePath).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
+    //         expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
     //         expect(error.getKeyword()).to.equal('const');
     //       });
     //     });
     //   });
-    // });
+    });
   });
 
   // describe('indices', () => {
@@ -1244,7 +1256,7 @@ describe('validateDataContractFactory', () => {
 
   //     const [error] = result.getErrors();
 
-  //     expect(error.instancePath).to.equal('/documents/indexedDocument/indices');
+  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices');
   //     expect(error.getKeyword()).to.equal('type');
   //   });
 
@@ -1257,7 +1269,7 @@ describe('validateDataContractFactory', () => {
 
   //     const [error] = result.getErrors();
 
-  //     expect(error.instancePath).to.equal('/documents/indexedDocument/indices');
+  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices');
   //     expect(error.getKeyword()).to.equal('minItems');
   //   });
 
@@ -1308,7 +1320,7 @@ describe('validateDataContractFactory', () => {
 
   //       const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/indices/0');
+  //       expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0');
   //       expect(error.getKeyword()).to.equal('type');
   //     });
 
@@ -1321,7 +1333,7 @@ describe('validateDataContractFactory', () => {
 
   //       const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/indices/0');
+  //       expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0');
   //       expect(error.getParams().missingProperty).to.equal('properties');
   //       expect(error.getKeyword()).to.equal('required');
   //     });
@@ -1337,7 +1349,7 @@ describe('validateDataContractFactory', () => {
 
   //         const [error] = result.getErrors();
 
-  //         expect(error.instancePath).to.equal(
+  //         expect(error.getInstancePath()).to.equal(
   //           '/documents/indexedDocument/indices/0/properties',
   //         );
   //         expect(error.getKeyword()).to.equal('type');
@@ -1353,7 +1365,7 @@ describe('validateDataContractFactory', () => {
 
   //         const [error] = result.getErrors();
 
-  //         expect(error.instancePath).to.equal(
+  //         expect(error.getInstancePath()).to.equal(
   //           '/documents/indexedDocument/indices/0/properties',
   //         );
   //         expect(error.getKeyword()).to.equal('minItems');
@@ -1371,7 +1383,7 @@ describe('validateDataContractFactory', () => {
 
   //         const [error] = result.getErrors();
 
-  //         expect(error.instancePath).to.equal(
+  //         expect(error.getInstancePath()).to.equal(
   //           '/documents/indexedDocument/indices/0/properties',
   //         );
   //         expect(error.getKeyword()).to.equal('maxItems');
@@ -1388,7 +1400,7 @@ describe('validateDataContractFactory', () => {
 
   //           const [error] = result.getErrors();
 
-  //           expect(error.instancePath).to.equal(
+  //           expect(error.getInstancePath()).to.equal(
   //             '/documents/indexedDocument/indices/0/properties/0',
   //           );
   //           expect(error.getKeyword()).to.equal('type');
@@ -1404,7 +1416,7 @@ describe('validateDataContractFactory', () => {
 
   //           const [error] = result.getErrors();
 
-  //           expect(error.instancePath).to.equal(
+  //           expect(error.getInstancePath()).to.equal(
   //             '/documents/indexedDocument/indices/0/properties',
   //           );
   //           expect(error.getKeyword()).to.equal('minItems');
@@ -1422,7 +1434,7 @@ describe('validateDataContractFactory', () => {
 
   //           const [error] = result.getErrors();
 
-  //           expect(error.instancePath).to.equal(
+  //           expect(error.getInstancePath()).to.equal(
   //             '/documents/indexedDocument/indices/0/properties/0',
   //           );
   //           expect(error.getKeyword()).to.equal('maxProperties');
@@ -1438,7 +1450,7 @@ describe('validateDataContractFactory', () => {
 
   //           const [error] = result.getErrors();
 
-  //           expect(error.instancePath).to.equal(
+  //           expect(error.getInstancePath()).to.equal(
   //             '/documents/indexedDocument/indices/0/properties/0/$ownerId',
   //           );
   //           expect(error.getKeyword()).to.equal('enum');
@@ -1516,7 +1528,7 @@ describe('validateDataContractFactory', () => {
 
   //       const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal('/documents/indexedDocument/indices/0/unique');
+  //       expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0/unique');
   //       expect(error.getKeyword()).to.equal('type');
   //     });
 
@@ -1537,7 +1549,7 @@ describe('validateDataContractFactory', () => {
 
   //       const [error] = result.getErrors();
 
-  //       expect(error.instancePath).to.equal(
+  //       expect(error.getInstancePath()).to.equal(
   //         '/documents/indexedDocument/indices',
   //       );
   //       expect(error.getKeyword()).to.equal('maxItems');
@@ -1913,7 +1925,7 @@ describe('validateDataContractFactory', () => {
 
   //     const [error] = result.getErrors();
 
-  //     expect(error.instancePath).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
+  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
   //     expect(error.getKeyword()).to.equal('type');
   //   });
 
@@ -1926,7 +1938,7 @@ describe('validateDataContractFactory', () => {
 
   //     const [error] = result.getErrors();
 
-  //     expect(error.instancePath).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
+  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
   //     expect(error.getKeyword()).to.equal('enum');
   //   });
   // });
@@ -1951,7 +1963,7 @@ describe('validateDataContractFactory', () => {
   //     const [error] = result.getErrors();
 
   //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.instancePath).to.equal('/documents/niceDocument/dependentSchemas');
+  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentSchemas');
   //     expect(error.message).to.equal('must be object');
   //   });
   // });
@@ -1976,7 +1988,7 @@ describe('validateDataContractFactory', () => {
   //     const [error] = result.getErrors();
 
   //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired');
+  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired');
   //     expect(error.message).to.equal('must be object');
   //   });
 
@@ -2003,7 +2015,7 @@ describe('validateDataContractFactory', () => {
   //     const [error] = result.getErrors();
 
   //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired/zxy');
+  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy');
   //     expect(error.message).to.equal('must be array');
   //   });
 
@@ -2028,7 +2040,7 @@ describe('validateDataContractFactory', () => {
   //     const [error] = result.getErrors();
 
   //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired/zxy/0');
+  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy/0');
   //     expect(error.message).to.equal('must be string');
   //   });
 
@@ -2053,7 +2065,7 @@ describe('validateDataContractFactory', () => {
   //     const [error] = result.getErrors();
 
   //     expect(error.getKeyword()).to.equal('uniqueItems');
-  //     expect(error.instancePath).to.equal('/documents/niceDocument/dependentRequired/zxy');
+  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy');
   //     expect(error.message).to.equal('must NOT have duplicate items (items ## 2 and 1 are identical)');
   //   });
   // });
