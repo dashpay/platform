@@ -80,6 +80,8 @@ pub enum BalanceChangeForIdentity {
     NoBalanceChange,
 }
 
+// TODO Fields shouldn't be public otherwise you can make strut inconsistent
+
 /// The fee expense for the identity from a fee result
 pub struct FeeChangeForIdentity {
     /// The identifier of the identity
@@ -106,15 +108,17 @@ impl FeeChangeForIdentity {
             storage_fee,
             processing_fee,
             fee_refunds_per_epoch,
-            balance_change: _,
             mut other_fee_refunds,
             removed_bytes_from_system,
+            ..
         } = self;
+
         if let Some(fee_refunds_per_epoch) = fee_refunds_per_epoch {
             other_fee_refunds
                 .0
                 .insert(identifier, fee_refunds_per_epoch);
         }
+
         FeeResult {
             storage_fee,
             processing_fee,
@@ -130,15 +134,17 @@ impl FeeChangeForIdentity {
             storage_fee,
             processing_fee,
             fee_refunds_per_epoch,
-            balance_change: _,
             mut other_fee_refunds,
             removed_bytes_from_system,
+            ..
         } = self;
+
         if let Some(fee_refunds_per_epoch) = fee_refunds_per_epoch {
             other_fee_refunds
                 .0
                 .insert(identifier, fee_refunds_per_epoch);
         }
+
         FeeResult {
             storage_fee,
             processing_fee: processing_fee - processing_debt,
@@ -162,6 +168,8 @@ impl FeeChangeForIdentity {
                 if user_balance >= desired_removed_balance {
                     Ok(self.into_fee_result())
                 } else if user_balance >= required_removed_balance {
+                    // We do not take into account balance debt for total credits balance verification
+                    // so we shouldn't add them to pools
                     Ok(self.into_fee_result_less_processing_debt(
                         desired_removed_balance - user_balance,
                     ))
@@ -198,12 +206,14 @@ impl FeeResult {
         // Then for each epoch we need to calculate the leftovers
         let storage_credits_returned = if let Some(refunds_per_epoch) = &fee_refunds_per_epoch {
             refunds_per_epoch
-                .into_iter()
+                .iter()
                 .map(|(epoch, credits)| {
+                    // TODO: Don't we need to deduct leftovers as well?
                     let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
                         *credits,
                         *epoch,
-                        current_epoch_index + 1,
+                        // TODO: You probably don't want to get refund from the current pool so it should be +1?
+                        current_epoch_index,
                     )?;
                     Ok(amount)
                 })
@@ -217,13 +227,15 @@ impl FeeResult {
 
         let balance_change = match storage_credits_returned.cmp(&base_desired_removed_balance) {
             Ordering::Less => {
-                //we should remove balance
+                // If we refund more than require to pay we should nil the required
                 let required_removed_balance =
-                    if base_required_removed_balance >= storage_credits_returned {
+                    if storage_credits_returned >= base_required_removed_balance {
                         0
                     } else {
-                        storage_credits_returned - base_required_removed_balance
+                        // otherwise we should require the difference between them
+                        base_required_removed_balance - storage_credits_returned
                     };
+
                 let desired_removed_balance =
                     base_desired_removed_balance - storage_credits_returned;
                 RemoveBalanceChange {

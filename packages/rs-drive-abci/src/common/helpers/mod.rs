@@ -1,6 +1,8 @@
 pub mod fee_pools;
 pub mod setup;
 
+// TODO: Remove Decimals entirely?
+
 #[cfg(test)]
 mod tests {
     use rust_decimal::Decimal;

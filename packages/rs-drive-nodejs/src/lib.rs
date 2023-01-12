@@ -10,6 +10,7 @@ use drive::dpp::prelude::Revision;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
+use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::CreditsPerEpoch;
@@ -21,11 +22,10 @@ use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
     Serializable,
 };
+use drive_abci::config::PlatformConfig;
 use drive_abci::platform::Platform;
 use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;
-use drive::drive::query::QueryDocumentsOutcome;
-use drive_abci::config::PlatformConfig;
 
 type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
 type UnitCallback = Box<dyn FnOnce(&Channel) + Send>;
@@ -652,7 +652,7 @@ impl PlatformWrapper {
                             override_document,
                             block_info,
                             apply,
-                            Some(storage_flags).as_ref(),
+                            storage_flags.into_optional_cow(),
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())
@@ -732,7 +732,7 @@ impl PlatformWrapper {
                             Some(owner_id),
                             block_info,
                             apply,
-                            Some(storage_flags).as_ref(),
+                            storage_flags.into_optional_cow(),
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())
@@ -1139,20 +1139,18 @@ impl PlatformWrapper {
 
     fn js_remove_from_identity_balance(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
-        let js_required_balance_to_remove = cx.argument::<JsNumber>(1)?;
-        let js_desired_balance_to_remove = cx.argument::<JsNumber>(2)?;
-        let js_block_info = cx.argument::<JsObject>(3)?;
-        let js_apply = cx.argument::<JsBoolean>(4)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(5)?;
-        let js_callback = cx.argument::<JsFunction>(6)?.root(&mut cx);
+        let js_amount = cx.argument::<JsNumber>(1)?;
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
 
         let drive = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
         let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
-        let required_balance_to_remove = js_required_balance_to_remove.value(&mut cx) as u64;
-        let desired_balance_to_remove = js_desired_balance_to_remove.value(&mut cx) as u64;
+        let amount = js_amount.value(&mut cx) as u64;
         let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1174,8 +1172,7 @@ impl PlatformWrapper {
                         .drive
                         .remove_from_identity_balance(
                             identity_id,
-                            required_balance_to_remove,
-                            desired_balance_to_remove,
+                            amount,
                             &block_info,
                             apply,
                             transaction_arg,
@@ -1499,7 +1496,11 @@ impl PlatformWrapper {
                     let callback = js_callback.into_inner(&mut task_context);
                     let this = task_context.undefined();
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(QueryDocumentsOutcome{ items, skipped, cost }) => {
+                        Ok(QueryDocumentsOutcome {
+                            items,
+                            skipped,
+                            cost,
+                        }) => {
                             let js_array: Handle<JsArray> = task_context.empty_array();
                             let js_vecs = converter::nested_vecs_to_js(&mut task_context, items)?;
                             let js_num = task_context.number(skipped).upcast::<JsValue>();

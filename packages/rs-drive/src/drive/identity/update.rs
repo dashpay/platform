@@ -4,17 +4,14 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use grovedb::batch::KeyInfoPath;
 
-use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
-use crate::fee::credits::MAX_CREDITS;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identity::{IdentityPublicKey, KeyID};
@@ -143,7 +140,7 @@ impl Drive {
         } else {
             let key_request = IdentityKeysRequest {
                 identity_id,
-                request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
+                request_type: KeyRequestType::SpecificKeys(key_ids),
                 limit: Some(key_ids_len as u16),
                 offset: None,
             };
@@ -251,101 +248,6 @@ mod tests {
 
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    mod add_to_identity_balance {
-        use super::*;
-
-        #[test]
-        fn should_add_to_balance() {
-            let drive = setup_drive_with_initial_state_structure();
-
-            let identity = Identity::random_identity(5, Some(12345));
-
-            let old_balance = identity.balance;
-
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
-
-            drive
-                .add_new_identity(identity.clone(), &block, true, None)
-                .expect("expected to insert identity");
-
-            let db_transaction = drive.grove.start_transaction();
-
-            let amount = 300;
-
-            let fee_result = drive
-                .add_to_identity_balance(
-                    identity.id.to_buffer(),
-                    amount,
-                    &block,
-                    true,
-                    Some(&db_transaction),
-                )
-                .expect("expected to add to identity balance");
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 620020,
-                    removed_bytes_from_system: 24, // TODO: That's fine?
-                    ..Default::default()
-                }
-            );
-
-            drive
-                .grove
-                .commit_transaction(db_transaction)
-                .unwrap()
-                .expect("expected to be able to commit a transaction");
-
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
-                .expect("expected to get balance");
-
-            assert_eq!(balance.unwrap(), old_balance + amount);
-        }
-
-        #[test]
-        fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
-
-            let identity = Identity::random_identity(5, Some(12345));
-
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
-
-            let app_hash_before = drive
-                .grove
-                .root_hash(None)
-                .unwrap()
-                .expect("should return app hash");
-
-            let fee_result = drive
-                .add_to_identity_balance(identity.id.to_buffer(), 300, &block, false, None)
-                .expect("expected to get estimated costs to update an identity balance");
-
-            let app_hash_after = drive
-                .grove
-                .root_hash(None)
-                .unwrap()
-                .expect("should return app hash");
-
-            assert_eq!(app_hash_after, app_hash_before);
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 5532770,
-                    ..Default::default()
-                }
-            );
-
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
-                .expect("expected to get balance");
-
-            assert!(balance.is_none()); //shouldn't have changed
-        }
-    }
-
     mod add_new_keys_to_identity {
         use super::*;
 
@@ -378,8 +280,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 15498000,
-                    processing_fee: 2654580,
+                    storage_fee: 15120000,
+                    processing_fee: 2430060,
                     ..Default::default()
                 }
             );
@@ -543,7 +445,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1645600,
+                    processing_fee: 1499200,
                     ..Default::default()
                 }
             );
@@ -603,8 +505,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 10368000,
-                    processing_fee: 5877330,
+                    storage_fee: 9720000,
+                    processing_fee: 5867730,
                     ..Default::default()
                 }
             );
@@ -646,8 +548,8 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 690660,
-                    removed_bytes_from_system: 8,
+                    processing_fee: 671060,
+                    removed_bytes_from_system: 0,
                     ..Default::default()
                 }
             );
@@ -708,109 +610,6 @@ mod tests {
                     ..Default::default()
                 }
             );
-        }
-    }
-
-    mod remove_from_identity_balance {
-        use super::*;
-
-        #[test]
-        fn should_remove_from_balance() {
-            let drive = setup_drive_with_initial_state_structure();
-
-            let identity = Identity::random_identity(5, Some(12345));
-
-            let old_balance = identity.balance;
-
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
-
-            drive
-                .add_new_identity(identity.clone(), &block, true, None)
-                .expect("expected to insert identity");
-
-            let db_transaction = drive.grove.start_transaction();
-
-            let amount = 10;
-
-            let fee_result = drive
-                .remove_from_identity_balance(
-                    identity.id.to_buffer(),
-                    amount,
-                    &block,
-                    true,
-                    Some(&db_transaction),
-                )
-                .expect("expected to add to identity balance");
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 620020,
-                    removed_bytes_from_system: 24, // TODO: That's fine?
-                    ..Default::default()
-                }
-            );
-
-            drive
-                .grove
-                .commit_transaction(db_transaction)
-                .unwrap()
-                .expect("expected to be able to commit a transaction");
-
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
-                .expect("expected to get balance");
-
-            assert_eq!(balance.unwrap(), old_balance - amount);
-        }
-
-        #[test]
-        fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
-
-            let identity = Identity::random_identity(5, Some(12345));
-
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
-
-            let app_hash_before = drive
-                .grove
-                .root_hash(None)
-                .unwrap()
-                .expect("should return app hash");
-
-            let amount = 10;
-
-            let fee_result = drive
-                .remove_from_identity_balance(
-                    identity.id.to_buffer(),
-                    amount,
-                    &block,
-                    false,
-                    None,
-                )
-                .expect("expected to add to identity balance");
-
-            let app_hash_after = drive
-                .grove
-                .root_hash(None)
-                .unwrap()
-                .expect("should return app hash");
-
-            assert_eq!(app_hash_after, app_hash_before);
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 5430770,
-                    ..Default::default()
-                }
-            );
-
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
-                .expect("expected to get balance");
-
-            assert!(balance.is_none()); //shouldn't have changed
         }
     }
 }

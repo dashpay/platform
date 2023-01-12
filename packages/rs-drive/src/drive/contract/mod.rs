@@ -1400,13 +1400,13 @@ mod tests {
                 .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), None)
                 .expect("should get contract");
 
-            assert!(matches!(
+            assert_eq!(
                 result.0,
                 Some(FeeResult {
-                    processing_fee: 6000,
-                    ..
+                    processing_fee: 4060,
+                    ..Default::default()
                 })
-            ));
+            );
 
             assert!(result.1.is_none());
         }

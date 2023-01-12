@@ -39,20 +39,17 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperationType::IdentityOperation;
-use drive::drive::batch::{DriveOperationType, GroveDbOpBatch};
+use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::block_info::BlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
-use drive::fee::op::DriveOperation;
 use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
 };
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -330,8 +327,15 @@ impl Platform {
                 }));
             }
 
+            remaining_fees =
+                remaining_fees
+                    .checked_sub(total_masternode_reward)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "overflow when subtracting for the remaining fees",
+                    )))?;
+
             let masternode_reward_given = if i == proposers_len - 1 {
-                remaining_fees + masternode_reward_leftover - total_masternode_reward
+                remaining_fees + masternode_reward_leftover
             } else {
                 masternode_reward_leftover
             };
@@ -347,12 +351,6 @@ impl Platform {
                 added_balance: masternode_reward_given,
             }));
 
-            remaining_fees =
-                remaining_fees
-                    .checked_sub(total_masternode_reward)
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "overflow when subtracting for the remaining fees",
-                    )))?;
             proposers_pro_tx_hashes.push(proposer_tx_hash);
         }
 
@@ -361,6 +359,7 @@ impl Platform {
             &BlockInfo::default(),
             transaction,
         )?;
+
         batch.append(&mut operations);
 
         unpaid_epoch_tree.add_delete_proposers_operations(proposers_pro_tx_hashes, batch);
@@ -1189,6 +1188,8 @@ mod tests {
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
         use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use rust_decimal::Decimal;
+        use rust_decimal_macros::dec;
 
         #[test]
         fn test_payout_to_proposers() {

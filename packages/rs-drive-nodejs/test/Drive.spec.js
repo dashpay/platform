@@ -588,7 +588,6 @@ describe('Drive', () => {
       const result = await drive.removeFromIdentityBalance(
         identity.getId(),
         amount,
-        amount,
         blockInfo,
       );
 
@@ -607,13 +606,11 @@ describe('Drive', () => {
     it('should not update state with dry run', async () => {
       initialRootHash = await drive.getGroveDB().getRootHash();
 
-      const requiredAmount = 2;
-      const desiredAmount = 2;
+      const amount = 2;
 
       const result = await drive.removeFromIdentityBalance(
         identity.getId(),
-        requiredAmount,
-        desiredAmount,
+        amount,
         blockInfo,
         false,
         true,

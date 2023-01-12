@@ -74,7 +74,6 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
-use crate::common::encode::encode_u64;
 use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
@@ -1341,12 +1340,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
+        let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
@@ -1360,8 +1354,14 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((3247, 2838400), (added_bytes, processing_fee));
+        assert_eq!(
+            fee_result,
+            FeeResult {
+                storage_fee: 3247 * STORAGE_DISK_USAGE_CREDIT_PER_BYTE,
+                processing_fee: 2416920,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -1389,12 +1389,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
+        let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
@@ -1408,8 +1403,14 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1428, 1865400), (added_bytes, processing_fee));
+        assert_eq!(
+            fee_result,
+            FeeResult {
+                storage_fee: 1428 * STORAGE_DISK_USAGE_CREDIT_PER_BYTE,
+                processing_fee: 1570990,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -1461,7 +1462,6 @@ mod tests {
         assert_eq!(145174860, processing_fee);
     }
 
-    #[ignore]
     #[test]
     fn test_unknown_state_cost_dashpay_fee_for_add_documents() {
         let tmp_dir = TempDir::new().unwrap();
@@ -1514,7 +1514,7 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        assert_eq!(fees, actual_fees);
+        assert_eq!(fees.storage_fee, actual_fees.storage_fee);
     }
 
     #[test]
@@ -1649,12 +1649,7 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
+        let fee_result = drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
@@ -1675,8 +1670,14 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1986, 2556600), (added_bytes, processing_fee));
+        assert_eq!(
+            fee_result,
+            FeeResult {
+                storage_fee: 1986 * STORAGE_DISK_USAGE_CREDIT_PER_BYTE,
+                processing_fee: 2207870,
+                ..Default::default()
+            }
+        );
 
         drive
             .grove

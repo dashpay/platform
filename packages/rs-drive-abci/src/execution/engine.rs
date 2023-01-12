@@ -3,14 +3,11 @@ use crate::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
 };
 use crate::error::Error;
-use crate::execution::engine::ExecutionEvent::{FreeDriveEvent, PaidDriveEvent};
 use crate::platform::Platform;
 use drive::dpp::identity::Identity;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
-use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
-use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
 
@@ -35,7 +32,7 @@ pub enum ExecutionEvent<'a> {
 impl<'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
     pub fn new_document_operation(identity: Identity, operation: DriveOperationType<'a>) -> Self {
-        PaidDriveEvent {
+        Self::PaidDriveEvent {
             identity,
             verify_balance_with_dry_run: true,
             operations: vec![operation],
@@ -43,7 +40,7 @@ impl<'a> ExecutionEvent<'a> {
     }
     /// Creates a new identity Insertion Event
     pub fn new_contract_operation(identity: Identity, operation: DriveOperationType<'a>) -> Self {
-        PaidDriveEvent {
+        Self::PaidDriveEvent {
             identity,
             verify_balance_with_dry_run: true,
             operations: vec![operation],
@@ -51,7 +48,7 @@ impl<'a> ExecutionEvent<'a> {
     }
     /// Creates a new identity Insertion Event
     pub fn new_identity_insertion(operations: Vec<DriveOperationType<'a>>) -> Self {
-        FreeDriveEvent { operations }
+        Self::FreeDriveEvent { operations }
     }
 }
 
@@ -95,11 +92,7 @@ impl Platform {
                             .to_fee_change(identity.id.to_buffer(), block_info.epoch.index)
                             .map_err(Error::Drive)?;
                         let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                            identity.id.to_buffer(),
                             fee_change,
-                            block_info,
-                            true,
-                            false,
                             Some(transaction),
                         )?;
                         total_fees
@@ -138,15 +131,18 @@ impl Platform {
             validator_set_quorum_hash: Default::default(),
         };
 
+        println!("Block #{}", block_info.height);
+
         let block_begin_response = self
             .block_begin(block_begin_request, Some(&transaction))
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "should begin process block #{} at time #{}",
                     block_info.height, block_info.time_ms
                 )
-                .as_str(),
-            );
+            });
+
+        println!("{:#?}", block_begin_response);
 
         let total_fees = self.run_events(state_transitions, block_info, &transaction)?;
 
@@ -156,13 +152,14 @@ impl Platform {
 
         let block_end_response = self
             .block_end(block_end_request, Some(&transaction))
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "should end process block #{} at time #{}",
                     block_info.height, block_info.time_ms
                 )
-                .as_str(),
-            );
+            });
+
+        println!("{:#?}", block_end_response);
 
         self.drive
             .grove
