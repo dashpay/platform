@@ -1,8 +1,12 @@
 //! Bindings for state repository -like objects coming from JS.
 
-use std::{convert::Infallible, pin::Pin, sync::Mutex};
+use std::{
+    convert::{Infallible, TryInto},
+    pin::Pin,
+    sync::Mutex,
+};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use dpp::{
     dashcore::InstantLock,
@@ -61,9 +65,6 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
 
-    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockTime)]
-    pub fn fetch_latest_platform_block_time(this: &ExternalStateRepositoryLike) -> u64;
-
     #[wasm_bindgen(structural, method, js_name=fetchDocuments)]
     pub fn fetch_documents(
         this: &ExternalStateRepositoryLike,
@@ -72,6 +73,9 @@ extern "C" {
         where_query: JsValue,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> js_sys::Array;
+
+    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockTime)]
+    pub fn fetch_latest_platform_block_time(this: &ExternalStateRepositoryLike) -> js_sys::Number;
 }
 
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
@@ -306,11 +310,29 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_latest_platform_block_time(&self) -> anyhow::Result<u64> {
-        let time = self
+        let js_number = self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
             .fetch_latest_platform_block_time();
-        Ok(time)
+
+        if let Some(float_number) = js_number.as_f64() {
+            if float_number.is_nan() || float_number.is_infinite() {
+                bail!("received an invalid timestamp: the number is either NaN or Inf")
+            }
+            if float_number < 0. {
+                bail!("received an invalid timestamp: the number is negative");
+            }
+            if float_number.fract() != 0. {
+                bail!("received an invalid timestamp: the number is fractional")
+            }
+            if float_number > u64::MAX as f64 {
+                bail!("received an invalid timestamp: the number is > u64::max")
+            }
+
+            return Ok(float_number as u64);
+        }
+
+        bail!("fetching latest platform block failed: value is not number");
     }
 }

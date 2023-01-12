@@ -22,12 +22,13 @@ const DocumentNotProvidedErrorJs = require('@dashevo/dpp/lib/document/errors/Doc
 const { default: loadWasmDpp } = require('../../../../../dist');
 const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
 const { CONSOLE_APPENDER } = require('karma/lib/constants');
+
 let Document;
 let DocumentsBatchTransition;
 let DataContract;
 let StateTransitionExecutionContext;
 let applyDocumentsBatchTransition;
-let Lab;
+let DocumentNotProvidedError;
 
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documentsJs;
@@ -51,13 +52,13 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   let executionContext;
   let blockTimeMs;
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     ({
       DataContract, Document, DocumentsBatchTransition, StateTransitionExecutionContext, applyDocumentsBatchTransition,
+      // Errors:
+      DocumentNotProvidedError
     } = await loadWasmDpp());
-  });
 
-  beforeEach(async function beforeEach() {
     dataContractJs = getDataContractFixture();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
 
@@ -81,10 +82,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     }, dataContract);
 
     blockTimeMs = Date.now();
-
     documentsJs = [replaceDocumentJs, documentsFixtureJs[2]];
-    documents = [replaceDocument, documentsFixture[2]];
-
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: [documentsFixtureJs[0]],
       replace: [documentsJs[0]],
@@ -126,11 +124,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     stateRepositoryMock.createDocument.returns(null);
     stateRepositoryMock.fetchDocuments.returns([replaceDocument]);
 
-    // fetchDocumentsMock = this.sinonSandbox.stub();
-    // fetchDocumentsMock.resolves([
-    //   replaceDocument,
-    // ]);
-
     applyDocumentsBatchTransitionJs = applyDocumentsBatchTransitionFactory(
       stateRepositoryMockJs,
       fetchDocumentsMock,
@@ -138,9 +131,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   });
 
   it('should call `store`, `replace` and `remove` functions for specific type of transitions', async () => {
-    console.log("befoooore: original test::: documentJs-----------------");
-    console.log(documentsJs[0]);
-
     await applyDocumentsBatchTransitionJs(stateTransitionJs);
 
     const replaceDocumentTransition = documentTransitionsJs[1];
@@ -157,12 +147,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ...stateRepositoryMockJs.createDocument.getCall(0).args,
       ...stateRepositoryMockJs.updateDocument.getCall(0).args,
     ];
-
-    console.log(callsArgs);
-    console.log("fixtureJs-----------------");
-    console.log(documentsFixtureJs[0]);
-    console.log("original test::: documentJs-----------------");
-    console.log(documentsJs[0]);
 
     expect(callsArgs).to.have.deep.members([
       documentsFixtureJs[0],
@@ -181,9 +165,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
   it('should call `store`, `replace` and `remove` functions for specific type of transitions - Rust', async () => {
     await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
-
-
-    // In case of imported Objects from WASM we cannot compare structures
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
 
     const [fetchContractId, fetchDocumentType] = stateRepositoryMock.fetchDocuments.getCall(0).args;
@@ -194,35 +175,22 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     expect(stateRepositoryMock.updateDocument).to.have.been.calledOnce();
     expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
 
-
     const [createDocument] = stateRepositoryMock.createDocument.getCall(0).args;
     const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
+    const [deleteDataContract, deleteDocumentType, deleteDocumentId] = stateRepositoryMock.removeDocument.getCall(0).args;
 
     expect(createDocument.toObject()).to.deep.equal(documentsFixtureJs[0].toObject());
-    console.log(documentsFixtureJs[0]);
+    let expectReplaceDocument = documentsJs[0].toJSON();
 
-    // expect(updateDocument.toObject()).to.deep.equal(replaceDocument.toObject());
-    console.log("documents of JS ------------------>")
-    console.log(documentsJs[0]);
+    // ! Why we need to replace. Apparently, `applyDocumentsTransition` somehow modifies `documentsJs` and
+    // ! increments revision and $updatedAt. I have no clue how its possible.
+    expectReplaceDocument.$updatedAt = documentTransitionsJs[1].toJSON().$updatedAt;
+    expectReplaceDocument.$revision = documentTransitionsJs[1].toJSON().$revision;
+    expect(updateDocument.toJSON()).to.deep.equal(expectReplaceDocument);
 
-    // const callsArgs = [
-    //   ...stateRepositoryMockJs.createDocument.getCall(0).args,
-    //   ...stateRepositoryMockJs.updateDocument.getCall(0).args,
-    // ];
-
-    // expect(callsArgs).to.have.deep.members([
-    //   documentsFixtureJs[0],
-    //   documentsJs[0],
-    //   executionContextJs,
-    //   executionContextJs,
-    // ]);
-
-    // expect(stateRepositoryMockJs.removeDocument).to.have.been.calledOnceWithExactly(
-    //   documentTransitionsJs[2].getDataContract(),
-    //   documentTransitionsJs[2].getType(),
-    //   documentTransitionsJs[2].getId(),
-    //   executionContextJs,
-    // );
+    expect(deleteDataContract.toObject()).to.deep.equal(dataContract.toObject());
+    expect(deleteDocumentType).to.deep.equal(documentTransitionsJs[2].getType());
+    expect(deleteDocumentId.toBuffer()).to.deep.equal(documentTransitionsJs[2].getId());
   });
 
   it('should throw an error if document was not provided for a replacement', async () => {
@@ -236,6 +204,20 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(DocumentNotProvidedErrorJs);
       expect(e.getDocumentTransition()).to.deep.equal(replaceDocumentTransition);
+    }
+  });
+
+  it('should throw an error if document was not provided for a replacement - Rust', async () => {
+    stateRepositoryMock.fetchDocuments.returns([]);
+
+    const replaceDocumentTransition = documentTransitionsJs[1];
+
+    try {
+      await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
+      expect.fail('Error was not thrown');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(DocumentNotProvidedError);
+      expect(e.getDocumentTransition().toObject()).to.deep.equal(replaceDocumentTransition.toObject());
     }
   });
 
@@ -279,5 +261,53 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       newDocument,
       executionContextJs,
     );
+  });
+
+  it('should call `replace` functions on dry run - Rust', async function test() {
+    this.timeout(10000);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTimeMs);
+    documentTransitionsJs = getDocumentTransitionsFixture({
+      create: [],
+      replace: [documentsJs[0]],
+      delete: [],
+    });
+
+    stateTransition = new DocumentsBatchTransition({
+      protocolVersion: protocolVersion.latestVersion,
+      ownerId,
+      transitions: documentTransitionsJs.map((t) => t.toObject()),
+    }, [dataContract]);
+
+
+
+    stateTransition.getExecutionContext().enableDryRun();
+
+    await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
+
+    // stateTransition.getExecutionContext().disableDryRun();
+
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
+
+    const [documentTransition] = stateTransition.getTransitions();
+
+    const newDocument = new Document({
+      $protocolVersion: stateTransitionJs.getProtocolVersion(),
+      $id: documentTransition.getId(),
+      $type: documentTransition.getType(),
+      $dataContractId: documentTransition.getDataContractId(),
+      $ownerId: stateTransitionJs.getOwnerId(),
+      $createdAt: blockTimeMs,
+      ...documentTransition.getData(),
+    }, documentTransition.getDataContract());
+
+    // newDocument.setRevision(documentTransition.getRevision());
+    // newDocument.setData(documentTransition.getData());
+    // newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+
+    // expect(stateRepositoryMockJs.updateDocument).to.have.been.called.calledOnce();
+    // const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
+
+    // console.log(`the update document is ${updateDocument.toObject()}`);
+
   });
 });

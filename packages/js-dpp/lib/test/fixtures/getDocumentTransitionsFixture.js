@@ -14,8 +14,8 @@ function getDocumentTransitionsFixture(documents = {}) {
 
   const factory = new DocumentFactory(
     createDPPMock(),
-    () => {},
-    () => {},
+    () => { },
+    () => { },
   );
 
   const stateTransition = factory.createStateTransition({
