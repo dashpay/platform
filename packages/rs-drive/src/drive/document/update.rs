@@ -675,6 +675,8 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use dpp::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
+    use dpp::state_repository::MockStateRepositoryLike;
     use grovedb::TransactionArg;
     use std::default::Default;
     use std::option::Option::None;
@@ -2388,7 +2390,7 @@ mod tests {
         let document_factory = DocumentFactory::new(
             1,
             document_validator,
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         // Create a document
@@ -2404,7 +2406,7 @@ mod tests {
             )
             .expect("should create a document");
 
-        let document_cbor = document.to_cbor().expect("should encode to cbor");
+        let document_cbor = document.to_buffer().expect("should encode to buffer");
 
         let storage_flags = StorageFlags::SingleEpochOwned(0, owner_id.to_buffer());
 
@@ -2430,7 +2432,7 @@ mod tests {
             .set("name", Value::String("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
-        let document_cbor = document.to_cbor().expect("should encode to cbor");
+        let document_cbor = document.to_buffer().expect("should encode to buffer");
 
         let block_info = BlockInfo::default_with_time(10000);
 

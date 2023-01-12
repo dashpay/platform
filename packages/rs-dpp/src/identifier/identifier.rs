@@ -98,6 +98,22 @@ impl TryFrom<&[u8]> for Identifier {
     }
 }
 
+impl TryFrom<Vec<u8>> for Identifier {
+    type Error = ProtocolError;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(&bytes)
+    }
+}
+
+impl TryFrom<String> for Identifier {
+    type Error = ProtocolError;
+
+    fn try_from(data: String) -> Result<Self, Self::Error> {
+        Self::from_string(&data, Encoding::Base58)
+    }
+}
+
 impl From<[u8; 32]> for Identifier {
     fn from(bytes: [u8; 32]) -> Self {
         Self::new(bytes)
@@ -118,7 +134,6 @@ impl Serialize for Identifier {
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
         let data: String = Deserialize::deserialize(d)?;
-
         // by default we use base58 as Identifier type should be encoded in that way
         Identifier::from_string_with_encoding_string(&data, Some("base58"))
             .map_err(|e| serde::de::Error::custom(e.to_string()))

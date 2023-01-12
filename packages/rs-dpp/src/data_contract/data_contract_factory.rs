@@ -26,7 +26,7 @@ struct DefaultEntropyGenerator;
 
 impl EntropyGenerator for DefaultEntropyGenerator {
     fn generate(&self) -> [u8; 32] {
-        entropy_generator::generate()
+        entropy_generator::generate().expect("entropy generation failed")
     }
 }
 

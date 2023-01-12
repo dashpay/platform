@@ -8,7 +8,7 @@ private = true
 
 [dependencies]
 serde = { version = "1.0.132", features = ["derive"] }
-ciborium = "0.2.0"
+ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
 integer-encoding = "3.0.3"
 bs58 = "0.4.0"
 base64 = "0.13.0"
@@ -50,6 +50,7 @@ rev = "a9e168767c318b94b6edd119c51542c43e8772b2"
 
 [dev-dependencies]
 criterion = "0.3.5"
+dpp = { path = "../rs-dpp", features=["mocks"]}
 
 [[bench]]
 name = "benchmarks"
