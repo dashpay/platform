@@ -640,196 +640,199 @@ describe('validateDataContractFactory', () => {
         );
       });
 
-    //   it('should return an invalid result if a property has invalid format', async () => {
-    //     const invalidNames = ['*(*&^', '$test', '.', '.a'];
+      it('should return an invalid result if a property has invalid format', async () => {
+        const rawDataContract = dataContract.toObject();
+        const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
-    //     await Promise.all(
-    //       invalidNames.map(async (name) => {
-    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
+        await Promise.all(
+          invalidNames.map(async (name) => {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-    //         clonedDataContract.documents.niceDocument.properties[name] = {};
+            clonedDataContract.documents.niceDocument.properties[name] = {};
 
-    //         const result = await validateDataContract(clonedDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
-    //         await expectJsonSchemaError(result, 3);
+            await expectJsonSchemaError(result, 2);
 
-    //         const errors = result.getErrors();
+            const [error] = result.getErrors();
 
-    //         expect(errors[0].getInstancePath()).to.equal('/documents/niceDocument/properties');
-    //         expect(errors[0].keyword).to.equal('pattern');
-    //         expect(errors[1].getInstancePath()).to.equal('/documents/niceDocument/properties');
-    //         expect(errors[1].keyword).to.equal('propertyNames');
-    //       }),
-    //     );
-    //   });
+            expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties');
+            expect(error.getKeyword()).to.equal('propertyNames');
+          }),
+        );
+      });
 
-    //   it('should return an invalid result if a nested property has invalid format', async () => {
-    //     const invalidNames = ['*(*&^', '$test', '.', '.a'];
+      it('should return an invalid result if a nested property has invalid format', async () => {
+        const rawDataContract = dataContract.toObject();
+        const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
-    //     rawDataContract.documents.niceDocument.properties.something = {
-    //       properties: {},
-    //       additionalProperties: false,
-    //     };
+        rawDataContract.documents.niceDocument.properties.something = {
+          properties: {},
+          additionalProperties: false,
+        };
 
-    //     await Promise.all(
-    //       invalidNames.map(async (name) => {
-    //         const clonedDataContract = lodashCloneDeep(rawDataContract);
+        await Promise.all(
+          invalidNames.map(async (name) => {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-    //         clonedDataContract.documents.niceDocument.properties.something.properties[name] = {};
+            clonedDataContract.documents.niceDocument.properties.something.properties[name] = {};
 
-    //         const result = await validateDataContract(clonedDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
-    //         await expectJsonSchemaError(result, 4);
+            await expectJsonSchemaError(result, 4);
 
-    //         const errors = result.getErrors();
+            const [errors] = result.getErrors();
 
-    //         expect(errors[0].getInstancePath()).to.equal(
-    //           '/documents/niceDocument/properties/something/properties',
-    //         );
-    //         expect(errors[0].keyword).to.equal('pattern');
-    //         expect(errors[1].getInstancePath()).to.equal(
-    //           '/documents/niceDocument/properties/something/properties',
-    //         );
-    //         expect(errors[1].keyword).to.equal('propertyNames');
-    //       }),
-    //     );
-    //   });
+            expect(errors.getInstancePath()).to.equal(
+              '/documents/niceDocument/properties/something/properties',
+            );
+            expect(errors.getKeyword()).to.equal('propertyNames');
+          }),
+        );
+      });
 
-    //   it('should have "additionalProperties" defined', async () => {
-    //     delete rawDataContract.documents.niceDocument.additionalProperties;
+      it('should have "additionalProperties" defined', async () => {
+        const rawDataContract = dataContract.toObject();
+        delete rawDataContract.documents.niceDocument.additionalProperties;
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('additionalProperties');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('additionalProperties');
+      });
 
-    //   it('should have "additionalProperties" defined to false', async () => {
-    //     rawDataContract.documents.niceDocument.additionalProperties = true;
+      it('should have "additionalProperties" defined to false', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.niceDocument.additionalProperties = true;
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result, 2);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/additionalProperties');
-    //     expect(error.getKeyword()).to.equal('const');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument/additionalProperties');
+        expect(error.getKeyword()).to.equal('const');
+      });
 
-    //   it('should have nested "additionalProperties" defined', async () => {
-    //     rawDataContract.documents.niceDocument.properties.object = {
-    //       type: 'array',
-    //       prefixItems: [
-    //         {
-    //           type: 'object',
-    //           properties: {
-    //             something: {
-    //               type: 'string',
-    //             },
-    //           },
-    //         },
-    //       ],
-    //       items: false,
-    //     };
+      it('should have nested "additionalProperties" defined', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.niceDocument.properties.object = {
+          type: 'array',
+          prefixItems: [
+            {
+              type: 'object',
+              properties: {
+                something: {
+                  type: 'string',
+                },
+              },
+            },
+          ],
+          items: false,
+        };
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result, 2);
+        await expectJsonSchemaError(result, 2);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('additionalProperties');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties/object/prefixItems/0');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('additionalProperties');
+      });
 
-    //   it('should return invalid result if there are additional properties', async () => {
-    //     rawDataContract.additionalProperty = { };
+      it('should return invalid result if there are additional properties', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.additionalProperty = {};
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('');
-    //     expect(error.getKeyword()).to.equal('additionalProperties');
-    //   });
+        expect(error.getInstancePath()).to.equal('');
+        expect(error.getKeyword()).to.equal('additionalProperties');
+      });
 
-    //   it('should have no more than 100 properties', async () => {
-    //     const propertyDefinition = { };
+      it('should have no more than 100 properties', async () => {
+        const rawDataContract = dataContract.toObject();
+        const propertyDefinition = { };
 
-    //     rawDataContract.documents.niceDocument.properties = {};
+        rawDataContract.documents.niceDocument.properties = {};
 
-    //     Array(101).fill(propertyDefinition).forEach((item, i) => {
-    //       rawDataContract.documents.niceDocument.properties[i] = item;
-    //     });
+        Array(101).fill(propertyDefinition).forEach((item, i) => {
+          rawDataContract.documents.niceDocument.properties[i] = item;
+        });
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result, 2);
+        await expectJsonSchemaError(result, 406);
 
-    //     const [error] = result.getErrors();
+        const errors = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/properties');
-    //     expect(error.getKeyword()).to.equal('maxProperties');
-    //   });
+        expect(errors[405].getInstancePath()).to.equal('/documents/niceDocument/properties');
+        expect(errors[405].getKeyword()).to.equal('maxProperties');
+      });
 
-    //   it('should have defined items for arrays', async () => {
-    //     rawDataContract.documents.new = {
-    //       properties: {
-    //         something: {
-    //           type: 'array',
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
+      it('should have defined items for arrays', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+            },
+          },
+          additionalProperties: false,
+        };
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result, 2);
+        await expectJsonSchemaError(result, 2);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('items');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/new/properties/something');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('items');
+      });
 
-    //   it('should have sub schema in items for arrays', async () => {
-    //     rawDataContract.documents.new = {
-    //       properties: {
-    //         something: {
-    //           type: 'array',
-    //           items: [
-    //             {
-    //               type: 'string',
-    //             },
-    //             {
-    //               type: 'number',
-    //             },
-    //           ],
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
+      it('should have sub schema in items for arrays', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+              items: [
+                {
+                  type: 'string',
+                },
+                {
+                  type: 'number',
+                },
+              ],
+            },
+          },
+          additionalProperties: false,
+        };
 
-    //     const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-    //     await expectJsonSchemaError(result, 3);
+        await expectJsonSchemaError(result, 2);
 
-    //     const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something/items');
-    //     expect(error.getKeyword()).to.equal('type');
-    //     expect(error.getParams().type).to.equal('object');
-    //   });
+        expect(error.getInstancePath()).to.equal('/documents/new/properties/something/items');
+        expect(error.getKeyword()).to.equal('type');
+        expect(error.getParams().type).to.equal('object');
+      });
 
     //   it('should have items if prefixItems is used for arrays', async () => {
     //     rawDataContract.documents.new = {

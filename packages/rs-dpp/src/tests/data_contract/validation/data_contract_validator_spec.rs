@@ -885,6 +885,8 @@ mod documents {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
 
+        dbg!(&result);
+
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("", schema_error.instance_path().to_string());
         assert_eq!(Some("additionalProperties"), schema_error.keyword());

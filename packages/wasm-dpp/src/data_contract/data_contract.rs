@@ -56,6 +56,9 @@ pub(crate) struct DataContractParameters {
     protocol_version: serde_json::Value,
     #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
     version: serde_json::Value,
+
+    #[serde(flatten)]
+    _extras: serde_json::Value // Captures excess fields to trigger validation failure later.
 }
 
 #[wasm_bindgen(js_class=DataContract)]
