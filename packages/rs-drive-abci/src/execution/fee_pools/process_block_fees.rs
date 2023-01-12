@@ -451,6 +451,7 @@ mod tests {
         use super::*;
 
         use drive::common::helpers::identities::create_test_masternode_identities;
+        use crate::config::PlatformConfig;
 
         mod helpers {
             use super::*;
@@ -550,7 +551,12 @@ mod tests {
 
         #[test]
         fn test_process_3_block_fees_from_different_epochs() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            // We are not adding to the overall platform credits so we can't verify
+            // the sum trees
+            let platform = setup_platform_with_initial_state_structure(Some(PlatformConfig {
+                drive_config: Default::default(),
+                verify_sum_trees: false,
+            }));
             let transaction = platform.drive.grove.start_transaction();
 
             platform.create_mn_shares_contract(Some(&transaction));

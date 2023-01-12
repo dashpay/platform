@@ -76,6 +76,7 @@ use rust_decimal::prelude::ToPrimitive;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Div, Range};
+use crate::DocumentAction::DocumentActionInsert;
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -101,9 +102,16 @@ impl Frequency {
 }
 
 #[derive(Clone, Debug)]
+pub enum DocumentAction {
+    DocumentActionInsert,
+    DocumentActionDelete,
+}
+
+#[derive(Clone, Debug)]
 pub struct DocumentOp {
     pub contract: Contract,
     pub document_type: DocumentType,
+    pub action: DocumentAction,
 }
 
 pub type ProTxHash = [u8; 32];
@@ -435,6 +443,7 @@ fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
 
     let document_op = DocumentOp {
         contract: contract.clone(),
+        action: DocumentActionInsert,
         document_type: contract
             .document_type_for_name("profile")
             .expect("expected a profile document type")
@@ -473,6 +482,7 @@ fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change(
 
     let document_op = DocumentOp {
         contract: contract.clone(),
+        action: DocumentActionInsert,
         document_type: contract
             .document_type_for_name("profile")
             .expect("expected a profile document type")
@@ -498,9 +508,11 @@ fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change(
         verify_sum_trees: true,
     };
     let day_in_ms = 1000 * 60 * 60 * 24;
-    let outcome = run_chain_for_strategy(100, day_in_ms, strategy, config, 15);
-    assert_eq!(outcome.identities.len(), 100);
+    let block_count = 120;
+    let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+    assert_eq!(outcome.identities.len() as u64, block_count);
     assert_eq!(outcome.masternode_identity_balances.len(), 100);
+    dbg!(&outcome.masternode_identity_balances);
     let all_have_balances = outcome
         .masternode_identity_balances
         .iter()
