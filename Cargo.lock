@@ -194,6 +194,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin_hashes"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90064b8dee6815a6470d60bad07bbbaee885c0e12d04177138fa3291a01b7bc4"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -833,14 +839,28 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
+source = "git+https://github.com/dashevo/rust-dashcore?rev=51548a4a1b9eca7430f5f3caf94d9784886ff2e9#51548a4a1b9eca7430f5f3caf94d9784886ff2e9"
+dependencies = [
+ "anyhow",
+ "bech32",
+ "bitcoin_hashes 0.10.0",
+ "hex",
+ "rustversion",
+ "secp256k1 0.24.2",
+ "serde",
+]
+
+[[package]]
+name = "dashcore"
+version = "0.29.1"
 source = "git+https://github.com/dashevo/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067#6092d584487918c5330fec93152e4df06a714067"
 dependencies = [
  "anyhow",
  "bech32",
- "bitcoin_hashes",
+ "bitcoin_hashes 0.10.0",
  "hex",
  "rustversion",
- "secp256k1",
+ "secp256k1 0.22.1",
  "serde",
 ]
 
@@ -861,7 +881,7 @@ name = "dashcore-rpc-json"
 version = "0.15.0"
 source = "git+https://github.com/jawid-h/rust-dashcore-rpc?branch=fix/attempt-to-fix#2b4156aac527eb91ee9882f6575766b59a226ef9"
 dependencies = [
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?rev=6092d584487918c5330fec93152e4df06a714067)",
  "serde",
  "serde_json",
  "serde_with",
@@ -917,7 +937,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?rev=51548a4a1b9eca7430f5f3caf94d9784886ff2e9)",
  "env_logger",
  "futures",
  "getrandom",
@@ -932,7 +952,7 @@ dependencies = [
  "mockall",
  "num_enum",
  "pretty_assertions",
- "rand",
+ "rand 0.8.5",
  "regex",
  "serde",
  "serde-big-array",
@@ -958,7 +978,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?rev=51548a4a1b9eca7430f5f3caf94d9784886ff2e9)",
  "dashcore-rpc",
  "dpp",
  "enum-map",
@@ -991,7 +1011,7 @@ dependencies = [
  "bs58",
  "chrono",
  "ciborium",
- "dashcore",
+ "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?rev=51548a4a1b9eca7430f5f3caf94d9784886ff2e9)",
  "dpp",
  "drive",
  "hex",
@@ -2748,7 +2768,19 @@ version = "0.22.1"
 source = "git+https://github.com/rust-bitcoin/rust-secp256k1?rev=f7cae46fc7733522cb84ef1b1ee1d1ed0cec2fd3#f7cae46fc7733522cb84ef1b1ee1d1ed0cec2fd3"
 dependencies = [
  "rand 0.6.5",
- "secp256k1-sys",
+ "secp256k1-sys 0.5.0",
+ "serde",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9512ffd81e3a3503ed401f79c33168b9148c75038956039166cd750eaa037c3"
+dependencies = [
+ "bitcoin_hashes 0.11.0",
+ "rand 0.8.5",
+ "secp256k1-sys 0.6.1",
  "serde",
 ]
 
@@ -2756,6 +2788,15 @@ dependencies = [
 name = "secp256k1-sys"
 version = "0.5.0"
 source = "git+https://github.com/rust-bitcoin/rust-secp256k1?rev=f7cae46fc7733522cb84ef1b1ee1d1ed0cec2fd3#f7cae46fc7733522cb84ef1b1ee1d1ed0cec2fd3"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
 dependencies = [
  "cc",
 ]

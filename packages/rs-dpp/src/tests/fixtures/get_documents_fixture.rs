@@ -3,11 +3,11 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use crate::{
+    contracts::withdrawals_contract,
     document::{
         document_factory::DocumentFactory,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
-    mocks,
     prelude::*,
     state_repository::{MockStateRepositoryLike, StateRepositoryLike},
     tests::utils::generate_random_identifier_struct as gen_owner_id,
@@ -114,7 +114,7 @@ pub fn get_withdrawal_document_fixture(data_contract: &DataContract, data: Value
     let factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),
-        mocks::FetchAndValidateDataContract {},
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
     );
 
     factory
