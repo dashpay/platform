@@ -4,11 +4,9 @@ const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTran
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const DocumentFactoryJs = require('@dashevo/dpp/lib/document/DocumentFactory');
-const lodash = require('lodash');
 const { default: loadWasmDpp } = require('../../../../../dist');
 const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
 
-let Identifier;
 let DocumentFactory;
 let DataContract;
 let Document;
@@ -26,7 +24,7 @@ describe('DocumentsBatchTransition', () => {
 
   beforeEach(async () => {
     ({
-      Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
+      ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
       Document,
     } = await loadWasmDpp());
   });
@@ -143,14 +141,8 @@ describe('DocumentsBatchTransition', () => {
     it('should return State Transition as plain object -  Rust', () => {
       const rawObject = stateTransition.toObject();
       const rawObjectJs = stateTransitionJs.toObject();
-      /* eslint-disable */
-      const rawObjectWithBuffers = lodash.cloneDeepWith(rawObject, (value) => {
-        if (value instanceof Identifier) {
-          return value.toBuffer();
-        }
-      });
 
-      expect(rawObjectWithBuffers).to.deep.equal(rawObjectJs);
+      expect(rawObject).to.deep.equal(rawObjectJs);
     });
   });
 

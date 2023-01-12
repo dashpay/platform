@@ -3,10 +3,10 @@ use dpp::{
     ProtocolError,
 };
 
-use js_sys::Function;
+use js_sys::{Function, Object, Reflect};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
 use crate::errors::{from_dpp_err, RustConversionError};
 

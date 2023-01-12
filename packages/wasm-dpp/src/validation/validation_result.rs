@@ -4,7 +4,16 @@ use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
-pub struct ValidationResultWasm(ValidationResult<()>);
+pub struct ValidationResultWasm(ValidationResult<JsValue>);
+
+impl<T> From<ValidationResult<T>> for ValidationResultWasm
+where
+    T: Into<JsValue> + Clone,
+{
+    fn from(validation_result: ValidationResult<T>) -> Self {
+        ValidationResultWasm(validation_result.map(Into::into))
+    }
+}
 
 #[wasm_bindgen(js_class=ValidationResult)]
 impl ValidationResultWasm {
@@ -32,10 +41,9 @@ impl ValidationResultWasm {
             .map(from_consensus_error_ref)
             .collect()
     }
-}
 
-impl From<ValidationResult<()>> for ValidationResultWasm {
-    fn from(validation_result: ValidationResult<()>) -> Self {
-        ValidationResultWasm(validation_result)
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&self) -> JsValue {
+        self.0.data().unwrap_or(&JsValue::undefined()).to_owned()
     }
 }
