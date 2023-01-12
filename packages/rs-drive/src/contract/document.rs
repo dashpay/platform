@@ -189,7 +189,7 @@ impl Document {
         // we would need dedicated deserialization functions based on the document type
         let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
-            Error::Structure(StructureError::InvalidCBOR("unable to decode contract"))
+            Error::Structure(StructureError::InvalidCBOR("unable to decode cbor"))
         })?;
 
         let owner_id: [u8; 32] = match owner_id {

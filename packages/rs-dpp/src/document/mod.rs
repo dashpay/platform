@@ -22,6 +22,7 @@ pub mod document_validator;
 pub mod errors;
 pub mod generate_document_id;
 pub mod state_transition;
+pub mod serialize;
 
 const IDENTIFIER_FIELDS: [&str; 3] = ["$id", "$dataContractId", "$ownerId"];
 

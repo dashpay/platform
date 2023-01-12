@@ -565,7 +565,7 @@ mod tests {
 
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
-            let removed_credits = 10000;
+            let removed_credits = 100000;
 
             let credits_per_epoch: CreditsPerEpoch =
                 IntMap::from_iter([(GENESIS_EPOCH_INDEX, removed_credits)]);
@@ -585,12 +585,15 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
                 .expect("should apply fee change");
 
-            let (refund_amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
+            let (refund_amount, leftovers) = calculate_storage_fee_distribution_amount_and_leftovers(
                 removed_credits,
                 GENESIS_EPOCH_INDEX,
-                GENESIS_EPOCH_INDEX,
+                GENESIS_EPOCH_INDEX + 1,
             )
             .expect("should calculate refund amount");
+
+            assert_eq!(leftovers, 360);
+            assert_eq!(refund_amount, 99390);
 
             assert!(matches!(
                 drive_operations[..],

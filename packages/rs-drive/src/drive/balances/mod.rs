@@ -91,6 +91,19 @@ impl VerifyCreditOutcome {
 
         Ok(*total_credits_in_platform == total_from_trees)
     }
+
+    /// Get the total in all trees
+    pub fn total_in_trees(&self) -> Result<u64, Error> {
+        let VerifyCreditOutcome {
+            total_in_pools,
+            total_identity_balances,
+            ..
+        } = self;
+        (*total_in_pools)
+            .checked_add(*total_identity_balances)            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+            "Overflow of total credits",
+        )))
+    }
 }
 
 impl Drive {
@@ -201,7 +214,7 @@ impl Drive {
         Ok(drive_operations)
     }
 
-    /// Verify that the sum tree identity credits + pool credits are equal to the
+    /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
     /// Total credits in the system
     pub fn verify_total_credits(
         &self,

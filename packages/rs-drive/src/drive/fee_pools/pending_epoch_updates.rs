@@ -38,7 +38,7 @@
 //!
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee_pools::pools_pending_updates_path;
+use crate::drive::fee_pools::pools_pending_updates_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -61,7 +61,7 @@ impl Drive {
         let (query_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                &PathQuery::new_unsized(pools_pending_updates_path_vec(), query),
                 transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
@@ -114,7 +114,7 @@ impl Drive {
         let (query_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                &PathQuery::new_unsized(pools_pending_updates_path_vec(), query),
                 transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
@@ -164,7 +164,7 @@ impl Drive {
         let (query_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                &PathQuery::new_unsized(pools_pending_updates_path_vec(), query),
                 transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
@@ -184,7 +184,7 @@ impl Drive {
                 continue;
             }
 
-            batch.add_delete(pools_pending_updates_path(), epoch_index_key);
+            batch.add_delete(pools_pending_updates_path_vec(), epoch_index_key);
         }
 
         Ok(())
@@ -199,9 +199,9 @@ pub fn add_update_pending_epoch_storage_pool_update_operations(
     for (epoch_index, credits) in credits_per_epoch {
         let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
-        let element = Element::new_sum_item(credits.to_signed()?);
+        let element = Element::new_sum_item(- credits.to_signed()?);
 
-        batch.add_insert(pools_pending_updates_path(), epoch_index_key, element);
+        batch.add_insert(pools_pending_updates_path_vec(), epoch_index_key, element);
     }
 
     Ok(())
@@ -306,7 +306,7 @@ mod tests {
             for operation in batch.into_iter() {
                 assert!(matches!(operation.op, Op::Delete));
 
-                assert_eq!(operation.path.to_path(), pools_pending_updates_path());
+                assert_eq!(operation.path.to_path(), pools_pending_updates_path_vec());
 
                 let epoch_index_key = operation.key.get_key();
                 let epoch_index = u16::from_be_bytes(

@@ -105,7 +105,6 @@
             "additionalProperties": false
         },
         "contactRequest": {
-            "documentsMutable": false,
             "indices": [
                 {
                     "properties": [

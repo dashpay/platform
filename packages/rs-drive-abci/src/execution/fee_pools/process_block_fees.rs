@@ -236,8 +236,12 @@ impl Platform {
             if !credits_verified.ok()? {
                 return Err(Error::Execution(
                     ExecutionError::CorruptedCreditsNotBalanced(format!(
-                        "credits are not balanced after block execution {:?}",
+                        "credits are not balanced after block execution {:?} off by {}",
+                        credits_verified,
                         credits_verified
+                            .total_in_trees()
+                            .unwrap()
+                            .abs_diff(credits_verified.total_credits_in_platform)
                     )),
                 ));
             }

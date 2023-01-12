@@ -47,8 +47,16 @@ impl<'a> ExecutionEvent<'a> {
         }
     }
     /// Creates a new identity Insertion Event
-    pub fn new_identity_insertion(operations: Vec<DriveOperationType<'a>>) -> Self {
+    pub fn new_identity_insertion(
+        identity: Identity,
+        operations: Vec<DriveOperationType<'a>>,
+    ) -> Self {
         Self::FreeDriveEvent { operations }
+        // Self::PaidDriveEvent {
+        //     identity,
+        //     verify_balance_with_dry_run: true,
+        //     operations,
+        // }
     }
 }
 
@@ -152,10 +160,10 @@ impl Platform {
 
         let block_end_response = self
             .block_end(block_end_request, Some(&transaction))
-            .unwrap_or_else(|_| {
+            .unwrap_or_else(|e| {
                 panic!(
-                    "should end process block #{} at time #{}",
-                    block_info.height, block_info.time_ms
+                    "engine should end process block #{} at time #{} : {}",
+                    block_info.height, block_info.time_ms, e
                 )
             });
 

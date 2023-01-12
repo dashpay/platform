@@ -208,12 +208,10 @@ impl FeeResult {
             refunds_per_epoch
                 .iter()
                 .map(|(epoch, credits)| {
-                    // TODO: Don't we need to deduct leftovers as well?
                     let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
                         *credits,
                         *epoch,
-                        // TODO: You probably don't want to get refund from the current pool so it should be +1?
-                        current_epoch_index,
+                        current_epoch_index + 1,
                     )?;
                     Ok(amount)
                 })

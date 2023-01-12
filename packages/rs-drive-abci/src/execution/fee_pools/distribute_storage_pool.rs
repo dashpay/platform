@@ -74,18 +74,18 @@ impl Platform {
         )?;
 
         // Deduct refunds since epoch where data was removed skipping previous (already paid or pay-in-progress) epochs.
+        // We want people to pay for the current epoch
         // Leftovers are ignored since they already deducted from Identity's refund amount
 
         let refunds = self.drive.fetch_pending_updates(transaction)?;
         let refunded_epochs_count = refunds.len() as u16;
 
-        // todo: Better to use iterator do not load everything into memory
         for (epoch_index, credits) in refunds {
             distribute_refunds_to_epochs_collection(
                 &mut credits_per_epochs,
                 credits,
                 epoch_index,
-                current_epoch_index,
+                current_epoch_index + 1,
             )?;
         }
 
@@ -237,7 +237,7 @@ mod tests {
                     )
                     .expect("should distribute refunds");
 
-                    let already_paid_epochs = current_epoch_index as u64 - epoch_index as u64;
+                    let already_paid_epochs = current_epoch_index as u64 - epoch_index as u64 + 1;
 
                     let already_paid_credits = if already_paid_epochs > 0 {
                         credits_per_epochs

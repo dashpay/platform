@@ -60,7 +60,7 @@ pub fn pools_vec_path() -> Vec<Vec<u8>> {
 }
 
 /// Returns the path to pending pool updates
-pub fn pools_pending_updates_path() -> Vec<Vec<u8>> {
+pub fn pools_pending_updates_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Pools as u8],
         KEY_PENDING_POOL_UPDATES.to_vec(),

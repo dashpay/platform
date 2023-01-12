@@ -37,6 +37,7 @@ use drive::common::helpers::identities::{
     create_test_masternode_identities, create_test_masternode_identities_with_rng,
 };
 use drive::common::{json_document_to_cbor, setup_contract};
+use drive::contract::document::Document;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::data_contract::extra::DriveContractExt;
 use drive::dpp::identifier::Identifier;
@@ -181,10 +182,11 @@ impl Strategy {
                         let documents = op
                             .document_type
                             .random_documents_with_rng(count as u32, rng);
-                        for document in documents {
+                        for mut document in documents {
                             let identity_num = rng.gen_range(0..current_identities.len());
                             let identity = current_identities.get(identity_num).unwrap().clone();
 
+                            document.owner_id = identity.id.to_buffer();
                             let storage_flags = StorageFlags::new_single_epoch(
                                 block_info.epoch.index,
                                 Some(identity.id.to_buffer()),
@@ -214,22 +216,28 @@ impl Strategy {
                             DriveQuery::any_item_query(&op.contract, &op.document_type);
                         let mut items = platform
                             .drive
-                            .query_document_ids(any_item_query, Some(&block_info.epoch), None)
+                            .query_documents(any_item_query, Some(&block_info.epoch), None)
                             .expect("expect to execute query")
                             .items;
                         if !items.is_empty() {
-                            let insert_op = DriveOperationType::DocumentOperation(
+                            let first_item = items.remove(0);
+                            let document =
+                                Document::from_bytes(first_item.as_slice(), &op.document_type)
+                                    .expect("expected to deserialize document");
+                            let identity = platform
+                                .drive
+                                .fetch_full_identity(document.owner_id, None)
+                                .expect("expected to be able to get identity")
+                                .expect("expected to get an identity");
+                            let delete_op = DriveOperationType::DocumentOperation(
                                 DocumentOperationType::DeleteDocumentForContract {
-                                    document_id: items
-                                        .remove(0)
-                                        .as_slice()
-                                        .try_into()
-                                        .expect("expected 32 byte id"),
+                                    document_id: document.id,
                                     contract: &op.contract,
                                     document_type: &op.document_type,
                                     owner_id: None,
                                 },
                             );
+                            operations.push((identity, delete_op));
                         }
                     }
                 }
@@ -244,16 +252,18 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         rng: &mut StdRng,
-    ) -> (Vec<ExecutionEvent>, Vec<Identity>) {
-        let mut execution_events = vec![];
-        let (mut identities, operations): (Vec<Identity>, Vec<Vec<DriveOperationType>>) =
-            self.identity_operations_for_block(rng).into_iter().unzip();
-        current_identities.append(&mut identities);
-        let mut identity_execution_events: Vec<ExecutionEvent> = operations
+    ) -> Vec<ExecutionEvent> {
+        let (mut identities, mut execution_events): (Vec<Identity>, Vec<ExecutionEvent>) = self
+            .identity_operations_for_block(rng)
             .into_iter()
-            .map(|operation| ExecutionEvent::new_identity_insertion(operation))
-            .collect();
-        execution_events.append(&mut identity_execution_events);
+            .map(|(identity, operations)| {
+                (
+                    identity.clone(),
+                    ExecutionEvent::new_identity_insertion(identity, operations),
+                )
+            })
+            .unzip();
+        current_identities.append(&mut identities);
 
         if block_info.height == 1 {
             // add contracts on block 1
@@ -278,7 +288,7 @@ impl Strategy {
             .collect();
 
         execution_events.append(&mut document_execution_events);
-        (execution_events, identities)
+        execution_events
     }
 }
 
@@ -344,18 +354,16 @@ fn run_chain_for_strategy(
             epoch: Default::default(),
         };
         let proposer = proposers.get(i as usize).unwrap();
-        let (state_transitions, mut new_identities) = strategy
-            .state_transitions_for_block_with_new_identities(
-                &platform,
-                &block_info,
-                &mut current_identities,
-                &mut rng,
-            );
+        let state_transitions = strategy.state_transitions_for_block_with_new_identities(
+            &platform,
+            &block_info,
+            &mut current_identities,
+            &mut rng,
+        );
 
         platform
             .execute_block(*proposer, &block_info, state_transitions)
             .expect("expected to execute a block");
-        current_identities.append(&mut new_identities);
         current_time_ms += block_spacing_ms;
         i += 1;
         i %= quorum_size;
@@ -555,7 +563,7 @@ fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change(
 fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change()
 {
     let contract_cbor = json_document_to_cbor(
-        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         Some(PROTOCOL_VERSION),
     );
     let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
@@ -585,14 +593,14 @@ fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions
             (
                 document_insertion_op,
                 Frequency {
-                    times_per_block_range: 1..20,
+                    times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
             ),
             (
                 document_deletion_op,
                 Frequency {
-                    times_per_block_range: 1..3,
+                    times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
             ),
