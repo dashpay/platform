@@ -244,10 +244,10 @@ impl Platform {
             .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, transaction)
             .map_err(Error::Drive)?;
 
-        let total_fees = Decimal::from(total_fees);
+        let mut remaining_fees = total_fees;
 
         // Calculate block count
-        let unpaid_epoch_block_count = Decimal::from(unpaid_epoch.block_count()?);
+        let unpaid_epoch_block_count = unpaid_epoch.block_count()?;
 
         let proposers = self
             .drive
@@ -256,17 +256,22 @@ impl Platform {
 
         let proposers_len = proposers.len() as u16;
 
-        let mut fee_leftovers = dec!(0.0);
+        let mut proposers_pro_tx_hashes = vec![];
 
-        for (i, (proposer_tx_hash, proposed_block_count)) in proposers.iter().enumerate() {
+        for (i, (proposer_tx_hash, proposed_block_count)) in proposers.into_iter().enumerate() {
             let i = i as u16;
-            let proposed_block_count = Decimal::from(*proposed_block_count);
 
-            let mut masternode_reward =
-                (total_fees * proposed_block_count) / unpaid_epoch_block_count;
+            let total_masternode_reward = total_fees
+                .checked_mul(proposed_block_count)
+                .and_then(|r| r.checked_div(unpaid_epoch_block_count))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow when getting masternode reward division",
+                )))?;
+
+            let mut masternode_reward_leftover = total_masternode_reward;
 
             let documents =
-                self.get_reward_shares_list_for_masternode(proposer_tx_hash, transaction)?;
+                self.get_reward_shares_list_for_masternode(&proposer_tx_hash, transaction)?;
 
             for document in documents {
                 let pay_to_id: [u8; 32] = document
@@ -288,7 +293,7 @@ impl Platform {
                     })?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
-                let share_percentage_integer: i64 = document
+                let share_percentage: u64 = document
                     .properties
                     .get("percentage")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
@@ -305,56 +310,50 @@ impl Platform {
                         ))
                     })?;
 
-                let share_percentage = Decimal::from(share_percentage_integer) / dec!(10000.0);
-
-                let reward = masternode_reward * share_percentage;
-
-                let reward_floored = reward.floor();
+                let share_reward = total_masternode_reward
+                    .checked_mul(share_percentage)
+                    .and_then(|a| a.checked_div(10000))
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "overflow when calculating reward share",
+                    )))?;
 
                 // update masternode reward that would be paid later
-                masternode_reward -= reward_floored;
-
-                let reward_floored: u64 = reward_floored.try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::Overflow(
-                        "can't convert reward to i64 from Decimal",
-                    ))
-                })?;
+                masternode_reward_leftover = masternode_reward_leftover
+                    .checked_sub(share_reward)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow when subtracting for the masternode share leftover",
+                )))?;
 
                 drive_operations.push(IdentityOperation(AddToIdentityBalance {
                     identity_id: pay_to_id,
-                    added_balance: reward_floored,
+                    added_balance: share_reward,
                 }));
             }
 
-            // Since balance is an integer, we collect rewards remainder
-            // and add leftovers to the latest proposer of the chunk
-            let masternode_reward_floored = masternode_reward.floor();
-
-            fee_leftovers += masternode_reward - masternode_reward_floored;
-
             let masternode_reward_given = if i == proposers_len - 1 {
-                masternode_reward_floored + fee_leftovers
+                remaining_fees + masternode_reward_leftover - total_masternode_reward
             } else {
-                masternode_reward_floored
+                masternode_reward_leftover
             };
-
-            // Convert to integer, since identity balance is u64
-            let masternode_reward_given: u64 =
-                masternode_reward_given.floor().try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::Overflow(
-                        "can't convert reward to i64 from Decimal",
-                    ))
-                })?;
 
             let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
                 Error::Execution(ExecutionError::DriveIncoherence(
                     "proposer_tx_hash is not 32 bytes long",
                 ))
             })?;
+
             drive_operations.push(IdentityOperation(AddToIdentityBalance {
                 identity_id: proposer,
                 added_balance: masternode_reward_given,
             }));
+
+            remaining_fees =
+                remaining_fees
+                    .checked_sub(total_masternode_reward)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "overflow when subtracting for the remaining fees",
+                    )))?;
+            proposers_pro_tx_hashes.push(proposer_tx_hash);
         }
 
         let mut operations = self.drive.convert_drive_operations_to_grove_operations(
@@ -364,11 +363,7 @@ impl Platform {
         )?;
         batch.append(&mut operations);
 
-        // remove proposers we've paid out
-        let proposer_pro_tx_hashes: Vec<Vec<u8>> =
-            proposers.into_iter().map(|(hash, _)| hash).collect();
-
-        unpaid_epoch_tree.add_delete_proposers_operations(proposer_pro_tx_hashes, batch);
+        unpaid_epoch_tree.add_delete_proposers_operations(proposers_pro_tx_hashes, batch);
 
         Ok(proposers_len)
     }
@@ -751,7 +746,7 @@ mod tests {
                     .expect("should add operation"),
             );
 
-            current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
+            current_epoch.add_init_current_operations(1.0, 11, 2, &mut batch);
 
             platform
                 .drive
@@ -844,7 +839,12 @@ mod tests {
                     .expect("should add operation"),
             );
 
-            current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
+            current_epoch.add_init_current_operations(
+                1.0,
+                (proposers_count as u64) + 1,
+                2,
+                &mut batch,
+            );
 
             platform
                 .drive
