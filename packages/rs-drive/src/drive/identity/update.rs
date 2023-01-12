@@ -736,7 +736,6 @@ mod tests {
                 .remove_from_identity_balance(
                     identity.id.to_buffer(),
                     amount,
-                    amount,
                     &block,
                     true,
                     Some(&db_transaction),
@@ -784,7 +783,6 @@ mod tests {
             let fee_result = drive
                 .remove_from_identity_balance(
                     identity.id.to_buffer(),
-                    amount,
                     amount,
                     &block,
                     false,

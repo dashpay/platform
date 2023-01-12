@@ -580,7 +580,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#a8a5a9e2dbf0ac8200140147fd41785c15e7b674"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1261,7 +1261,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#a8a5a9e2dbf0ac8200140147fd41785c15e7b674"
 dependencies = [
  "bincode",
  "costs",
@@ -1695,7 +1695,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#a8a5a9e2dbf0ac8200140147fd41785c15e7b674"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1996,18 +1996,18 @@ dependencies = [
 
 [[package]]
 name = "num_enum"
-version = "0.5.8"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5826b7f970b71559e98460aafa900837a3ea29d533cb4d319f4968c1baec2d75"
+checksum = "cf5395665662ef45796a4ff5486c5d41d29e0c09640af4c5f17fd94ee2c119c9"
 dependencies = [
  "num_enum_derive",
 ]
 
 [[package]]
 name = "num_enum_derive"
-version = "0.5.8"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcf29f406cea75713169aeadb41f34a4d2afd2de46e8cd6c0120ac235a255ac3"
+checksum = "3b0498641e53dd6ac1a4f22547548caa6864cc4933784319cd1775271c5a46ce"
 dependencies = [
  "proc-macro-crate 1.2.1",
  "proc-macro2",
@@ -2017,9 +2017,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.30.1"
+version = "0.30.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d864c91689fdc196779b98dba0aceac6118594c2df6ee5d943eb6a8df4d107a"
+checksum = "2b8c786513eb403643f2a88c244c2aaa270ef2153f55094587d0c48a3cf22a83"
 dependencies = [
  "memchr",
 ]
@@ -2063,9 +2063,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ff9f3fef3968a3ec5945535ed654cb38ff72d7495a25619e2247fb15a2ed9ba"
+checksum = "ba1ef8814b5c993410bb3adfad7a5ed269563e4a2f90c41f5d85be7fb47133bf"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
@@ -2736,7 +2736,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#a8a5a9e2dbf0ac8200140147fd41785c15e7b674"
 dependencies = [
  "blake3",
  "costs",
@@ -3123,7 +3123,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#c7372eed9cd42151a531d6a62d61fa1bafb840ad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#a8a5a9e2dbf0ac8200140147fd41785c15e7b674"
 dependencies = [
  "hex",
  "itertools",
@@ -3344,10 +3344,11 @@ dependencies = [
 
 [[package]]
 name = "zstd-sys"
-version = "2.0.4+zstd.1.5.2"
+version = "2.0.5+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fa202f2ef00074143e219d15b62ffc317d17cc33909feac471c044087cad7b0"
+checksum = "edc50ffce891ad571e9f9afe5039c4837bede781ac4bb13052ed7ae695518596"
 dependencies = [
  "cc",
  "libc",
+ "pkg-config",
 ]
