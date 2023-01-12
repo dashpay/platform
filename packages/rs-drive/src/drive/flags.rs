@@ -572,9 +572,7 @@ impl StorageFlags {
     ) -> Result<Option<Cow<Self>>, Error> {
         match data {
             None => Ok(None),
-            Some(data) => {
-                Self::from_slice(data.as_slice()).map(|option| option.map(|s| Cow::Owned(s)))
-            }
+            Some(data) => Self::from_slice(data.as_slice()).map(|option| option.map(Cow::Owned)),
         }
     }
 
@@ -729,5 +727,10 @@ impl StorageFlags {
                 Ok((key_storage_removal, value_storage_removal))
             }
         }
+    }
+
+    /// Wrap Storage Flags into optional owned cow
+    pub fn into_optional_cow<'a>(self) -> Option<Cow<'a, Self>> {
+        Some(Cow::Owned(self))
     }
 }

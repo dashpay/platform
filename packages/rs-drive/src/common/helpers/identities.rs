@@ -47,6 +47,21 @@ use std::collections::BTreeMap;
 pub fn create_test_identity(
     drive: &Drive,
     id: [u8; 32],
+    seed: Option<u64>,
+    transaction: TransactionArg,
+) -> Identity {
+    let mut rng = match seed {
+        None => StdRng::from_entropy(),
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
+    };
+
+    create_test_identity_with_rng(drive, id, &mut rng, transaction)
+}
+
+/// Creates a test identity from an id with random generator and inserts it into Drive.
+pub fn create_test_identity_with_rng(
+    drive: &Drive,
+    id: [u8; 32],
     rng: &mut StdRng,
     transaction: TransactionArg,
 ) -> Identity {
@@ -139,7 +154,7 @@ pub fn create_test_masternode_identities_with_rng(
 
     for _ in 0..count {
         let proposer_pro_tx_hash = rng.gen::<[u8; 32]>();
-        create_test_identity(drive, proposer_pro_tx_hash, rng, transaction);
+        create_test_identity_with_rng(drive, proposer_pro_tx_hash, rng, transaction);
 
         identity_ids.push(proposer_pro_tx_hash);
     }

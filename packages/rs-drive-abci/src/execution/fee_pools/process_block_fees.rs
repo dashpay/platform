@@ -44,7 +44,7 @@ use crate::abci::messages::BlockFees;
 use crate::block::BlockStateInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::fee_pools::distribute_storage_pool::DistributionStorageFeeResult;
+use crate::execution::fee_pools::distribute_storage_pool::StorageFeeDistributionOutcome;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayouts};
 use crate::platform::Platform;
@@ -71,7 +71,7 @@ pub struct ProcessedBlockFeesOutcome {
     /// A struct with the number of proposers to be paid out and the last paid epoch index
     pub payouts: Option<ProposersPayouts>,
     /// A number of epochs which had refunded
-    pub refunded_epochs_count: Option<usize>,
+    pub refunded_epochs_count: Option<u16>,
 }
 
 impl Platform {
@@ -87,7 +87,7 @@ impl Platform {
         block_fees: &BlockFees,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<Option<DistributionStorageFeeResult>, Error> {
+    ) -> Result<Option<StorageFeeDistributionOutcome>, Error> {
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
             .previous_epoch_index
@@ -114,7 +114,7 @@ impl Platform {
         }
 
         // Distribute storage fees accumulated during previous epoch
-        let storage_distribution_leftover_credits = self
+        let storage_fee_distribution_outcome = self
             .add_distribute_storage_fee_to_epochs_operations(
                 current_epoch.index,
                 transaction,
@@ -128,7 +128,7 @@ impl Platform {
                 transaction,
             )?;
 
-        Ok(Some(storage_distribution_leftover_credits))
+        Ok(Some(storage_fee_distribution_outcome))
     }
 
     /// Adds operations to GroveDB op batch related to processing
@@ -146,7 +146,7 @@ impl Platform {
 
         let mut batch = GroveDbOpBatch::new();
 
-        let storage_fee_distribution_result = if epoch_info.is_epoch_change {
+        let storage_fee_distribution_outcome = if epoch_info.is_epoch_change {
             self.add_process_epoch_change_operations(
                 block_info,
                 epoch_info,
@@ -195,9 +195,9 @@ impl Platform {
             &current_epoch,
             &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
-            storage_fee_distribution_result
+            storage_fee_distribution_outcome
                 .as_ref()
-                .map(|result| result.leftovers),
+                .map(|outcome| outcome.leftovers),
             transaction,
             &mut batch,
         )?;
@@ -222,8 +222,8 @@ impl Platform {
         let outcome = ProcessedBlockFeesOutcome {
             fees_in_pools,
             payouts,
-            refunded_epochs_count: storage_fee_distribution_result
-                .map(|result| result.refunded_epochs_count),
+            refunded_epochs_count: storage_fee_distribution_outcome
+                .map(|outcome| outcome.refunded_epochs_count),
         };
 
         if self.config.verify_sum_trees {
@@ -233,19 +233,17 @@ impl Platform {
                 .verify_total_credits(transaction)
                 .map_err(Error::Drive)?;
 
-            if credits_verified.ok()? {
-                Ok(outcome)
-            } else {
-                Err(Error::Execution(
+            if !credits_verified.ok()? {
+                return Err(Error::Execution(
                     ExecutionError::CorruptedCreditsNotBalanced(format!(
                         "credits are not balanced after block execution {:?}",
                         credits_verified
                     )),
-                ))
+                ));
             }
-        } else {
-            Ok(outcome)
         }
+
+        Ok(outcome)
     }
 }
 
@@ -325,7 +323,7 @@ mod tests {
 
                 let mut batch = GroveDbOpBatch::new();
 
-                let distribute_storage_pool_result = platform
+                let storage_fee_distribution_outcome = platform
                     .add_process_epoch_change_operations(
                         &block_info,
                         &epoch_info,
@@ -359,7 +357,10 @@ mod tests {
                 assert_eq!(epoch_start_block_height, block_height);
 
                 // storage fee should be distributed
-                assert_eq!(distribute_storage_pool_result.is_some(), should_distribute);
+                assert_eq!(
+                    storage_fee_distribution_outcome.is_some(),
+                    should_distribute
+                );
 
                 let thousandth_epoch = Epoch::new(next_thousandth_epoch.index - 1);
 
@@ -489,7 +490,7 @@ mod tests {
                     fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
                 };
 
-                let distribute_storage_pool_result = platform
+                let storage_fee_distribution_outcome = platform
                     .process_block_fees(&block_info, &epoch_info, block_fees.clone(), transaction)
                     .expect("should process block fees");
 
@@ -531,9 +532,9 @@ mod tests {
                 // Should pay for previous epoch
 
                 if epoch_info.is_epoch_change && epoch_index > GENESIS_EPOCH_INDEX {
-                    assert!(distribute_storage_pool_result.payouts.is_some());
+                    assert!(storage_fee_distribution_outcome.payouts.is_some());
                 } else {
-                    assert!(distribute_storage_pool_result.payouts.is_none());
+                    assert!(storage_fee_distribution_outcome.payouts.is_none());
                 }
 
                 // Should distribute block fees into pools

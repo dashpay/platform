@@ -44,11 +44,11 @@ use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
 
 /// Result of storage fee distribution
-pub struct DistributionStorageFeeResult {
+pub struct StorageFeeDistributionOutcome {
     /// Leftovers in result of divisions and rounding after storage fee distribution to epochs
     pub leftovers: Credits,
     /// A number of epochs which had refunded
-    pub refunded_epochs_count: usize,
+    pub refunded_epochs_count: u16,
 }
 
 impl Platform {
@@ -59,7 +59,7 @@ impl Platform {
         current_epoch_index: EpochIndex,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<DistributionStorageFeeResult, Error> {
+    ) -> Result<StorageFeeDistributionOutcome, Error> {
         let storage_distribution_fees = self
             .drive
             .get_aggregate_storage_fees_from_distribution_pool(transaction)?;
@@ -77,7 +77,7 @@ impl Platform {
         // Leftovers are ignored since they already deducted from Identity's refund amount
 
         let refunds = self.drive.fetch_pending_updates(transaction)?;
-        let refunded_epochs_count = refunds.len();
+        let refunded_epochs_count = refunds.len() as u16;
 
         // todo: Better to use iterator do not load everything into memory
         for (epoch_index, credits) in refunds {
@@ -96,7 +96,7 @@ impl Platform {
                 transaction,
             )?;
 
-        Ok(DistributionStorageFeeResult {
+        Ok(StorageFeeDistributionOutcome {
             leftovers,
             refunded_epochs_count,
         })
@@ -197,7 +197,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            let result = platform
+            let outcome = platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     current_epoch_index,
                     Some(&transaction),
@@ -211,8 +211,8 @@ mod tests {
                 .expect("should apply batch");
 
             // check leftover
-            assert_eq!(result.leftovers, 180);
-            assert_eq!(result.refunded_epochs_count, refunds.len());
+            assert_eq!(outcome.leftovers, 180);
+            assert_eq!(outcome.refunded_epochs_count, refunds.len() as u16);
 
             // collect all the storage fee values of the 1000 epochs pools
             let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
@@ -223,7 +223,7 @@ mod tests {
 
             // Assert total distributed fees
 
-            let total_storage_pool_distribution = (storage_pool - result.leftovers) * 2;
+            let total_storage_pool_distribution = (storage_pool - outcome.leftovers) * 2;
 
             let total_refunds: Credits = refunds
                 .into_iter()

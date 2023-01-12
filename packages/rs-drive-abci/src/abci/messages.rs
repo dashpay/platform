@@ -118,18 +118,20 @@ impl BlockFees {
 }
 
 /// A struct for handling block end responses
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockEndResponse {
     /// Number of proposers to be paid
     pub proposers_paid_count: Option<u16>,
     /// Index of the last epoch that marked as paid
     pub paid_epoch_index: Option<u16>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<u16>,
 }
 
 impl BlockEndResponse {
     /// Retrieves fee info for the block to be implemented in the BlockEndResponse
-    pub(crate) fn from_process_block_fees_result(
+    pub(crate) fn from_process_block_fees_outcome(
         process_block_fees_result: &ProcessedBlockFeesOutcome,
     ) -> Self {
         let (proposers_paid_count, paid_epoch_index) = process_block_fees_result
@@ -145,6 +147,7 @@ impl BlockEndResponse {
         Self {
             proposers_paid_count,
             paid_epoch_index,
+            refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
         }
     }
 }

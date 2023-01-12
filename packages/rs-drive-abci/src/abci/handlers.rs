@@ -153,15 +153,15 @@ impl TenderdashAbci for Platform {
         ))?;
 
         // Process fees
-        let process_block_fees_result = self.process_block_fees(
+        let process_block_fees_outcome = self.process_block_fees(
             &block_execution_context.block_info,
             &block_execution_context.epoch_info,
             request.fees,
             transaction,
         )?;
 
-        Ok(BlockEndResponse::from_process_block_fees_result(
-            &process_block_fees_result,
+        Ok(BlockEndResponse::from_process_block_fees_outcome(
+            &process_block_fees_outcome,
         ))
     }
 
@@ -373,13 +373,12 @@ mod tests {
 
                     let block_end_response = platform
                         .block_end(block_end_request, Some(&transaction))
-                        .expect(
-                            format!(
+                        .unwrap_or_else(|_| {
+                            panic!(
                                 "should end process block #{} for day #{}",
                                 block_height, day
                             )
-                            .as_str(),
-                        );
+                        });
 
                     let after_finalize_block_request = AfterFinalizeBlockRequest {
                         updated_data_contract_ids: Vec::new(),

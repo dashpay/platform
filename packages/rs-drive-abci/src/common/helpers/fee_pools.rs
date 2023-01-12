@@ -40,7 +40,7 @@ use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use drive::common::helpers::identities::create_test_identity;
+use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::document::Document;
 use drive::contract::Contract;
 use drive::dpp::data_contract::extra::DriveContractExt;
@@ -131,7 +131,7 @@ pub fn create_test_masternode_share_identities_and_documents(
             .iter()
             .map(|mn_identity| {
                 let id = rng.gen::<[u8; 32]>();
-                let identity = create_test_identity(drive, id, &mut rng, transaction);
+                let identity = create_test_identity_with_rng(drive, id, &mut rng, transaction);
                 let document = create_test_mn_share_document(
                     drive,
                     contract,

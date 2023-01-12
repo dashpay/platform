@@ -439,8 +439,7 @@ class Drive {
 
   /**
    * @param {Identifier} identityId
-   * @param {number} requiredAmount
-   * @param {number} desiredAmount
+   * @param {number} amount
    * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
    * @param {boolean} [dryRun=false]
@@ -449,8 +448,7 @@ class Drive {
    */
   async removeFromIdentityBalance(
     identityId,
-    requiredAmount,
-    desiredAmount,
+    amount,
     blockInfo,
     useTransaction = false,
     dryRun = false,
@@ -458,8 +456,7 @@ class Drive {
     return driveRemoveFromIdentityBalanceAsync.call(
       this.drive,
       identityId.toBuffer(),
-      requiredAmount,
-      desiredAmount,
+      amount,
       blockInfo,
       !dryRun,
       useTransaction,
