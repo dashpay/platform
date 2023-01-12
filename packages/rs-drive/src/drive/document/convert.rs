@@ -12,7 +12,7 @@ where
     dpp_documents
         .map(|document| {
             crate::contract::document::Document::from_cbor(
-                &document.to_cbor().map_err(|_| {
+                &document.to_buffer().map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "Can't convert dpp document to cbor",
                     ))

@@ -111,7 +111,7 @@ pub fn setup_document(
 ) {
     drive
         .add_serialized_document_for_serialized_contract(
-            &document.to_cbor().unwrap(),
+            &document.to_buffer().unwrap(),
             &data_contract.to_cbor().unwrap(),
             withdrawals_contract::types::WITHDRAWAL,
             Some(data_contract.owner_id.to_buffer()),

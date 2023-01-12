@@ -50,7 +50,7 @@ impl Drive {
         let documents = documents
             .into_iter()
             .map(|document_cbor| {
-                Document::from_cbor(document_cbor).map_err(|_| {
+                Document::from_buffer(document_cbor).map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "Can't create a document from cbor",
                     ))
@@ -97,7 +97,7 @@ impl Drive {
         let documents = documents
             .into_iter()
             .map(|document_cbor| {
-                Document::from_cbor(document_cbor).map_err(|_| {
+                Document::from_buffer(document_cbor).map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "Can't create a document from cbor",
                     ))
