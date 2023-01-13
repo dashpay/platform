@@ -19,7 +19,8 @@ use crate::{
 #[skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RawInstantAssetLockProof {
+pub struct RawInstantAssetLockProof {
+    // TODO: consider using to_serde_json_value() instead of this struct
     #[serde(rename = "type")]
     lock_type: Option<u8>,
     instant_lock: Option<Vec<u8>>,

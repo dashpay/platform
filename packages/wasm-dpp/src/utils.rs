@@ -82,7 +82,7 @@ where
 pub fn stringify(data: &JsValue) -> Result<String, JsValue> {
     let replacer_func = Function::new_with_args(
         "key, value",
-        "return value.type=='Buffer' ? value.data : value ",
+        "return value && value.type=='Buffer' ? value.data : value ",
     );
 
     let data_string: String =

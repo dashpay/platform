@@ -5,6 +5,7 @@ use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
+    #[derive(Clone)]
     pub type JsBlsAdapter;
 
     #[wasm_bindgen(method)]

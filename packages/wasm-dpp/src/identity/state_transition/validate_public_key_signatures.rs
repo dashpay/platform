@@ -21,6 +21,7 @@ pub fn validate_public_key_signatures(
     raw_public_keys: Vec<JsValue>,
     bls: JsBlsAdapter,
 ) -> Result<ValidationResultWasm, JsValue> {
+    // TODO: use to_serde_json_value?
     let st_type: StateTransitionType =
         (js_sys::Reflect::get(&raw_state_transition, &JsValue::from_str("type"))?
             .as_f64()
