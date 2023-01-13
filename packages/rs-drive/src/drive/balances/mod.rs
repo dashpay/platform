@@ -39,11 +39,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::GroveOperation;
-use grovedb::batch::GroveDbOp;
+use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::operations::insert::InsertOptions;
 use grovedb::Element::Item;
-use grovedb::TransactionArg;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
+use std::collections::HashMap;
 
 /// Storage fee pool key
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
@@ -100,9 +101,10 @@ impl VerifyCreditOutcome {
             ..
         } = self;
         (*total_in_pools)
-            .checked_add(*total_identity_balances)            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-            "Overflow of total credits",
-        )))
+            .checked_add(*total_identity_balances)
+            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                "Overflow of total credits",
+            )))
     }
 }
 
@@ -117,7 +119,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let mut drive_operations = vec![];
-        let batch_operations = self.add_to_system_credits_operation(amount, transaction)?;
+        let batch_operations =
+            self.add_to_system_credits_operation(amount, &mut None, transaction)?;
         let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
         self.grove_apply_batch_with_add_costs(
             grove_db_operations,
@@ -131,9 +134,17 @@ impl Drive {
     pub(crate) fn add_to_system_credits_operation(
         &self,
         amount: u64,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_total_system_credits_update(
+                estimated_costs_only_with_layer_info,
+            );
+        }
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
@@ -169,7 +180,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         let mut drive_operations = vec![];
-        let batch_operations = self.remove_from_system_credits_operations(amount, transaction)?;
+        let batch_operations =
+            self.remove_from_system_credits_operations(amount, &mut None, transaction)?;
         let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
         self.grove_apply_batch_with_add_costs(
             grove_db_operations,
@@ -184,9 +196,17 @@ impl Drive {
     pub fn remove_from_system_credits_operations(
         &self,
         amount: u64,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_total_system_credits_update(
+                estimated_costs_only_with_layer_info,
+            );
+        }
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(

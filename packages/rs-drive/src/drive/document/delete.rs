@@ -641,7 +641,15 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let document_type = contract.document_type_for_name(document_type_name)?;
-        self.delete_document_for_contract_operations(document_id, contract, document_type, owner_id, previous_batch_operations, estimated_costs_only_with_layer_info, transaction)
+        self.delete_document_for_contract_operations(
+            document_id,
+            contract,
+            document_type,
+            owner_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )
     }
 
     /// Prepares the operations for deleting a document.
@@ -678,8 +686,10 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_documents_primary_key_path =
-            contract_documents_primary_key_path(contract.id.as_bytes(), document_type.name.as_str());
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(
+            contract.id.as_bytes(),
+            document_type.name.as_str(),
+        );
 
         let direct_query_type = if let Some(estimated_costs_only_with_layer_info) =
             estimated_costs_only_with_layer_info
@@ -713,8 +723,8 @@ impl Drive {
             if let Element::Item(data, element_flags) = document_element {
                 //todo: remove this hack
                 let document = match Document::from_cbor(data.as_slice(), None, owner_id) {
-                    Ok(document) => { Ok(document) }
-                    Err(_) => { Document::from_bytes(data.as_slice(), document_type)}
+                    Ok(document) => Ok(document),
+                    Err(_) => Document::from_bytes(data.as_slice(), document_type),
                 }?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentWithoutSerialization((document, storage_flags))

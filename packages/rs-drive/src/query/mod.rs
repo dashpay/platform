@@ -34,11 +34,11 @@ use ciborium::value::Value;
 use dpp::data_contract::extra::ContractError;
 use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::extra::{encode_float, Index, IndexProperty};
+use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
 pub use grovedb::{
     Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
 };
-use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 
 use indexmap::IndexMap;
 use integer_encoding::VarInt;
@@ -1314,7 +1314,11 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        let query_result = drive.grove_get_path_query_serialized_results(&path_query, transaction, drive_operations);
+        let query_result = drive.grove_get_path_query_serialized_results(
+            &path_query,
+            transaction,
+            drive_operations,
+        );
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
@@ -1338,11 +1342,14 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(QueryResultElements, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        let query_result = drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
+        let query_result =
+            drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((QueryResultElements::new(), 0)),
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+                Ok((QueryResultElements::new(), 0))
+            }
             _ => {
                 let (data, skipped) = query_result?;
                 {

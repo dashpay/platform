@@ -58,19 +58,23 @@
 
 use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8};
 
-use crate::drive::{identity_tree_path, Drive};
+use crate::drive::{identity_tree_path, unique_key_hashes_tree_path_vec, Drive};
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 
-use crate::drive::identity::{identity_key_tree_path_vec, identity_path_vec, identity_query_keys_purpose_tree_path, identity_query_keys_purpose_tree_path_vec, identity_query_keys_security_level_tree_path_vec, identity_query_keys_tree_path_vec};
+use crate::drive::identity::{
+    identity_key_tree_path_vec, identity_path_vec, identity_query_keys_purpose_tree_path,
+    identity_query_keys_purpose_tree_path_vec, identity_query_keys_security_level_tree_path_vec,
+    identity_query_keys_tree_path_vec,
+};
 
 use crate::drive::balances::balance_path_vec;
+use dpp::identity::{Purpose, SecurityLevel};
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
-use dpp::identity::{Purpose, SecurityLevel};
 
 // we need to construct the reference from the split height of the key
 // type which is at 4
@@ -194,21 +198,32 @@ impl Drive {
         purpose: Purpose,
     ) {
         let estimated_layer_count = match purpose {
-            Purpose::AUTHENTICATION => { ApproximateElements(4) }
-            Purpose::ENCRYPTION => { unreachable!() }
-            Purpose::DECRYPTION => { unreachable!() }
-            Purpose::WITHDRAW => { ApproximateElements(1) }
+            Purpose::AUTHENTICATION => ApproximateElements(4),
+            Purpose::ENCRYPTION => {
+                unreachable!()
+            }
+            Purpose::DECRYPTION => {
+                unreachable!()
+            }
+            Purpose::WITHDRAW => ApproximateElements(1),
         };
 
         let estimated_layer_sizes = match purpose {
-            Purpose::AUTHENTICATION => { AllSubtrees(1, NoSumTrees, None) }
-            Purpose::ENCRYPTION => { unreachable!() }
-            Purpose::DECRYPTION => { unreachable!() }
-            Purpose::WITHDRAW => { AllReference(1, KEY_REFERENCE_SIZE, None) }
+            Purpose::AUTHENTICATION => AllSubtrees(1, NoSumTrees, None),
+            Purpose::ENCRYPTION => {
+                unreachable!()
+            }
+            Purpose::DECRYPTION => {
+                unreachable!()
+            }
+            Purpose::WITHDRAW => AllReference(1, KEY_REFERENCE_SIZE, None),
         };
         // we then need to insert the identity keys layer
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_owned_path(identity_query_keys_purpose_tree_path_vec(identity_id.as_slice(), purpose)),
+            KeyInfoPath::from_known_owned_path(identity_query_keys_purpose_tree_path_vec(
+                identity_id.as_slice(),
+                purpose,
+            )),
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count, // there are
@@ -225,7 +240,10 @@ impl Drive {
     ) {
         // we then need to insert the identity keys layer
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_owned_path(identity_query_keys_security_level_tree_path_vec(identity_id.as_slice(), security_level)),
+            KeyInfoPath::from_known_owned_path(identity_query_keys_security_level_tree_path_vec(
+                identity_id.as_slice(),
+                security_level,
+            )),
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count: ApproximateElements(4), //we can estimate that each security level will only have 4 keys

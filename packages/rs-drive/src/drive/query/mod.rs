@@ -78,7 +78,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<QueryDocumentsOutcome, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let (items, skipped) = query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let (items, skipped) =
+            query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
             fee_result.processing_fee
@@ -102,7 +103,12 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<QueryDocumentIdsOutcome, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        let (items, skipped) = query.execute_no_proof_internal(self, QueryResultType::QueryKeyElementPairResultType, transaction, &mut drive_operations)?;
+        let (items, skipped) = query.execute_no_proof_internal(
+            self,
+            QueryResultType::QueryKeyElementPairResultType,
+            transaction,
+            &mut drive_operations,
+        )?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
             fee_result.processing_fee
@@ -110,7 +116,11 @@ impl Drive {
             0
         };
 
-        let keys = items.to_key_elements().into_iter().map(|(key, element)| key).collect();
+        let keys = items
+            .to_key_elements()
+            .into_iter()
+            .map(|(key, element)| key)
+            .collect();
 
         Ok(QueryDocumentIdsOutcome {
             items: keys,

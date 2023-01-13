@@ -37,8 +37,8 @@ use crate::drive::RootTree;
 
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 
-use integer_encoding::VarInt;
 use dpp::identity::Purpose::AUTHENTICATION;
+use integer_encoding::VarInt;
 
 mod balance;
 mod contract_info;
@@ -165,7 +165,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
     ]
 }
 
-pub(crate) fn identity_query_keys_purpose_tree_path_vec (
+pub(crate) fn identity_query_keys_purpose_tree_path_vec(
     identity_id: &[u8],
     purpose: Purpose,
 ) -> Vec<Vec<u8>> {
@@ -177,7 +177,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec (
     ]
 }
 
-pub(crate) fn identity_query_keys_security_level_tree_path_vec (
+pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     identity_id: &[u8],
     security_level: SecurityLevel,
 ) -> Vec<Vec<u8>> {

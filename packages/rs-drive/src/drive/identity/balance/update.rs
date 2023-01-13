@@ -585,12 +585,13 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
                 .expect("should apply fee change");
 
-            let (refund_amount, leftovers) = calculate_storage_fee_distribution_amount_and_leftovers(
-                removed_credits,
-                GENESIS_EPOCH_INDEX,
-                GENESIS_EPOCH_INDEX + 1,
-            )
-            .expect("should calculate refund amount");
+            let (refund_amount, leftovers) =
+                calculate_storage_fee_distribution_amount_and_leftovers(
+                    removed_credits,
+                    GENESIS_EPOCH_INDEX,
+                    GENESIS_EPOCH_INDEX + 1,
+                )
+                .expect("should calculate refund amount");
 
             assert_eq!(leftovers, 360);
             assert_eq!(refund_amount, 99390);

@@ -24,6 +24,7 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation::FunctionOperation;
 use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
+use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -33,7 +34,6 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
-use dpp::identity::Purpose::AUTHENTICATION;
 
 pub enum ContractApplyInfo {
     Keys(Vec<IdentityPublicKey>),
@@ -221,6 +221,12 @@ impl Drive {
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_keys_for_identity_id(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
+        }
         let mut batch_operations: Vec<DriveOperation> = vec![];
         let identity_path = identity_path(identity_id.as_slice());
         self.batch_insert_empty_tree(
@@ -273,7 +279,10 @@ impl Drive {
         let identity_query_key_tree = identity_query_keys_tree_path(identity_id.as_slice());
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Drive::add_estimation_costs_for_root_key_reference_tree(identity_id, estimated_costs_only_with_layer_info)
+            Drive::add_estimation_costs_for_root_key_reference_tree(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            )
         }
 
         // There are 4 Purposes: Authentication, Encryption, Decryption, Withdrawal
@@ -285,8 +294,13 @@ impl Drive {
                 drive_operations,
             )?;
 
-            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-                Drive::add_estimation_costs_for_purpose_in_key_reference_tree(identity_id, estimated_costs_only_with_layer_info, purpose)
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Drive::add_estimation_costs_for_purpose_in_key_reference_tree(
+                    identity_id,
+                    estimated_costs_only_with_layer_info,
+                    purpose,
+                )
             }
         }
         // There are 4 Security Levels: Master, Critical, High, Medium
@@ -300,8 +314,13 @@ impl Drive {
                 Some(storage_flags),
                 drive_operations,
             )?;
-            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-                Drive::add_estimation_costs_for_security_level_in_key_reference_tree(identity_id, estimated_costs_only_with_layer_info, security_level)
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Drive::add_estimation_costs_for_security_level_in_key_reference_tree(
+                    identity_id,
+                    estimated_costs_only_with_layer_info,
+                    security_level,
+                )
             }
         }
         Ok(())

@@ -29,19 +29,25 @@ impl DriveOperationConverter for SystemOperationType {
     fn to_drive_operations(
         self,
         drive: &Drive,
-        _estimated_costs_only_with_layer_info: &mut Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         match self {
-            SystemOperationType::AddToSystemCredits { amount } => {
-                drive.add_to_system_credits_operation(amount, transaction)
-            }
-            SystemOperationType::RemoveFromSystemCredits { amount } => {
-                drive.remove_from_system_credits_operations(amount, transaction)
-            }
+            SystemOperationType::AddToSystemCredits { amount } => drive
+                .add_to_system_credits_operation(
+                    amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                ),
+            SystemOperationType::RemoveFromSystemCredits { amount } => drive
+                .remove_from_system_credits_operations(
+                    amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                ),
         }
     }
 }

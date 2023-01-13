@@ -39,20 +39,22 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
-        Ok(self.fetch_identity_balance_operations(
-            identity_id,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )?.map(|balance| Identity {
-            protocol_version: PROTOCOL_VERSION,
-            id: Identifier::new(identity_id),
-            public_keys: Default::default(),
-            balance,
-            revision: 0,
-            asset_lock_proof: None,
-            metadata: None,
-        }))
+        Ok(self
+            .fetch_identity_balance_operations(
+                identity_id,
+                apply,
+                transaction,
+                &mut drive_operations,
+            )?
+            .map(|balance| Identity {
+                protocol_version: PROTOCOL_VERSION,
+                id: Identifier::new(identity_id),
+                public_keys: Default::default(),
+                balance,
+                revision: 0,
+                asset_lock_proof: None,
+                metadata: None,
+            }))
     }
 
     /// Fetches the Identity's balance from the backing store

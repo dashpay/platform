@@ -199,7 +199,7 @@ pub fn add_update_pending_epoch_storage_pool_update_operations(
     for (epoch_index, credits) in credits_per_epoch {
         let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
-        let element = Element::new_sum_item(- credits.to_signed()?);
+        let element = Element::new_sum_item(-credits.to_signed()?);
 
         batch.add_insert(pools_pending_updates_path_vec(), epoch_index_key, element);
     }

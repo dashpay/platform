@@ -2496,7 +2496,7 @@ fn test_query_with_cached_contract() {
     });
     let where_cbor = common::value_to_cbor(query_value, None);
 
-    let QueryDocumentsOutcome { items, .. }  = drive
+    let QueryDocumentsOutcome { items, .. } = drive
         .query_documents_cbor_with_document_type_lookup(
             where_cbor.as_slice(),
             *contract.id.as_bytes(),
