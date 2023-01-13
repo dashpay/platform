@@ -95,11 +95,11 @@ impl Platform {
                             .apply_drive_operations(operations, true, block_info, Some(transaction))
                             .map_err(Error::Drive)?;
                         //todo: verify this is the right epoch
-                        let fee_change = individual_fee_result
-                            .to_fee_change(identity.id.to_buffer(), block_info.epoch.index)
+                        let balance_change = individual_fee_result
+                            .to_balance_change(identity.id.to_buffer(), block_info.epoch.index)
                             .map_err(Error::Drive)?;
                         let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                            fee_change,
+                            balance_change,
                             Some(transaction),
                         )?;
                         total_fees

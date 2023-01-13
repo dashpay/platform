@@ -1,6 +1,6 @@
+use crate::document::Document;
 use crate::ProtocolError;
 use bincode::Options;
-use crate::document::Document;
 
 impl Document {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {

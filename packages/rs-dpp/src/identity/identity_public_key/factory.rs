@@ -173,7 +173,10 @@ impl IdentityPublicKey {
     pub fn random_authentication_keys_with_rng(key_count: KeyCount, rng: &mut StdRng) -> Vec<Self> {
         let mut used_key_matrix = [false; 16].to_vec();
         (0..key_count)
-            .map(|i| Self::random_authentication_key_with_rng(i, rng, Some((i, &mut used_key_matrix))).unwrap())
+            .map(|i| {
+                Self::random_authentication_key_with_rng(i, rng, Some((i, &mut used_key_matrix)))
+                    .unwrap()
+            })
             .collect()
     }
 

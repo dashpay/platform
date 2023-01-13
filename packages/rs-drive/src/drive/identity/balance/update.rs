@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::op::DriveOperation;
-use crate::fee::result::{BalanceChangeForIdentity, FeeChangeForIdentity, FeeResult};
+use crate::fee::result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -201,14 +201,11 @@ impl Drive {
     /// Balances are stored in the balance tree under the identity's id
     pub fn apply_balance_change_from_fee_to_identity(
         &self,
-        balance_change_from_fee: FeeChangeForIdentity,
+        balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
     ) -> Result<FeeRemovalOutcome, Error> {
-        let (batch_operations, actual_fee_paid) = self
-            .apply_balance_change_from_fee_to_identity_operations(
-                balance_change_from_fee,
-                transaction,
-            )?;
+        let (batch_operations, actual_fee_paid) =
+            self.apply_balance_change_from_fee_to_identity_operations(balance_change, transaction)?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
@@ -225,21 +222,19 @@ impl Drive {
     /// Balances are stored in the identity under key 0
     pub(crate) fn apply_balance_change_from_fee_to_identity_operations(
         &self,
-        balance_change_from_fee: FeeChangeForIdentity,
+        balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
     ) -> Result<(Vec<DriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
 
-        if matches!(
-            balance_change_from_fee.balance_change,
-            BalanceChangeForIdentity::NoBalanceChange
-        ) {
-            return Ok((drive_operations, balance_change_from_fee.into_fee_result()));
+        if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
+            return Ok((drive_operations, balance_change.into_fee_result()));
         }
 
+        // Update identity's balance according to calculated fees
         let previous_balance = self
             .fetch_identity_balance_operations(
-                balance_change_from_fee.identifier,
+                balance_change.identity_id,
                 true,
                 transaction,
                 &mut drive_operations,
@@ -248,20 +243,22 @@ impl Drive {
                 "there should always be a balance if apply is set to true",
             )))?;
 
-        let (new_balance, negative_credit_amount) = match balance_change_from_fee.balance_change {
-            BalanceChangeForIdentity::AddBalanceChange { balance_to_add } => {
+        let (new_balance, negative_credit_amount) = match balance_change.change() {
+            BalanceChange::AddToBalance(balance_to_add) => {
                 let new_balance = if previous_balance == 0 {
                     // Deduct debt from added amount if exists
                     self.fetch_identity_negative_balance_operations(
-                        balance_change_from_fee.identifier,
+                        balance_change.identity_id,
                         true,
                         transaction,
                         &mut drive_operations,
                     )?
-                    .map_or(Ok(balance_to_add), |negative_balance| {
-                        drive_operations.push(self.remove_identity_negative_credit_operation(
-                            balance_change_from_fee.identifier,
-                        ));
+                    .map_or(Ok(*balance_to_add), |negative_balance| {
+                        drive_operations.push(
+                            self.remove_identity_negative_credit_operation(
+                                balance_change.identity_id,
+                            ),
+                        );
 
                         balance_to_add
                             .checked_sub(negative_balance)
@@ -272,7 +269,7 @@ impl Drive {
                 } else {
                     // Deduct added balance from existing one
                     previous_balance
-                        .checked_add(balance_to_add)
+                        .checked_add(*balance_to_add)
                         .ok_or(Error::Fee(FeeError::Overflow(
                             "add balance change overflow on paying for an operation (by getting refunds)",
                         )))?
@@ -280,43 +277,56 @@ impl Drive {
 
                 (new_balance, None)
             }
-            BalanceChangeForIdentity::RemoveBalanceChange {
+            BalanceChange::RemoveFromBalance {
                 required_removed_balance,
                 desired_removed_balance,
             } => {
-                if desired_removed_balance > previous_balance {
+                if *desired_removed_balance > previous_balance {
                     // we do not have enough balance
                     // there is a part we absolutely need to pay for
-                    if required_removed_balance > previous_balance {
+                    if *required_removed_balance > previous_balance {
                         return Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
                             "identity does not have the required balance",
                         )));
                     }
-                    (0, Some(desired_removed_balance - previous_balance))
+                    (0, Some(*desired_removed_balance - previous_balance))
                 } else {
                     // we have enough balance
                     (previous_balance - desired_removed_balance, None)
                 }
             }
-            BalanceChangeForIdentity::NoBalanceChange => unreachable!(),
+            BalanceChange::NoBalanceChange => unreachable!(),
         };
 
         drive_operations.push(self.update_identity_balance_operation(
-            balance_change_from_fee.identifier,
+            balance_change.identity_id,
             new_balance,
             true,
         )?);
 
         if let Some(negative_credit_amount) = negative_credit_amount {
             drive_operations.push(self.update_identity_negative_credit_operation(
-                balance_change_from_fee.identifier,
+                balance_change.identity_id,
                 negative_credit_amount,
             ));
         }
 
+        // Update other refunded identity balances
+        for (identity_id, credits) in balance_change.other_refunds()? {
+            let mut estimated_costs_only_with_layer_info =
+                None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
+
+            drive_operations.extend(self.add_to_identity_balance_operations(
+                identity_id,
+                credits,
+                &mut estimated_costs_only_with_layer_info,
+                transaction,
+            )?);
+        }
+
         Ok((
             drive_operations,
-            balance_change_from_fee.fee_result_outcome(previous_balance)?,
+            balance_change.fee_result_outcome(previous_balance)?,
         ))
     }
 
@@ -629,7 +639,6 @@ mod tests {
         use super::*;
         use crate::common::helpers::identities::create_test_identity;
         use crate::fee::credits::SignedCredits;
-        use crate::fee::epoch::distribution::calculate_storage_fee_distribution_amount_and_leftovers;
         use crate::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use crate::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
         use grovedb::batch::Op;
@@ -644,7 +653,7 @@ mod tests {
 
             let fee_result = FeeResult::default_with_fees(0, 0);
             let fee_change = fee_result
-                .to_fee_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -660,46 +669,54 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let other_identity = create_test_identity(&drive, [1; 32], Some(16), None);
 
             let removed_credits = 100000;
+            let other_removed_credits = 200000;
 
             let credits_per_epoch: CreditsPerEpoch =
                 IntMap::from_iter([(GENESIS_EPOCH_INDEX, removed_credits)]);
 
+            let other_credits_per_epoch: CreditsPerEpoch =
+                IntMap::from_iter([(GENESIS_EPOCH_INDEX, other_removed_credits)]);
+
             let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
-                BTreeMap::from_iter([(identity.id.to_buffer(), credits_per_epoch)]);
+                BTreeMap::from_iter([
+                    (identity.id.to_buffer(), credits_per_epoch),
+                    (other_identity.id.to_buffer(), other_credits_per_epoch),
+                ]);
 
             let fee_result = FeeResult {
                 fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
                 ..Default::default()
             };
             let fee_change = fee_result
-                .to_fee_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
                 .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
                 .expect("should apply fee change");
 
-            let (refund_amount, leftovers) =
-                calculate_storage_fee_distribution_amount_and_leftovers(
-                    removed_credits,
-                    GENESIS_EPOCH_INDEX,
-                    GENESIS_EPOCH_INDEX + 1,
-                )
-                .expect("should calculate refund amount");
-
-            assert_eq!(leftovers, 360);
-            assert_eq!(refund_amount, 99390);
-
             assert!(matches!(
                 drive_operations[..],
-                [_, DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                    op: Op::Replace {
-                        element: Element::SumItem(balance, None),
-                    },
-                    ..
-                })] if balance == refund_amount as SignedCredits
+                [
+                    _,
+                    _,
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::SumItem(99390, None),
+                        },
+                        ..
+                    }),
+                    ..,
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::SumItem(199320, None),
+                        },
+                        ..
+                    })
+                ]
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -743,7 +760,7 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .to_fee_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -791,7 +808,7 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .to_fee_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -843,7 +860,7 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .to_fee_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let result =

@@ -36,7 +36,8 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::epoch::distribution::calculate_storage_fee_distribution_amount_and_leftovers;
+use crate::fee::epoch::{CreditsPerEpoch, EpochIndex};
 use crate::fee::get_overflow_error;
 use bincode::Options;
 use costs::storage_cost::removal::{Identifier, StorageRemovalPerEpochByIdentifier};
@@ -136,9 +137,48 @@ impl FeeRefunds {
         summed_credits
     }
 
-    /// Passthrough method for into iteration
-    pub fn into_iter(self) -> IntoIter<Identifier, CreditsPerEpoch> {
-        self.0.into_iter()
+    /// Calculates a refund amount of credits per identity excluding specified identity id
+    pub fn calculate_amount_for_refunds_except_identity(
+        &self,
+        identity_id: Identifier,
+        current_epoch_index: EpochIndex,
+    ) -> Result<BTreeMap<Identifier, Credits>, Error> {
+        self.iter()
+            .filter(|(&identifier, _)| identifier != identity_id)
+            .map(|(&identifier, _)| {
+                let credits = self
+                    .calculate_amount_for_refund_to_identity(identifier, current_epoch_index)?
+                    .unwrap();
+
+                Ok((identifier, credits))
+            })
+            .collect::<Result<_, _>>()
+    }
+
+    /// Calculates a refund amount of credits for specified identity id
+    pub fn calculate_amount_for_refund_to_identity(
+        &self,
+        identity_id: Identifier,
+        current_epoch_index: EpochIndex,
+    ) -> Result<Option<Credits>, Error> {
+        let Some(credits_per_epoch) = self.get(&identity_id) else {
+            return Ok(None);
+        };
+
+        let credits = credits_per_epoch
+            .iter()
+            .try_fold::<_, _, Result<_, Error>>(0 as Credits, |acc, (epoch_index, credits)| {
+                let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
+                    *credits,
+                    *epoch_index,
+                    // TODO: Move + 1 inside the function
+                    current_epoch_index + 1,
+                )?;
+
+                Ok(acc + amount)
+            })?;
+
+        Ok(Some(credits))
     }
 
     /// Serialize the structure
@@ -180,5 +220,14 @@ impl FeeRefunds {
                     ))
                 })?,
         ))
+    }
+}
+
+impl IntoIterator for FeeRefunds {
+    type Item = (Identifier, CreditsPerEpoch);
+    type IntoIter = IntoIter<Identifier, CreditsPerEpoch>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
