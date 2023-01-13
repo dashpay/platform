@@ -33,6 +33,7 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
 use std::collections::HashMap;
+use dpp::identity::Purpose::AUTHENTICATION;
 
 pub enum ContractApplyInfo {
     Keys(Vec<IdentityPublicKey>),
@@ -240,6 +241,7 @@ impl Drive {
         self.create_new_identity_key_query_trees_operations(
             identity_id,
             storage_flags,
+            estimated_costs_only_with_layer_info,
             &mut batch_operations,
         )?;
 
@@ -263,45 +265,44 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         storage_flags: &StorageFlags,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let identity_query_key_tree = identity_query_keys_tree_path(identity_id.as_slice());
 
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_root_key_reference_tree(identity_id, estimated_costs_only_with_layer_info)
+        }
+
         // There are 4 Purposes: Authentication, Encryption, Decryption, Withdrawal
-        for purpose in 0..4 {
+        for purpose in Purpose::authentication_withdraw() {
             self.batch_insert_empty_tree(
                 identity_query_key_tree,
-                DriveKeyInfo::Key(vec![purpose]),
+                DriveKeyInfo::Key(vec![purpose as u8]),
                 Some(storage_flags),
                 drive_operations,
             )?;
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+                Drive::add_estimation_costs_for_purpose_in_key_reference_tree(identity_id, estimated_costs_only_with_layer_info, purpose)
+            }
         }
         // There are 4 Security Levels: Master, Critical, High, Medium
         // For the Authentication Purpose we insert every tree
         let identity_key_authentication_tree =
-            identity_query_keys_purpose_tree_path(identity_id.as_slice(), &[0]);
-        for security_level in 0..4 {
+            identity_query_keys_purpose_tree_path(identity_id.as_slice(), &[AUTHENTICATION as u8]);
+        for security_level in SecurityLevel::full_range() {
             self.batch_insert_empty_tree(
                 identity_key_authentication_tree,
-                DriveKeyInfo::Key(vec![security_level]),
+                DriveKeyInfo::Key(vec![security_level as u8]),
                 Some(storage_flags),
                 drive_operations,
             )?;
-        }
-        // For Encryption and Decryption we only insert the medium security level
-        for purpose in 1..3 {
-            let purpose_vec = vec![purpose];
-            let identity_key_purpose_tree = identity_query_keys_purpose_tree_path(
-                identity_id.as_slice(),
-                purpose_vec.as_slice(),
-            );
-
-            self.batch_insert_empty_tree(
-                identity_key_purpose_tree,
-                DriveKeyInfo::Key(vec![SecurityLevel::MEDIUM as u8]),
-                Some(storage_flags),
-                drive_operations,
-            )?;
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+                Drive::add_estimation_costs_for_security_level_in_key_reference_tree(identity_id, estimated_costs_only_with_layer_info, security_level)
+            }
         }
         Ok(())
     }

@@ -226,7 +226,7 @@ impl Strategy {
                                     .expect("expected to deserialize document");
                             let identity = platform
                                 .drive
-                                .fetch_full_identity(document.owner_id, None)
+                                .fetch_identity_stub_with_balance(document.owner_id, true, None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let delete_op = DriveOperationType::DocumentOperation(

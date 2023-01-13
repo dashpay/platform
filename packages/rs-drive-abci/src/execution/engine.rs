@@ -51,12 +51,11 @@ impl<'a> ExecutionEvent<'a> {
         identity: Identity,
         operations: Vec<DriveOperationType<'a>>,
     ) -> Self {
-        Self::FreeDriveEvent { operations }
-        // Self::PaidDriveEvent {
-        //     identity,
-        //     verify_balance_with_dry_run: true,
-        //     operations,
-        // }
+        Self::PaidDriveEvent {
+            identity,
+            verify_balance_with_dry_run: true,
+            operations,
+        }
     }
 }
 

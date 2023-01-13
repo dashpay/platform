@@ -30,6 +30,31 @@ use integer_encoding::VarInt;
 use std::collections::BTreeMap;
 
 impl Drive {
+    /// Fetches the Identity's balance as an identity stub from the backing store
+    /// Passing apply as false get the estimated cost instead
+    pub fn fetch_identity_stub_with_balance(
+        &self,
+        identity_id: [u8; 32],
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<Option<Identity>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        Ok(self.fetch_identity_balance_operations(
+            identity_id,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )?.map(|balance| Identity {
+            protocol_version: PROTOCOL_VERSION,
+            id: Identifier::new(identity_id),
+            public_keys: Default::default(),
+            balance,
+            revision: 0,
+            asset_lock_proof: None,
+            metadata: None,
+        }))
+    }
+
     /// Fetches the Identity's balance from the backing store
     /// Passing apply as false get the estimated cost instead
     pub fn fetch_identity_balance(

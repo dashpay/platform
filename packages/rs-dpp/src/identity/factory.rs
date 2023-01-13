@@ -13,7 +13,7 @@ impl Identity {
         // balance must be in i64 (that would be >> 2)
         // but let's make it smaller
         let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max
-        let public_keys = IdentityPublicKey::random_keys_with_rng(key_count, rng)
+        let public_keys = IdentityPublicKey::random_authentication_keys_with_rng(key_count, rng)
             .into_iter()
             .map(|key| (key.id, key))
             .collect();
