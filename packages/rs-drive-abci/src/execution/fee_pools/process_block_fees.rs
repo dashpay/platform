@@ -134,7 +134,7 @@ impl Platform {
     /// Adds operations to GroveDB op batch related to processing
     /// and distributing the block fees from the previous block and applies the batch.
     ///
-    /// Returns `ProcessedBlockFeesResult`.
+    /// Returns `ProcessedBlockFeesOutcome`.
     pub fn process_block_fees(
         &self,
         block_info: &BlockStateInfo,

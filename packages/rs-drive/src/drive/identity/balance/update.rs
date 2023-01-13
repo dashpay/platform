@@ -7,10 +7,10 @@ use crate::error::fee::FeeError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::credits::MAX_CREDITS;
+use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::op::DriveOperation;
 use crate::fee::result::{BalanceChangeForIdentity, FeeChangeForIdentity, FeeResult};
-use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -21,11 +21,10 @@ pub struct FeeRemovalOutcome {
 }
 
 impl Drive {
-    /// We can set an identities balance
-    pub(crate) fn update_identity_balance_operation(
+    fn update_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
-        balance: u64,
+        balance: Credits,
         is_replace: bool,
     ) -> Result<DriveOperation, Error> {
         let balance_path = balance_path_vec();
@@ -50,10 +49,10 @@ impl Drive {
     }
 
     /// We can set an identities negative credit balance
-    pub(super) fn update_identity_negative_credit_operation(
+    fn update_identity_negative_credit_operation(
         &self,
         identity_id: [u8; 32],
-        negative_credit: u64,
+        negative_credit: Credits,
     ) -> DriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
 
@@ -67,11 +66,29 @@ impl Drive {
         )
     }
 
+    fn remove_identity_negative_credit_operation(&self, identity_id: [u8; 32]) -> DriveOperation {
+        let identity_path = identity_path_vec(identity_id.as_slice());
+
+        DriveOperation::GroveOperation(GroveDbOp::delete_op(
+            identity_path,
+            Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit).to_vec(),
+        ))
+    }
+
+    /// We can set an identities balance
+    pub fn insert_identity_balance_operation(
+        &self,
+        identity_id: [u8; 32],
+        balance: Credits,
+    ) -> Result<DriveOperation, Error> {
+        self.update_identity_balance_operation(identity_id, balance, false)
+    }
+
     /// Balances are stored in the balance tree under the identity's id
     pub fn add_to_identity_balance(
         &self,
         identity_id: [u8; 32],
-        added_balance: u64,
+        added_balance: Credits,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -107,7 +124,7 @@ impl Drive {
     pub(crate) fn add_to_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
-        added_balance: u64,
+        added_balance: Credits,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -118,23 +135,56 @@ impl Drive {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
         }
 
-        let previous_balance = self.fetch_identity_balance_operations(
-            identity_id,
-            estimated_costs_only_with_layer_info.is_none(),
-            transaction,
-            &mut drive_operations,
-        )?;
+        let previous_balance = self
+            .fetch_identity_balance_operations(
+                identity_id,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                &mut drive_operations,
+            )?
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "there should always be a balance",
+            )))?;
 
         let new_balance = if estimated_costs_only_with_layer_info.is_none() {
-            previous_balance
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "there should always be a balance if apply is set to true",
-                )))?
-                .checked_add(added_balance)
-                .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
-                    "identity overflow error",
-                )))?
+            if previous_balance == 0 {
+                // Deduct debt from added amount if exists
+                self.fetch_identity_negative_balance_operations(
+                    identity_id,
+                    true,
+                    transaction,
+                    &mut drive_operations,
+                )?
+                .map_or(Ok(added_balance), |negative_balance| {
+                    drive_operations
+                        .push(self.remove_identity_negative_credit_operation(identity_id));
+
+                    added_balance
+                        .checked_sub(negative_balance)
+                        .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                            "added balance is lower than negative balance",
+                        )))
+                })?
+            } else {
+                // Deduct added balance from existing one
+                previous_balance
+                    .checked_add(added_balance)
+                    .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                        "identity balance add overflow error",
+                    )))?
+            }
         } else {
+            // For dry run, we need to assume that extra read will be called
+            self.fetch_identity_negative_balance_operations(
+                identity_id,
+                false,
+                transaction,
+                &mut drive_operations,
+            )?;
+
+            // And removed negative balance
+            drive_operations.push(self.remove_identity_negative_credit_operation(identity_id));
+
             // Leave some room for tests
             MAX_CREDITS - 1000
         };
@@ -144,6 +194,7 @@ impl Drive {
             new_balance,
             true,
         )?);
+
         Ok(drive_operations)
     }
 
@@ -199,11 +250,34 @@ impl Drive {
 
         let (new_balance, negative_credit_amount) = match balance_change_from_fee.balance_change {
             BalanceChangeForIdentity::AddBalanceChange { balance_to_add } => {
-                let new_balance = previous_balance
-                    .checked_add(balance_to_add)
-                    .ok_or(Error::Fee(FeeError::Overflow(
-                    "add balance change overflow on paying for an operation (by getting refunds)",
-                )))?;
+                let new_balance = if previous_balance == 0 {
+                    // Deduct debt from added amount if exists
+                    self.fetch_identity_negative_balance_operations(
+                        balance_change_from_fee.identifier,
+                        true,
+                        transaction,
+                        &mut drive_operations,
+                    )?
+                    .map_or(Ok(balance_to_add), |negative_balance| {
+                        drive_operations.push(self.remove_identity_negative_credit_operation(
+                            balance_change_from_fee.identifier,
+                        ));
+
+                        balance_to_add
+                            .checked_sub(negative_balance)
+                            .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                                "added balance is lower than negative balance",
+                            )))
+                    })?
+                } else {
+                    // Deduct added balance from existing one
+                    previous_balance
+                        .checked_add(balance_to_add)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "add balance change overflow on paying for an operation (by getting refunds)",
+                        )))?
+                };
+
                 (new_balance, None)
             }
             BalanceChangeForIdentity::RemoveBalanceChange {
@@ -250,7 +324,7 @@ impl Drive {
     pub fn remove_from_identity_balance(
         &self,
         identity_id: [u8; 32],
-        balance_to_remove: u64,
+        balance_to_remove: Credits,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -285,7 +359,7 @@ impl Drive {
     pub(crate) fn remove_from_identity_balance_operations(
         &self,
         identity_id: [u8; 32],
-        balance_to_remove: u64,
+        balance_to_remove: Credits,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -336,6 +410,18 @@ mod tests {
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
     use crate::fee_pools::epochs::Epoch;
+
+    mod insert_identity_balance_operation {
+        #[test]
+        fn should_fail_if_balance_already_persisted() {
+            todo!()
+        }
+
+        #[test]
+        fn should_insert_balance() {
+            todo!()
+        }
+    }
 
     mod add_to_identity_balance {
         use super::*;
@@ -388,6 +474,16 @@ mod tests {
                 .expect("expected to get balance");
 
             assert_eq!(balance.unwrap(), old_balance + amount);
+        }
+
+        #[test]
+        fn should_fail_if_balance_is_not_persisted() {
+            todo!()
+        }
+
+        #[test]
+        fn should_deduct_from_debt_if_balance_is_nil() {
+            todo!()
         }
 
         #[test]
@@ -607,6 +703,16 @@ mod tests {
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
+        }
+
+        #[test]
+        fn should_deduct_from_debt_if_exits() {
+            todo!()
+        }
+
+        #[test]
+        fn should_fail_if_added_balance_lower_than_debt() {
+            todo!()
         }
 
         #[test]
