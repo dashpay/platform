@@ -28,6 +28,12 @@ pub struct DocumentReplaceTransition {
     pub data: Option<JsonValue>,
 }
 
+impl DocumentReplaceTransition {
+    pub fn get_revision(&self) -> u32 {
+        self.revision
+    }
+}
+
 impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     fn from_json_object(
         mut json_value: JsonValue,

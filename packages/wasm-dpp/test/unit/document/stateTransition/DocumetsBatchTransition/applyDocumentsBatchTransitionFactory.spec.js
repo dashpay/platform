@@ -284,7 +284,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
 
-    // stateTransition.getExecutionContext().disableDryRun();
+    stateTransition.getExecutionContext().disableDryRun();
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
 
@@ -300,14 +300,13 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());
 
-    // newDocument.setRevision(documentTransition.getRevision());
-    // newDocument.setData(documentTransition.getData());
-    // newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+    newDocument.setRevision(documentTransition.getRevision());
+    newDocument.setData(documentTransition.getData());
+    newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
 
-    // expect(stateRepositoryMockJs.updateDocument).to.have.been.called.calledOnce();
-    // const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
+    expect(stateRepositoryMock.updateDocument).to.have.been.called.calledOnce();
+    const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
 
-    // console.log(`the update document is ${updateDocument.toObject()}`);
-
+    expect(updateDocument.toObject()).to.be.deep.equal(newDocument.toObject());
   });
 });

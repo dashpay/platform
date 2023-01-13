@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    document_batch_transition::document_transition::to_object,
+    document_batch_transition::document_transition::convert_binary_data,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
@@ -88,8 +88,8 @@ impl DocumentReplaceTransitionWasm {
             .data_contract
             .get_identifiers_and_binary_paths(&self.inner.base.document_type);
 
-        to_object(
-            &self.inner,
+        convert_binary_data(
+            self.inner.to_object().with_js_error()?,
             options,
             identifiers_paths
                 .into_iter()

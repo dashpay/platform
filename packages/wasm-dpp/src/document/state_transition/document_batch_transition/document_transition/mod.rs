@@ -12,6 +12,7 @@ use dpp::{
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -52,6 +53,43 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
         self.0.get_data_contract_id().to_owned().into()
+    }
+
+    #[wasm_bindgen(js_name=getRevision)]
+    pub fn get_revision(&self) -> JsValue {
+        if let Some(revision) = self.0.get_revision() {
+            revision.into()
+        } else {
+            JsValue::NULL
+        }
+    }
+
+    #[wasm_bindgen(js_name=getUpdatedAt)]
+    pub fn get_updated_at(&self) -> JsValue {
+        if let Some(revision) = self.0.get_updated_at() {
+            revision.into()
+        } else {
+            JsValue::NULL
+        }
+    }
+
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&self) -> Result<JsValue, JsValue> {
+        if let Some(data) = self.0.get_data() {
+            let (identifier_paths, binary_paths) = self
+                .0
+                .get_data_contract()
+                .get_identifiers_and_binary_paths(self.0.get_document_type());
+            let js_value = convert_binary_data(
+                data.to_owned(),
+                &JsValue::NULL,
+                identifier_paths,
+                binary_paths,
+            )?;
+            Ok(js_value)
+        } else {
+            Ok(JsValue::NULL)
+        }
     }
 
     #[wasm_bindgen(js_name=get)]
@@ -145,12 +183,13 @@ pub fn from_document_transition_to_js_value(document_transition: DocumentTransit
     }
 }
 
-pub(crate) fn to_object<'a>(
-    data: &impl DocumentTransitionObjectLike,
+pub(crate) fn convert_binary_data<'a>(
+    value: Value,
     options: &JsValue,
     identifiers_paths: impl IntoIterator<Item = &'a str>,
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
+    let mut value = value;
     let options: ConversionOptions = if options.is_object() {
         let raw_options = options.with_serde_to_json_value()?;
         serde_json::from_value(raw_options).with_js_error()?
@@ -158,7 +197,6 @@ pub(crate) fn to_object<'a>(
         Default::default()
     };
 
-    let mut value = data.to_object().with_js_error()?;
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     let js_value = value.serialize(&serializer)?;
 

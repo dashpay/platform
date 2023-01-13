@@ -41,6 +41,10 @@ pub trait DocumentTransitionExt {
     fn get_data_contract(&self) -> &DataContract;
     /// get the data contract id
     fn get_data_contract_id(&self) -> &Identifier;
+    /// get the data of the transition if exits
+    fn get_data(&self) -> Option<&Value>;
+    /// get the revision of transition if exits
+    fn get_revision(&self) -> Option<u32>;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
@@ -226,6 +230,22 @@ impl DocumentTransitionExt for DocumentTransition {
                     None
                 }
             }
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn get_data(&self) -> Option<&Value> {
+        match self {
+            DocumentTransition::Create(t) => t.data.as_ref(),
+            DocumentTransition::Replace(t) => t.data.as_ref(),
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn get_revision(&self) -> Option<u32> {
+        match self {
+            DocumentTransition::Create(t) => Some(t.get_revision()),
+            DocumentTransition::Replace(t) => Some(t.get_revision()),
             DocumentTransition::Delete(_) => None,
         }
     }
