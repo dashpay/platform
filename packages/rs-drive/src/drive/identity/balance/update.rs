@@ -10,7 +10,7 @@ use crate::fee::calculate_fee;
 use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::op::DriveOperation;
 use crate::fee::result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -49,7 +49,7 @@ impl Drive {
     }
 
     /// We can set an identities negative credit balance
-    fn update_identity_negative_credit_operation(
+    pub(crate) fn update_identity_negative_credit_operation(
         &self,
         identity_id: [u8; 32],
         negative_credit: Credits,
@@ -66,17 +66,8 @@ impl Drive {
         )
     }
 
-    fn remove_identity_negative_credit_operation(&self, identity_id: [u8; 32]) -> DriveOperation {
-        let identity_path = identity_path_vec(identity_id.as_slice());
-
-        DriveOperation::GroveOperation(GroveDbOp::delete_op(
-            identity_path,
-            Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit).to_vec(),
-        ))
-    }
-
     /// We can set an identities balance
-    pub fn insert_identity_balance_operation(
+    pub(crate) fn insert_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
         balance: Credits,
@@ -146,54 +137,63 @@ impl Drive {
                 "there should always be a balance",
             )))?;
 
-        let new_balance = if estimated_costs_only_with_layer_info.is_none() {
-            if previous_balance == 0 {
-                // Deduct debt from added amount if exists
-                self.fetch_identity_negative_balance_operations(
-                    identity_id,
-                    true,
-                    transaction,
-                    &mut drive_operations,
-                )?
-                .map_or(Ok(added_balance), |negative_balance| {
-                    drive_operations
-                        .push(self.remove_identity_negative_credit_operation(identity_id));
-
-                    added_balance
-                        .checked_sub(negative_balance)
+        let (maybe_new_balance, maybe_new_negative_balance) =
+            if estimated_costs_only_with_layer_info.is_none() {
+                if previous_balance == 0 {
+                    // Deduct debt from added amount if exists
+                    let negative_balance = self
+                        .fetch_identity_negative_balance_operations(
+                            identity_id,
+                            true,
+                            transaction,
+                            &mut drive_operations,
+                        )?
                         .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
                             "added balance is lower than negative balance",
-                        )))
-                })?
+                        )))?;
+
+                    if negative_balance > added_balance {
+                        (None, Some(negative_balance - added_balance))
+                    } else {
+                        (Some(added_balance - negative_balance), None)
+                    }
+                } else {
+                    // Deduct added balance from existing one
+                    let new_balance =
+                        previous_balance
+                            .checked_add(added_balance)
+                            .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                                "identity balance add overflow error",
+                            )))?;
+
+                    (Some(new_balance), None)
+                }
             } else {
-                // Deduct added balance from existing one
-                previous_balance
-                    .checked_add(added_balance)
-                    .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
-                        "identity balance add overflow error",
-                    )))?
-            }
-        } else {
-            // For dry run, we need to assume that extra read will be called
-            self.fetch_identity_negative_balance_operations(
+                // For dry run, we need to assume that extra read will be called
+                self.fetch_identity_negative_balance_operations(
+                    identity_id,
+                    false,
+                    transaction,
+                    &mut drive_operations,
+                )?;
+
+                // Leave some room for tests
+                (Some(MAX_CREDITS - 1000), None)
+            };
+
+        if let Some(new_balance) = maybe_new_balance {
+            drive_operations.push(self.update_identity_balance_operation(
                 identity_id,
-                false,
-                transaction,
-                &mut drive_operations,
-            )?;
+                new_balance,
+                true,
+            )?);
+        }
 
-            // And removed negative balance
-            drive_operations.push(self.remove_identity_negative_credit_operation(identity_id));
-
-            // Leave some room for tests
-            MAX_CREDITS - 1000
-        };
-
-        drive_operations.push(self.update_identity_balance_operation(
-            identity_id,
-            new_balance,
-            true,
-        )?);
+        if let Some(new_negative_balance) = maybe_new_negative_balance {
+            drive_operations.push(
+                self.update_identity_negative_credit_operation(identity_id, new_negative_balance),
+            );
+        }
 
         Ok(drive_operations)
     }
@@ -254,12 +254,6 @@ impl Drive {
                         &mut drive_operations,
                     )?
                     .map_or(Ok(*balance_to_add), |negative_balance| {
-                        drive_operations.push(
-                            self.remove_identity_negative_credit_operation(
-                                balance_change.identity_id,
-                            ),
-                        );
-
                         balance_to_add
                             .checked_sub(negative_balance)
                             .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
@@ -435,6 +429,8 @@ mod tests {
 
     mod add_to_identity_balance {
         use super::*;
+
+        // TODO: Cover the rest of cases
 
         #[test]
         fn should_add_to_balance() {
