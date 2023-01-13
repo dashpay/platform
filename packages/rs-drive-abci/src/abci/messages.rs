@@ -116,6 +116,8 @@ pub struct BlockEndResponse {
     pub proposers_paid_count: Option<u16>,
     /// Index of the last epoch that marked as paid
     pub paid_epoch_index: Option<u16>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<usize>,
 }
 
 impl BlockEndResponse {
@@ -123,19 +125,21 @@ impl BlockEndResponse {
     pub(crate) fn from_process_block_fees_result(
         process_block_fees_result: &ProcessedBlockFeesResult,
     ) -> Self {
-        let (proposers_paid_count, paid_epoch_index) = process_block_fees_result
+        let (proposers_paid_count, paid_epoch_index, refunded_epochs_count) = process_block_fees_result
             .payouts
             .as_ref()
-            .map_or((None, None), |proposer_payouts| {
+            .map_or((None, None, None), |proposer_payouts| {
                 (
                     Some(proposer_payouts.proposers_paid_count),
                     Some(proposer_payouts.paid_epoch_index),
+                    Some(proposer_payouts.refunded_epochs_count),
                 )
             });
 
         Self {
             proposers_paid_count,
             paid_epoch_index,
+            refunded_epochs_count,
         }
     }
 }

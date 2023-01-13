@@ -89,7 +89,8 @@ function endBlockFactory(
         currentEpochIndex,
         proposersPaidCount: rsResponse.proposersPaidCount,
         paidEpochIndex: rsResponse.paidEpochIndex,
-      }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
+        refundedEpochsCount: rsResponse.refundedEpochsCount,
+      }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}. ${rsResponse.refundedEpochsCount} epochs were refunded.`);
     }
 
     const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);

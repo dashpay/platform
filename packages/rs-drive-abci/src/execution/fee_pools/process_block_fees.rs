@@ -186,6 +186,10 @@ impl Platform {
             .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                 epoch_info.current_epoch_index,
                 cached_current_epoch_start_block_height,
+                storage_fee_distribution_result
+                    .as_ref()
+                    .map(|result| result.refunded_epochs_count)
+                    .unwrap_or(0),
                 transaction,
                 &mut batch,
             )?;
