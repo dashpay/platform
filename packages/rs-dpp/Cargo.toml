@@ -12,7 +12,7 @@ bls-signatures = { version = "0.13.0" }
 bs58 = "0.4.0"
 byteorder = { version="1.4"}
 chrono = { version="0.4.20", default-features=false, features=["wasmbind", "clock"]}
-ciborium = { version="0.2"}
+ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
 dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, branch="master" }
 env_logger = { version="0.9"}
 futures = { version ="0.3"}
@@ -35,8 +35,16 @@ serde_json = { version="1.0", features=["preserve_order"]}
 serde_repr = { version = "0.1.7" }
 sha2  = { version="0.10"}
 thiserror = { version = "1.0"}
+mockall = { version="0.11.3", optional=true}
+
 
 [dev-dependencies]
 mockall= { version ="0.11"}
 test-case = { version ="2.0"}
 tokio = { version ="1.17",  features=["full"]}
+pretty_assertions = { version="1.3.0"}
+
+
+[features]
+mocks = ["mockall"]
+

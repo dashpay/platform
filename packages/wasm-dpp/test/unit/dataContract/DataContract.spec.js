@@ -198,7 +198,7 @@ describe('DataContract', () => {
         dataContract.getDocumentSchema('undefinedObject');
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e.getDocType()).to.equal('undefinedObject');
+        expect(e.getType()).to.equal('undefinedObject');
       }
     });
 
@@ -215,7 +215,7 @@ describe('DataContract', () => {
         dataContract.getDocumentSchemaRef('undefinedObject');
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e.getDocType()).to.equal('undefinedObject');
+        expect(e.getType()).to.equal('undefinedObject');
       }
     });
 
@@ -326,7 +326,7 @@ describe('DataContract', () => {
         dataContract.getBinaryProperties('unknown');
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e.getDocType()).to.equal('unknown');
+        expect(e.getType()).to.equal('unknown');
       }
     });
   });

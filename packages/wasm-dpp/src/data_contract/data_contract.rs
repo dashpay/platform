@@ -12,6 +12,7 @@ use dpp::util::string_encoding::Encoding;
 
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::metadata::MetadataWasm;
+use crate::utils::WithJsError;
 use crate::{bail_js, with_js_error};
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
@@ -73,6 +74,11 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
         self.0.id.clone().into()
+    }
+
+    #[wasm_bindgen(js_name=setId)]
+    pub fn set_id(&mut self, id: IdentifierWrapper) {
+        self.0.id = id.inner();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -276,6 +282,12 @@ impl DataContractWasm {
             .map_err(from_dpp_err)?
             .into())
     }
+
+    #[wasm_bindgen(js_name=fromBuffer)]
+    pub fn from_buffer(b: &[u8]) -> Result<DataContractWasm, JsValue> {
+        let data_contract = DataContract::from_cbor(b).with_js_error()?;
+        Ok(data_contract.into())
+    }
 }
 
 #[wasm_bindgen(js_name=DataContractDefaults)]
@@ -286,5 +298,11 @@ impl DataContractDefaults {
     #[wasm_bindgen(getter = SCHEMA)]
     pub fn get_default_schema() -> String {
         SCHEMA_URI.to_string()
+    }
+}
+
+impl DataContractWasm {
+    pub fn inner(&self) -> &DataContract {
+        &self.0
     }
 }
