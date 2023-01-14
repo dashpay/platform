@@ -89,7 +89,13 @@ impl Drive {
                 Ok(Some(balance as Credits))
             }
 
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => {
+                if apply {
+                    Ok(None)
+                } else {
+                    Ok(Some(0))
+                }
+            }
 
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "identity balance was present but was not identified as an item",

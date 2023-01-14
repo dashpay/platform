@@ -155,15 +155,17 @@ impl Drive {
                     transaction,
                     drive_operations,
                 )?
-                .ok_or(Error::Identity(IdentityError::CriticalBalanceOverflow(
-                    "added balance is lower than negative balance",
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "there should always be a balance if apply is set to true",
                 )))?;
 
             if apply {
                 if negative_balance > added_balance {
                     Ok((None, Some(negative_balance - added_balance)))
                 } else {
-                    Ok((Some(added_balance - negative_balance), None))
+                    let new_negative_balance = if negative_balance > 0 { Some(0) } else { None };
+
+                    Ok((Some(added_balance - negative_balance), new_negative_balance))
                 }
             } else {
                 // For dry run we want worst possible case + some room for tests (1000)
@@ -254,6 +256,9 @@ impl Drive {
         Ok(FeeRemovalOutcome { actual_fee_paid })
     }
 
+    /// Applies a balance change based on Fee Result
+    /// If calculated balance is below 0 it will go to negative balance
+    ///
     /// Balances are stored in the identity under key 0
     pub(crate) fn apply_balance_change_from_fee_to_identity_operations(
         &self,
@@ -375,6 +380,9 @@ impl Drive {
         Ok(fees)
     }
 
+    /// Removes specified amount of credits from identity balance
+    /// This function doesn't go below nil balance (negative balance)
+    ///
     /// Balances are stored in the identity under key 0
     /// This gets operations based on apply flag (stateful vs stateless)
     pub(crate) fn remove_from_identity_balance_operations(
@@ -431,20 +439,9 @@ mod tests {
 
     use crate::fee_pools::epochs::Epoch;
 
-    mod insert_identity_balance_operation {
-        #[test]
-        fn should_fail_if_balance_already_persisted() {
-            todo!()
-        }
-
-        #[test]
-        fn should_insert_balance() {
-            todo!()
-        }
-    }
-
     mod add_to_identity_balance {
         use super::*;
+        use crate::common::helpers::identities::create_test_identity;
 
         #[test]
         fn should_add_to_balance() {
@@ -454,10 +451,10 @@ mod tests {
 
             let old_balance = identity.balance;
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None)
+                .add_new_identity(identity.clone(), &block_info, true, None)
                 .expect("expected to insert identity");
 
             let db_transaction = drive.grove.start_transaction();
@@ -468,7 +465,7 @@ mod tests {
                 .add_to_identity_balance(
                     identity.id.to_buffer(),
                     amount,
-                    &block,
+                    &block_info,
                     true,
                     Some(&db_transaction),
                 )
@@ -490,7 +487,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block_info, true, None)
                 .expect("expected to get balance");
 
             assert_eq!(balance.unwrap(), old_balance + amount);
@@ -498,17 +495,138 @@ mod tests {
 
         #[test]
         fn should_fail_if_balance_is_not_persisted() {
-            todo!()
+            let drive = setup_drive_with_initial_state_structure();
+
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let result = drive.add_to_identity_balance([0; 32], 300, &block_info, true, None);
+
+            assert!(
+                matches!(result, Err(Error::Drive(DriveError::CorruptedCodeExecution(m))) if m == "there should always be a balance")
+            );
         }
 
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
-            todo!()
+            let drive = setup_drive_with_initial_state_structure();
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None);
+
+            let added_balance = 300;
+            let negative_amount = 100;
+
+            // Persist negative balance
+            let batch = vec![drive.replace_identity_negative_credit_operation(
+                identity.id.to_buffer(),
+                negative_amount,
+            )];
+
+            let mut drive_operations: Vec<DriveOperation> = vec![];
+            drive
+                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .expect("should apply batch");
+
+            let block_info = BlockInfo::default();
+
+            let fee_result = drive
+                .add_to_identity_balance(
+                    identity.id.to_buffer(),
+                    added_balance,
+                    &block_info,
+                    true,
+                    None,
+                )
+                .expect("expected to add to identity balance");
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 54000,
+                    processing_fee: 1245080,
+                    removed_bytes_from_system: 24, // TODO: That's fine?
+                    ..Default::default()
+                }
+            );
+
+            let (updated_balance, _fee_cost) = drive
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block_info, true, None)
+                .expect("expected to get balance");
+
+            assert_eq!(
+                updated_balance.expect("balance should present"),
+                added_balance - negative_amount
+            );
+
+            let updated_negative_balance = drive
+                .fetch_identity_negative_balance_operations(
+                    identity.id.to_buffer(),
+                    true,
+                    None,
+                    &mut drive_operations,
+                )
+                .expect("expected to get balance")
+                .expect("balance should present");
+
+            assert_eq!(updated_negative_balance, 0)
         }
 
         #[test]
-        fn should_reduce_debt_if_added_balance_is_lower() {
-            todo!()
+        fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
+            let drive = setup_drive_with_initial_state_structure();
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None);
+
+            let added_balance = 50;
+            let negative_amount = 100;
+
+            // Persist negative balance
+            let batch = vec![drive.replace_identity_negative_credit_operation(
+                identity.id.to_buffer(),
+                negative_amount,
+            )];
+
+            let mut drive_operations: Vec<DriveOperation> = vec![];
+            drive
+                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .expect("should apply batch");
+
+            let block_info = BlockInfo::default();
+
+            let fee_result = drive
+                .add_to_identity_balance(
+                    identity.id.to_buffer(),
+                    added_balance,
+                    &block_info,
+                    true,
+                    None,
+                )
+                .expect("expected to add to identity balance");
+
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    storage_fee: 0,
+                    processing_fee: 904750,
+                    removed_bytes_from_system: 0,
+                    ..Default::default()
+                }
+            );
+
+            let (updated_balance, _fee_cost) = drive
+                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block_info, true, None)
+                .expect("expected to get balance");
+
+            assert_eq!(updated_balance.expect("balance should present"), 0);
+
+            let updated_negative_balance = drive
+                .fetch_identity_negative_balance_operations(
+                    identity.id.to_buffer(),
+                    true,
+                    None,
+                    &mut drive_operations,
+                )
+                .expect("expected to get balance")
+                .expect("balance should present");
+
+            assert_eq!(updated_negative_balance, negative_amount - added_balance)
         }
 
         #[test]
@@ -739,17 +857,135 @@ mod tests {
 
         #[test]
         fn should_fail_if_balance_is_not_persisted() {
-            todo!()
+            let drive = setup_drive_with_initial_state_structure();
+
+            let fee_result = FeeResult::default_with_fees(100000, 100);
+            let fee_change = fee_result
+                .to_balance_change([0; 32], GENESIS_EPOCH_INDEX)
+                .expect("should calculate fee change for identity");
+
+            let result =
+                drive.apply_balance_change_from_fee_to_identity_operations(fee_change, None);
+
+            assert!(
+                matches!(result, Err(Error::Drive(DriveError::CorruptedCodeExecution(m))) if m == "there should always be a balance if apply is set to true")
+            );
         }
 
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
-            todo!()
+            let drive = setup_drive_with_initial_state_structure();
+
+            let removed_credits = 10000;
+            let negative_amount = 1000;
+
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+
+            // Persist negative balance
+            let batch = vec![drive.replace_identity_negative_credit_operation(
+                identity.id.to_buffer(),
+                negative_amount,
+            )];
+
+            let mut drive_operations: Vec<DriveOperation> = vec![];
+            drive
+                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .expect("should apply batch");
+
+            let credits_per_epoch: CreditsPerEpoch =
+                IntMap::from_iter([(GENESIS_EPOCH_INDEX, removed_credits)]);
+
+            let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
+                BTreeMap::from_iter([(identity.id.to_buffer(), credits_per_epoch)]);
+
+            let fee_result = FeeResult {
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                ..Default::default()
+            };
+            let fee_change = fee_result
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .expect("should calculate fee change for identity");
+
+            let (drive_operations, fee_result_outcome) = drive
+                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .expect("should apply fee change");
+
+            assert!(matches!(
+                &drive_operations[..],
+                [
+                    _,
+                    _,
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::SumItem(8575, None),
+                        },
+                    ..
+                    }),
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::Item(debt_bytes, None),
+                        },
+                        ..
+                    })
+                ] if debt_bytes == &0u64.to_be_bytes()
+            ));
+
+            assert_eq!(fee_result_outcome, fee_result);
         }
 
         #[test]
-        fn should_reduce_debt_if_added_balance_is_lower() {
-            todo!()
+        fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let removed_credits = 1000;
+            let negative_amount = 3000;
+
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+
+            // Persist negative balance
+            let batch = vec![drive.replace_identity_negative_credit_operation(
+                identity.id.to_buffer(),
+                negative_amount,
+            )];
+
+            let mut drive_operations: Vec<DriveOperation> = vec![];
+            drive
+                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .expect("should apply batch");
+
+            let credits_per_epoch: CreditsPerEpoch =
+                IntMap::from_iter([(GENESIS_EPOCH_INDEX, removed_credits)]);
+
+            let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
+                BTreeMap::from_iter([(identity.id.to_buffer(), credits_per_epoch)]);
+
+            let fee_result = FeeResult {
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                ..Default::default()
+            };
+            let fee_change = fee_result
+                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .expect("should calculate fee change for identity");
+
+            let (drive_operations, fee_result_outcome) = drive
+                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .expect("should apply fee change");
+
+            assert!(matches!(
+                &drive_operations[..],
+                [
+                    _,
+                    _,
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::Item(debt_bytes, None),
+                        },
+                        ..
+                    })
+                ] if debt_bytes == &2442u64.to_be_bytes()
+            ));
+
+            assert_eq!(fee_result_outcome, fee_result);
         }
 
         #[test]
@@ -840,18 +1076,21 @@ mod tests {
 
             assert!(matches!(
                 &drive_operations[..],
-                [_, DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                    op: Op::Replace {
-                        element: Element::SumItem(balance, None),
-                    },
-                    ..
-                }),
-                DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                    op: Op::Insert {
-                        element: Element::Item(debt_bytes, None),
-                    },
-                    ..
-                })] if balance == &(0 as SignedCredits) && debt_bytes == &expected_debt_bytes
+                [
+                    _,
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::SumItem(balance, None),
+                        },
+                        ..
+                    }),
+                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                        op: Op::Replace {
+                            element: Element::Item(debt_bytes, None),
+                        },
+                        ..
+                    })
+                ] if balance == &(0 as SignedCredits) && debt_bytes == &expected_debt_bytes
             ));
 
             assert_eq!(
