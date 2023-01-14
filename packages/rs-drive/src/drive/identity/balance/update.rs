@@ -21,31 +21,25 @@ pub struct FeeRemovalOutcome {
 }
 
 impl Drive {
-    fn update_identity_balance_operation(
+    fn replace_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
         balance: Credits,
-        is_replace: bool,
     ) -> Result<DriveOperation, Error> {
-        let balance_path = balance_path_vec();
         // while i64::MAX could potentially work, best to avoid it.
         if balance >= MAX_CREDITS {
-            Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
+            return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
                 "trying to set balance to over max credits amount (i64::MAX)",
-            )))
-        } else if is_replace {
-            Ok(DriveOperation::replace_for_known_path_key_element(
-                balance_path,
-                identity_id.to_vec(),
-                Element::new_sum_item(balance as i64),
-            ))
-        } else {
-            Ok(DriveOperation::insert_for_known_path_key_element(
-                balance_path,
-                identity_id.to_vec(),
-                Element::new_sum_item(balance as i64),
-            ))
+            )));
         }
+
+        let balance_path = balance_path_vec();
+
+        Ok(DriveOperation::replace_for_known_path_key_element(
+            balance_path,
+            identity_id.to_vec(),
+            Element::new_sum_item(balance as i64),
+        ))
     }
 
     /// We can set an identities negative credit balance
@@ -66,13 +60,29 @@ impl Drive {
         )
     }
 
-    /// We can set an identities balance
+    /// Creates a balance key-value with specified amount
+    /// Must be used only to create initial key-value. To update balance
+    /// use `add_to_identity_balance`, `remove_from_identity_balance`,
+    /// and `apply_balance_change_from_fee_to_identity`
     pub(crate) fn insert_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
         balance: Credits,
     ) -> Result<DriveOperation, Error> {
-        self.update_identity_balance_operation(identity_id, balance, false)
+        // while i64::MAX could potentially work, best to avoid it.
+        if balance >= MAX_CREDITS {
+            return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                "trying to set balance to over max credits amount (i64::MAX)",
+            )));
+        };
+
+        let balance_path = balance_path_vec();
+
+        Ok(DriveOperation::insert_for_known_path_key_element(
+            balance_path,
+            identity_id.to_vec(),
+            Element::new_sum_item(balance as i64),
+        ))
     }
 
     /// Balances are stored in the balance tree under the identity's id
@@ -182,11 +192,8 @@ impl Drive {
             };
 
         if let Some(new_balance) = maybe_new_balance {
-            drive_operations.push(self.update_identity_balance_operation(
-                identity_id,
-                new_balance,
-                true,
-            )?);
+            drive_operations
+                .push(self.replace_identity_balance_operation(identity_id, new_balance)?);
         }
 
         if let Some(new_negative_balance) = maybe_new_negative_balance {
@@ -292,11 +299,9 @@ impl Drive {
             BalanceChange::NoBalanceChange => unreachable!(),
         };
 
-        drive_operations.push(self.update_identity_balance_operation(
-            balance_change.identity_id,
-            new_balance,
-            true,
-        )?);
+        drive_operations.push(
+            self.replace_identity_balance_operation(balance_change.identity_id, new_balance)?,
+        );
 
         if let Some(negative_credit_amount) = negative_credit_amount {
             drive_operations.push(self.update_identity_negative_credit_operation(
@@ -396,10 +401,9 @@ impl Drive {
             )));
         }
 
-        drive_operations.push(self.update_identity_balance_operation(
+        drive_operations.push(self.replace_identity_balance_operation(
             identity_id,
             previous_balance - balance_to_remove,
-            true,
         )?);
 
         Ok(drive_operations)
@@ -521,7 +525,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 5532770,
+                    processing_fee: 5609970,
                     ..Default::default()
                 }
             );
