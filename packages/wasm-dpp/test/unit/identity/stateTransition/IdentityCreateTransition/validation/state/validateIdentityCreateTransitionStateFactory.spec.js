@@ -1,7 +1,3 @@
-const { expectValidationError } = require(
-  '@dashevo/dpp/lib/test/expect/expectError',
-);
-
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
@@ -9,6 +5,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
+const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 describe('validateIdentityCreateTransitionStateFactory', () => {
   let IdentityCreateTransition;
@@ -73,7 +70,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
 
     const result = await validate(stateTransition);
 
-    expectValidationError(result, IdentityAlreadyExistsError, 1, ValidationResult);
+    await expectValidationError(result, IdentityAlreadyExistsError);
 
     const [error] = result.getErrors();
 

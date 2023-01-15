@@ -3,11 +3,8 @@ const { Transaction, Script, PrivateKey } = require('@dashevo/dashcore-lib');
 const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const { expectValidationError } = require(
-  '@dashevo/dpp/lib/test/expect/expectError',
-);
-
 const { expect } = require('chai');
+const { expectJsonSchemaError, expectValidationError } = require('../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../dist');
 
@@ -78,7 +75,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -114,7 +111,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -161,7 +158,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -194,7 +191,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, InvalidAssetLockProofCoreChainHeightError, 1, ValidationResult);
+      await expectValidationError(result, InvalidAssetLockProofCoreChainHeightError, 1);
 
       const [error] = result.getErrors();
 
@@ -214,7 +211,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -248,7 +245,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -268,7 +265,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -288,8 +285,8 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(result,
-        IdentityAssetLockTransactionIsNotFoundError, 1, ValidationResult);
+      await expectValidationError(result,
+        IdentityAssetLockTransactionIsNotFoundError);
 
       const [error] = result.getErrors();
 
@@ -321,11 +318,9 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(
+      await expectValidationError(
         result,
         InvalidIdentityAssetLockTransactionOutputError,
-        1,
-        ValidationResult,
       );
     });
 
@@ -339,8 +334,8 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      expectValidationError(
-        result, InvalidAssetLockProofTransactionHeightError, 1, ValidationResult,
+      await expectValidationError(
+        result, InvalidAssetLockProofTransactionHeightError,
       );
 
       const [error] = result.getErrors();

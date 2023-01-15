@@ -3,11 +3,8 @@ const DashCoreLib = require('@dashevo/dashcore-lib');
 const getInstantAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const { expectValidationError } = require(
-  '@dashevo/dpp/lib/test/expect/expectError',
-);
-
 const { expect } = require('chai');
+const { expectJsonSchemaError, expectValidationError } = require('../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../dist');
 
@@ -65,7 +62,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -92,7 +89,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -117,7 +114,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -132,7 +129,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -146,7 +143,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       rawProof.instantLock = Buffer.alloc(200);
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
-      expectValidationError(result, InvalidInstantAssetLockProofError, 1, ValidationResult);
+      await expectValidationError(result, InvalidInstantAssetLockProofError);
 
       const [error] = result.getErrors();
 
@@ -164,11 +161,9 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(
+      await expectValidationError(
         result,
         IdentityAssetLockProofLockedTransactionMismatchError,
-        1,
-        ValidationResult,
       );
 
       const [error] = result.getErrors();
@@ -185,11 +180,9 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(
+      await expectValidationError(
         result,
         InvalidInstantAssetLockProofSignatureError,
-        1,
-        ValidationResult,
       );
 
       const [error] = result.getErrors();
@@ -206,7 +199,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -231,7 +224,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -246,7 +239,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -261,7 +254,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, InvalidIdentityAssetLockTransactionError, 1, ValidationResult);
+      await expectValidationError(result, InvalidIdentityAssetLockTransactionError);
 
       const [error] = result.getErrors();
 
@@ -278,7 +271,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
 
-      expectValidationError(result, JsonSchemaError, 1, ValidationResult);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
