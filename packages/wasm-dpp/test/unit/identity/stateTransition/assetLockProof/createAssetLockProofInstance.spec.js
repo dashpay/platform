@@ -18,8 +18,8 @@ describe('createAssetLockProofInstance', () => {
 
   it('should create an instance of InstantAssetLockProof', () => {
     const assetLockProofFixture = getInstantAssetLockProofFixture();
-    const instanceJS = createAssetLockProofInstanceJS(assetLockProofFixture.toObject());
     const instance = createAssetLockProofInstance(assetLockProofFixture.toObject());
+    const instanceJS = createAssetLockProofInstanceJS(assetLockProofFixture.toObject());
 
     expect(instance.toObject()).to.deep.equal(instanceJS.toObject());
     expect(instance).to.be.an.instanceOf(InstantAssetLockProof);
@@ -27,8 +27,8 @@ describe('createAssetLockProofInstance', () => {
 
   it('should create an instance of ChainAssetLockProof', () => {
     const assetLockProofFixture = getChainAssetLockFixture();
-    const instanceJS = createAssetLockProofInstanceJS(assetLockProofFixture.toObject());
     const instance = createAssetLockProofInstance(assetLockProofFixture.toObject());
+    const instanceJS = createAssetLockProofInstanceJS(assetLockProofFixture.toObject());
 
     expect(instance.toObject()).to.deep.equal(instanceJS.toObject());
     expect(instance).to.be.an.instanceOf(ChainAssetLockProof);

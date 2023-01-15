@@ -11,23 +11,9 @@ describe('InstantAssetLockProof', () => {
     ({ InstantAssetLockProof } = await loadWasmDpp());
 
     instantAssetLockProofJS = getInstantAssetLockProofFixture();
-  });
-
-  beforeEach(() => {
-    const {
-      type,
-      outputIndex,
-      transaction,
-      instantLock,
-    } = instantAssetLockProofJS.toObject();
-    // const { coreChainLockedHeight, outPoint } = inst;
-
-    instantAssetLockProof = new InstantAssetLockProof({
-      type,
-      outputIndex,
-      transaction,
-      instantLock,
-    });
+    instantAssetLockProof = new InstantAssetLockProof(
+      instantAssetLockProofJS.toObject(),
+    );
   });
 
   describe('#getType', () => {

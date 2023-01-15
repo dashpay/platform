@@ -11,12 +11,9 @@ describe('ChainAssetLockProof', () => {
     ({ ChainAssetLockProof } = await loadWasmDpp());
 
     chainAssetLockProofJS = getChainAssetLockFixture();
-  });
-
-  beforeEach(() => {
-    const rawObject = chainAssetLockProofJS.toObject();
-
-    chainAssetLockProof = new ChainAssetLockProof(rawObject);
+    chainAssetLockProof = new ChainAssetLockProof(
+      chainAssetLockProofJS.toObject(),
+    );
   });
 
   describe('#getType', () => {
