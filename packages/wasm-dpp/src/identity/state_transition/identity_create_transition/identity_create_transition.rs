@@ -121,7 +121,7 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .to_vec()
             .into_iter()
-            .map(|key| key.to_serde_json_value().unwrap())
+            .map(|key| key.with_serde_to_json_value().unwrap())
             .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
             .collect::<Vec<IdentityPublicKey>>();
 
@@ -136,7 +136,7 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .to_vec()
             .into_iter()
-            .map(|key| key.to_serde_json_value().unwrap())
+            .map(|key| key.with_serde_to_json_value().unwrap())
             .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
             .collect::<Vec<IdentityPublicKey>>();
 

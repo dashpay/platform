@@ -250,25 +250,27 @@ impl StateTransitionConvert for IdentityCreateTransition {
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        // The [state_transition_helpers::to_object] doesn't  convert the `public_keys` property.
-        // The property must be serialized manually
+        let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
         let mut public_keys: Vec<JsonValue> = vec![];
         for key in self.public_keys.iter() {
             public_keys.push(key.to_raw_json_object(skip_signature)?);
         }
 
-        let mut raw_object: JsonValue = state_transition_helpers::to_object(
-            self,
-            Self::signature_property_paths(),
-            Self::identifiers_property_paths(),
-            skip_signature,
-        )?;
-        raw_object.insert(
+        json_value.insert(
             property_names::PUBLIC_KEYS.to_owned(),
             JsonValue::Array(public_keys),
         )?;
 
-        Ok(raw_object)
+        Ok(json_value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {

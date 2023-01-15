@@ -69,7 +69,7 @@ where
     }
 
     // payToId identity exists
-    let pay_to_identifier = Identifier::from_string(pay_to_id, Encoding::Base58)?;
+    let pay_to_identifier = Identifier::from_bytes(&pay_to_id_bytes)?;
     let maybe_identity = context
         .state_repository
         .fetch_identity(

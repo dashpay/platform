@@ -107,11 +107,6 @@ pub enum ProtocolError {
     #[error("Public key is disabled")]
     PublicKeyIsDisabledError { public_key: IdentityPublicKey },
 
-    #[error("Document was not provided for apply of state transition")]
-    DocumentNotProvided {
-        document_transition: DocumentTransition,
-    },
-
     #[error("Identity is not present")]
     IdentityNotPresentError { id: Identifier },
 }

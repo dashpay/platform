@@ -58,7 +58,7 @@ pub async fn validate_identity_create_transition_basic_wasm(
             .map(|v| v.as_f64().unwrap_or(LATEST_VERSION as f64) as u32)
             .unwrap_or(LATEST_VERSION);
 
-    let state_transition_json = raw_state_transition.to_serde_json_value()?;
+    let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
 
     let protocol_version_validator = ProtocolVersionValidator::new(
         current_protocol_version,

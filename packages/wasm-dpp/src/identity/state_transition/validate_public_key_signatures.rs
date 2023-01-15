@@ -4,13 +4,13 @@ use crate::IdentityCreateTransitionWasm;
 use crate::{
     identity::identity_public_key::IdentityPublicKeyWasm, validation::ValidationResultWasm,
 };
-use dpp::document::document_transition::JsonValue;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::state_transition::validate_public_key_signatures::{
     PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
 };
 use dpp::prelude::IdentityPublicKey;
 use dpp::state_transition::{StateTransitionConvert, StateTransitionType};
+use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -21,7 +21,7 @@ pub fn validate_public_key_signatures(
     raw_public_keys: Vec<JsValue>,
     bls: JsBlsAdapter,
 ) -> Result<ValidationResultWasm, JsValue> {
-    // TODO: use to_serde_json_value?
+    // TODO: use with_serde_to_json_value?
     let st_type: StateTransitionType =
         (js_sys::Reflect::get(&raw_state_transition, &JsValue::from_str("type"))?
             .as_f64()

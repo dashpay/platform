@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::{
-    errors::{from_dpp_err, RustConversionError},
+    errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation::ValidationResultWasm,
     with_js_error, StateTransitionExecutionContextWasm,
@@ -20,7 +20,7 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawChainAssetLockProof {
-    // TODO: consider using to_serde_json_value() instead of this struct
+    // TODO: consider using with_serde_to_json_value() instead of this struct
     #[serde(rename = "type")]
     lock_type: Option<u8>,
     core_chain_locked_height: Option<u32>,
