@@ -252,6 +252,7 @@ impl DriveOperation {
                                 (
                                     FeeRefunds::from_storage_removal(
                                         removal_per_epoch_by_identifier,
+                                        epoch.index,
                                     )?,
                                     system_amount,
                                 )

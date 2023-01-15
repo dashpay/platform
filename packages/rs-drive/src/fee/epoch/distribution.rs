@@ -40,12 +40,14 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits, SignedCredits};
 use crate::fee::epoch::{
-    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
+    CreditsPerEpoch, EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_EPOCHS,
+    PERPETUAL_STORAGE_EPOCHS_DEC, PERPETUAL_STORAGE_YEARS,
 };
 use crate::fee::get_overflow_error;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use sqlparser::ast::DataType::Decimal;
 
 // TODO: Should be updated from the doc
 
@@ -76,6 +78,7 @@ pub fn distribute_storage_fee_to_epochs_collection(
     distribution_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
+        None,
         |epoch_index, epoch_fee_share| {
             let epoch_credits: SignedCredits =
                 credits_per_epochs.get(&epoch_index).map_or(0, |i| *i);
@@ -95,25 +98,24 @@ pub fn distribute_storage_fee_to_epochs_collection(
 
 /// Distributes refunds to epochs into `SignedCreditsPerEpoch` and returns leftovers
 /// It skips epochs up to specified `skip_until_epoch_index`
-pub fn distribute_refunds_to_epochs_collection(
+pub fn subtract_refunds_from_epoch_credits_collection(
     credits_per_epochs: &mut SignedCreditsPerEpoch,
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
-    skip_until_epoch_index: EpochIndex,
-) -> Result<DistributionLeftovers, Error> {
-    distribution_storage_fee_to_epochs_map(
+    current_epoch_index: EpochIndex,
+) -> Result<(), Error> {
+    let leftovers = distribution_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
+        Some(current_epoch_index + 1), // TODO: Revisit
         |epoch_index, epoch_fee_share| {
-            if epoch_index < skip_until_epoch_index {
-                return Ok(());
-            }
+            //todo: change to entry
 
             let epoch_credits: SignedCredits =
                 credits_per_epochs.get(&epoch_index).map_or(0, |i| *i);
 
             let result_storage_fee: SignedCredits = epoch_credits
-                .checked_sub(epoch_fee_share.to_signed()?)
+                .checked_sub_unsigned(epoch_fee_share)
                 .ok_or_else(|| {
                     get_overflow_error("updated epoch credits are not fitting to credits min size")
                 })?;
@@ -122,7 +124,23 @@ pub fn distribute_refunds_to_epochs_collection(
 
             Ok(())
         },
-    )
+    )?;
+
+    // We need to remove the leftovers from the current epoch
+
+    let epoch_credits: SignedCredits = credits_per_epochs
+        .get(&current_epoch_index)
+        .map_or(0, |i| *i);
+
+    let result_storage_fee: SignedCredits = epoch_credits
+        .checked_sub_unsigned(leftovers)
+        .ok_or_else(|| {
+            get_overflow_error("updated epoch credits are not fitting to credits min size")
+        })?;
+
+    credits_per_epochs.insert(current_epoch_index, result_storage_fee);
+
+    Ok(())
 }
 
 /// Calculates leftovers and amount of credits by distributing storage fees to epochs
@@ -136,11 +154,11 @@ pub fn calculate_storage_fee_distribution_amount_and_leftovers(
     let leftovers = distribution_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
+        None,
         |epoch_index, epoch_fee_share| {
             if epoch_index < skip_up_to_epoch_index {
                 skipped_amount += epoch_fee_share;
             }
-
             Ok(())
         },
     )?;
@@ -148,11 +166,19 @@ pub fn calculate_storage_fee_distribution_amount_and_leftovers(
     Ok((storage_fee - skipped_amount - leftovers, leftovers))
 }
 
+fn modify_distribution_table(multiplier: Decimal) -> Vec<Decimal> {
+    FEE_DISTRIBUTION_TABLE
+        .iter()
+        .map(|value| value * multiplier)
+        .collect()
+}
+
 /// Distributes storage fees to epochs and call function for each epoch.
 /// Returns leftovers
 fn distribution_storage_fee_to_epochs_map<F>(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
+    skip_until_epoch_index: Option<EpochIndex>,
     mut map_function: F,
 ) -> Result<DistributionLeftovers, Error>
 where
@@ -168,8 +194,23 @@ where
 
     let epochs_per_year = Decimal::from(EPOCHS_PER_YEAR);
 
-    for year in 0..PERPETUAL_STORAGE_YEARS {
-        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
+    let start_year = skip_until_epoch_index
+        .map(|epoch_index| epoch_index / EPOCHS_PER_YEAR)
+        .unwrap_or_default();
+
+    let fee_distribution_table: [Decimal; PERPETUAL_STORAGE_YEARS as usize] =
+        if let Some(skip_until_epoch_index) = skip_until_epoch_index {
+            let multiplier = PERPETUAL_STORAGE_EPOCHS_DEC
+                / Decimal::from(
+                    PERPETUAL_STORAGE_EPOCHS - skip_until_epoch_index + start_epoch_index,
+                );
+            modify_distribution_table(multiplier)
+        } else {
+            FEE_DISTRIBUTION_TABLE
+        };
+
+    for year in start_year..PERPETUAL_STORAGE_YEARS {
+        let distribution_for_that_year_ratio = fee_distribution_table[year as usize];
 
         let year_fee_share = storage_fee_dec * distribution_for_that_year_ratio;
 
@@ -180,9 +221,15 @@ where
             .to_u64()
             .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
 
-        let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
+        let year_start_epoch_index = if year == start_year {
+            skip_until_epoch_index.unwrap_or(start_epoch_index)
+        } else {
+            start_epoch_index + EPOCHS_PER_YEAR * year
+        };
 
-        for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
+        let year_end_epoch_index = start_epoch_index + ((year + 1) * EPOCHS_PER_YEAR);
+
+        for epoch_index in year_start_epoch_index..year_end_epoch_index {
             map_function(epoch_index, epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
@@ -229,11 +276,11 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_distribute_nothing_if_storage_fee_are_zero() {
+        fn should_distribute_nothing_if_storage_fees_are_zero() {
             let mut calls = 0;
 
             let leftovers =
-                distribution_storage_fee_to_epochs_map(0, GENESIS_EPOCH_INDEX, |_, _| {
+                distribution_storage_fee_to_epochs_map(0, GENESIS_EPOCH_INDEX, None, |_, _| {
                     calls += 1;
 
                     Ok(())
@@ -242,6 +289,36 @@ mod tests {
 
             assert_eq!(calls, 0);
             assert_eq!(leftovers, 0);
+        }
+
+        #[test]
+        fn should_call_function_for_each_epoch_for_50_years_sequentially() {
+            let mut calls = 0;
+
+            let mut previous_epoch_index = -1;
+
+            let leftovers = distribution_storage_fee_to_epochs_map(
+                100000,
+                GENESIS_EPOCH_INDEX,
+                None,
+                |epoch_index, _| {
+                    assert_eq!(epoch_index as i32, previous_epoch_index + 1);
+                    previous_epoch_index = epoch_index as i32;
+
+                    calls += 1;
+
+                    Ok(())
+                },
+            )
+            .expect("should distribute storage fee");
+
+            assert_eq!(calls, PERPETUAL_STORAGE_EPOCHS);
+            assert_eq!(leftovers, 360);
+        }
+
+        #[test]
+        fn should_skip_distribution_until_epoch_index() {
+            todo!()
         }
     }
 
@@ -388,15 +465,17 @@ mod tests {
         }
     }
 
-    mod distribute_refunds_to_epochs_collection {
+    mod subtract_refunds_from_epoch_credits_collection {
         use super::*;
 
         #[test]
         fn should_deduct_refunds_from_collection_since_specific_epoch() {
             let storage_fee: Credits = 1000000;
             let start_epoch_index: EpochIndex = 0;
+            let expected_leftovers = 102780;
 
-            const SKIP_UP_TO_EPOCH_INDEX: EpochIndex = 42;
+            // At epoch 42 we are asking for a refund from epoch 0 of 1 Million credits
+            const REFUNDED_EPOCH_INDEX: EpochIndex = 42;
 
             let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
@@ -404,7 +483,7 @@ mod tests {
                 &mut credits_per_epochs,
                 storage_fee,
                 start_epoch_index,
-                SKIP_UP_TO_EPOCH_INDEX,
+                REFUNDED_EPOCH_INDEX,
             )
             .expect("should distribute storage fee");
 
@@ -412,8 +491,9 @@ mod tests {
             assert_eq!(leftovers, 180);
 
             // compare them with reference table
+            #[rustfmt::skip]
             let reference_fees: [SignedCredits;
-                (PERPETUAL_STORAGE_EPOCHS - SKIP_UP_TO_EPOCH_INDEX) as usize] = [
+                (PERPETUAL_STORAGE_EPOCHS - REFUNDED_EPOCH_INDEX) as usize] = [
                 -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300, -2300,
                 -2300, -2300, -2300, -2300, -2300, -2300, -2200, -2200, -2200, -2200, -2200, -2200,
                 -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200, -2200,
@@ -489,11 +569,11 @@ mod tests {
                 -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62, -62,
             ];
 
-            let skipped_reference_fees: [Credits; SKIP_UP_TO_EPOCH_INDEX as usize] = [
-                2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
-                2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
-                2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
-            ];
+            // let skipped_reference_fees: [Credits; SKIP_UNTIL_EPOCH_INDEX as usize] = [
+            //     2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
+            //     2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
+            //     2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
+            // ];
 
             assert_eq!(
                 credits_per_epochs.clone().into_values().collect::<Vec<_>>(),

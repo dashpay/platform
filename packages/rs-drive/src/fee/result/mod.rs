@@ -61,6 +61,7 @@ pub struct FeeResult {
 }
 
 /// The balance change for an identity
+#[derive(Clone, Debug)]
 pub enum BalanceChange {
     /// Add Balance
     AddToBalance(Credits),
@@ -76,6 +77,7 @@ pub enum BalanceChange {
 }
 
 /// The fee expense for the identity from a fee result
+#[derive(Clone, Debug)]
 pub struct BalanceChangeForIdentity {
     /// The identifier of the identity
     pub identity_id: Identifier,

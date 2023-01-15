@@ -347,20 +347,24 @@ fn run_chain_for_strategy(
         platform
             .execute_block(*proposer, &block_info, state_transitions)
             .expect("expected to execute a block");
+
         current_time_ms += block_spacing_ms;
         i += 1;
         i %= quorum_size;
     }
+
     let masternode_identity_balances = platform
         .drive
         .fetch_identities_balances(&proposers, None)
         .expect("expected to get balances");
+
     let end_epoch_index = platform
         .block_execution_context
         .take()
         .expect("expected context")
         .epoch_info
         .current_epoch_index;
+
     ChainExecutionOutcome {
         platform,
         masternode_identity_balances,

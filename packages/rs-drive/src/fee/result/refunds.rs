@@ -56,6 +56,7 @@ impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
     pub fn from_storage_removal(
         storage_removal: StorageRemovalPerEpochByIdentifier,
+        current_epoch_index: EpochIndex,
     ) -> Result<Self, Error> {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
@@ -73,7 +74,15 @@ impl FeeRefunds {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;
 
-                        Ok((epoch_index, credits))
+                        // TODO We don't need leftovers as return result?
+                        let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
+                            credits,
+                            epoch_index,
+                            // TODO: Move + 1 inside the function
+                            current_epoch_index + 1,
+                        )?;
+
+                        Ok((epoch_index, amount))
                     })
                     .collect::<Result<CreditsPerEpoch, Error>>()
                     .map(|credits_per_epochs| (identifier, credits_per_epochs))
@@ -168,14 +177,14 @@ impl FeeRefunds {
         let credits = credits_per_epoch
             .iter()
             .try_fold::<_, _, Result<_, Error>>(0 as Credits, |acc, (epoch_index, credits)| {
-                let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
-                    *credits,
-                    *epoch_index,
-                    // TODO: Move + 1 inside the function
-                    current_epoch_index + 1,
-                )?;
+                // let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
+                //     *credits,
+                //     *epoch_index,
+                //     // TODO: Move + 1 inside the function
+                //     current_epoch_index + 1,
+                // )?;
 
-                Ok(acc + amount)
+                Ok(acc + credits)
             })?;
 
         Ok(Some(credits))

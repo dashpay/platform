@@ -36,6 +36,7 @@
 use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
+use crate::execution::fee_pools::fee_distribution::FeesInPools;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
@@ -87,7 +88,7 @@ pub struct BlockEndRequest {
 }
 
 /// Aggregated fees after block execution
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockFees {
     /// Processing fee
@@ -127,6 +128,8 @@ pub struct BlockEndResponse {
     pub paid_epoch_index: Option<u16>,
     /// A number of epochs which had refunded
     pub refunded_epochs_count: Option<u16>,
+    /// Amount of fees in the storage and processing fee distribution pools
+    pub fees_in_pools: FeesInPools,
 }
 
 impl BlockEndResponse {
@@ -148,6 +151,7 @@ impl BlockEndResponse {
             proposers_paid_count,
             paid_epoch_index,
             refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
+            fees_in_pools: process_block_fees_result.fees_in_pools,
         }
     }
 }
