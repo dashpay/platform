@@ -34,6 +34,7 @@
 
 use crate::fee::credits::{Credits, SignedCredits};
 use nohash_hasher::IntMap;
+use rust_decimal::Decimal;
 
 pub mod distribution;
 
@@ -51,6 +52,9 @@ pub const PERPETUAL_STORAGE_YEARS: u16 = 50;
 
 /// Perpetual storage epochs
 pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR;
+
+/// Perpetual storage epochs
+pub const PERPETUAL_STORAGE_EPOCHS_DEC: Decimal = Decimal::from(PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR);
 
 /// Credits per epoch map
 pub type CreditsPerEpoch = IntMap<EpochIndex, Credits>;

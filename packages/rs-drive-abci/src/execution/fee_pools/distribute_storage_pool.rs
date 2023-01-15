@@ -39,7 +39,7 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::credits::{Credits, SignedCredits};
 use drive::fee::epoch::distribution::{
-    distribute_refunds_to_epochs_collection, distribute_storage_fee_to_epochs_collection,
+    distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
 };
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
@@ -86,7 +86,7 @@ impl Platform {
                 &mut credits_per_epochs,
                 credits,
                 epoch_index,
-                current_epoch_index + 1,
+                current_epoch_index,
             )?;
         }
 

@@ -479,16 +479,13 @@ mod tests {
 
             let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
-            let leftovers = distribute_refunds_to_epochs_collection(
+            subtract_refunds_from_epoch_credits_collection(
                 &mut credits_per_epochs,
                 storage_fee,
                 start_epoch_index,
                 REFUNDED_EPOCH_INDEX,
             )
             .expect("should distribute storage fee");
-
-            // check leftover
-            assert_eq!(leftovers, 180);
 
             // compare them with reference table
             #[rustfmt::skip]
@@ -582,12 +579,7 @@ mod tests {
 
             let total_distributed: SignedCredits = credits_per_epochs.values().sum();
 
-            assert_eq!(
-                total_distributed.to_unsigned()
-                    + leftovers
-                    + skipped_reference_fees.into_iter().sum::<Credits>(),
-                storage_fee
-            );
+            assert_eq!(total_distributed.to_unsigned(), storage_fee);
         }
     }
 
