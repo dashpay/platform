@@ -20,7 +20,6 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
   let IdentityAssetLockProofLockedTransactionMismatchError;
   let InvalidInstantAssetLockProofSignatureError;
   let InvalidIdentityAssetLockTransactionError;
-  let JsonSchemaError;
 
   let validateInstantAssetLockProofStructure;
   let validateInstantAssetLockProofStructureDPP;
@@ -29,7 +28,6 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     ({
       StateTransitionExecutionContext,
       ValidationResult,
-      JsonSchemaError,
       InvalidInstantAssetLockProofError,
       IdentityAssetLockProofLockedTransactionMismatchError,
       InvalidInstantAssetLockProofSignatureError,

@@ -18,7 +18,6 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
   let StateTransitionExecutionContext;
   let ValidationResult;
-  let JsonSchemaError;
   let InvalidAssetLockProofCoreChainHeightError;
   let IdentityAssetLockTransactionIsNotFoundError;
   let InvalidIdentityAssetLockTransactionOutputError;
@@ -30,7 +29,6 @@ describe('validateChainAssetLockProofStructureFactory', () => {
     ({
       StateTransitionExecutionContext,
       ValidationResult,
-      JsonSchemaError,
       InvalidAssetLockProofCoreChainHeightError,
       IdentityAssetLockTransactionIsNotFoundError,
       InvalidIdentityAssetLockTransactionOutputError,
@@ -276,7 +274,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.not.be.called();
     });
 
-    it('should point to existing transaction', async () => {
+    it('should point to existing transaction', async function () {
       stateRepositoryMock.fetchTransaction.returns(null);
 
       const result = await validateChainAssetLockProofStructure(
@@ -295,9 +293,10 @@ describe('validateChainAssetLockProofStructureFactory', () => {
         Buffer.from(transactionHash, 'hex'),
       );
 
-      const { args } = stateRepositoryMock.fetchTransaction.firstCall;
-      expect(args[0]).to.equal(transactionHash);
-      expect(args[1]).to.be.instanceOf(StateTransitionExecutionContext);
+      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+        transactionHash,
+        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+      );
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     });
 
@@ -324,7 +323,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
       );
     });
 
-    it('should point to transaction from block lower than core chain locked height', async () => {
+    it('should point to transaction from block lower than core chain locked height', async function () {
       rawProof.coreChainLockedHeight = 41;
       stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.returns(41);
 
@@ -344,14 +343,15 @@ describe('validateChainAssetLockProofStructureFactory', () => {
       expect(error.getProofCoreChainLockedHeight()).to.equal(41);
       expect(error.getTransactionHeight()).to.equal(42);
 
-      const { args } = stateRepositoryMock.fetchTransaction.firstCall;
-      expect(args[0]).to.equal(transactionHash);
-      expect(args[1]).to.be.instanceOf(StateTransitionExecutionContext);
+      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+        transactionHash,
+        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+      );
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     });
   });
 
-  it('should return valid result', async () => {
+  it('should return valid result', async function () {
     const result = await validateChainAssetLockProofStructure(
       stateRepositoryMock,
       rawProof,
@@ -362,9 +362,10 @@ describe('validateChainAssetLockProofStructureFactory', () => {
     expect(result.isValid()).to.be.true();
     expect(result.getData()).to.deep.equal(publicKeyHash);
 
-    const { args } = stateRepositoryMock.fetchTransaction.firstCall;
-    expect(args[0]).to.equal(transactionHash);
-    expect(args[1]).to.be.instanceOf(StateTransitionExecutionContext);
+    expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+      transactionHash,
+      this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+    );
 
     expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
   });

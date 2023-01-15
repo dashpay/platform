@@ -121,14 +121,13 @@ describe('validatePublicKeySignaturesFactory', () => {
   });
 
   it('should return InvalidIdentityKeySignatureError if signature is not valid', async () => {
-    const keys = identityCreateTransition.getPublicKeys().map((key) => key.toObject());
-    const rawPublicKey2 = keys[1];
+    const rawPublicKey2 = rawIdentityCreateTransition.publicKeys[1];
 
     rawPublicKey2.signature = crypto.randomBytes(65);
 
     const result = await validatePublicKeySignatures(
       rawIdentityCreateTransition,
-      keys,
+      rawIdentityCreateTransition.publicKeys,
     );
 
     await expectValidationError(result, InvalidIdentityKeySignatureError);
@@ -139,11 +138,9 @@ describe('validatePublicKeySignaturesFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const keys = identityCreateTransition.getPublicKeys().map((key) => key.toObject());
-
     const result = await validatePublicKeySignatures(
       rawIdentityCreateTransition,
-      keys,
+      rawIdentityCreateTransition.publicKeys,
       blsAdapter,
     );
 

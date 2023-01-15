@@ -92,7 +92,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
       ([output] = transaction.outputs);
     });
 
-    it('should fetch output from state repository', async () => {
+    it('should fetch output from state repository', async function () {
       const assetLockTransactionOutput = await fetchAssetLockTransactionOutput(
         assetLockProofFixture,
         executionContext,
@@ -100,9 +100,10 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
 
       expect(assetLockTransactionOutput).to.deep.equal(output.toObject());
 
-      const { args } = stateRepositoryMock.fetchTransaction.firstCall;
-      expect(args[0]).to.equal(transactionHash);
-      expect(args[1]).to.be.instanceOf(StateTransitionExecutionContext);
+      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+        transactionHash,
+        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+      );
     });
 
     it('should throw AssetLockTransactionIsNotFoundError when transaction is not found', async () => {
@@ -121,7 +122,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
       }
     });
 
-    it('should return mocked output on dry run', async () => {
+    it('should return mocked output on dry run', async function () {
       executionContext.enableDryRun();
 
       const result = await fetchAssetLockTransactionOutput(
@@ -136,9 +137,10 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
         script: '',
       });
 
-      const { args } = stateRepositoryMock.fetchTransaction.firstCall;
-      expect(args[0]).to.equal(transactionHash);
-      expect(args[1]).to.be.instanceOf(StateTransitionExecutionContext);
+      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+        transactionHash,
+        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+      );
     });
   });
 
