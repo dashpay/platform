@@ -19,8 +19,54 @@ pub struct FeeRemovalOutcome {
     pub actual_fee_paid: FeeResult,
 }
 
+/// The outcome of adding to a previous balance
+struct AddToPreviousBalanceOutcome {
+    /// Is some if the balance was modified
+    balance_modified: Option<Credits>,
+    /// Is some if the negative credit balance was modified
+    negative_credit_balance_modified: Option<Credits>,
+}
+
 impl Drive {
-    fn replace_identity_balance_operation(
+    /// Creates a balance key-value with specified amount
+    /// Must be used only to create initial key-value. To update balance
+    /// use `add_to_identity_balance`, `remove_from_identity_balance`,
+    /// and `apply_balance_change_from_fee_to_identity`
+    pub(in crate::drive::identity) fn insert_identity_balance_operation(
+        &self,
+        identity_id: [u8; 32],
+        balance: Credits,
+    ) -> Result<DriveOperation, Error> {
+        // while i64::MAX could potentially work, best to avoid it.
+        if balance >= MAX_CREDITS {
+            return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                "trying to set balance to over max credits amount (i64::MAX)",
+            )));
+        };
+
+        let balance_path = balance_path_vec();
+
+        Ok(DriveOperation::insert_for_known_path_key_element(
+            balance_path,
+            identity_id.to_vec(),
+            Element::new_sum_item(balance as i64),
+        ))
+    }
+
+    pub(in crate::drive::identity) fn initialize_identity_balance_operation(
+        &self,
+        identity_id: [u8; 32],
+    ) -> DriveOperation {
+        let balance_path = balance_path_vec();
+
+        DriveOperation::insert_for_known_path_key_element(
+            balance_path,
+            identity_id.to_vec(),
+            Element::new_sum_item(0),
+        )
+    }
+
+    fn update_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
         balance: Credits,
@@ -42,25 +88,7 @@ impl Drive {
     }
 
     /// We can set an identities negative credit balance
-    pub(crate) fn insert_identity_negative_credit_operation(
-        &self,
-        identity_id: [u8; 32],
-        negative_credit: Credits,
-    ) -> DriveOperation {
-        let identity_path = identity_path_vec(identity_id.as_slice());
-
-        // The value needs to be replaced without changing storage fees so we use bytes instead of varint
-        let new_negative_credit_bytes = negative_credit.to_be_bytes().to_vec();
-
-        DriveOperation::insert_for_known_path_key_element(
-            identity_path,
-            Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit).to_vec(),
-            Element::new_item(new_negative_credit_bytes),
-        )
-    }
-
-    /// We can set an identities negative credit balance
-    fn replace_identity_negative_credit_operation(
+    pub(in crate::drive::identity) fn update_identity_negative_credit_operation(
         &self,
         identity_id: [u8; 32],
         negative_credit: Credits,
@@ -75,31 +103,6 @@ impl Drive {
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit).to_vec(),
             Element::new_item(new_negative_credit_bytes),
         )
-    }
-
-    /// Creates a balance key-value with specified amount
-    /// Must be used only to create initial key-value. To update balance
-    /// use `add_to_identity_balance`, `remove_from_identity_balance`,
-    /// and `apply_balance_change_from_fee_to_identity`
-    pub(crate) fn insert_identity_balance_operation(
-        &self,
-        identity_id: [u8; 32],
-        balance: Credits,
-    ) -> Result<DriveOperation, Error> {
-        // while i64::MAX could potentially work, best to avoid it.
-        if balance >= MAX_CREDITS {
-            return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
-                "trying to set balance to over max credits amount (i64::MAX)",
-            )));
-        };
-
-        let balance_path = balance_path_vec();
-
-        Ok(DriveOperation::insert_for_known_path_key_element(
-            balance_path,
-            identity_id.to_vec(),
-            Element::new_sum_item(balance as i64),
-        ))
     }
 
     /// Balances are stored in the balance tree under the identity's id
@@ -137,7 +140,7 @@ impl Drive {
         Ok(fees)
     }
 
-    fn add_to_previous_balance_operations(
+    fn add_to_previous_balance(
         &self,
         identity_id: [u8; 32],
         previous_balance: Credits,
@@ -145,7 +148,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<(Option<Credits>, Option<Credits>), Error> {
+    ) -> Result<AddToPreviousBalanceOutcome, Error> {
         if previous_balance == 0 {
             // Deduct debt from added amount if exists
             let negative_balance = self
@@ -161,15 +164,25 @@ impl Drive {
 
             if apply {
                 if negative_balance > added_balance {
-                    Ok((None, Some(negative_balance - added_balance)))
+                    Ok(AddToPreviousBalanceOutcome {
+                        balance_modified: None,
+                        negative_credit_balance_modified: Some(negative_balance - added_balance),
+                    })
                 } else {
-                    let new_negative_balance = if negative_balance > 0 { Some(0) } else { None };
+                    let negative_credit_balance_modified =
+                        if negative_balance > 0 { Some(0) } else { None };
 
-                    Ok((Some(added_balance - negative_balance), new_negative_balance))
+                    Ok(AddToPreviousBalanceOutcome {
+                        balance_modified: Some(added_balance - negative_balance),
+                        negative_credit_balance_modified,
+                    })
                 }
             } else {
                 // For dry run we want worst possible case + some room for tests (1000)
-                Ok((Some(MAX_CREDITS - 1000), Some(0)))
+                Ok(AddToPreviousBalanceOutcome {
+                    balance_modified: Some(MAX_CREDITS - 1000),
+                    negative_credit_balance_modified: Some(0),
+                })
             }
         } else {
             // Deduct added balance from existing one
@@ -180,7 +193,10 @@ impl Drive {
                         "identity balance add overflow error",
                     )))?;
 
-            Ok((Some(new_balance), None))
+            Ok(AddToPreviousBalanceOutcome {
+                balance_modified: Some(new_balance),
+                negative_credit_balance_modified: None,
+            })
         }
     }
 
@@ -211,24 +227,26 @@ impl Drive {
                 "there should always be a balance",
             )))?;
 
-        let (maybe_new_balance, maybe_new_negative_balance) = self
-            .add_to_previous_balance_operations(
-                identity_id,
-                previous_balance,
-                added_balance,
-                estimated_costs_only_with_layer_info.is_none(),
-                transaction,
-                &mut drive_operations,
-            )?;
+        let AddToPreviousBalanceOutcome {
+            balance_modified,
+            negative_credit_balance_modified,
+        } = self.add_to_previous_balance(
+            identity_id,
+            previous_balance,
+            added_balance,
+            estimated_costs_only_with_layer_info.is_none(),
+            transaction,
+            &mut drive_operations,
+        )?;
 
-        if let Some(new_balance) = maybe_new_balance {
+        if let Some(new_balance) = balance_modified {
             drive_operations
-                .push(self.replace_identity_balance_operation(identity_id, new_balance)?);
+                .push(self.update_identity_balance_operation(identity_id, new_balance)?);
         }
 
-        if let Some(new_negative_balance) = maybe_new_negative_balance {
+        if let Some(new_negative_balance) = negative_credit_balance_modified {
             drive_operations.push(
-                self.replace_identity_negative_credit_operation(identity_id, new_negative_balance),
+                self.update_identity_negative_credit_operation(identity_id, new_negative_balance),
             );
         }
 
@@ -283,16 +301,18 @@ impl Drive {
                 "there should always be a balance if apply is set to true",
             )))?;
 
-        let (maybe_new_balance, maybe_new_negative_balance) = match balance_change.change() {
-            BalanceChange::AddToBalance(balance_to_add) => self
-                .add_to_previous_balance_operations(
-                    balance_change.identity_id,
-                    previous_balance,
-                    *balance_to_add,
-                    true,
-                    transaction,
-                    &mut drive_operations,
-                )?,
+        let AddToPreviousBalanceOutcome {
+            balance_modified,
+            negative_credit_balance_modified,
+        } = match balance_change.change() {
+            BalanceChange::AddToBalance(balance_to_add) => self.add_to_previous_balance(
+                balance_change.identity_id,
+                previous_balance,
+                *balance_to_add,
+                true,
+                transaction,
+                &mut drive_operations,
+            )?,
             BalanceChange::RemoveFromBalance {
                 required_removed_balance,
                 desired_removed_balance,
@@ -305,23 +325,31 @@ impl Drive {
                             "identity does not have the required balance",
                         )));
                     }
-                    (Some(0), Some(*desired_removed_balance - previous_balance))
+                    AddToPreviousBalanceOutcome {
+                        balance_modified: Some(0),
+                        negative_credit_balance_modified: Some(
+                            *desired_removed_balance - previous_balance,
+                        ),
+                    }
                 } else {
                     // we have enough balance
-                    (Some(previous_balance - desired_removed_balance), None)
+                    AddToPreviousBalanceOutcome {
+                        balance_modified: Some(previous_balance - desired_removed_balance),
+                        negative_credit_balance_modified: None,
+                    }
                 }
             }
             BalanceChange::NoBalanceChange => unreachable!(),
         };
 
-        if let Some(new_balance) = maybe_new_balance {
+        if let Some(new_balance) = balance_modified {
             drive_operations.push(
-                self.replace_identity_balance_operation(balance_change.identity_id, new_balance)?,
+                self.update_identity_balance_operation(balance_change.identity_id, new_balance)?,
             );
         }
 
-        if let Some(new_negative_balance) = maybe_new_negative_balance {
-            drive_operations.push(self.replace_identity_negative_credit_operation(
+        if let Some(new_negative_balance) = negative_credit_balance_modified {
+            drive_operations.push(self.update_identity_negative_credit_operation(
                 balance_change.identity_id,
                 new_negative_balance,
             ));
@@ -421,7 +449,7 @@ impl Drive {
             )));
         }
 
-        drive_operations.push(self.replace_identity_balance_operation(
+        drive_operations.push(self.update_identity_balance_operation(
             identity_id,
             previous_balance - balance_to_remove,
         )?);
@@ -515,7 +543,7 @@ mod tests {
             let negative_amount = 100;
 
             // Persist negative balance
-            let batch = vec![drive.replace_identity_negative_credit_operation(
+            let batch = vec![drive.update_identity_negative_credit_operation(
                 identity.id.to_buffer(),
                 negative_amount,
             )];
@@ -578,7 +606,7 @@ mod tests {
             let negative_amount = 100;
 
             // Persist negative balance
-            let batch = vec![drive.replace_identity_negative_credit_operation(
+            let batch = vec![drive.update_identity_negative_credit_operation(
                 identity.id.to_buffer(),
                 negative_amount,
             )];
@@ -786,7 +814,8 @@ mod tests {
 
             let fee_result = FeeResult::default_with_fees(0, 0);
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -824,7 +853,8 @@ mod tests {
                 ..Default::default()
             };
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -861,7 +891,7 @@ mod tests {
 
             let fee_result = FeeResult::default_with_fees(100000, 100);
             let fee_change = fee_result
-                .to_balance_change([0; 32], GENESIS_EPOCH_INDEX)
+                .into_balance_change([0; 32], GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let result =
@@ -882,7 +912,7 @@ mod tests {
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
             // Persist negative balance
-            let batch = vec![drive.replace_identity_negative_credit_operation(
+            let batch = vec![drive.update_identity_negative_credit_operation(
                 identity.id.to_buffer(),
                 negative_amount,
             )];
@@ -903,7 +933,8 @@ mod tests {
                 ..Default::default()
             };
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -943,7 +974,7 @@ mod tests {
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
             // Persist negative balance
-            let batch = vec![drive.replace_identity_negative_credit_operation(
+            let batch = vec![drive.update_identity_negative_credit_operation(
                 identity.id.to_buffer(),
                 negative_amount,
             )];
@@ -964,7 +995,8 @@ mod tests {
                 ..Default::default()
             };
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -1016,7 +1048,8 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -1064,7 +1097,8 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -1119,7 +1153,8 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .to_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .clone()
+                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
                 .expect("should calculate fee change for identity");
 
             let result =

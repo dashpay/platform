@@ -204,10 +204,6 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
     ]
 }
 
-pub(crate) fn identity_negative_balance_tree_path(identity_id: &[u8]) -> [&[u8]; 2] {
-    [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id]
-}
-
 /// The root structure of identities
 #[repr(u8)]
 #[derive(Copy, Clone)]

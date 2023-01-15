@@ -139,7 +139,7 @@ impl Drive {
         // We insert the balance
         batch_operations.push(self.insert_identity_balance_operation(id.to_buffer(), balance)?);
 
-        batch_operations.push(self.insert_identity_negative_credit_operation(id.to_buffer(), 0));
+        batch_operations.push(self.initialize_identity_balance_operation(id.to_buffer()));
 
         // We insert the revision
         // todo: we might not need the revision

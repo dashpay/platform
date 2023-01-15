@@ -156,8 +156,8 @@ impl FeeResult {
     }
 
     /// Convenience method to get required removed balance
-    pub fn to_balance_change(
-        &self,
+    pub fn into_balance_change(
+        self,
         identity_id: [u8; 32],
         current_epoch_index: EpochIndex,
     ) -> Result<BalanceChangeForIdentity, Error> {
@@ -197,7 +197,7 @@ impl FeeResult {
 
         Ok(BalanceChangeForIdentity {
             identity_id,
-            fee_result: self.to_owned(),
+            fee_result: self,
             current_epoch_index,
             change: balance_change,
         })
