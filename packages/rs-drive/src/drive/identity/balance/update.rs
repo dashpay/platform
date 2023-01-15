@@ -53,16 +53,16 @@ impl Drive {
         ))
     }
 
-    pub(in crate::drive::identity) fn initialize_identity_balance_operation(
+    pub(in crate::drive::identity) fn initialize_negative_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
     ) -> DriveOperation {
-        let balance_path = balance_path_vec();
+        let identity_path = identity_path_vec(identity_id.as_slice());
 
         DriveOperation::insert_for_known_path_key_element(
-            balance_path,
-            identity_id.to_vec(),
-            Element::new_sum_item(0),
+            identity_path,
+            vec![IdentityRootStructure::IdentityTreeNegativeCredit as u8],
+            Element::new_item(0u64.to_be_bytes().to_vec()),
         )
     }
 
@@ -100,7 +100,7 @@ impl Drive {
 
         DriveOperation::replace_for_known_path_key_element(
             identity_path,
-            Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit).to_vec(),
+            vec![IdentityRootStructure::IdentityTreeNegativeCredit as u8],
             Element::new_item(new_negative_credit_bytes),
         )
     }
