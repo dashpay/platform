@@ -36,18 +36,19 @@
 //! and masternodes receive payouts for previous epoch.
 //!
 
+use std::cmp::Ordering;
+use std::ops::Div;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits, SignedCredits};
 use crate::fee::epoch::{
     CreditsPerEpoch, EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_EPOCHS,
-    PERPETUAL_STORAGE_EPOCHS_DEC, PERPETUAL_STORAGE_YEARS,
+    PERPETUAL_STORAGE_YEARS,
 };
 use crate::fee::get_overflow_error;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlparser::ast::DataType::Decimal;
 
 // TODO: Should be updated from the doc
 
@@ -166,11 +167,24 @@ pub fn calculate_storage_fee_distribution_amount_and_leftovers(
     Ok((storage_fee - skipped_amount - leftovers, leftovers))
 }
 
-fn modify_distribution_table(multiplier: Decimal) -> Vec<Decimal> {
-    FEE_DISTRIBUTION_TABLE
-        .iter()
-        .map(|value| value * multiplier)
-        .collect()
+fn multiplier_from(    start_epoch_index: EpochIndex,
+                       current_epoch_index: EpochIndex) -> Decimal {
+    let current_year = (current_epoch_index - start_epoch_index) / EPOCHS_PER_YEAR;
+    let ratio_used: Decimal = FEE_DISTRIBUTION_TABLE.iter().enumerate().filter_map(|(year, epoch_multiplier)| {
+        match (year as EpochIndex).cmp(&current_year) {
+            Ordering::Less => {
+                None
+            }
+            Ordering::Equal => {
+                let offset = (current_epoch_index - start_epoch_index) % EPOCHS_PER_YEAR;
+                Some(epoch_multiplier.div(Decimal::from(offset)))
+            }
+            Ordering::Greater => {
+                Some(*epoch_multiplier)
+            }
+        }
+    }).sum();
+    dec!(1) / Decimal::from(ratio_used)
 }
 
 /// Distributes storage fees to epochs and call function for each epoch.
@@ -188,7 +202,7 @@ where
         return Ok(0);
     }
 
-    let storage_fee_dec: Decimal = storage_fee.into();
+    let mut storage_fee_dec: Decimal = storage_fee.into();
 
     let mut distribution_leftover_credits = storage_fee;
 
@@ -198,19 +212,15 @@ where
         .map(|epoch_index| epoch_index / EPOCHS_PER_YEAR)
         .unwrap_or_default();
 
-    let fee_distribution_table: [Decimal; PERPETUAL_STORAGE_YEARS as usize] =
+
         if let Some(skip_until_epoch_index) = skip_until_epoch_index {
-            let multiplier = PERPETUAL_STORAGE_EPOCHS_DEC
-                / Decimal::from(
-                    PERPETUAL_STORAGE_EPOCHS - skip_until_epoch_index + start_epoch_index,
-                );
-            modify_distribution_table(multiplier)
-        } else {
-            FEE_DISTRIBUTION_TABLE
-        };
+            let multiplier = multiplier_from(start_epoch_index, skip_until_epoch_index);
+            dbg!(multiplier);
+            storage_fee_dec *= multiplier;
+        }
 
     for year in start_year..PERPETUAL_STORAGE_YEARS {
-        let distribution_for_that_year_ratio = fee_distribution_table[year as usize];
+        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
 
         let year_fee_share = storage_fee_dec * distribution_for_that_year_ratio;
 
@@ -474,7 +484,11 @@ mod tests {
             let start_epoch_index: EpochIndex = 0;
             let expected_leftovers = 102780;
 
-            // At epoch 42 we are asking for a refund from epoch 0 of 1 Million credits
+            // Example: Bob inserted an element into the tree
+            // He paid 1.2 Million credits for this operation that happened at epoch 0.
+            // At epoch 42 we are asking for a refund.
+            // The refund is 1 Million credits that were left from the 1.2.
+
             const REFUNDED_EPOCH_INDEX: EpochIndex = 42;
 
             let mut credits_per_epochs = SignedCreditsPerEpoch::default();
