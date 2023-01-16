@@ -613,8 +613,8 @@ fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions
 }
 
 #[test]
-fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change()
-{
+fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+) {
     let contract_cbor = json_document_to_cbor(
         "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         Some(PROTOCOL_VERSION),

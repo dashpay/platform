@@ -80,16 +80,21 @@ pub fn distribute_storage_fee_to_epochs_collection(
         storage_fee,
         start_epoch_index,
         |epoch_index, epoch_fee_share| {
-            let epoch_credits: SignedCredits =
-                credits_per_epochs.get(&epoch_index).map_or(0, |i| *i);
-
-            let result_storage_fee: SignedCredits = epoch_credits
-                .checked_add(epoch_fee_share.to_signed()?)
-                .ok_or_else(|| {
-                    get_overflow_error("updated epoch credits are not fitting to credits max size")
-                })?;
-
-            credits_per_epochs.insert(epoch_index, result_storage_fee);
+            match credits_per_epochs.entry(epoch_index) {
+                Entry::Occupied(entry) => {
+                    let epoch_credits = entry.into_mut();
+                    *epoch_credits = epoch_credits
+                        .checked_add_unsigned(epoch_fee_share)
+                        .ok_or_else(|| {
+                            get_overflow_error(
+                                "updated epoch credits are not fitting to credits min size",
+                            )
+                        })?;
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(epoch_fee_share.to_signed()?);
+                }
+            }
 
             Ok(())
         },
@@ -110,8 +115,8 @@ pub fn subtract_refunds_from_epoch_credits_collection(
         current_epoch_index + 1,
         |epoch_index, epoch_fee_share| {
             match credits_per_epochs.entry(epoch_index) {
-                Entry::Occupied(occupied_entry) => {
-                    let epoch_credits = occupied_entry.into_mut();
+                Entry::Occupied(entry) => {
+                    let epoch_credits = entry.into_mut();
                     *epoch_credits = epoch_credits
                         .checked_sub_unsigned(epoch_fee_share)
                         .ok_or_else(|| {
@@ -120,8 +125,8 @@ pub fn subtract_refunds_from_epoch_credits_collection(
                             )
                         })?;
                 }
-                Entry::Vacant(epoch_credits) => {
-                    epoch_credits.insert(-epoch_fee_share.to_signed()?);
+                Entry::Vacant(entry) => {
+                    entry.insert(-epoch_fee_share.to_signed()?);
                 }
             }
             Ok(())
@@ -129,18 +134,15 @@ pub fn subtract_refunds_from_epoch_credits_collection(
     )?;
 
     // We need to remove the leftovers from the current epoch
+    if leftovers > 0 {
+        let epoch_credits = credits_per_epochs.entry(current_epoch_index).or_default();
 
-    let epoch_credits: SignedCredits = credits_per_epochs
-        .get(&current_epoch_index)
-        .map_or(0, |i| *i);
-
-    let result_storage_fee: SignedCredits = epoch_credits
-        .checked_sub_unsigned(leftovers)
-        .ok_or_else(|| {
-            get_overflow_error("updated epoch credits are not fitting to credits min size")
-        })?;
-
-    credits_per_epochs.insert(current_epoch_index, result_storage_fee);
+        *epoch_credits = epoch_credits
+            .checked_sub_unsigned(leftovers)
+            .ok_or_else(|| {
+                get_overflow_error("updated epoch credits are not fitting to credits min size")
+            })?;
+    }
 
     Ok(())
 }
@@ -613,7 +615,7 @@ mod tests {
             // this is because there was only 1 refund so leftovers wouldn't have any effect
             #[rustfmt::skip]
             let reference_fees: [SignedCredits;
-                (PERPETUAL_STORAGE_EPOCHS - REFUNDED_EPOCH_INDEX) as usize] = [0, -2760, -2760, -2760,
+                (PERPETUAL_STORAGE_EPOCHS - REFUNDED_EPOCH_INDEX - 1) as usize] = [-2760, -2760, -2760,
                 -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760,
                 -2760, -2760, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640,
                 -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2520, -2520,
