@@ -33,12 +33,13 @@
 //! storage fees from the distribution pool to the epoch pools.
 //!
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::fee::credits::Credits;
+use drive::fee::credits::{Credits, SignedCredits};
 use drive::fee::epoch::distribution::{
-    distribute_refunds_to_epochs_collection, distribute_storage_fee_to_epochs_collection,
+    distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
 };
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
@@ -81,11 +82,11 @@ impl Platform {
         let refunded_epochs_count = refunds.len() as u16;
 
         for (epoch_index, credits) in refunds {
-            distribute_refunds_to_epochs_collection(
+            subtract_refunds_from_epoch_credits_collection(
                 &mut credits_per_epochs,
                 credits,
                 epoch_index,
-                current_epoch_index + 1,
+                current_epoch_index,
             )?;
         }
 

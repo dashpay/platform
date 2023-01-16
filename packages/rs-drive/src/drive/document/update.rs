@@ -1549,9 +1549,12 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            assert_eq!(*removed_credits, 27309075);
+            let refund_equivalent_bytes =
+                removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-            assert_eq!(original_bytes, removed_bytes);
+            assert!(expected_added_bytes > refund_equivalent_bytes);
+            assert_eq!(refund_equivalent_bytes, 1011); // we refunded 1011 instead of 1014
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1668,9 +1671,12 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            assert_eq!(*removed_credits, 27309075);
+            let refund_equivalent_bytes =
+                removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-            assert_eq!(original_bytes, removed_bytes);
+            assert!(expected_added_bytes > refund_equivalent_bytes);
+            assert_eq!(refund_equivalent_bytes, 1011); // we refunded 1011 instead of 1014
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1707,14 +1713,18 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
         let expected_added_bytes = if using_history { 607 } else { 605 };
         assert_eq!(added_bytes, expected_added_bytes);
 
-        let expected_removed_bytes = if using_history { 604 } else { 602 };
-        assert_eq!(removed_bytes, expected_removed_bytes);
+        let expected_removed_credits = if using_history { 16266750 } else { 16212825 };
+        assert_eq!(*removed_credits, expected_removed_credits);
+        let refund_equivalent_bytes =
+            removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+        assert!(expected_added_bytes > refund_equivalent_bytes);
+        let expected_remove_bytes = if using_history { 602 } else { 600 };
+        assert_eq!(refund_equivalent_bytes, expected_remove_bytes); // we refunded 1011 instead of 1014
     }
 
     #[test]

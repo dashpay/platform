@@ -31,54 +31,36 @@
 //!
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
-use base64::Config;
-use chrono::{Duration, Utc};
-use drive::common::helpers::identities::{
-    create_test_masternode_identities, create_test_masternode_identities_with_rng,
-};
-use drive::common::{json_document_to_cbor, setup_contract};
+use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
+use drive::common::json_document_to_cbor;
 use drive::contract::document::Document;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::data_contract::extra::DriveContractExt;
-use drive::dpp::identifier::Identifier;
-use drive::dpp::identity;
 use drive::dpp::identity::{Identity, KeyID};
 use drive::drive::batch::{
-    ContractOperationType, DocumentOperationType, DriveOperationType, GroveDbOpBatch,
-    IdentityOperationType, SystemOperationType,
+    ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
+    SystemOperationType,
 };
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags;
 use drive::drive::flags::StorageFlags::SingleEpoch;
-use drive::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentRefWithoutSerialization, DocumentWithoutSerialization,
-};
+use drive::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use drive::drive::{block_info, Drive};
+use drive::drive::Drive;
 use drive::fee::credits::Credits;
-use drive::fee::epoch::CreditsPerEpoch;
-use drive::fee::result::FeeResult;
-use drive::fee_pools::epochs::Epoch;
-use drive::grovedb::{Transaction, TransactionArg};
 use drive::query::DriveQuery;
 use drive_abci::abci::handlers::TenderdashAbci;
-use drive_abci::abci::messages::{
-    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
-};
-use drive_abci::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
-use drive_abci::common::helpers::setup::{
-    setup_platform_raw, setup_platform_with_initial_state_structure,
-};
+use drive_abci::abci::messages::InitChainRequest;
+use drive_abci::common::helpers::setup::setup_platform_raw;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::engine::ExecutionEvent;
 use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rust_decimal::prelude::ToPrimitive;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::ops::{Div, Range};
+use std::collections::BTreeMap;
+use std::ops::Range;
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -310,7 +292,8 @@ fn create_identities_operations<'a>(
                     amount: identity.balance,
                 });
             let ops = vec![insert_op, system_credits_op];
-            (identity.clone(), ops)
+
+            (identity, ops)
         })
         .collect()
 }
@@ -364,20 +347,24 @@ fn run_chain_for_strategy(
         platform
             .execute_block(*proposer, &block_info, state_transitions)
             .expect("expected to execute a block");
+
         current_time_ms += block_spacing_ms;
         i += 1;
         i %= quorum_size;
     }
+
     let masternode_identity_balances = platform
         .drive
         .fetch_identities_balances(&proposers, None)
         .expect("expected to get balances");
+
     let end_epoch_index = platform
         .block_execution_context
         .take()
         .expect("expected context")
         .epoch_info
         .current_epoch_index;
+
     ChainExecutionOutcome {
         platform,
         masternode_identity_balances,
@@ -450,7 +437,7 @@ fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
 #[test]
 fn run_chain_insert_one_new_identity_and_a_contract() {
     let contract_cbor = json_document_to_cbor(
-        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         Some(PROTOCOL_VERSION),
     );
     let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
@@ -474,7 +461,7 @@ fn run_chain_insert_one_new_identity_and_a_contract() {
 #[test]
 fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
     let contract_cbor = json_document_to_cbor(
-        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         Some(PROTOCOL_VERSION),
     );
     let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
@@ -513,7 +500,7 @@ fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
 #[test]
 fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
     let contract_cbor = json_document_to_cbor(
-        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         Some(PROTOCOL_VERSION),
     );
     let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
@@ -551,7 +538,6 @@ fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change(
     let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
     assert_eq!(outcome.identities.len() as u64, block_count);
     assert_eq!(outcome.masternode_identity_balances.len(), 100);
-    dbg!(&outcome.masternode_identity_balances);
     let all_have_balances = outcome
         .masternode_identity_balances
         .iter()
@@ -619,7 +605,73 @@ fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions
     let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
     assert_eq!(outcome.identities.len() as u64, block_count);
     assert_eq!(outcome.masternode_identity_balances.len(), 100);
-    dbg!(&outcome.masternode_identity_balances);
+    let all_have_balances = outcome
+        .masternode_identity_balances
+        .iter()
+        .all(|(_, balance)| *balance != 0);
+    assert!(all_have_balances, "all masternodes should have a balance");
+}
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+) {
+    let contract_cbor = json_document_to_cbor(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+        Some(PROTOCOL_VERSION),
+    );
+    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+        .expect("contract should be deserialized");
+
+    let document_insertion_op = DocumentOp {
+        contract: contract.clone(),
+        action: DocumentActionInsert,
+        document_type: contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let document_deletion_op = DocumentOp {
+        contract: contract.clone(),
+        action: DocumentActionDelete,
+        document_type: contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let strategy = Strategy {
+        contracts: vec![contract],
+        operations: vec![
+            (
+                document_insertion_op,
+                Frequency {
+                    times_per_block_range: 1..10,
+                    chance_per_block: None,
+                },
+            ),
+            (
+                document_deletion_op,
+                Frequency {
+                    times_per_block_range: 1..4,
+                    chance_per_block: None,
+                },
+            ),
+        ],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    let day_in_ms = 1000 * 60 * 60 * 24;
+    let block_count = 120;
+    let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+    assert_eq!(outcome.identities.len() as u64, block_count);
+    assert_eq!(outcome.masternode_identity_balances.len(), 100);
     let all_have_balances = outcome
         .masternode_identity_balances
         .iter()

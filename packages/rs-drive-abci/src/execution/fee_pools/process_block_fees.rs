@@ -134,7 +134,7 @@ impl Platform {
     /// Adds operations to GroveDB op batch related to processing
     /// and distributing the block fees from the previous block and applies the batch.
     ///
-    /// Returns `ProcessedBlockFeesResult`.
+    /// Returns `ProcessedBlockFeesOutcome`.
     pub fn process_block_fees(
         &self,
         block_info: &BlockStateInfo,
@@ -230,7 +230,7 @@ impl Platform {
             // Verify sum trees
             let credits_verified = self
                 .drive
-                .verify_total_credits(transaction)
+                .calculate_total_credits_balance(transaction)
                 .map_err(Error::Drive)?;
 
             if !credits_verified.ok()? {

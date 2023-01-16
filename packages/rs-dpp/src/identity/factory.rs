@@ -45,7 +45,11 @@ impl Identity {
         Self::random_identities_with_rng(count, key_count, &mut rng)
     }
 
-    pub fn random_identities_with_rng(count: u16, key_count: KeyCount, rng: &mut StdRng) -> Vec<Self> {
+    pub fn random_identities_with_rng(
+        count: u16,
+        key_count: KeyCount,
+        rng: &mut StdRng,
+    ) -> Vec<Self> {
         let mut vec: Vec<Identity> = vec![];
         for _i in 0..count {
             vec.push(Self::random_identity_with_rng(key_count, rng));

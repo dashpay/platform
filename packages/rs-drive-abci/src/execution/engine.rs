@@ -74,8 +74,7 @@ impl Platform {
                     verify_balance_with_dry_run,
                     operations,
                 } => {
-                    let mut enough_balance = true;
-                    if verify_balance_with_dry_run {
+                    let enough_balance = if verify_balance_with_dry_run {
                         let estimated_fee_result = self
                             .drive
                             .apply_drive_operations(
@@ -85,23 +84,34 @@ impl Platform {
                                 Some(transaction),
                             )
                             .map_err(Error::Drive)?;
-                        if identity.balance < estimated_fee_result.total_base_fee() {
-                            enough_balance = false
-                        }
-                    }
+
+                        // TODO: Should take into account refunds as well
+                        identity.balance >= estimated_fee_result.total_base_fee()
+                    } else {
+                        true
+                    };
+
                     if enough_balance {
                         let individual_fee_result = self
                             .drive
                             .apply_drive_operations(operations, true, block_info, Some(transaction))
                             .map_err(Error::Drive)?;
-                        //todo: verify this is the right epoch
-                        let fee_change = individual_fee_result
-                            .to_fee_change(identity.id.to_buffer(), block_info.epoch.index)
+
+                        let balance_change = individual_fee_result
+                            .into_balance_change(identity.id.to_buffer())
                             .map_err(Error::Drive)?;
+
                         let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                            fee_change,
+                            balance_change.clone(),
                             Some(transaction),
                         )?;
+
+                        println!(
+                            "Identity balance {:?} changed {:#?}",
+                            identity.balance,
+                            balance_change.change()
+                        );
+
                         total_fees
                             .checked_add_assign(outcome.actual_fee_paid)
                             .map_err(Error::Drive)?;
@@ -153,9 +163,9 @@ impl Platform {
 
         let total_fees = self.run_events(state_transitions, block_info, &transaction)?;
 
-        let block_end_request = BlockEndRequest {
-            fees: BlockFees::from_fee_result(total_fees),
-        };
+        let fees = BlockFees::from_fee_result(total_fees);
+
+        let block_end_request = BlockEndRequest { fees };
 
         let block_end_response = self
             .block_end(block_end_request, Some(&transaction))

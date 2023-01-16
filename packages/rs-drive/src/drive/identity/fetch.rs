@@ -57,58 +57,6 @@ impl Drive {
             }))
     }
 
-    /// Fetches the Identity's balance from the backing store
-    /// Passing apply as false get the estimated cost instead
-    pub fn fetch_identity_balance(
-        &self,
-        identity_id: [u8; 32],
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<Option<u64>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.fetch_identity_balance_operations(
-            identity_id,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )
-    }
-
-    /// Fetches the Identity's balance from the backing store
-    /// Passing apply as false get the estimated cost instead
-    pub fn fetch_identity_balance_with_fees(
-        &self,
-        identity_id: [u8; 32],
-        block_info: &BlockInfo,
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<(Option<u64>, FeeResult), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        let value = self.fetch_identity_balance_operations(
-            identity_id,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
-        Ok((value, fees))
-    }
-
-    /// The query for the identity balance
-    pub fn identity_balance_query(identity_id: [u8; 32]) -> PathQuery {
-        let balance_path = balance_path_vec();
-        let mut query = Query::new();
-        query.insert_key(identity_id.to_vec());
-        PathQuery {
-            path: balance_path,
-            query: SizedQuery {
-                query,
-                limit: None,
-                offset: None,
-            },
-        }
-    }
-
     /// The query for the identity revision
     pub fn identity_revision_query(identity_id: [u8; 32]) -> PathQuery {
         let identity_path = identity_path_vec(identity_id.as_slice());
@@ -121,50 +69,6 @@ impl Drive {
                 limit: None,
                 offset: None,
             },
-        }
-    }
-
-    /// Creates the operations to get Identity's balance from the backing store
-    /// This gets operations based on apply flag (stateful vs stateless)
-    pub(crate) fn fetch_identity_balance_operations(
-        &self,
-        identity_id: [u8; 32],
-        apply: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
-    ) -> Result<Option<u64>, Error> {
-        let direct_query_type = if apply {
-            DirectQueryType::StatefulDirectQuery
-        } else {
-            // 8 is the size of a i64 used in sum trees
-            DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: true,
-                query_target: QueryTargetValue(8),
-            }
-        };
-
-        let balance_path = balance_path();
-
-        match self.grove_get_raw(
-            balance_path,
-            identity_id.as_slice(),
-            direct_query_type,
-            transaction,
-            drive_operations,
-        ) {
-            Ok(Some(SumItem(balance, _))) if balance >= 0 => Ok(Some(balance as Credits)),
-
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
-
-            Ok(Some(SumItem(..))) => Err(Error::Drive(DriveError::CorruptedElementType(
-                "identity balance was present but was negative",
-            ))),
-
-            Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
-                "identity balance was present but was not identified as a sum item",
-            ))),
-
-            Err(e) => Err(e),
         }
     }
 

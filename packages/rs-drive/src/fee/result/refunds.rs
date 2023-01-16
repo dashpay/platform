@@ -36,7 +36,8 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+use crate::fee::epoch::{CreditsPerEpoch, EpochIndex};
 use crate::fee::get_overflow_error;
 use bincode::Options;
 use costs::storage_cost::removal::{Identifier, StorageRemovalPerEpochByIdentifier};
@@ -55,6 +56,7 @@ impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
     pub fn from_storage_removal(
         storage_removal: StorageRemovalPerEpochByIdentifier,
+        current_epoch_index: EpochIndex,
     ) -> Result<Self, Error> {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
@@ -72,7 +74,13 @@ impl FeeRefunds {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;
 
-                        Ok((epoch_index, credits))
+                        let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                            credits,
+                            epoch_index,
+                            current_epoch_index,
+                        )?;
+
+                        Ok((epoch_index, amount))
                     })
                     .collect::<Result<CreditsPerEpoch, Error>>()
                     .map(|credits_per_epochs| (identifier, credits_per_epochs))
@@ -136,9 +144,41 @@ impl FeeRefunds {
         summed_credits
     }
 
-    /// Passthrough method for into iteration
-    pub fn into_iter(self) -> IntoIter<Identifier, CreditsPerEpoch> {
-        self.0.into_iter()
+    /// Calculates a refund amount of credits per identity excluding specified identity id
+    pub fn calculate_all_refunds_except_identity(
+        &self,
+        identity_id: Identifier,
+    ) -> BTreeMap<Identifier, Credits> {
+        self.iter()
+            .filter_map(|(&identifier, _)| {
+                if identifier == identity_id {
+                    return None;
+                }
+
+                let credits = self
+                    .calculate_refunds_amount_for_identity(identifier)
+                    .unwrap();
+
+                Some((identifier, credits))
+            })
+            .collect()
+    }
+
+    /// Calculates a refund amount of credits for specified identity id
+    pub fn calculate_refunds_amount_for_identity(
+        &self,
+        identity_id: Identifier,
+    ) -> Option<Credits> {
+        let Some(credits_per_epoch) = self.get(&identity_id) else {
+            return None;
+        };
+
+        let credits = credits_per_epoch
+            .iter()
+            .map(|(_epoch_index, credits)| credits)
+            .sum();
+
+        Some(credits)
     }
 
     /// Serialize the structure
@@ -180,5 +220,14 @@ impl FeeRefunds {
                     ))
                 })?,
         ))
+    }
+}
+
+impl IntoIterator for FeeRefunds {
+    type Item = (Identifier, CreditsPerEpoch);
+    type IntoIter = IntoIter<Identifier, CreditsPerEpoch>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }

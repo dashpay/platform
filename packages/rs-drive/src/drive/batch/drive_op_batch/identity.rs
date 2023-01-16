@@ -17,16 +17,6 @@ pub enum IdentityOperationType {
         /// The identity we wish to insert
         identity: Identity,
     },
-    /// Updates an identities balance.
-    UpdateIdentityBalance {
-        /// The identity id of the identity
-        identity_id: [u8; 32],
-        /// The new balance
-        balance: u64,
-        /// Are we replacing an old value for this identity?
-        /// This should most often be set to true
-        is_replace: bool,
-    },
     /// Adds balance to an identity
     AddToIdentityBalance {
         /// The identity id of the identity
@@ -87,15 +77,6 @@ impl DriveOperationConverter for IdentityOperationType {
                     estimated_costs_only_with_layer_info,
                     transaction,
                 ),
-            IdentityOperationType::UpdateIdentityBalance {
-                identity_id,
-                balance,
-                is_replace,
-            } => Ok(vec![drive.update_identity_balance_operation(
-                identity_id,
-                balance,
-                is_replace,
-            )?]),
             IdentityOperationType::AddToIdentityBalance {
                 identity_id,
                 added_balance,

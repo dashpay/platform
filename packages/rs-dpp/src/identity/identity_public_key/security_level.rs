@@ -38,7 +38,7 @@ impl TryFrom<u8> for SecurityLevel {
 
 impl SecurityLevel {
     /// The full range of security levels
-    pub fn full_range() -> [SecurityLevel;4] {
+    pub fn full_range() -> [SecurityLevel; 4] {
         [Self::MASTER, Self::CRITICAL, Self::HIGH, Self::MEDIUM]
     }
     pub fn last() -> SecurityLevel {

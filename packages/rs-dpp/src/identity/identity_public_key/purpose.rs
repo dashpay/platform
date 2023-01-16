@@ -1,9 +1,8 @@
+use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, WITHDRAW};
 use anyhow::bail;
 use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;
-use std::ops::Range;
-use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, WITHDRAW};
 
 #[repr(u8)]
 #[derive(
@@ -24,10 +23,10 @@ impl TryFrom<u8> for Purpose {
     type Error = anyhow::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(Self::AUTHENTICATION),
-            1 => Ok(Self::ENCRYPTION),
-            2 => Ok(Self::DECRYPTION),
-            3 => Ok(Self::WITHDRAW),
+            0 => Ok(AUTHENTICATION),
+            1 => Ok(ENCRYPTION),
+            2 => Ok(DECRYPTION),
+            3 => Ok(WITHDRAW),
             value => bail!("unrecognized purpose: {}", value),
         }
     }
@@ -46,15 +45,15 @@ impl std::fmt::Display for Purpose {
 
 impl Purpose {
     /// The full range of purposes
-    pub fn full_range() -> [Purpose;4] {
+    pub fn full_range() -> [Purpose; 4] {
         [AUTHENTICATION, ENCRYPTION, DECRYPTION, WITHDRAW]
     }
     /// Just the authentication and withdraw purposes
-    pub fn authentication_withdraw() -> [Purpose;2] {
+    pub fn authentication_withdraw() -> [Purpose; 2] {
         [AUTHENTICATION, WITHDRAW]
     }
     /// Just the encryption and decryption purposes
-    pub fn encryption_decryption() -> [Purpose;2] {
+    pub fn encryption_decryption() -> [Purpose; 2] {
         [ENCRYPTION, DECRYPTION]
     }
     /// The last purpose
