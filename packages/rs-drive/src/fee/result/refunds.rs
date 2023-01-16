@@ -32,6 +32,11 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
+/// There are additional work and storage required to process refunds
+/// To protect system from the spam and unnecessary work
+/// a dust refund limit is used
+const MIN_REFUND_LIMIT_BYTES: u32 = 32;
+
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
@@ -63,8 +68,9 @@ impl FeeRefunds {
             .map(|(identifier, bytes_per_epochs)| {
                 bytes_per_epochs
                     .into_iter()
-                    .map(|(key, bytes)| {
-                        let epoch_index = u16::try_from(key).map_err(|_| get_overflow_error("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
+                    .filter(|(_, bytes)| bytes >= &MIN_REFUND_LIMIT_BYTES)
+                    .map(|(encoded_epoch_index, bytes)| {
+                        let epoch_index = u16::try_from(encoded_epoch_index).map_err(|_| get_overflow_error("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
 
                         // TODO We should use multipliers
 
@@ -229,5 +235,32 @@ impl IntoIterator for FeeRefunds {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod from_storage_removal {
+        use super::*;
+        use intmap::IntMap;
+
+        #[test]
+        fn should_filter_out_refunds_under_the_limit() {
+            let identity_id = [0; 32];
+
+            let bytes_per_epoch = IntMap::from_iter([(0, 31), (1, 100)]);
+            let storage_removal =
+                StorageRemovalPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
+
+            let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3)
+                .expect("should create fee refunds");
+
+            let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
+
+            assert!(credits_per_epoch.get(&0).is_none());
+            assert!(credits_per_epoch.get(&1).is_some());
+        }
     }
 }
