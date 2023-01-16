@@ -90,8 +90,6 @@ impl Platform {
             )?;
         }
 
-        dbg!(&credits_per_epochs);
-
         self.drive
             .add_update_epoch_storage_fee_pools_sequence_operations(
                 batch,

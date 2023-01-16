@@ -538,7 +538,6 @@ fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change(
     let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
     assert_eq!(outcome.identities.len() as u64, block_count);
     assert_eq!(outcome.masternode_identity_balances.len(), 100);
-    dbg!(&outcome.masternode_identity_balances);
     let all_have_balances = outcome
         .masternode_identity_balances
         .iter()
