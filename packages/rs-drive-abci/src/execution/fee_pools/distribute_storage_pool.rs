@@ -33,11 +33,10 @@
 //! storage fees from the distribution pool to the epoch pools.
 //!
 
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::fee::credits::{Credits, SignedCredits};
+use drive::fee::credits::Credits;
 use drive::fee::epoch::distribution::{
     distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
 };
@@ -53,8 +52,9 @@ pub struct StorageFeeDistributionOutcome {
 }
 
 impl Platform {
-    /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
-    /// from the distribution pool and pending updates to the epoch pools and returns the leftovers.
+    /// Adds operations to the GroveDB op batch which distribute storage fees
+    /// from the distribution pool and subtract pending refunds
+    /// Returns distribution leftovers
     pub fn add_distribute_storage_fee_to_epochs_operations(
         &self,
         current_epoch_index: EpochIndex,
@@ -74,11 +74,11 @@ impl Platform {
             current_epoch_index,
         )?;
 
-        // Deduct refunds since epoch where data was removed skipping previous (already paid or pay-in-progress) epochs.
-        // We want people to pay for the current epoch
+        // Deduct pending refunds since epoch where data was removed skipping previous
+        // (already paid or pay-in-progress) epochs. We want people to pay for the current epoch
         // Leftovers are ignored since they already deducted from Identity's refund amount
 
-        let refunds = self.drive.fetch_pending_updates(transaction)?;
+        let refunds = self.drive.fetch_pending_epoch_refunds(transaction)?;
         let refunded_epochs_count = refunds.len() as u16;
 
         for (epoch_index, credits) in refunds {
@@ -112,7 +112,7 @@ mod tests {
     use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
 
     mod add_distribute_storage_fee_to_epochs_operations {
-        use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
+        use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee::credits::Creditable;
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
         use drive::fee_pools::epochs::Epoch;
@@ -188,8 +188,8 @@ mod tests {
             let refunds =
                 CreditsPerEpoch::from_iter([(0, 10000), (1, 15000), (2, 20000), (3, 25000)]);
 
-            add_update_pending_epoch_storage_pool_update_operations(&mut batch, refunds.clone())
-                .expect("should update pending updates");
+            add_update_pending_epoch_refunds_operations(&mut batch, refunds.clone())
+                .expect("should update pending epoch refunds");
 
             platform
                 .drive

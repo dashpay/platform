@@ -33,24 +33,32 @@
 //! after state transition execution, but epoch pools must be updated
 //! as well to deduct refunded amount. To do not update every block all
 //! storage epoch pools, we introduce additional structure which aggregate
-//! all pending updates for epoch storage pools and apply them during
+//! all pending refunds for epochs and apply them during
 //! storage fee distribution on epoch change.
 //!
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee_pools::pools_pending_updates_path_vec;
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::credits::Creditable;
 use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;
+use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 
+/// Returns the path to pending epoch refunds
+pub fn pending_epoch_refunds_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Pools as u8],
+        KEY_PENDING_EPOCH_REFUNDS.to_vec(),
+    ]
+}
+
 impl Drive {
-    /// Fetches all pending epoch pool updates
-    pub fn fetch_pending_updates(
+    /// Fetches all pending epoch refunds
+    pub fn fetch_pending_epoch_refunds(
         &self,
         transaction: TransactionArg,
     ) -> Result<CreditsPerEpoch, Error> {
@@ -61,7 +69,7 @@ impl Drive {
         let (query_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_pending_updates_path_vec(), query),
+                &PathQuery::new_unsized(pending_epoch_refunds_path_vec(), query),
                 transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
@@ -84,16 +92,15 @@ impl Drive {
                     Ok((epoch_index, credits.to_unsigned()))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "pending updates credits must be sum items",
+                        "pending refund credits must be sum items",
                     )))
                 }
             })
             .collect::<Result<CreditsPerEpoch, Error>>()
     }
 
-    /// Fetches existing pending epoch pool updates using specified epochs
-    /// and returns merged result
-    pub fn fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
+    /// Fetches pending epoch refunds and adds them to specified collection
+    pub fn fetch_and_add_pending_epoch_refunds_to_collection(
         &self,
         mut credits_per_epoch: CreditsPerEpoch,
         transaction: TransactionArg,
@@ -114,7 +121,7 @@ impl Drive {
         let (query_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_pending_updates_path_vec(), query),
+                &PathQuery::new_unsized(pending_epoch_refunds_path_vec(), query),
                 transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
@@ -127,21 +134,23 @@ impl Drive {
             let epoch_index =
                 u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
-                        "epoch index for pending pool updates must be u16",
+                        "epoch index for pending epoch refunds must be u16",
                     ))
                 })?);
 
             let existing_credits = credits_per_epoch.get_mut(&epoch_index).ok_or(Error::Drive(
-                DriveError::CorruptedCodeExecution("pending updates should contain fetched epochs"),
+                DriveError::CorruptedCodeExecution(
+                    "pending epoch refunds should contain fetched epochs",
+                ),
             ))?;
 
             if let Element::SumItem(credits, _) = element {
                 *existing_credits = existing_credits
                     .checked_add(credits.to_unsigned())
-                    .ok_or_else(|| get_overflow_error("pending updates credits overflow"))?;
+                    .ok_or_else(|| get_overflow_error("pending epoch refunds credits overflow"))?;
             } else {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "pending updates credits must be sum items",
+                    "pending epoch refunds credits must be sum items",
                 )));
             }
         }
@@ -149,8 +158,8 @@ impl Drive {
         Ok(credits_per_epoch)
     }
 
-    /// Adds operations to delete pending epoch pool updates except specified epochs
-    pub fn add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
+    /// Adds operations to delete pending epoch refunds except epochs from provided collection
+    pub fn add_delete_pending_epoch_refunds_except_specified_operations(
         &self,
         batch: &mut GroveDbOpBatch,
         credits_per_epoch: &CreditsPerEpoch,
@@ -164,7 +173,7 @@ impl Drive {
         let (query_result, _) = self
             .grove
             .query_raw(
-                &PathQuery::new_unsized(pools_pending_updates_path_vec(), query),
+                &PathQuery::new_unsized(pending_epoch_refunds_path_vec(), query),
                 transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
@@ -184,7 +193,7 @@ impl Drive {
                 continue;
             }
 
-            batch.add_delete(pools_pending_updates_path_vec(), epoch_index_key);
+            batch.add_delete(pending_epoch_refunds_path_vec(), epoch_index_key);
         }
 
         Ok(())
@@ -192,7 +201,7 @@ impl Drive {
 }
 
 /// Adds GroveDB batch operations to update pending epoch storage pool updates
-pub fn add_update_pending_epoch_storage_pool_update_operations(
+pub fn add_update_pending_epoch_refunds_operations(
     batch: &mut GroveDbOpBatch,
     credits_per_epoch: CreditsPerEpoch,
 ) -> Result<(), Error> {
@@ -201,7 +210,7 @@ pub fn add_update_pending_epoch_storage_pool_update_operations(
 
         let element = Element::new_sum_item(-credits.to_signed()?);
 
-        batch.add_insert(pools_pending_updates_path_vec(), epoch_index_key, element);
+        batch.add_insert(pending_epoch_refunds_path_vec(), epoch_index_key, element);
     }
 
     Ok(())
@@ -212,7 +221,7 @@ mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    mod fetch_and_merge_with_existing_pending_epoch_storage_pool_updates {
+    mod fetch_and_add_pending_epoch_refunds_to_collection {
         use super::*;
 
         #[test]
@@ -221,18 +230,15 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            // Store initial set of pending updates
+            // Store initial set of pending refunds
 
-            let initial_pending_updates =
+            let initial_pending_refunds =
                 CreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
             let mut batch = GroveDbOpBatch::new();
 
-            add_update_pending_epoch_storage_pool_update_operations(
-                &mut batch,
-                initial_pending_updates,
-            )
-            .expect("should update pending epoch updates");
+            add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
+                .expect("should update pending epoch updates");
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
@@ -240,24 +246,24 @@ mod tests {
 
             // Fetch and merge
 
-            let new_pending_updates =
+            let new_pending_refunds =
                 CreditsPerEpoch::from_iter([(1, 15), (3, 25), (30, 195), (41, 150)]);
 
-            let updated_pending_updates = drive
-                .fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
-                    new_pending_updates,
+            let updated_pending_refunds = drive
+                .fetch_and_add_pending_epoch_refunds_to_collection(
+                    new_pending_refunds,
                     Some(&transaction),
                 )
                 .expect("should fetch and merge pending updates");
 
-            let expected_pending_updates =
+            let expected_pending_refunds =
                 CreditsPerEpoch::from_iter([(1, 30), (3, 50), (30, 195), (41, 150)]);
 
-            assert_eq!(updated_pending_updates, expected_pending_updates);
+            assert_eq!(updated_pending_refunds, expected_pending_refunds);
         }
     }
 
-    mod add_delete_pending_epoch_storage_pool_updates_except_specified_operations {
+    mod add_delete_pending_epoch_refunds_except_specified_operations {
         use super::*;
         use grovedb::batch::Op;
 
@@ -267,46 +273,43 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            // Store initial set of pending updates
+            // Store initial set of pending refunds
 
-            let initial_pending_updates =
+            let initial_pending_refunds =
                 CreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
             let mut batch = GroveDbOpBatch::new();
 
-            add_update_pending_epoch_storage_pool_update_operations(
-                &mut batch,
-                initial_pending_updates,
-            )
-            .expect("should update pending epoch updates");
+            add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
+                .expect("should update pending epoch updates");
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            // Delete existing pending updates expect specified pending updates
+            // Delete existing pending refunds except specified epochs
 
-            let new_pending_updates = CreditsPerEpoch::from_iter([(1, 15), (3, 25)]);
+            let new_pending_refunds = CreditsPerEpoch::from_iter([(1, 15), (3, 25)]);
 
             let mut batch = GroveDbOpBatch::new();
 
             drive
-                .add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
+                .add_delete_pending_epoch_refunds_except_specified_operations(
                     &mut batch,
-                    &new_pending_updates,
+                    &new_pending_refunds,
                     Some(&transaction),
                 )
                 .expect("should fetch and merge pending updates");
 
-            let expected_pending_updates =
+            let expected_pending_refunds =
                 CreditsPerEpoch::from_iter([(7, 95), (9, 100), (12, 120)]);
 
-            assert_eq!(batch.len(), expected_pending_updates.len());
+            assert_eq!(batch.len(), expected_pending_refunds.len());
 
             for operation in batch.into_iter() {
                 assert!(matches!(operation.op, Op::Delete));
 
-                assert_eq!(operation.path.to_path(), pools_pending_updates_path_vec());
+                assert_eq!(operation.path.to_path(), pending_epoch_refunds_path_vec());
 
                 let epoch_index_key = operation.key.get_key();
                 let epoch_index = u16::from_be_bytes(
@@ -315,7 +318,7 @@ mod tests {
                         .expect("should convert to u16 bytes"),
                 );
 
-                assert!(expected_pending_updates.contains_key(&epoch_index));
+                assert!(expected_pending_refunds.contains_key(&epoch_index));
             }
         }
     }

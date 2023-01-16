@@ -36,7 +36,7 @@
 use std::option::Option::None;
 
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
+use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 
@@ -122,7 +122,7 @@ impl Platform {
             )?;
 
         self.drive
-            .add_delete_pending_epoch_storage_pool_updates_except_specified_operations(
+            .add_delete_pending_epoch_refunds_except_specified_operations(
                 batch,
                 &block_fees.fee_refunds,
                 transaction,
@@ -202,9 +202,9 @@ impl Platform {
             &mut batch,
         )?;
 
-        let pending_epoch_pool_updates = if !epoch_info.is_epoch_change {
+        let pending_epoch_refunds = if !epoch_info.is_epoch_change {
             self.drive
-                .fetch_and_merge_with_existing_pending_epoch_storage_pool_updates(
+                .fetch_and_add_pending_epoch_refunds_to_collection(
                     block_fees.fee_refunds,
                     transaction,
                 )?
@@ -212,10 +212,7 @@ impl Platform {
             block_fees.fee_refunds
         };
 
-        add_update_pending_epoch_storage_pool_update_operations(
-            &mut batch,
-            pending_epoch_pool_updates,
-        )?;
+        add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds)?;
 
         self.drive.grove_apply_batch(batch, false, transaction)?;
 

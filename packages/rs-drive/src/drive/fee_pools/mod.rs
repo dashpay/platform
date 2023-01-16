@@ -31,21 +31,19 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Credits, SignedCredits};
-use crate::fee::epoch::{CreditsPerEpoch, EpochIndex, SignedCreditsPerEpoch};
+use crate::fee::credits::SignedCredits;
+use crate::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::{paths, Epoch};
-use crate::fee_pools::epochs_root_tree_key_constants::{
-    KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL,
-};
+use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use itertools::Itertools;
 
 /// Epochs module
 pub mod epochs;
-pub mod pending_epoch_updates;
+pub mod pending_epoch_refunds;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
 
@@ -57,14 +55,6 @@ pub fn pools_path() -> [&'static [u8]; 1] {
 /// Returns the path to the Pools subtree as a mutable vector.
 pub fn pools_vec_path() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Pools as u8]]
-}
-
-/// Returns the path to pending pool updates
-pub fn pools_pending_updates_path_vec() -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::Pools as u8],
-        KEY_PENDING_POOL_UPDATES.to_vec(),
-    ]
 }
 
 /// Returns the path to the aggregate storage fee distribution pool.
