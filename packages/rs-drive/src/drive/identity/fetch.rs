@@ -135,10 +135,11 @@ impl Drive {
             drive_operations,
         ) {
             Ok(Some(Item(encoded_revision, _))) => {
-                let (revision, _) =
-                    u64::decode_var(encoded_revision.as_slice()).ok_or(Error::Drive(
-                        DriveError::CorruptedElementType("identity revision could not be decoded"),
-                    ))?;
+                let revision = u64::from_be_bytes(encoded_revision.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedElementType(
+                        "identity revision was not 8 bytes as expected",
+                    ))
+                })?);
 
                 Ok(Some(revision))
             }

@@ -121,9 +121,11 @@ impl DriveOperationConverter for IdentityOperationType {
             IdentityOperationType::UpdateIdentityRevision {
                 identity_id,
                 revision,
-            } => Ok(vec![
-                drive.update_identity_revision_operation(identity_id, revision)
-            ]),
+            } => Ok(vec![drive.update_identity_revision_operation(
+                identity_id,
+                revision,
+                estimated_costs_only_with_layer_info,
+            )]),
         }
     }
 }

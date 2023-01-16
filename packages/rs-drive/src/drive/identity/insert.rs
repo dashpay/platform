@@ -143,7 +143,8 @@ impl Drive {
 
         // We insert the revision
         // todo: we might not need the revision
-        batch_operations.push(self.update_identity_revision_operation(id.to_buffer(), revision));
+        batch_operations
+            .push(self.initialize_identity_revision_operation(id.to_buffer(), revision));
 
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),

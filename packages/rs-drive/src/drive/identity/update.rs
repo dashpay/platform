@@ -21,6 +21,7 @@ use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
+    //todo: this should probably not exist
     /// Update revision for specific identity
     pub fn update_identity_revision(
         &self,
@@ -32,13 +33,17 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
-        let estimated_costs_only_with_layer_info = if apply {
+        let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
         };
 
-        let batch_operations = vec![self.update_identity_revision_operation(identity_id, revision)];
+        let batch_operations = vec![self.update_identity_revision_operation(
+            identity_id,
+            revision,
+            &mut estimated_costs_only_with_layer_info,
+        )];
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
@@ -54,17 +59,41 @@ impl Drive {
         Ok(fees)
     }
 
+    /// Initialize the revision of the identity, should only be called on create identity
+    /// Revisions get bumped on all changes except for the balance and negative credit fields
+    pub(in crate::drive::identity) fn initialize_identity_revision_operation(
+        &self,
+        identity_id: [u8; 32],
+        revision: Revision,
+    ) -> DriveOperation {
+        let identity_path = identity_path_vec(identity_id.as_slice());
+        let revision_bytes = revision.to_be_bytes().to_vec();
+        DriveOperation::insert_for_known_path_key_element(
+            identity_path,
+            Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),
+            Element::new_item(revision_bytes),
+        )
+    }
+
     /// Update the revision of the identity
     /// Revisions get bumped on all changes except for the balance and negative credit fields
     pub(crate) fn update_identity_revision_operation(
         &self,
         identity_id: [u8; 32],
         revision: Revision,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
     ) -> DriveOperation {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_update_revision(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
+        }
         let identity_path = identity_path_vec(identity_id.as_slice());
-        //todo: can this be a var vec?
-        let revision_bytes = revision.encode_var_vec();
-        DriveOperation::insert_for_known_path_key_element(
+        let revision_bytes = revision.to_be_bytes().to_vec();
+        DriveOperation::replace_for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),
             Element::new_item(revision_bytes),
@@ -599,8 +628,8 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 832780,
-                    removed_bytes_from_system: 8,
+                    processing_fee: 4632950,
+                    removed_bytes_from_system: 0,
                     ..Default::default()
                 }
             );
