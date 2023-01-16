@@ -24,7 +24,12 @@ pub struct FetchTransactionResponse {
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(any(test, feature="mocks"), automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
+#[cfg_attr(any(test, feature="mocks"), automock(
+    type ConversionError=Infallible;
+    type FetchDataContract=DataContract;
+    type FetchIdentity=Identity;
+    type FetchTransaction=FetchTransactionResponse;
+))]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     type ConversionError: Into<ProtocolError>;
