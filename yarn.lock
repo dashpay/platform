@@ -1296,7 +1296,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
@@ -1329,7 +1329,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     assert-browserify: ^2.0.0
@@ -1404,7 +1404,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
@@ -1451,7 +1451,7 @@ __metadata:
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     chai: ^4.3.4
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1473,14 +1473,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.19.44":
+"@dashevo/dashcore-lib@github:dashevo/dashcore-lib#feat-update-bls":
   version: 0.19.44
-  resolution: "@dashevo/dashcore-lib@npm:0.19.44"
+  resolution: "@dashevo/dashcore-lib@https://github.com/dashevo/dashcore-lib.git#commit=606f9d6ab613ae2b804b82c99632e95d5ffd0d10"
   dependencies:
+    "@dashevo/bls": ~1.0.0-beta.2
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
     bloom-filter: ^0.2.0
-    bls-signatures: ^0.2.5
     bn.js: ^4.12.0
     bs58: =4.0.1
     elliptic: ^6.5.4
@@ -1488,7 +1488,7 @@ __metadata:
     lodash: ^4.17.20
     ripemd160: ^2.0.2
     unorm: ^1.6.0
-  checksum: 00fb3a109a34aaf1f9730389518329fd6e895798d6c68ba983a317e60e7c505e6055bf3bf78ff4c2faf3e186118580ec27ddc9d7679f4bd4dd1710976ea729bf
+  checksum: 92d59481f3f750ec334e944605c3de610375e3be6cdb2db16c4a4cc2af452d688efa4cd7b43565b49e649b19b0c0d29991fc457ddbed7d99ea6affedb55aee31
   languageName: node
   linkType: hard
 
@@ -1573,7 +1573,7 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -1636,7 +1636,7 @@ __metadata:
   dependencies:
     "@dashevo/abci": "github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
@@ -1748,7 +1748,7 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -1869,7 +1869,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     assert: ^2.0.0
@@ -1923,7 +1923,7 @@ __metadata:
   dependencies:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@dashevo/bls": ~1.0.0-beta.2
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/wasm-re2": ~1.0.2
@@ -5656,7 +5656,7 @@ __metadata:
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
@@ -5719,7 +5719,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls"
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.1

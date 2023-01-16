@@ -48,7 +48,7 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.44",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/docker-compose": "^0.24.1",

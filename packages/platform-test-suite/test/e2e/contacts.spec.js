@@ -20,6 +20,9 @@ describe('e2e', () => {
 
     let dataContractDocumentSchemas;
 
+    let diff;
+    let startBlock;
+
     before(() => {
       dataContractDocumentSchemas = {
         profile: {
@@ -90,9 +93,13 @@ describe('e2e', () => {
     describe('Bob', () => {
       it('should create user wallet and identity', async () => {
         // Create Bob wallet
-        bobClient = await createClientWithFundedWallet(200000);
+        bobClient = await createClientWithFundedWallet(500000);
 
         bobIdentity = await bobClient.platform.identities.register(190000);
+
+        console.log(bobIdentity.getMetadata());
+
+        startBlock = bobIdentity.getMetadata().blockHeight;
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -281,6 +288,12 @@ describe('e2e', () => {
           'contacts.contact',
           { where: [['$id', '==', aliceContactAcceptance.getId()]] },
         );
+
+        const bi = await bobClient.platform.identities.register(250);
+
+        console.log(bi.getMetadata());
+
+        console.log('Diff', bi.getMetadata().blockHeight - startBlock);
 
         expect(fetchedAliceContactAcceptance).to.not.exist();
       });

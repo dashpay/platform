@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "~0.19.44",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/wasm-re2": "~1.0.2",
