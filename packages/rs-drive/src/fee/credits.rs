@@ -84,7 +84,7 @@ impl Creditable for Credits {
         Self::decode_var(vec.as_slice())
             .map(|(n, _)| n)
             .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                "pending updates epoch index for must be u16",
+                "pending refunds epoch index for must be u16",
             )))
     }
 
@@ -105,7 +105,7 @@ impl Creditable for SignedCredits {
         Self::decode_var(vec.as_slice())
             .map(|(n, _)| n)
             .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                "pending updates epoch index for must be u16",
+                "pending refunds epoch index for must be u16",
             )))
     }
 

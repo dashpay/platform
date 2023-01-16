@@ -34,7 +34,7 @@ use crate::fee::credits::{Creditable, Credits};
 use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use crate::fee_pools::epochs::Epoch;
 use crate::fee_pools::epochs_root_tree_key_constants::{
-    KEY_PENDING_POOL_UPDATES, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
+    KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
 };
 use grovedb::batch::GroveDbOp;
 use grovedb::Element;
@@ -52,7 +52,7 @@ pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Resul
     // Init next epoch to pay
     batch.push(update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
 
-    add_create_pending_pool_updates_tree_operations(batch);
+    add_create_pending_epoch_refunds_tree_operations(batch);
 
     // We need to insert 50 years worth of epochs,
     // with 20 epochs per year that's 1000 epochs
@@ -65,8 +65,8 @@ pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Resul
 }
 
 /// Adds operations to batch to create pending pool updates tree
-pub fn add_create_pending_pool_updates_tree_operations(batch: &mut GroveDbOpBatch) {
-    batch.add_insert_empty_sum_tree(pools_vec_path(), KEY_PENDING_POOL_UPDATES.to_vec());
+pub fn add_create_pending_epoch_refunds_tree_operations(batch: &mut GroveDbOpBatch) {
+    batch.add_insert_empty_sum_tree(pools_vec_path(), KEY_PENDING_EPOCH_REFUNDS.to_vec());
 }
 
 /// Updates the storage fee distribution pool with a new storage fee
