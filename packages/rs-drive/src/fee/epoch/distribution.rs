@@ -38,7 +38,7 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits, SignedCredits};
+use crate::fee::credits::{Creditable, Credits};
 use crate::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
@@ -335,7 +335,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fee::credits::{Creditable, MAX_CREDITS};
+    use crate::fee::credits::{SignedCredits, MAX_CREDITS};
     use crate::fee::epoch::GENESIS_EPOCH_INDEX;
     use crate::fee::epoch::PERPETUAL_STORAGE_EPOCHS;
     use rust_decimal::Decimal;
@@ -356,7 +356,7 @@ mod tests {
         }
 
         #[test]
-        fn should_create_multiplier_for_epochs_since_24_and_repayed_since_43() {
+        fn should_create_multiplier_for_epochs_since_24_and_not_paid_since_43() {
             // there were 19 epochs
             let epoch_0_cost = dec!(19.0) * dec!(0.05000) / dec!(20.0);
 
