@@ -118,7 +118,7 @@ jobs:
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
         env:
-          CARGO_BUILD_PROFILE: test
+          ENABLE_CORE_RPC_MOCKING: true
 
       - name: Build SDK
         run: yarn build --filter "+dash"
