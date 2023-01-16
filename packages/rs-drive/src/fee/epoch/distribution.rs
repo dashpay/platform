@@ -356,7 +356,7 @@ mod tests {
         }
 
         #[test]
-        fn should_create_multiplier_for_epochs_since_24_and_not_paid_since_43() {
+        fn should_create_multiplier_for_epochs_since_24_and_repaid_since_43() {
             // there were 19 epochs
             let epoch_0_cost = dec!(19.0) * dec!(0.05000) / dec!(20.0);
 
