@@ -1,5 +1,8 @@
 use dpp::{data_contract::extra::IndexProperty, util::json_schema::Index};
 use wasm_bindgen::prelude::*;
+use serde::Serialize;
+
+use crate::{errors::RustConversionError, with_js_error};
 
 #[wasm_bindgen(js_name=IndexProperty)]
 #[derive(Debug, Clone)]
@@ -57,5 +60,12 @@ impl IndexDefinitionWasm {
     #[wasm_bindgen(js_name=isUnique)]
     pub fn is_unique(&self) -> bool {
         self.inner.unique
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let object = with_js_error!(self.inner.serialize(&serializer))?;
+        Ok(object)
     }
 }

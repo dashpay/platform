@@ -43,10 +43,17 @@ describe('validateDataContractFactory', () => {
   let ValidationResult;
   let JsonSchemaCompilationError;
   let IncompatibleRe2PatternError;
+  let DuplicateIndexError;
+  let UndefinedIndexPropertyError;
+  let UniqueIndicesLimitReachedError;
+  let SystemPropertyIndexAlreadyPresentError;
+  let InvalidIndexPropertyTypeError;
+  let InvalidCompoundIndexError;
+  let InvalidIndexedPropertyConstraintError;
 
   before(async () => {
     ({
-      DataContractValidator, ValidationResult, JsonSchemaCompilationError, IncompatibleRe2PatternError,
+      DataContractValidator, ValidationResult, JsonSchemaCompilationError, IncompatibleRe2PatternError, DuplicateIndexError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, SystemPropertyIndexAlreadyPresentError, InvalidIndexPropertyTypeError, InvalidCompoundIndexError, InvalidIndexedPropertyConstraintError,
     } = await loadWasmDpp());
   });
 
@@ -1157,1074 +1164,1120 @@ describe('validateDataContractFactory', () => {
         expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
       });
 
-    //   describe('byteArray', () => {
-    //     it('should be a boolean', async () => {
-    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = 1;
+      describe('byteArray', () => {
+        it('should be a boolean', async () => {
+          const rawDataContract = dataContract.toObject();
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = 1;
 
-    //       const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-    //       await expectJsonSchemaError(result, 2);
+          await expectJsonSchemaError(result, 4);
 
-    //       const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-    //       expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
-    //       expect(error.getKeyword()).to.equal('type');
-    //       expect(error.getParams().type).to.equal('boolean');
-    //     });
+          expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
+          expect(error.getKeyword()).to.equal('type');
+          expect(error.getParams().type).to.equal('boolean');
+        });
 
-    //     it('should equal to true', async () => {
-    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = false;
+        it('should equal to true', async () => {
+          const rawDataContract = dataContract.toObject();
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.byteArray = false;
 
-    //       const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-    //       await expectJsonSchemaError(result, 2);
+          await expectJsonSchemaError(result, 2);
 
-    //       const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-    //       expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
-    //       expect(error.getKeyword()).to.equal('const');
-    //       expect(error.getParams().allowedValue).to.equal(true);
-    //     });
+          expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/byteArray');
+          expect(error.getKeyword()).to.equal('const');
+          expect(error.getParams().allowedValue).to.equal(true);
+        });
 
-    //     it('should be used with type `array`', async () => {
-    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.type = 'string';
+        it('should be used with type `array`', async () => {
+          const rawDataContract = dataContract.toObject();
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.type = 'string';
+          
+          const result = await validateDataContract(rawDataContract);
 
-    //       const result = await validateDataContract(rawDataContract);
+          await expectJsonSchemaError(result, 2);
 
-    //       await expectJsonSchemaError(result, 2);
+          const [error] = result.getErrors();
 
-    //       const [error] = result.getErrors();
+          expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
+          expect(error.getKeyword()).to.equal('const');
+        });
 
-    //       expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/byteArrayField/type');
-    //       expect(error.getKeyword()).to.equal('const');
-    //     });
+        it('should not be used with `items`', async () => {
+          const rawDataContract = dataContract.toObject();
+          rawDataContract.documents.withByteArrays.properties.byteArrayField.items = {
+            type: 'string',
+          };
 
-    //     it('should not be used with `items`', async () => {
-    //       rawDataContract.documents.withByteArrays.properties.byteArrayField.items = {
-    //         type: 'string',
-    //       };
+          const result = await validateDataContract(rawDataContract);
 
-    //       const result = await validateDataContract(rawDataContract);
+          expectValidationError(result, JsonSchemaCompilationError);
 
-    //       expectValidationError(result, JsonSchemaCompilationError);
+          const [error] = result.getErrors();
 
-    //       const [error] = result.getErrors();
+          expect(error.getCode()).to.equal(1004);
+        });
+      });
 
-    //       expect(error.getCode()).to.equal(1004);
-    //       expect(error.message).to.equal("'byteArray' should not be used with 'items'");
-    //     });
-    //   });
+      describe('contentMediaType', () => {
+        describe('application/x.dash.dpp.identifier', () => {
+          it('should be used with byte array only', async () => {
+            const rawDataContract = dataContract.toObject();
+            delete rawDataContract.documents.withByteArrays.properties.identifierField.byteArray;
 
-    //   describe('contentMediaType', () => {
-    //     describe('application/x.dash.dpp.identifier', () => {
-    //       it('should be used with byte array only', async () => {
-    //         delete rawDataContract.documents.withByteArrays.properties.identifierField.byteArray;
+            const result = await validateDataContract(rawDataContract);
 
-    //         const result = await validateDataContract(rawDataContract);
+            await expectJsonSchemaError(result, 4);
 
-    //         await expectJsonSchemaError(result, 2);
+            const [error] = result.getErrors();
 
-    //         const [error] = result.getErrors();
+            expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField');
+            expect(error.getKeyword()).to.equal('required');
+          });
 
-    //         expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField');
-    //         expect(error.getKeyword()).to.equal('required');
-    //       });
+          it('should be used with byte array not shorter than 32 bytes', async () => {
+            const rawDataContract = dataContract.toObject();
+            rawDataContract.documents.withByteArrays.properties.identifierField.minItems = 31;
 
-    //       it('should be used with byte array not shorter than 32 bytes', async () => {
-    //         rawDataContract.documents.withByteArrays.properties.identifierField.minItems = 31;
+            const result = await validateDataContract(rawDataContract);
 
-    //         const result = await validateDataContract(rawDataContract);
+            await expectJsonSchemaError(result, 2);
 
-    //         await expectJsonSchemaError(result, 2);
+            const [error] = result.getErrors();
 
-    //         const [error] = result.getErrors();
+            expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
+            expect(error.getKeyword()).to.equal('const');
+          });
 
-    //         expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField/minItems');
-    //         expect(error.getKeyword()).to.equal('const');
-    //       });
+          it('should be used with byte array not longer than 32 bytes', async () => {
+            const rawDataContract = dataContract.toObject();
+            rawDataContract.documents.withByteArrays.properties.identifierField.maxItems = 31;
 
-    //       it('should be used with byte array not longer than 32 bytes', async () => {
-    //         rawDataContract.documents.withByteArrays.properties.identifierField.maxItems = 31;
+            const result = await validateDataContract(rawDataContract);
 
-    //         const result = await validateDataContract(rawDataContract);
+            await expectJsonSchemaError(result, 2);
 
-    //         await expectJsonSchemaError(result, 2);
+            const [error] = result.getErrors();
 
-    //         const [error] = result.getErrors();
-
-    //         expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
-    //         expect(error.getKeyword()).to.equal('const');
-    //       });
-    //     });
-    //   });
+            expect(error.getInstancePath()).to.equal('/documents/withByteArrays/properties/identifierField/maxItems');
+            expect(error.getKeyword()).to.equal('const');
+          });
+        });
+     });
     });
   });
 
-  // describe('indices', () => {
-  //   it('should be an array', async () => {
-  //     rawDataContract.documents.indexedDocument.indices = 'definitely not an array';
+  describe('indices', () => {
+    it('should be an array', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.indexedDocument.indices = 'definitely not an array';
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     await expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
+      expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-  //   it('should have at least one item', async () => {
-  //     rawDataContract.documents.indexedDocument.indices = [];
+    it('should have at least one item', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.indexedDocument.indices = [];
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     await expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices');
-  //     expect(error.getKeyword()).to.equal('minItems');
-  //   });
+      expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices');
+      expect(error.getKeyword()).to.equal('minItems');
+    });
 
-  //   it('should return invalid result if there are duplicated indices', async () => {
-  //     const indexDefinition = {
-  //       ...rawDataContract.documents.indexedDocument.indices[0],
-  //       name: 'otherIndexName',
-  //     };
+    it.skip('should return invalid result if there are duplicated indices', async () => {
+      const rawDataContract = dataContract.toObject();
+      const indexDefinition = {
+        ...rawDataContract.documents.indexedDocument.indices[0],
+        name: 'otherIndexName',
+      };
 
-  //     rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
+      rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     expectValidationError(result, DuplicateIndexError);
+      expectValidationError(result, DuplicateIndexError);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getCode()).to.equal(1008);
-  //     expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //   });
+      expect(error.getCode()).to.equal(1008);
+      expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+    });
 
-  //   it('should return invalid result if there are duplicated index names', async () => {
-  //     const indexDefinition = {
-  //       ...rawDataContract.documents.indexedDocument.indices[0],
-  //     };
+    it('should return invalid result if there are duplicated index names', async () => {
+      const rawDataContract = dataContract.toObject();
+      const indexDefinition = {
+        ...rawDataContract.documents.indexedDocument.indices[0],
+      };
 
-  //     rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
+      rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
 
-  //     const result = await validateDataContract(rawDataContract);
+      const result = await validateDataContract(rawDataContract);
 
-  //     expect(result.isValid()).to.be.false();
+      expect(result.isValid()).to.be.false();
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getCode()).to.equal(1048);
-  //     expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //     expect(error.getDuplicateIndexName()).to.deep.equal('index1');
-  //   });
+      expect(error.getCode()).to.equal(1048);
+      expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      expect(error.getDuplicateIndexName()).to.deep.equal('index1');
+    });
 
-  //   describe('index', () => {
-  //     it('should be an object', async () => {
-  //       rawDataContract.documents.indexedDocument.indices = ['something else'];
+    describe('index', () => {
+      it('should be an object', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument.indices = ['something else'];
 
-  //       const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result);
 
-  //       const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-  //       expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0');
-  //       expect(error.getKeyword()).to.equal('type');
-  //     });
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0');
+        expect(error.getKeyword()).to.equal('type');
+      });
 
-  //     it('should have properties definition', async () => {
-  //       rawDataContract.documents.indexedDocument.indices = [{}];
+      it('should have properties definition', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument.indices = [{}];
 
-  //       const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result, 2);
 
-  //       const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-  //       expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0');
-  //       expect(error.getParams().missingProperty).to.equal('properties');
-  //       expect(error.getKeyword()).to.equal('required');
-  //     });
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0');
+        expect(error.getParams().missingProperty).to.equal('properties');
+        expect(error.getKeyword()).to.equal('required');
+      });
 
-  //     describe('properties definition', () => {
-  //       it('should be an array', async () => {
-  //         rawDataContract.documents.indexedDocument.indices[0]
-  //           .properties = 'something else';
+      describe('properties definition', () => {
+        it('should be an array', async () => {
+          const rawDataContract = dataContract.toObject();
+          rawDataContract.documents.indexedDocument.indices[0]
+            .properties = 'something else';
 
-  //         const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-  //         await expectJsonSchemaError(result);
+          await expectJsonSchemaError(result);
 
-  //         const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-  //         expect(error.getInstancePath()).to.equal(
-  //           '/documents/indexedDocument/indices/0/properties',
-  //         );
-  //         expect(error.getKeyword()).to.equal('type');
-  //       });
+          expect(error.getInstancePath()).to.equal(
+            '/documents/indexedDocument/indices/0/properties',
+          );
+          expect(error.getKeyword()).to.equal('type');
+        });
 
-  //       it('should have at least one property defined', async () => {
-  //         rawDataContract.documents.indexedDocument.indices[0]
-  //           .properties = [];
+        it('should have at least one property defined', async () => {
+          const rawDataContract = dataContract.toObject();
+          rawDataContract.documents.indexedDocument.indices[0]
+            .properties = [];
 
-  //         const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-  //         await expectJsonSchemaError(result);
+          await expectJsonSchemaError(result);
 
-  //         const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-  //         expect(error.getInstancePath()).to.equal(
-  //           '/documents/indexedDocument/indices/0/properties',
-  //         );
-  //         expect(error.getKeyword()).to.equal('minItems');
-  //       });
+          expect(error.getInstancePath()).to.equal(
+            '/documents/indexedDocument/indices/0/properties',
+          );
+          expect(error.getKeyword()).to.equal('minItems');
+        });
 
-  //       it('should have no more than 10 property $defs', async () => {
-  //         for (let i = 0; i < 10; i++) {
-  //           rawDataContract.documents.indexedDocument.indices[0]
-  //             .properties.push({ [`field${i}`]: 'asc' });
-  //         }
+        it('should have no more than 10 property $defs', async () => {
+          const rawDataContract = dataContract.toObject();
+          for (let i = 0; i < 10; i++) {
+            rawDataContract.documents.indexedDocument.indices[0]
+              .properties.push({ [`field${i}`]: 'asc' });
+          }
 
-  //         const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(rawDataContract);
 
-  //         await expectJsonSchemaError(result);
+          await expectJsonSchemaError(result);
 
-  //         const [error] = result.getErrors();
+          const [error] = result.getErrors();
 
-  //         expect(error.getInstancePath()).to.equal(
-  //           '/documents/indexedDocument/indices/0/properties',
-  //         );
-  //         expect(error.getKeyword()).to.equal('maxItems');
-  //       });
+          expect(error.getInstancePath()).to.equal(
+            '/documents/indexedDocument/indices/0/properties',
+          );
+          expect(error.getKeyword()).to.equal('maxItems');
+        });
 
-  //       describe('property definition', () => {
-  //         it('should be an object', async () => {
-  //           rawDataContract.documents.indexedDocument.indices[0]
-  //             .properties[0] = 'something else';
+        describe('property definition', () => {
+          it('should be an object', async () => {
+            const rawDataContract = dataContract.toObject();
+            rawDataContract.documents.indexedDocument.indices[0]
+              .properties[0] = 'something else';
 
-  //           const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(rawDataContract);
 
-  //           await expectJsonSchemaError(result);
+            await expectJsonSchemaError(result);
 
-  //           const [error] = result.getErrors();
+            const [error] = result.getErrors();
 
-  //           expect(error.getInstancePath()).to.equal(
-  //             '/documents/indexedDocument/indices/0/properties/0',
-  //           );
-  //           expect(error.getKeyword()).to.equal('type');
-  //         });
+            expect(error.getInstancePath()).to.equal(
+              '/documents/indexedDocument/indices/0/properties/0',
+            );
+            expect(error.getKeyword()).to.equal('type');
+          });
+
+          it('should have at least one property', async () => {
+            const rawDataContract = dataContract.toObject();
+            rawDataContract.documents.indexedDocument.indices[0]
+              .properties = [];
+
+            const result = await validateDataContract(rawDataContract);
+
+            await expectJsonSchemaError(result);
+
+            const [error] = result.getErrors();
 
-  //         it('should have at least one property', async () => {
-  //           rawDataContract.documents.indexedDocument.indices[0]
-  //             .properties = [];
+            expect(error.getInstancePath()).to.equal(
+              '/documents/indexedDocument/indices/0/properties',
+            );
+            expect(error.getKeyword()).to.equal('minItems');
+          });
+
+          it('should have no more than one property', async () => {
+            const rawDataContract = dataContract.toObject();
+            const property = rawDataContract.documents.indexedDocument.indices[0]
+              .properties[0];
+
+            property.anotherField = 'something';
+
+            const result = await validateDataContract(rawDataContract);
 
-  //           const result = await validateDataContract(rawDataContract);
+            await expectJsonSchemaError(result, 2);
 
-  //           await expectJsonSchemaError(result);
+            const [_, error] = result.getErrors();
 
-  //           const [error] = result.getErrors();
+            expect(error.getInstancePath()).to.equal(
+              '/documents/indexedDocument/indices/0/properties/0',
+            );
+            expect(error.getKeyword()).to.equal('maxProperties');
+          });
 
-  //           expect(error.getInstancePath()).to.equal(
-  //             '/documents/indexedDocument/indices/0/properties',
-  //           );
-  //           expect(error.getKeyword()).to.equal('minItems');
-  //         });
+          it('should have property values only "asc" or "desc"', async () => {
+            const rawDataContract = dataContract.toObject();
+            rawDataContract.documents.indexedDocument.indices[0]
+              .properties[0].$ownerId = 'wrong';
 
-  //         it('should have no more than one property', async () => {
-  //           const property = rawDataContract.documents.indexedDocument.indices[0]
-  //             .properties[0];
+            const result = await validateDataContract(rawDataContract);
 
-  //           property.anotherField = 'something';
+            await expectJsonSchemaError(result);
 
-  //           const result = await validateDataContract(rawDataContract);
+            const [error] = result.getErrors();
 
-  //           await expectJsonSchemaError(result);
+            expect(error.getInstancePath()).to.equal(
+              '/documents/indexedDocument/indices/0/properties/0/$ownerId',
+            );
+            expect(error.getKeyword()).to.equal('enum');
+          });
+        });
+      });
 
-  //           const [error] = result.getErrors();
+      describe('property names', () => {
+        it('should have valid property names (indices)', async () => {
+          const rawDataContract = dataContract.toObject();
+          const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
+            'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
 
-  //           expect(error.getInstancePath()).to.equal(
-  //             '/documents/indexedDocument/indices/0/properties/0',
-  //           );
-  //           expect(error.getKeyword()).to.equal('maxProperties');
-  //         });
+          await Promise.all(
+            validNames.map(async (name) => {
+              const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //         it('should have property values only "asc" or "desc"', async () => {
-  //           rawDataContract.documents.indexedDocument.indices[0]
-  //             .properties[0].$ownerId = 'wrong';
+              clonedDataContract.documents.indexedDocument.properties[name] = { type: 'string', maxLength: 63 };
+              clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
+              clonedDataContract.documents.indexedDocument.required.push(name);
 
-  //           const result = await validateDataContract(rawDataContract);
+              const result = await validateDataContract(clonedDataContract);
 
-  //           await expectJsonSchemaError(result);
+              await expectJsonSchemaError(result, 0);
+            }),
+          );
+        });
 
-  //           const [error] = result.getErrors();
+        it('should return an invalid result if a property (indices) has invalid format', async () => {
+          const rawDataContract = dataContract.toObject();
+          const invalidNames = ['a.', '.a'];
 
-  //           expect(error.getInstancePath()).to.equal(
-  //             '/documents/indexedDocument/indices/0/properties/0/$ownerId',
-  //           );
-  //           expect(error.getKeyword()).to.equal('enum');
-  //         });
-  //       });
-  //     });
+          rawDataContract.documents.indexedDocument = {
+            type: 'object',
+            properties: {
+              a: {
+                type: 'object',
+                properties: {
+                  property: {
+                    type: 'string',
+                    maxLength: 63,
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+            indices: [
+              {
+                name: 'index1',
+                properties: [],
+                unique: true,
+              },
+            ],
+            additionalProperties: false,
+          };
 
-  //     describe('property names', () => {
-  //       it('should have valid property names (indices)', async () => {
-  //         const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
-  //           'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+          await Promise.all(
+            invalidNames.map(async (name) => {
+              const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-  //         await Promise.all(
-  //           validNames.map(async (name) => {
-  //             const clonedDataContract = lodashCloneDeep(rawDataContract);
+              clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
 
-  //             clonedDataContract.documents.indexedDocument.properties[name] = { type: 'string', maxLength: 63 };
-  //             clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
-  //             clonedDataContract.documents.indexedDocument.required.push(name);
+              const result = await validateDataContract(clonedDataContract);
 
-  //             const result = await validateDataContract(clonedDataContract);
+              expectValidationError(result, UndefinedIndexPropertyError, 1);
+            }),
+          );
+        });
+      });
 
-  //             await expectJsonSchemaError(result, 0);
-  //           }),
-  //         );
-  //       });
+      it('should have "unique" flag to be of a boolean type', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument.indices[0].unique = 12;
 
-  //       it('should return an invalid result if a property (indices) has invalid format', async () => {
-  //         const invalidNames = ['a.', '.a'];
+        const result = await validateDataContract(rawDataContract);
 
-  //         rawDataContract.documents.indexedDocument = {
-  //           type: 'object',
-  //           properties: {
-  //             a: {
-  //               type: 'object',
-  //               properties: {
-  //                 property: {
-  //                   type: 'string',
-  //                   maxLength: 63,
-  //                 },
-  //               },
-  //               additionalProperties: false,
-  //             },
-  //           },
-  //           indices: [
-  //             {
-  //               name: 'index1',
-  //               properties: [],
-  //               unique: true,
-  //             },
-  //           ],
-  //           additionalProperties: false,
-  //         };
+        await expectJsonSchemaError(result);
 
-  //         await Promise.all(
-  //           invalidNames.map(async (name) => {
-  //             const clonedDataContract = lodashCloneDeep(rawDataContract);
+        const [error] = result.getErrors();
 
-  //             clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0/unique');
+        expect(error.getKeyword()).to.equal('type');
+      });
 
-  //             const result = await validateDataContract(clonedDataContract);
+      it('should have no more than 10 indices', async () => {
+        const rawDataContract = dataContract.toObject();
+        for (let i = 0; i < 10; i++) {
+          const propertyName = `field${i}`;
 
-  //             expectValidationError(result, UndefinedIndexPropertyError, 1);
-  //           }),
-  //         );
-  //       });
-  //     });
+          rawDataContract.documents.indexedDocument.properties[propertyName] = { type: 'string' };
 
-  //     it('should have "unique" flag to be of a boolean type', async () => {
-  //       rawDataContract.documents.indexedDocument.indices[0].unique = 12;
+          rawDataContract.documents.indexedDocument.indices.push({
+            properties: [{ [propertyName]: 'asc' }],
+          });
+        }
 
-  //       const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+        await expectJsonSchemaError(result, 11);
 
-  //       const [error] = result.getErrors();
+        const error = result.getErrors()[10];
 
-  //       expect(error.getInstancePath()).to.equal('/documents/indexedDocument/indices/0/unique');
-  //       expect(error.getKeyword()).to.equal('type');
-  //     });
+        expect(error.getInstancePath()).to.equal(
+          '/documents/indexedDocument/indices',
+        );
+        expect(error.getKeyword()).to.equal('maxItems');
+      });
 
-  //     it('should have no more than 10 indices', async () => {
-  //       for (let i = 0; i < 10; i++) {
-  //         const propertyName = `field${i}`;
+      it('should have no more than 3 unique indices', async () => {
+        const rawDataContract = dataContract.toObject();
+        for (let i = 0; i < 4; i++) {
+          const propertyName = `field${i}`;
 
-  //         rawDataContract.documents.indexedDocument.properties[propertyName] = { type: 'string' };
+          rawDataContract.documents.indexedDocument.properties[propertyName] = {
+            type: 'string',
+            maxLength: 63,
+          };
 
-  //         rawDataContract.documents.indexedDocument.indices.push({
-  //           properties: [{ [propertyName]: 'asc' }],
-  //         });
-  //       }
+          rawDataContract.documents.indexedDocument.indices.push({
+            name: `index_${i}`,
+            properties: [{ [propertyName]: 'asc' }],
+            unique: true,
+          });
+        }
 
-  //       const result = await validateDataContract(rawDataContract);
+        const result = await validateDataContract(rawDataContract);
 
-  //       await expectJsonSchemaError(result);
+        expectValidationError(result, UniqueIndicesLimitReachedError);
 
-  //       const [error] = result.getErrors();
+        const [error] = result.getErrors();
 
-  //       expect(error.getInstancePath()).to.equal(
-  //         '/documents/indexedDocument/indices',
-  //       );
-  //       expect(error.getKeyword()).to.equal('maxItems');
-  //     });
+        expect(error.getCode()).to.equal(1017);
+        expect(error.getDocumentType()).to.equal('indexedDocument');
+      });
 
-  //     it('should have no more than 3 unique indices', async () => {
-  //       for (let i = 0; i < 4; i++) {
-  //         const propertyName = `field${i}`;
+      it.skip('should return invalid result if $id is specified as an indexed property', async () => {
+        const rawDataContract = dataContract.toObject();
+        const indexDefinition = {
+          name: 'index_1',
+          properties: [
+            { $id: 'asc' },
+            { firstName: 'asc' },
+          ],
+        };
+
+        const indeciesDefinition = rawDataContract.documents.indexedDocument.indices;
+
+        indeciesDefinition.push(indexDefinition);
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, SystemPropertyIndexAlreadyPresentError);
+
+        const [error] = result.getErrors();
 
-  //         rawDataContract.documents.indexedDocument.properties[propertyName] = {
-  //           type: 'string',
-  //           maxLength: 63,
-  //         };
-
-  //         rawDataContract.documents.indexedDocument.indices.push({
-  //           name: `index_${i}`,
-  //           properties: [{ [propertyName]: 'asc' }],
-  //           unique: true,
-  //         });
-  //       }
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, UniqueIndicesLimitReachedError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1017);
-  //       expect(error.getDocumentType()).to.equal('indexedDocument');
-  //     });
-
-  //     it('should return invalid result if $id is specified as an indexed property', async () => {
-  //       const indexDefinition = {
-  //         name: 'index_1',
-  //         properties: [
-  //           { $id: 'asc' },
-  //           { firstName: 'asc' },
-  //         ],
-  //       };
-
-  //       const indeciesDefinition = rawDataContract.documents.indexedDocument.indices;
-
-  //       indeciesDefinition.push(indexDefinition);
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, SystemPropertyIndexAlreadyPresentError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1015);
-  //       expect(error.getPropertyName()).to.equal('$id');
-  //       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     });
-
-  //     it('should return invalid result if indices has undefined property', async () => {
-  //       const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
-
-  //       indexDefinition.properties.push({
-  //         missingProperty: 'asc',
-  //       });
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, UndefinedIndexPropertyError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1016);
-  //       expect(error.getPropertyName()).to.equal('missingProperty');
-  //       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     });
-
-  //     it('should return invalid result if index property is object', async () => {
-  //       const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-
-  //       indexedDocumentDefinition.properties.objectProperty = {
-  //         type: 'object',
-  //         properties: {
-  //           something: {
-  //             type: 'string',
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       indexedDocumentDefinition.required.push('objectProperty');
-
-  //       const indexDefinition = indexedDocumentDefinition.indices[0];
-
-  //       indexDefinition.properties.push({
-  //         objectProperty: 'asc',
-  //       });
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, InvalidIndexPropertyTypeError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1013);
-  //       expect(error.getPropertyName()).to.equal('objectProperty');
-  //       expect(error.getPropertyType()).to.equal('object');
-  //       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     });
-
-  //     it('should return invalid result if index property is an array', async () => {
-  //       rawDataContract.documents.indexedArray = {
-  //         type: 'object',
-  //         indices: [
-  //           {
-  //             name: 'index1',
-  //             properties: [
-  //               { mentions: 'asc' },
-  //             ],
-  //           },
-  //         ],
-  //         properties: {
-  //           mentions: {
-  //             type: 'array',
-  //             prefixItems: [
-  //               {
-  //                 type: 'string',
-  //                 maxLength: 100,
-  //               },
-  //             ],
-  //             minItems: 1,
-  //             maxItems: 5,
-  //             items: false,
-  //           },
-  //         },
-  //         additionalProperties: false,
-  //       };
-
-  //       const indexDefinition = rawDataContract.documents.indexedArray.indices[0];
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, InvalidIndexPropertyTypeError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1013);
-  //       expect(error.getPropertyName()).to.equal('mentions');
-  //       expect(error.getPropertyType()).to.equal('array');
-  //       expect(error.getDocumentType()).to.deep.equal('indexedArray');
-  //       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     });
-
-  //     // it('should return invalid result if index property is array of objects', async () => {
-  //     //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-  //     //
-  //     //   indexedDocumentDefinition.properties.arrayProperty = {
-  //     //     type: 'array',
-  //     //     items: {
-  //     //       type: 'object',
-  //     //       properties: {
-  //     //         something: {
-  //     //           type: 'string',
-  //     //         },
-  //     //       },
-  //     //       additionalProperties: false,
-  //     //     },
-  //     //   };
-  //     //
-  //     //   indexedDocumentDefinition.required.push('arrayProperty');
-  //     //
-  //     //   const indexDefinition = indexedDocumentDefinition.indices[0];
-  //     //
-  //     //   indexDefinition.properties.push({
-  //     //     arrayProperty: 'asc',
-  //     //   });
-  //     //
-  //     //   const result = await validateDataContract(rawDataContract);
-  //     //
-  //     //   expectValidationError(result, InvalidIndexPropertyTypeError);
-  //     //
-  //     //   const [error] = result.getErrors();
-  //     //
-  //     //   expect(error.getCode()).to.equal(1013);
-  //     //   expect(error.getPropertyName()).to.equal('arrayProperty');
-  //     //   expect(error.getPropertyType()).to.equal('array');
-  //     //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //     //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     // });
-
-  //     // it('should return invalid result if index property is an array of different types',
-  //     // async () => {
-  //     //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-  //     //
-  //     //   const indexDefinition = indexedDocumentDefinition.indices[0];
-  //     //
-  //     //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-  //     //     {
-  //     //       type: 'string',
-  //     //     },
-  //     //     {
-  //     //       type: 'number',
-  //     //     },
-  //     //   ];
-  //     //
-  //     //   rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
-  //     //
-  //     //   const result = await validateDataContract(rawDataContract);
-  //     //   expectValidationError(result, InvalidIndexPropertyTypeError);
-  //     //
-  //     //   const error = result.getFirstError();
-  //     //
-  //     //   expect(error.getCode()).to.equal(1013);
-  //     //   expect(error.getPropertyName()).to.equal('mentions');
-  //     //   expect(error.getPropertyType()).to.equal('array');
-  //     //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
-  //     //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     // });
-  //     //
-  //     // it('should return invalid result if index property contained prefixItems array of arrays',
-  //     // async () => {
-  //     //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-  //     //
-  //     //   const indexDefinition = indexedDocumentDefinition.indices[0];
-  //     //
-  //     //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-  //     //     {
-  //     //       type: 'array',
-  //     //       items: {
-  //     //         type: 'string',
-  //     //       },
-  //     //     },
-  //     //   ];
-  //     //
-  //     //   const result = await validateDataContract(rawDataContract);
-  //     //   expectValidationError(result, InvalidIndexPropertyTypeError);
-  //     //
-  //     //   const error = result.getFirstError();
-  //     //
-  //     //   expect(error.getCode()).to.equal(1013);
-  //     //   expect(error.getPropertyName()).to.equal('mentions');
-  //     //   expect(error.getPropertyType()).to.equal('array');
-  //     //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
-  //     //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     // });
-
-  //     // it('should return invalid result if index property contained prefixItems array of objects',
-  //     // async () => {
-  //     //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-  //     //
-  //     //   const indexDefinition = indexedDocumentDefinition.indices[0];
-  //     //
-  //     //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-  //     //     {
-  //     //       type: 'object',
-  //     //       properties: {
-  //     //         something: {
-  //     //           type: 'string',
-  //     //         },
-  //     //       },
-  //     //       additionalProperties: false,
-  //     //     },
-  //     //   ];
-  //     //
-  //     //   const result = await validateDataContract(rawDataContract);
-  //     //   expectValidationError(result, InvalidIndexPropertyTypeError);
-  //     //
-  //     //   const error = result.getFirstError();
-  //     //
-  //     //   expect(error.getCode()).to.equal(1013);
-  //     //   expect(error.getPropertyName()).to.equal('mentions');
-  //     //   expect(error.getPropertyType()).to.equal('array');
-  //     //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
-  //     //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     // });
-  //     //
-  //     // it('should return invalid result if index property is array of arrays', async () => {
-  //     //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-  //     //
-  //     //   indexedDocumentDefinition.properties.arrayProperty = {
-  //     //     type: 'array',
-  //     //     items: {
-  //     //       type: 'array',
-  //     //       items: {
-  //     //         type: 'string',
-  //     //       },
-  //     //     },
-  //     //   };
-  //     //
-  //     //   indexedDocumentDefinition.required.push('arrayProperty');
-  //     //
-  //     //   const indexDefinition = indexedDocumentDefinition.indices[0];
-  //     //
-  //     //   indexDefinition.properties.push({
-  //     //     arrayProperty: 'asc',
-  //     //   });
-  //     //
-  //     //   const result = await validateDataContract(rawDataContract);
-  //     //
-  //     //   expectValidationError(result, InvalidIndexPropertyTypeError);
-  //     //
-  //     //   const [error] = result.getErrors();
-  //     //
-  //     //   expect(error.getCode()).to.equal(1013);
-  //     //   expect(error.getPropertyName()).to.equal('arrayProperty');
-  //     //   expect(error.getPropertyType()).to.equal('array');
-  //     //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //     //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     // });
-
-  //     it('should return invalid result if index property is array with different item definitions', async () => {
-  //       const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-
-  //       indexedDocumentDefinition.properties.arrayProperty = {
-  //         type: 'array',
-  //         prefixItems: [
-  //           {
-  //             type: 'string',
-  //           },
-  //           {
-  //             type: 'number',
-  //           },
-  //         ],
-  //         minItems: 2,
-  //         items: false,
-  //       };
-
-  //       indexedDocumentDefinition.required.push('arrayProperty');
-
-  //       const indexDefinition = indexedDocumentDefinition.indices[0];
-
-  //       indexDefinition.properties.push({
-  //         arrayProperty: 'asc',
-  //       });
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, InvalidIndexPropertyTypeError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1013);
-  //       expect(error.getPropertyName()).to.equal('arrayProperty');
-  //       expect(error.getPropertyType()).to.equal('array');
-  //       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-  //       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-  //     });
-
-  //     it('should return invalid result if unique compound index contains both required and optional properties', async () => {
-  //       rawDataContract.documents.optionalUniqueIndexedDocument.required.splice(-1);
-
-  //       const result = await validateDataContract(rawDataContract);
-
-  //       expectValidationError(result, InvalidCompoundIndexError);
-
-  //       const [error] = result.getErrors();
-
-  //       expect(error.getCode()).to.equal(1010);
-  //       expect(error.getIndexDefinition()).to.deep.equal(
-  //         rawDataContract.documents.optionalUniqueIndexedDocument.indices[1],
-  //       );
-  //       expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
-  //     });
-  //   });
-  // });
-
-  // describe('signatureSecurityLevelRequirement', () => {
-  //   it('should be a number', async () => {
-  //     rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 'definitely not a number';
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
-
-  //   it('should be one of the available values', async () => {
-  //     rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 199;
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
-  //     expect(error.getKeyword()).to.equal('enum');
-  //   });
-  // });
-
-  // describe('dependentSchemas', () => {
-  //   it('should be an object', async () => {
-  //     rawDataContract.documents.niceDocument = {
-  //       type: 'object',
-  //       properties: {
-  //         abc: {
-  //           type: 'string',
-  //         },
-  //       },
-  //       additionalProperties: false,
-  //       dependentSchemas: 'string',
-  //     };
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentSchemas');
-  //     expect(error.message).to.equal('must be object');
-  //   });
-  // });
-
-  // describe('dependentRequired', () => {
-  //   it('should be an object', async () => {
-  //     rawDataContract.documents.niceDocument = {
-  //       type: 'object',
-  //       properties: {
-  //         abc: {
-  //           type: 'string',
-  //         },
-  //       },
-  //       additionalProperties: false,
-  //       dependentRequired: 'string',
-  //     };
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired');
-  //     expect(error.message).to.equal('must be object');
-  //   });
-
-  //   it('should have an array value', async () => {
-  //     rawDataContract.documents.niceDocument = {
-  //       type: 'object',
-  //       properties: {
-  //         abc: {
-  //           type: 'string',
-  //         },
-  //       },
-  //       additionalProperties: false,
-  //       dependentRequired: {
-  //         zxy: {
-  //           type: 'number',
-  //         },
-  //       },
-  //     };
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy');
-  //     expect(error.message).to.equal('must be array');
-  //   });
-
-  //   it('should have an array of strings', async () => {
-  //     rawDataContract.documents.niceDocument = {
-  //       type: 'object',
-  //       properties: {
-  //         abc: {
-  //           type: 'string',
-  //         },
-  //       },
-  //       additionalProperties: false,
-  //       dependentRequired: {
-  //         zxy: [1, '2'],
-  //       },
-  //     };
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getKeyword()).to.equal('type');
-  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy/0');
-  //     expect(error.message).to.equal('must be string');
-  //   });
-
-  //   it('should have an array of unique strings', async () => {
-  //     rawDataContract.documents.niceDocument = {
-  //       type: 'object',
-  //       properties: {
-  //         abc: {
-  //           type: 'string',
-  //         },
-  //       },
-  //       additionalProperties: false,
-  //       dependentRequired: {
-  //         zxy: ['1', '2', '2'],
-  //       },
-  //     };
-
-  //     const result = await validateDataContract(rawDataContract);
-
-  //     await expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getKeyword()).to.equal('uniqueItems');
-  //     expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy');
-  //     expect(error.message).to.equal('must NOT have duplicate items (items ## 2 and 1 are identical)');
-  //   });
-  // });
-
-  // it.skip('should return invalid result with circular $ref pointer', async () => {
-  //   rawDataContract.$defs.object = { $ref: '#/$defs/object' };
-
-  //   const result = await validateDataContract(rawDataContract);
-
-  //   expectValidationError(result, InvalidJsonSchemaRefError);
-
-  //   const [error] = result.getErrors();
-
-  //   expect(error.getCode()).to.equal(1014);
-
-  //   expect(error.message).to.startsWith('Invalid JSON Schema $ref: Circular $ref pointer found');
-  // });
-
-  // it('should return invalid result if indexed string property missing maxLength constraint', async () => {
-  //   delete rawDataContract.documents.indexedDocument.properties.firstName.maxLength;
-
-  //   const result = await validateDataContract(rawDataContract);
-
-  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-  //   const [error] = result.getErrors();
-
-  //   expect(error.getCode()).to.equal(1012);
-  //   expect(error.getPropertyName()).to.equal('firstName');
-  //   expect(error.getConstraintName()).to.equal('maxLength');
-  //   expect(error.getReason()).to.equal('should be less or equal 63');
-  // });
-
-  // it('should return invalid result if indexed string property have to big maxLength', async () => {
-  //   rawDataContract.documents.indexedDocument.properties.firstName.maxLength = 2048;
-
-  //   const result = await validateDataContract(rawDataContract);
-
-  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-  //   const [error] = result.getErrors();
-
-  //   expect(error.getCode()).to.equal(1012);
-  //   expect(error.getPropertyName()).to.equal('firstName');
-  //   expect(error.getConstraintName()).to.equal('maxLength');
-  //   expect(error.getReason()).to.equal('should be less or equal 63');
-  // });
-
-  // // it('should return invalid result if indexed array property missing maxItems constraint',
-  // // async () => {
-  // //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
-  // //
-  // //   const result = await validateDataContract(rawDataContract);
-  // //
-  // //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-  // //
-  // //   const [error] = result.getErrors();
-  // //
-  // //   expect(error.getCode()).to.equal(1012);
-  // //   expect(error.getPropertyName()).to.equal('mentions');
-  // //   expect(error.getConstraintName()).to.equal('maxItems');
-  // //   expect(error.getReason()).to.equal('should be less or equal 63');
-  // // });
-  // //
-  // // it('should return invalid result if indexed array property have to big maxItems', async () => {
-  // //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
-  // //
-  // //   const result = await validateDataContract(rawDataContract);
-  // //
-  // //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-  // //
-  // //   const [error] = result.getErrors();
-  // //
-  // //   expect(error.getCode()).to.equal(1012);
-  // //   expect(error.getPropertyName()).to.equal('mentions');
-  // //   expect(error.getConstraintName()).to.equal('maxItems');
-  // //   expect(error.getReason()).to.equal('should be less or equal 63');
-  // // });
-  // //
-  // // it('should return invalid result if indexed array property
-  // // have string item without maxItems constraint', async () => {
-  // //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
-  // //
-  // //   const result = await validateDataContract(rawDataContract);
-  // //
-  // //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-  // //
-  // //   const [error] = result.getErrors();
-  // //
-  // //   expect(error.getCode()).to.equal(1012);
-  // //   expect(error.getPropertyName()).to.equal('mentions');
-  // //   expect(error.getConstraintName()).to.equal('maxItems');
-  // //   expect(error.getReason()).to.equal('should be less or equal 63');
-  // // });
-  // //
-  // // it('should return invalid result if indexed array property have
-  // // string item with maxItems bigger than 1024', async () => {
-  // //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
-  // //
-  // //   const result = await validateDataContract(rawDataContract);
-  // //
-  // //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-  // //
-  // //   const [error] = result.getErrors();
-  // //
-  // //   expect(error.getCode()).to.equal(1012);
-  // //   expect(error.getPropertyName()).to.equal('mentions');
-  // //   expect(error.getConstraintName()).to.equal('maxItems');
-  // //   expect(error.getReason()).to.equal('should be less or equal 63');
-  // // });
-
-  // it('should return invalid result if indexed byte array property missing maxItems constraint', async () => {
-  //   delete rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems;
-
-  //   const result = await validateDataContract(rawDataContract);
-
-  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-  //   const [error] = result.getErrors();
-
-  //   expect(error.getCode()).to.equal(1012);
-  //   expect(error.getPropertyName()).to.equal('byteArrayField');
-  //   expect(error.getConstraintName()).to.equal('maxItems');
-  //   expect(error.getReason()).to.equal('should be less or equal 255');
-  // });
-
-  // it('should return invalid result if indexed byte array property have to big maxItems', async () => {
-  //   rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems = 8192;
-
-  //   const result = await validateDataContract(rawDataContract);
-
-  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-  //   const [error] = result.getErrors();
-
-  //   expect(error.getCode()).to.equal(1012);
-  //   expect(error.getPropertyName()).to.equal('byteArrayField');
-  //   expect(error.getConstraintName()).to.equal('maxItems');
-  //   expect(error.getReason()).to.equal('should be less or equal 255');
-  // });
-
-  // it('should return valid result if Data Contract is valid', async () => {
-  //   const result = await validateDataContract(rawDataContract);
-
-  //   expect(result).to.be.an.instanceOf(ValidationResult);
-  //   expect(result.isValid()).to.be.true();
-  // });
+        expect(error.getCode()).to.equal(1015);
+        expect(error.getPropertyName()).to.equal('$id');
+        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if indices has undefined property', async () => {
+        const rawDataContract = dataContract.toObject();
+        const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
+
+        indexDefinition.properties.push({
+          missingProperty: 'asc',
+        });
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, UndefinedIndexPropertyError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1016);
+        expect(error.getPropertyName()).to.equal('missingProperty');
+        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if index property is object', async () => {
+        const rawDataContract = dataContract.toObject();
+        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+
+        indexedDocumentDefinition.properties.objectProperty = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        indexedDocumentDefinition.required.push('objectProperty');
+
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+
+        indexDefinition.properties.push({
+          objectProperty: 'asc',
+        });
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('objectProperty');
+        expect(error.getPropertyType()).to.equal('object');
+        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if index property is an array', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedArray = {
+          type: 'object',
+          indices: [
+            {
+              name: 'index1',
+              properties: [
+                { mentions: 'asc' },
+              ],
+            },
+          ],
+          properties: {
+            mentions: {
+              type: 'array',
+              prefixItems: [
+                {
+                  type: 'string',
+                  maxLength: 100,
+                },
+              ],
+              minItems: 1,
+              maxItems: 5,
+              items: false,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const indexDefinition = rawDataContract.documents.indexedArray.indices[0];
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if index property is array of objects', async () => {
+        const rawDataContract = dataContract.toObject();
+        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+      
+        indexedDocumentDefinition.properties.arrayProperty = {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              something: {
+                type: 'string',
+              },
+            },
+            additionalProperties: false,
+          },
+        };
+      
+        indexedDocumentDefinition.required.push('arrayProperty');
+      
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+      
+        indexDefinition.properties.push({
+          arrayProperty: 'asc',
+        });
+      
+        const result = await validateDataContract(rawDataContract);
+      
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+      
+        const [error] = result.getErrors();
+      
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('arrayProperty');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if index property is an array of different types',
+         async () => {
+           const rawDataContract = dataContract.toObject();
+
+        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+      
+        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+          {
+            type: 'string',
+          },
+          {
+            type: 'number',
+          },
+        ];
+      
+        rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
+      
+        const result = await validateDataContract(rawDataContract);
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+      
+        const error = result.getFirstError();
+      
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+      
+      it.skip('should return invalid result if index property contained prefixItems array of arrays', async () => {
+        const rawDataContract = dataContract.toObject();
+
+        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+      
+        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+          {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+          },
+        ];
+      
+        const result = await validateDataContract(rawDataContract);
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+      
+        const error = result.getFirstError();
+      
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if index property contained prefixItems array of objects', async () => {
+        const rawDataContract = dataContract.toObject();
+
+        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+      
+        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+          {
+            type: 'object',
+            properties: {
+              something: {
+                type: 'string',
+              },
+            },
+            additionalProperties: false,
+          },
+        ];
+      
+        const result = await validateDataContract(rawDataContract);
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+      
+        const error = result.getFirstError();
+      
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('mentions');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedArray');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+      
+      it.skip('should return invalid result if index property is array of arrays', async () => {
+        const rawDataContract = dataContract.toObject();
+        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+      
+        indexedDocumentDefinition.properties.arrayProperty = {
+          type: 'array',
+          items: {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+          },
+        };
+      
+        indexedDocumentDefinition.required.push('arrayProperty');
+      
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+      
+        indexDefinition.properties.push({
+          arrayProperty: 'asc',
+        });
+      
+        const result = await validateDataContract(rawDataContract);
+      
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+      
+        const [error] = result.getErrors();
+      
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('arrayProperty');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if index property is array with different item definitions', async () => {
+        const rawDataContract = dataContract.toObject();
+        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+
+        indexedDocumentDefinition.properties.arrayProperty = {
+          type: 'array',
+          prefixItems: [
+            {
+              type: 'string',
+            },
+            {
+              type: 'number',
+            },
+          ],
+          minItems: 2,
+          items: false,
+        };
+
+        indexedDocumentDefinition.required.push('arrayProperty');
+
+        const indexDefinition = indexedDocumentDefinition.indices[0];
+
+        indexDefinition.properties.push({
+          arrayProperty: 'asc',
+        });
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, InvalidIndexPropertyTypeError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1013);
+        expect(error.getPropertyName()).to.equal('arrayProperty');
+        expect(error.getPropertyType()).to.equal('array');
+        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      });
+
+      it.skip('should return invalid result if unique compound index contains both required and optional properties', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.optionalUniqueIndexedDocument.required.splice(-1);
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, InvalidCompoundIndexError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1010);
+        expect(error.getIndexDefinition().toObject()).to.deep.equal(
+          rawDataContract.documents.optionalUniqueIndexedDocument.indices[1],
+        );
+        expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
+      });
+    });
+  });
+
+  describe('signatureSecurityLevelRequirement', () => {
+    it('should be a number', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 'definitely not a number';
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result, 2);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
+      expect(error.getKeyword()).to.equal('type');
+    });
+
+    it('should be one of the available values', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 199;
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
+      expect(error.getKeyword()).to.equal('enum');
+    });
+  });
+
+  describe('dependentSchemas', () => {
+    it('should be an object', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.niceDocument = {
+        type: 'object',
+        properties: {
+          abc: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
+        dependentSchemas: 'string',
+      };
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentSchemas');
+    });
+  });
+
+  describe('dependentRequired', () => {
+    it('should be an object', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.niceDocument = {
+        type: 'object',
+        properties: {
+          abc: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
+        dependentRequired: 'string',
+      };
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired');
+    });
+
+    it('should have an array value', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.niceDocument = {
+        type: 'object',
+        properties: {
+          abc: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
+        dependentRequired: {
+          zxy: {
+            type: 'number',
+          },
+        },
+      };
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy');
+    });
+
+    it('should have an array of strings', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.niceDocument = {
+        type: 'object',
+        properties: {
+          abc: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
+        dependentRequired: {
+          zxy: [1, '2'],
+        },
+      };
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy/0');
+    });
+
+    it('should have an array of unique strings', async () => {
+      const rawDataContract = dataContract.toObject();
+      rawDataContract.documents.niceDocument = {
+        type: 'object',
+        properties: {
+          abc: {
+            type: 'string',
+          },
+        },
+        additionalProperties: false,
+        dependentRequired: {
+          zxy: ['1', '2', '2'],
+        },
+      };
+
+      const result = await validateDataContract(rawDataContract);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('uniqueItems');
+      expect(error.getInstancePath()).to.equal('/documents/niceDocument/dependentRequired/zxy');
+    });
+  });
+
+  it.skip('should return invalid result with circular $ref pointer', async () => {
+    const rawDataContract = dataContract.toObject();
+    rawDataContract.$defs.object = { $ref: '#/$defs/object' };
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidJsonSchemaRefError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1014);
+
+    expect(error.message).to.startsWith('Invalid JSON Schema $ref: Circular $ref pointer found');
+  });
+
+  it('should return invalid result if indexed string property missing maxLength constraint', async () => {
+    const rawDataContract = dataContract.toObject();
+    delete rawDataContract.documents.indexedDocument.properties.firstName.maxLength;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('firstName');
+    expect(error.getConstraintName()).to.equal('maxLength');
+    expect(error.getReason()).to.equal('should be less or equal than 63');
+  });
+
+  it('should return invalid result if indexed string property have to big maxLength', async () => {
+    const rawDataContract = dataContract.toObject();
+    rawDataContract.documents.indexedDocument.properties.firstName.maxLength = 2048;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('firstName');
+    expect(error.getConstraintName()).to.equal('maxLength');
+    expect(error.getReason()).to.equal('should be less or equal than 63');
+  });
+
+  it.skip('should return invalid result if indexed array property missing maxItems constraint',
+     async () => {
+       const rawDataContract = dataContract.toObject();
+    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+  
+    const result = await validateDataContract(rawDataContract);
+  
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  
+    const [error] = result.getErrors();
+  
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 63');
+  });
+  
+  it.skip('should return invalid result if indexed array property have to big maxItems', async () => {
+    const rawDataContract = dataContract.toObject();
+    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+  
+    const result = await validateDataContract(rawDataContract);
+  
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  
+    const [error] = result.getErrors();
+  
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 63');
+  });
+  
+  it.skip('should return invalid result if indexed array property have string item without maxItems constraint', async () => {
+    const rawDataContract = dataContract.toObject();
+    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+  
+    const result = await validateDataContract(rawDataContract);
+  
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  
+    const [error] = result.getErrors();
+  
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 63');
+  });
+  
+  it.skip('should return invalid result if indexed array property have string item with maxItems bigger than 1024', async () => {
+    const rawDataContract = dataContract.toObject();
+    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+  
+    const result = await validateDataContract(rawDataContract);
+  
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  
+    const [error] = result.getErrors();
+  
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 63');
+  });
+
+  it('should return invalid result if indexed byte array property missing maxItems constraint', async () => {
+    const rawDataContract = dataContract.toObject();
+    delete rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('byteArrayField');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 255');
+  });
+
+  it('should return invalid result if indexed byte array property have to big maxItems', async () => {
+    const rawDataContract = dataContract.toObject();
+    rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems = 8192;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('byteArrayField');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 255');
+  });
+
+  it('should return valid result if Data Contract is valid', async () => {
+    const rawDataContract = dataContract.toObject();
+    const result = await validateDataContract(rawDataContract);
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+  });
 });
