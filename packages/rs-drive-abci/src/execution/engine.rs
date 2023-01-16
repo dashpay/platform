@@ -97,9 +97,8 @@ impl Platform {
                             .apply_drive_operations(operations, true, block_info, Some(transaction))
                             .map_err(Error::Drive)?;
 
-                        //todo: verify this is the right epoch
                         let balance_change = individual_fee_result
-                            .into_balance_change(identity.id.to_buffer(), block_info.epoch.index)
+                            .into_balance_change(identity.id.to_buffer())
                             .map_err(Error::Drive)?;
 
                         let outcome = self.drive.apply_balance_change_from_fee_to_identity(

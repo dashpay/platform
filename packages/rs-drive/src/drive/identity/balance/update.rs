@@ -356,7 +356,7 @@ impl Drive {
         }
 
         // Update other refunded identity balances
-        for (identity_id, credits) in balance_change.other_refunds()? {
+        for (identity_id, credits) in balance_change.other_refunds() {
             let mut estimated_costs_only_with_layer_info =
                 None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
 
@@ -815,7 +815,7 @@ mod tests {
             let fee_result = FeeResult::default_with_fees(0, 0);
             let fee_change = fee_result
                 .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -854,7 +854,7 @@ mod tests {
             };
             let fee_change = fee_result
                 .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -868,18 +868,18 @@ mod tests {
                     _,
                     DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
-                            element: Element::SumItem(removed_credits, None),
+                            element: Element::SumItem(refund_amount, None),
                         },
                         ..
                     }),
                     ..,
                     DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
-                            element: Element::SumItem(other_removed_credits, None),
+                            element: Element::SumItem(other_refund_amount, None),
                         },
                         ..
                     })
-                ]
+                ] if refund_amount as Credits == removed_credits && other_refund_amount as Credits == other_removed_credits
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -891,7 +891,7 @@ mod tests {
 
             let fee_result = FeeResult::default_with_fees(100000, 100);
             let fee_change = fee_result
-                .into_balance_change([0; 32], GENESIS_EPOCH_INDEX)
+                .into_balance_change([0; 32])
                 .expect("should calculate fee change for identity");
 
             let result =
@@ -934,7 +934,7 @@ mod tests {
             };
             let fee_change = fee_result
                 .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -948,7 +948,7 @@ mod tests {
                     _,
                     DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
-                            element: Element::SumItem(removed_credits, None),
+                            element: Element::SumItem(refund_amount, None),
                         },
                     ..
                     }),
@@ -958,7 +958,7 @@ mod tests {
                         },
                         ..
                     })
-                ] if debt_bytes == &0u64.to_be_bytes()
+                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes()
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -996,7 +996,7 @@ mod tests {
             };
             let fee_change = fee_result
                 .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -1049,7 +1049,7 @@ mod tests {
 
             let fee_change = fee_result
                 .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -1097,8 +1097,7 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let (drive_operations, fee_result_outcome) = drive
@@ -1153,8 +1152,7 @@ mod tests {
             };
 
             let fee_change = fee_result
-                .clone()
-                .into_balance_change(identity.id.to_buffer(), GENESIS_EPOCH_INDEX)
+                .into_balance_change(identity.id.to_buffer())
                 .expect("should calculate fee change for identity");
 
             let result =

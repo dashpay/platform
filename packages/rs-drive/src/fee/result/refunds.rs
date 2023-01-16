@@ -74,11 +74,10 @@ impl FeeRefunds {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;
 
-                        // TODO We don't need leftovers as return result?
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
                             credits,
                             epoch_index,
-                            current_epoch_index + 1,
+                            current_epoch_index,
                         )?;
 
                         Ok((epoch_index, amount))
@@ -146,47 +145,40 @@ impl FeeRefunds {
     }
 
     /// Calculates a refund amount of credits per identity excluding specified identity id
-    pub fn calculate_amount_for_refunds_except_identity(
+    pub fn calculate_all_refunds_except_identity(
         &self,
         identity_id: Identifier,
-        current_epoch_index: EpochIndex,
-    ) -> Result<BTreeMap<Identifier, Credits>, Error> {
+    ) -> BTreeMap<Identifier, Credits> {
         self.iter()
-            .filter(|(&identifier, _)| identifier != identity_id)
-            .map(|(&identifier, _)| {
+            .filter_map(|(&identifier, _)| {
+                if identifier == identity_id {
+                    return None;
+                }
+
                 let credits = self
-                    .calculate_amount_for_refund_to_identity(identifier, current_epoch_index)?
+                    .calculate_refunds_amount_for_identity(identifier)
                     .unwrap();
 
-                Ok((identifier, credits))
+                Some((identifier, credits))
             })
-            .collect::<Result<_, _>>()
+            .collect()
     }
 
     /// Calculates a refund amount of credits for specified identity id
-    pub fn calculate_amount_for_refund_to_identity(
+    pub fn calculate_refunds_amount_for_identity(
         &self,
         identity_id: Identifier,
-        current_epoch_index: EpochIndex,
-    ) -> Result<Option<Credits>, Error> {
+    ) -> Option<Credits> {
         let Some(credits_per_epoch) = self.get(&identity_id) else {
-            return Ok(None);
+            return None;
         };
 
         let credits = credits_per_epoch
             .iter()
-            .try_fold::<_, _, Result<_, Error>>(0 as Credits, |acc, (epoch_index, credits)| {
-                // let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
-                //     *credits,
-                //     *epoch_index,
-                //     // TODO: Move + 1 inside the function
-                //     current_epoch_index + 1,
-                // )?;
+            .map(|(_epoch_index, credits)| credits)
+            .sum();
 
-                Ok(acc + credits)
-            })?;
-
-        Ok(Some(credits))
+        Some(credits)
     }
 
     /// Serialize the structure

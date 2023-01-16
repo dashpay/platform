@@ -38,7 +38,6 @@
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
-use crate::fee::epoch::EpochIndex;
 use crate::fee::result::refunds::FeeRefunds;
 use crate::fee::result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
 use costs::storage_cost::removal::Identifier;
@@ -84,7 +83,6 @@ pub struct BalanceChangeForIdentity {
 
     fee_result: FeeResult,
     change: BalanceChange,
-    current_epoch_index: EpochIndex,
 }
 
 impl BalanceChangeForIdentity {
@@ -94,13 +92,10 @@ impl BalanceChangeForIdentity {
     }
 
     /// Returns refund amount of credits for other identities
-    pub fn other_refunds(&self) -> Result<BTreeMap<Identifier, Credits>, Error> {
+    pub fn other_refunds(&self) -> BTreeMap<Identifier, Credits> {
         self.fee_result
             .fee_refunds
-            .calculate_amount_for_refunds_except_identity(
-                self.identity_id,
-                self.current_epoch_index,
-            )
+            .calculate_all_refunds_except_identity(self.identity_id)
     }
 
     /// Convert into a fee result
@@ -161,11 +156,10 @@ impl FeeResult {
     pub fn into_balance_change(
         self,
         identity_id: [u8; 32],
-        current_epoch_index: EpochIndex,
     ) -> Result<BalanceChangeForIdentity, Error> {
         let storage_credits_returned = self
             .fee_refunds
-            .calculate_amount_for_refund_to_identity(identity_id, current_epoch_index)?
+            .calculate_refunds_amount_for_identity(identity_id)
             .unwrap_or_default();
 
         let base_required_removed_balance = self.storage_fee;
@@ -200,7 +194,6 @@ impl FeeResult {
         Ok(BalanceChangeForIdentity {
             identity_id,
             fee_result: self,
-            current_epoch_index,
             change: balance_change,
         })
     }
