@@ -33,6 +33,7 @@
 //!
 
 use crate::error::execution::ExecutionError;
+use serde::{Deserialize, Serialize};
 
 use crate::abci::messages::BlockFees;
 use crate::error::Error;
@@ -61,6 +62,7 @@ pub struct ProposersPayouts {
 }
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct FeesInPools {
     /// Amount of processing fees in the distribution pools
     pub processing_fees: u64,

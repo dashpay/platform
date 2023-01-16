@@ -1,5 +1,5 @@
 use drive::fee::credits::Credits;
-use drive::fee::epoch::distribution::calculate_storage_fee_distribution_amount_and_leftovers;
+use drive::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use drive::fee::epoch::EpochIndex;
 use neon::prelude::*;
 
@@ -21,7 +21,7 @@ pub fn js_calculate_storage_fee_distribution_amount_and_leftovers(
         EpochIndex::try_from(js_skip_up_to_epoch_index.value(&mut cx) as i64)
             .or_else(|_| cx.throw_range_error("`startEpochIndex` must fit in u16"))?;
 
-    let (amount, leftovers) = calculate_storage_fee_distribution_amount_and_leftovers(
+    let (amount, leftovers) = calculate_storage_fee_refund_amount_and_leftovers(
         storage_fees,
         start_epoch_index,
         skip_up_to_epoch_index,

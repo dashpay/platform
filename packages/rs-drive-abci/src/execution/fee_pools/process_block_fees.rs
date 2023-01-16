@@ -230,7 +230,7 @@ impl Platform {
             // Verify sum trees
             let credits_verified = self
                 .drive
-                .verify_total_credits(transaction)
+                .calculate_total_credits_balance(transaction)
                 .map_err(Error::Drive)?;
 
             if !credits_verified.ok()? {

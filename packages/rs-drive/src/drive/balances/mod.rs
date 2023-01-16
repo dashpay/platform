@@ -31,16 +31,15 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
-use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::grove_operations::{DirectQueryType, QueryType};
+use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::credits::{Creditable, Credits, SignedCredits, MAX_CREDITS};
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::GroveOperation;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use grovedb::operations::insert::InsertOptions;
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -66,45 +65,68 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 
 #[derive(Copy, Clone, Debug)]
 /// The outcome of verifying credits
-pub struct VerifyCreditOutcome {
+pub struct TotalCreditsBalance {
     /// all the credits in platform
-    pub total_credits_in_platform: u64,
+    pub total_credits_in_platform: Credits,
     /// all the credits in distribution pools
-    pub total_in_pools: u64,
+    pub total_in_pools: SignedCredits,
     /// all the credits in identity balances
-    pub total_identity_balances: u64,
+    pub total_identity_balances: SignedCredits,
 }
 
-impl VerifyCreditOutcome {
+impl TotalCreditsBalance {
     /// Is the outcome okay? basically do the values match up
     /// Errors in case of overflow
     pub fn ok(&self) -> Result<bool, Error> {
-        let VerifyCreditOutcome {
+        let TotalCreditsBalance {
             total_credits_in_platform,
             total_in_pools,
             total_identity_balances,
-        } = self;
-        let total_from_trees = (*total_in_pools)
-            .checked_add(*total_identity_balances)
+        } = *self;
+
+        if total_in_pools < 0 {
+            return Err(Error::Drive(DriveError::CriticalCorruptedState(
+                "Credits in distribution pools are less than 0",
+            )));
+        }
+
+        if total_identity_balances < 0 {
+            return Err(Error::Drive(DriveError::CriticalCorruptedState(
+                "Credits of identity balances are less than 0",
+            )));
+        }
+
+        if total_credits_in_platform > MAX_CREDITS {
+            return Err(Error::Drive(DriveError::CriticalCorruptedState(
+                "Total credits in platform more than max credits size",
+            )));
+        }
+
+        let total_from_trees = (total_in_pools)
+            .checked_add(total_identity_balances)
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "Overflow of total credits",
             )))?;
 
-        Ok(*total_credits_in_platform == total_from_trees)
+        Ok(total_credits_in_platform.to_signed()? == total_from_trees)
     }
 
     /// Get the total in all trees
-    pub fn total_in_trees(&self) -> Result<u64, Error> {
-        let VerifyCreditOutcome {
+    pub fn total_in_trees(&self) -> Result<Credits, Error> {
+        let TotalCreditsBalance {
             total_in_pools,
             total_identity_balances,
             ..
-        } = self;
-        (*total_in_pools)
-            .checked_add(*total_identity_balances)
-            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "Overflow of total credits",
-            )))
+        } = *self;
+
+        let total_in_trees =
+            total_in_pools
+                .checked_add(total_identity_balances)
+                .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                    "Overflow of total credits",
+                )))?;
+
+        Ok(total_in_trees.to_unsigned())
     }
 }
 
@@ -236,10 +258,10 @@ impl Drive {
 
     /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
     /// Total credits in the system
-    pub fn verify_total_credits(
+    pub fn calculate_total_credits_balance(
         &self,
         transaction: TransactionArg,
-    ) -> Result<VerifyCreditOutcome, Error> {
+    ) -> Result<TotalCreditsBalance, Error> {
         let mut drive_operations = vec![];
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
@@ -262,11 +284,6 @@ impl Drive {
             &mut drive_operations,
         )?;
 
-        if total_identity_balances < 0 {
-            return Err(Error::Drive(DriveError::CriticalCorruptedState(
-                "Credits of identity balances are less than 0",
-            )));
-        }
         let total_in_pools = self.grove_get_sum_tree_total_value(
             [],
             Into::<&[u8; 1]>::into(RootTree::Pools),
@@ -275,16 +292,10 @@ impl Drive {
             &mut drive_operations,
         )?;
 
-        if total_in_pools < 0 {
-            return Err(Error::Drive(DriveError::CriticalCorruptedState(
-                "Credits in distribution pools are less than 0",
-            )));
-        }
-
-        Ok(VerifyCreditOutcome {
+        Ok(TotalCreditsBalance {
             total_credits_in_platform,
-            total_in_pools: total_in_pools as u64,
-            total_identity_balances: total_identity_balances as u64,
+            total_in_pools,
+            total_identity_balances,
         })
     }
 }
@@ -304,7 +315,7 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         let credits_match_expected = drive
-            .verify_total_credits(None)
+            .calculate_total_credits_balance(None)
             .expect("expected to get the result of the verification");
         assert!(credits_match_expected.ok().expect("no overflow"));
     }
