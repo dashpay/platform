@@ -24,7 +24,6 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation::FunctionOperation;
 use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
-use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -114,6 +113,27 @@ impl Drive {
         let purpose_vec = vec![purpose as u8];
         let security_level_vec = vec![security_level as u8];
 
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_root_key_reference_tree(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
+
+            Self::add_estimation_costs_for_purpose_in_key_reference_tree(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+                purpose,
+            );
+
+            if matches!(purpose, Purpose::AUTHENTICATION) {
+                Self::add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree(
+                    identity_id,
+                    estimated_costs_only_with_layer_info,
+                    security_level,
+                );
+            }
+        }
+
         // Now lets add in references so we can query keys.
         // We assume the following, the identity already has a the basic Query Tree
 
@@ -198,15 +218,20 @@ impl Drive {
         )?;
 
         if with_references {
-            self.insert_key_searchable_references_operations(
-                identity_id,
-                &identity_key,
-                key_id_bytes.as_slice(),
-                storage_flags,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                drive_operations,
-            )?;
+            if matches!(
+                identity_key.purpose,
+                Purpose::AUTHENTICATION | Purpose::WITHDRAW
+            ) {
+                self.insert_key_searchable_references_operations(
+                    identity_id,
+                    &identity_key,
+                    key_id_bytes.as_slice(),
+                    storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    drive_operations,
+                )?;
+            }
         }
         Ok(())
     }
@@ -279,7 +304,7 @@ impl Drive {
         let identity_query_key_tree = identity_query_keys_tree_path(identity_id.as_slice());
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Drive::add_estimation_costs_for_root_key_reference_tree(
+            Self::add_estimation_costs_for_root_key_reference_tree(
                 identity_id,
                 estimated_costs_only_with_layer_info,
             )
@@ -305,8 +330,10 @@ impl Drive {
         }
         // There are 4 Security Levels: Master, Critical, High, Medium
         // For the Authentication Purpose we insert every tree
-        let identity_key_authentication_tree =
-            identity_query_keys_purpose_tree_path(identity_id.as_slice(), &[AUTHENTICATION as u8]);
+        let identity_key_authentication_tree = identity_query_keys_purpose_tree_path(
+            identity_id.as_slice(),
+            &[Purpose::AUTHENTICATION as u8],
+        );
         for security_level in SecurityLevel::full_range() {
             self.batch_insert_empty_tree(
                 identity_key_authentication_tree,
@@ -316,7 +343,7 @@ impl Drive {
             )?;
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                Drive::add_estimation_costs_for_security_level_in_key_reference_tree(
+                Drive::add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree(
                     identity_id,
                     estimated_costs_only_with_layer_info,
                     security_level,

@@ -214,6 +214,10 @@ impl Drive {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
+            Self::add_estimation_costs_for_negative_credit(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
         }
 
         let previous_balance = self
@@ -425,6 +429,10 @@ impl Drive {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
+            Self::add_estimation_costs_for_negative_credit(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
         }
 
         let previous_balance = if estimated_costs_only_with_layer_info.is_none() {
@@ -675,6 +683,14 @@ mod tests {
                 .add_to_identity_balance(identity.id.to_buffer(), 300, &block, false, None)
                 .expect("expected to get estimated costs to update an identity balance");
 
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    processing_fee: 10175040,
+                    ..Default::default()
+                }
+            );
+
             let app_hash_after = drive
                 .grove
                 .root_hash(None)
@@ -682,14 +698,6 @@ mod tests {
                 .expect("should return app hash");
 
             assert_eq!(app_hash_after, app_hash_before);
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 5609970,
-                    ..Default::default()
-                }
-            );
 
             let (balance, _fee_cost) = drive
                 .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)

@@ -263,7 +263,7 @@ mod tests {
                 .add_new_identity(identity.clone(), &block, true, None)
                 .expect("expected to insert identity");
 
-            let new_keys_to_add = IdentityPublicKey::random_keys(5, 1, Some(15));
+            let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 1, Some(15));
 
             let db_transaction = drive.grove.start_transaction();
 
@@ -280,8 +280,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 15120000,
-                    processing_fee: 2561320,
+                    storage_fee: 14364000,
+                    processing_fee: 2502490,
                     ..Default::default()
                 }
             );
@@ -303,10 +303,6 @@ mod tests {
         fn should_add_two_dozen_new_keys_to_identity() {
             let drive = setup_drive_with_initial_state_structure();
 
-            drive
-                .create_initial_state_structure(None)
-                .expect("expected to create root tree successfully");
-
             let identity = Identity::random_identity(5, Some(12345));
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0));
@@ -315,7 +311,7 @@ mod tests {
                 .add_new_identity(identity.clone(), &block, true, None)
                 .expect("expected to insert identity");
 
-            let new_keys_to_add = IdentityPublicKey::random_keys(5, 24, Some(15));
+            let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 24, Some(15));
 
             let db_transaction = drive.grove.start_transaction();
 
@@ -332,8 +328,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 390636000,
-                    processing_fee: 10289310,
+                    storage_fee: 350676000,
+                    processing_fee: 9864200,
                     ..Default::default()
                 }
             );
@@ -359,7 +355,7 @@ mod tests {
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0));
 
-            let new_keys_to_add = IdentityPublicKey::random_keys(5, 1, Some(15));
+            let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 1, Some(15));
 
             let app_hash_before = drive
                 .grove
@@ -388,8 +384,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 15498000,
-                    processing_fee: 2642980,
+                    storage_fee: 17415000,
+                    processing_fee: 12549360,
                     ..Default::default()
                 }
             );
@@ -445,7 +441,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1499200,
+                    processing_fee: 1646460,
                     ..Default::default()
                 }
             );
@@ -505,13 +501,11 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 9720000,
-                    processing_fee: 5867730,
+                    storage_fee: 0,
+                    processing_fee: 5870930,
                     ..Default::default()
                 }
             );
-
-            todo!("fees shouldn't be so big")
         }
     }
 
