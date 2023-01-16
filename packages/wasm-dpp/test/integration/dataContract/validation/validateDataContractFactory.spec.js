@@ -31,7 +31,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 // const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 // const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
 
-const { expectJsonSchemaError } = require('../../../../lib/test/expect/expectError.js');
+const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError.js');
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
@@ -41,10 +41,12 @@ describe('validateDataContractFactory', () => {
 
   let DataContractValidator;
   let ValidationResult;
+  let JsonSchemaCompilationError;
+  let IncompatibleRe2PatternError;
 
   before(async () => {
     ({
-      DataContractValidator, ValidationResult,
+      DataContractValidator, ValidationResult, JsonSchemaCompilationError, IncompatibleRe2PatternError,
     } = await loadWasmDpp());
   });
 
@@ -834,317 +836,326 @@ describe('validateDataContractFactory', () => {
         expect(error.getParams().type).to.equal('object');
       });
 
-    //   it('should have items if prefixItems is used for arrays', async () => {
-    //     rawDataContract.documents.new = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'array',
-    //           prefixItems: [
-    //             {
-    //               type: 'string',
-    //             },
-    //             {
-    //               type: 'number',
-    //             },
-    //           ],
-    //           minItems: 2,
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('items');
-    //   });
-
-    //   it('should not have items disabled if prefixItems is used for arrays', async () => {
-    //     rawDataContract.documents.new = {
-    //       properties: {
-    //         something: {
-    //           type: 'array',
-    //           prefixItems: [
-    //             {
-    //               type: 'string',
-    //             },
-    //             {
-    //               type: 'number',
-    //             },
-    //           ],
-    //           items: true,
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/new/properties/something/items');
-    //     expect(error.getKeyword()).to.equal('const');
-    //     expect(error.getParams().allowedValue).to.equal(false);
-    //   });
-
-    //   it('should return invalid result if "default" keyword is used', async () => {
-    //     rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName');
-    //     expect(error.getKeyword()).to.equal('unevaluatedProperties');
-    //   });
-
-    //   it.skip('should return invalid result if remote `$ref` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       $ref: 'http://remote.com/schema#',
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/$ref');
-    //     expect(error.getKeyword()).to.equal('pattern');
-    //   });
-
-    //   it('should not have `propertyNames`', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //         },
-    //       },
-    //       propertyNames: {
-    //         pattern: 'abc',
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument');
-    //     expect(error.getKeyword()).to.equal('unevaluatedProperties');
-    //     expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
-    //   });
-
-    //   it('should have `maxItems` if `uniqueItems` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'array',
-    //           uniqueItems: true,
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('items');
-    //   });
-
-    //   it('should have `maxItems` no bigger than 100000 if `uniqueItems` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'array',
-    //           uniqueItems: true,
-    //           maxItems: 200000,
-    //           items: {
-    //             type: 'object',
-    //             properties: {
-    //               property: {
-    //                 type: 'string',
-    //               },
-    //             },
-    //             additionalProperties: false,
-    //           },
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxItems');
-    //     expect(error.getKeyword()).to.equal('maximum');
-    //   });
-
-    //   it('should return invalid result if document JSON Schema is not valid', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //           format: 'lalala',
-    //           maxLength: 100,
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     expectValidationError(result, JsonSchemaCompilationError);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getCode()).to.equal(1004);
-
-    //     expect(error.message).to.be.a('string').and.satisfy((msg) => (
-    //       msg.startsWith('unknown format "lalala" ignored in schema')
-    //     ));
-    //   });
-
-    //   it('should have `maxLength` if `pattern` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //           pattern: 'a',
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('maxLength');
-    //   });
-
-    //   it('should have `maxLength` no bigger than 50000 if `pattern` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //           pattern: 'a',
-    //           maxLength: 60000,
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxLength');
-    //     expect(error.getKeyword()).to.equal('maximum');
-    //   });
-
-    //   it('should have `maxLength` if `format` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //           format: 'url',
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
-    //     expect(error.getKeyword()).to.equal('required');
-    //     expect(error.getParams().missingProperty).to.equal('maxLength');
-    //   });
-
-    //   it('should have `maxLength` no bigger than 50000 if `format` is used', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //           format: 'url',
-    //           maxLength: 60000,
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     await expectJsonSchemaError(result, 2);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxLength');
-    //     expect(error.getKeyword()).to.equal('maximum');
-    //   });
-
-    //   it('should not have incompatible patterns', async () => {
-    //     rawDataContract.documents.indexedDocument = {
-    //       type: 'object',
-    //       properties: {
-    //         something: {
-    //           type: 'string',
-    //           maxLength: 100,
-    //           pattern: '^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$',
-    //         },
-    //       },
-    //       additionalProperties: false,
-    //     };
-
-    //     const result = await validateDataContract(rawDataContract);
-
-    //     expectValidationError(result, IncompatibleRe2PatternError);
-
-    //     const [error] = result.getErrors();
-
-    //     expect(error.getCode()).to.equal(1009);
-    //     expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
-    //     expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
-    //     expect(error.getPatternError()).to.be.instanceOf(Error);
-    //   });
+      it('should have items if prefixItems is used for arrays', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.new = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'array',
+              prefixItems: [
+                {
+                  type: 'string',
+                },
+                {
+                  type: 'number',
+                },
+              ],
+              minItems: 2,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 4);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/new/properties/something');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('items');
+      });
+
+      it('should not have items disabled if prefixItems is used for arrays', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.new = {
+          properties: {
+            something: {
+              type: 'array',
+              prefixItems: [
+                {
+                  type: 'string',
+                },
+                {
+                  type: 'number',
+                },
+              ],
+              items: true,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/new/properties/something/items');
+        expect(error.getKeyword()).to.equal('const');
+        expect(error.getParams().allowedValue).to.equal(false);
+      });
+
+      it.skip('should return invalid result if "default" keyword is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
+      });
+
+      it('should return invalid result if remote `$ref` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          $ref: 'http://remote.com/schema#',
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/$ref');
+        expect(error.getKeyword()).to.equal('pattern');
+      });
+
+      it.skip('should not have `propertyNames`', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+            },
+          },
+          propertyNames: {
+            pattern: 'abc',
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
+        expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
+      });
+
+      it('should have `maxItems` if `uniqueItems` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'array',
+              uniqueItems: true,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 4);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('maxItems');
+      });
+
+      it('should have `maxItems` no bigger than 100000 if `uniqueItems` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'array',
+              uniqueItems: true,
+              maxItems: 200000,
+              items: {
+                type: 'object',
+                properties: {
+                  property: {
+                    type: 'string',
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxItems');
+        expect(error.getKeyword()).to.equal('maximum');
+      });
+
+      it('should return invalid result if document JSON Schema is not valid', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              format: 'lalala',
+              maxLength: 100,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, JsonSchemaCompilationError);
+
+        const [error] = result.getErrors();
+// TODO
+//        expect(error.getCode()).to.equal(1004);
+        expect(error.getKeyword()).to.equal('format');
+      });
+
+      it('should have `maxLength` if `pattern` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              pattern: 'a',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('maxLength');
+      });
+
+      it('should have `maxLength` no bigger than 50000 if `pattern` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              pattern: 'a',
+              maxLength: 60000,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxLength');
+        expect(error.getKeyword()).to.equal('maximum');
+      });
+
+      it('should have `maxLength` if `format` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              format: 'url',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('maxLength');
+      });
+
+      it('should have `maxLength` no bigger than 50000 if `format` is used', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              format: 'url',
+              maxLength: 60000,
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        await expectJsonSchemaError(result, 2);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/something/maxLength');
+        expect(error.getKeyword()).to.equal('maximum');
+      });
+
+      it('should not have incompatible patterns', async () => {
+        const rawDataContract = dataContract.toObject();
+        rawDataContract.documents.indexedDocument = {
+          type: 'object',
+          properties: {
+            something: {
+              type: 'string',
+              maxLength: 100,
+              pattern: '^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$',
+            },
+          },
+          additionalProperties: false,
+        };
+
+        const result = await validateDataContract(rawDataContract);
+
+        expectValidationError(result, IncompatibleRe2PatternError);
+
+        const [error] = result.getErrors();
+
+        expect(error.getCode()).to.equal(1009);
+        expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
+        expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
+      });
 
     //   describe('byteArray', () => {
     //     it('should be a boolean', async () => {
