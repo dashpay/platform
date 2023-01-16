@@ -606,7 +606,73 @@ fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions
     let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
     assert_eq!(outcome.identities.len() as u64, block_count);
     assert_eq!(outcome.masternode_identity_balances.len(), 100);
-    dbg!(&outcome.masternode_identity_balances);
+    let all_have_balances = outcome
+        .masternode_identity_balances
+        .iter()
+        .all(|(_, balance)| *balance != 0);
+    assert!(all_have_balances, "all masternodes should have a balance");
+}
+
+#[test]
+fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change()
+{
+    let contract_cbor = json_document_to_cbor(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+        Some(PROTOCOL_VERSION),
+    );
+    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+        .expect("contract should be deserialized");
+
+    let document_insertion_op = DocumentOp {
+        contract: contract.clone(),
+        action: DocumentActionInsert,
+        document_type: contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let document_deletion_op = DocumentOp {
+        contract: contract.clone(),
+        action: DocumentActionDelete,
+        document_type: contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type")
+            .clone(),
+    };
+
+    let strategy = Strategy {
+        contracts: vec![contract],
+        operations: vec![
+            (
+                document_insertion_op,
+                Frequency {
+                    times_per_block_range: 1..10,
+                    chance_per_block: None,
+                },
+            ),
+            (
+                document_deletion_op,
+                Frequency {
+                    times_per_block_range: 1..4,
+                    chance_per_block: None,
+                },
+            ),
+        ],
+        identities_inserts: Frequency {
+            times_per_block_range: 1..2,
+            chance_per_block: None,
+        },
+    };
+    let config = PlatformConfig {
+        drive_config: Default::default(),
+        verify_sum_trees: true,
+    };
+    let day_in_ms = 1000 * 60 * 60 * 24;
+    let block_count = 120;
+    let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+    assert_eq!(outcome.identities.len() as u64, block_count);
+    assert_eq!(outcome.masternode_identity_balances.len(), 100);
     let all_have_balances = outcome
         .masternode_identity_balances
         .iter()

@@ -36,7 +36,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-use crate::fee::epoch::distribution::calculate_storage_fee_distribution_amount_and_leftovers;
+use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{CreditsPerEpoch, EpochIndex};
 use crate::fee::get_overflow_error;
 use bincode::Options;
@@ -75,10 +75,9 @@ impl FeeRefunds {
                             })?;
 
                         // TODO We don't need leftovers as return result?
-                        let (amount, _) = calculate_storage_fee_distribution_amount_and_leftovers(
+                        let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
                             credits,
                             epoch_index,
-                            // TODO: Move + 1 inside the function
                             current_epoch_index + 1,
                         )?;
 
