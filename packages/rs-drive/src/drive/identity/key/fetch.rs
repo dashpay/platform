@@ -234,6 +234,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeM
 }
 
 /// A request to get Keys from an Identity
+#[derive(Clone)]
 pub struct IdentityKeysRequest {
     /// The request identity id
     pub identity_id: [u8; 32],
@@ -621,6 +622,12 @@ mod tests {
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
+            .fetch_identity_keys(key_request.clone(), Some(&transaction))
+            .expect("expected to fetch keys");
+
+        assert_eq!(public_keys.len(), 1); //because we are not requesting with options
+
+        let public_keys: KeyIDOptionalIdentityPublicKeyPairBTreeMap = drive
             .fetch_identity_keys(key_request, Some(&transaction))
             .expect("expected to fetch keys");
 
