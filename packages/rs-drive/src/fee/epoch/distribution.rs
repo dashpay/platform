@@ -276,7 +276,6 @@ where
             .ok_or(Error::Fee(FeeError::Overflow(
                 "overflow when multiplying with the multiplier (this should be impossible)",
             )))?;
-    let mut sum_ratio = dec!(0);
     for year in start_year..PERPETUAL_STORAGE_YEARS {
         let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
 
@@ -298,7 +297,6 @@ where
         let year_end_epoch_index = start_epoch_index + ((year + 1) * EPOCHS_PER_YEAR);
 
         for epoch_index in year_start_epoch_index..year_end_epoch_index {
-            sum_ratio += FEE_DISTRIBUTION_TABLE[year as usize] / epochs_per_year;
             map_function(epoch_index, estimated_epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
@@ -308,9 +306,6 @@ where
                 )))?;
         }
     }
-    dbg!(sum_ratio);
-    sum_ratio *= multiplier;
-    dbg!(sum_ratio);
     Ok(distribution_leftover_credits)
 }
 
@@ -406,11 +401,6 @@ mod tests {
 
             assert_eq!(calls, PERPETUAL_STORAGE_EPOCHS);
             assert_eq!(leftovers, 360);
-        }
-
-        #[test]
-        fn should_skip_distribution_until_epoch_index() {
-            todo!()
         }
     }
 

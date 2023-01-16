@@ -1529,9 +1529,12 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        assert_eq!(*removed_credits, 44959380);
+        let refund_equivalent_bytes =
+            removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
-        assert_eq!(added_bytes, removed_bytes);
+        assert!(added_bytes > refund_equivalent_bytes);
+        assert_eq!(refund_equivalent_bytes, 1665); // we refunded 1665 instead of 1682
     }
 
     #[test]

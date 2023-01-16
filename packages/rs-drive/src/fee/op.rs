@@ -237,7 +237,7 @@ impl DriveOperation {
                     let cost = operation.operation_cost()?;
                     let storage_fee = cost.storage_cost(epoch)?;
                     let processing_fee = cost.ephemeral_cost(epoch)?;
-                    let (removed_bytes_from_epochs_by_identities, removed_bytes_from_system) =
+                    let (fee_refunds, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
                             NoStorageRemoval => (FeeRefunds::default(), 0),
                             BasicStorageRemoval(amount) => {
@@ -261,7 +261,7 @@ impl DriveOperation {
                     Ok(FeeResult {
                         storage_fee,
                         processing_fee,
-                        fee_refunds: removed_bytes_from_epochs_by_identities,
+                        fee_refunds,
                         removed_bytes_from_system,
                     })
                 }

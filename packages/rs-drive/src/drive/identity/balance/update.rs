@@ -868,14 +868,14 @@ mod tests {
                     _,
                     DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
-                            element: Element::SumItem(99390, None),
+                            element: Element::SumItem(removed_credits, None),
                         },
                         ..
                     }),
                     ..,
                     DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
-                            element: Element::SumItem(199320, None),
+                            element: Element::SumItem(other_removed_credits, None),
                         },
                         ..
                     })
@@ -948,7 +948,7 @@ mod tests {
                     _,
                     DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
-                            element: Element::SumItem(8575, None),
+                            element: Element::SumItem(removed_credits, None),
                         },
                     ..
                     }),
@@ -1014,7 +1014,7 @@ mod tests {
                         },
                         ..
                     })
-                ] if debt_bytes == &2442u64.to_be_bytes()
+                ] if debt_bytes == &2000u64.to_be_bytes()
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
