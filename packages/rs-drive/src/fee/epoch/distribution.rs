@@ -108,7 +108,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     current_epoch_index: EpochIndex,
-) -> Result<DistributionLeftovers, Error> {
+) -> Result<(), Error> {
     let leftovers = refund_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
@@ -144,7 +144,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
             })?;
     }
 
-    Ok(leftovers)
+    Ok(())
 }
 
 /// Calculates leftovers and amount of credits by distributing storage fees to epochs
