@@ -6,7 +6,6 @@ use dpp::{
     },
     prelude::{DataContract, Document, Identifier},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -28,6 +27,7 @@ use crate::{
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;
+pub mod validation;
 
 #[derive(Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]

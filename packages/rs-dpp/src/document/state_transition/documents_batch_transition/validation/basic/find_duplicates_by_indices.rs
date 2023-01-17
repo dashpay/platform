@@ -25,12 +25,12 @@ macro_rules! get_from_transition {
 
 /// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
-    document_raw_transitions: impl IntoIterator<Item = &'a JsonValue>,
+    document_raw_transitions: impl IntoIterator<Item = &'a Value>,
     data_contract: &DataContract,
-) -> Result<Vec<&'a JsonValue>, ProtocolError> {
+) -> Result<Vec<&'a Value>, ProtocolError> {
     #[derive(Debug)]
     struct Group<'a> {
-        transitions: Vec<&'a JsonValue>,
+        transitions: Vec<&'a Value>,
         indices: Vec<Index>,
     }
     let mut groups: HashMap<&'a str, Group> = HashMap::new();
@@ -50,7 +50,7 @@ pub fn find_duplicates_by_indices<'a>(
         };
     }
 
-    let mut found_group_duplicates: Vec<&'a JsonValue> = vec![];
+    let mut found_group_duplicates: Vec<&'a Value> = vec![];
     for (_, group) in groups
         .iter()
         // Filter out groups without unique indices
@@ -58,15 +58,15 @@ pub fn find_duplicates_by_indices<'a>(
         // Filter out group with only one object
         .filter(|(_, group)| group.transitions.len() > 1)
     {
-        for transition in group.transitions.as_slice() {
-            let transition_id = transition.get_bytes("$id")?;
+        for transition in group.transitions.iter() {
+            let transition_id = transition.get("$id").unwrap();
 
-            let mut found_duplicates: Vec<&'a JsonValue> = vec![];
+            let mut found_duplicates: Vec<&'a Value> = vec![];
             for transition_to_check in group
                 .transitions
                 .iter()
                 // Exclude current transition from search
-                .filter(|t| t.get_bytes("$id").unwrap() != transition_id)
+                .filter(|t| t.get("$id").unwrap() != transition_id)
             {
                 if is_duplicate_by_indices(transition, transition_to_check, &group.indices) {
                     found_duplicates.push(transition_to_check)
@@ -77,28 +77,6 @@ pub fn find_duplicates_by_indices<'a>(
     }
 
     Ok(found_group_duplicates)
-}
-
-fn is_duplicate_by_indices(
-    original_transition: &JsonValue,
-    transition_to_check: &JsonValue,
-    type_indices: &[Index],
-) -> bool {
-    for index in type_indices {
-        for property in index.properties.iter() {
-            let original = original_transition
-                .get(&property.name)
-                .unwrap_or(&JsonValue::Null);
-            let to_check = transition_to_check
-                .get(&property.name)
-                .unwrap_or(&JsonValue::Null);
-
-            if original != to_check {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<Index> {
@@ -134,6 +112,36 @@ fn get_data_property(document_transition: &DocumentTransition, property_name: &s
     }
 }
 
+fn is_duplicate_by_indices(
+    original_transition: &Value,
+    transition_to_check: &Value,
+    type_indices: &Vec<Index>,
+) -> bool {
+    let mut accumulator = false;
+    for definition in type_indices {
+        let mut original_hash = String::new();
+        let mut hash_to_check = String::new();
+        for property in &definition.properties {
+            original_hash.push_str(&format!(
+                "{}:{}",
+                property.name,
+                original_transition
+                    .get(&property.name)
+                    .unwrap_or(&Value::Null)
+            ));
+            hash_to_check.push_str(&format!(
+                "{}:{}",
+                property.name,
+                transition_to_check
+                    .get(&property.name)
+                    .unwrap_or(&Value::Null)
+            ));
+        }
+        accumulator = accumulator || (original_hash == hash_to_check);
+    }
+    accumulator
+}
+
 #[cfg(test)]
 mod test {
     use serde_json::json;
@@ -141,6 +149,35 @@ mod test {
     use crate::{prelude::*, util::string_encoding::Encoding};
 
     use super::find_duplicates_by_indices;
+
+    fn setup_test() {
+        let document_def = json!(                {
+                            "indices": [
+                              {
+                                "name": "ownerIdLastName",
+                                "properties": [
+                                  {"$ownerId": "asc"},
+                                  {"lastName": "asc"},
+                                ],
+                                "unique": true,
+                              },
+                            ],
+                            "properties": {
+                              "firstName": {
+                                "type": "string",
+                              },
+                              "lastName": {
+                                "type": "string",
+                              },
+                            },
+                            "required": ["lastName"],
+                            "additionalProperties": false,
+                          }
+        );
+
+        let mut data_contract = DataContract::default();
+        data_contract.set_document_schema("singleDocument".to_string(), document_def);
+    }
 
     #[test]
     fn test_find_duplicates_by_indices() {
@@ -205,7 +242,6 @@ mod test {
                 "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
               }
         );
-
         let duplicates = find_duplicates_by_indices(
             [&document_raw_transition_1, &document_create_transition_2],
             &data_contract,

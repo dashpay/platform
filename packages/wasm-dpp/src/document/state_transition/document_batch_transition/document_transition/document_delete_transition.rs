@@ -5,7 +5,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    document_batch_transition::document_transition::convert_binary_data,
+    document_batch_transition::document_transition::convert_to_object,
     identifier::IdentifierWrapper, utils::WithJsError, DataContractWasm,
 };
 
@@ -30,7 +30,7 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
-        convert_binary_data(
+        convert_to_object(
             self.inner.to_object().with_js_error()?,
             options,
             document_delete_transition::IDENTIFIER_FIELDS,

@@ -223,8 +223,8 @@ mod test {
             .expect_update_document()
             .returning(|_, _| Ok(()));
         state_repository
-            .expect_fetch_latest_platform_block_header()
-            .returning(|| Ok(create_empty_block(None)));
+            .expect_fetch_latest_platform_block_time()
+            .returning(|| Ok(0));
 
         let result = apply_documents_batch_transition(&state_repository, &state_transition).await;
         assert!(result.is_ok());

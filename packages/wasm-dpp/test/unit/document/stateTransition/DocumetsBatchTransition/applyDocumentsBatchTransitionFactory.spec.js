@@ -20,8 +20,6 @@ const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransit
 const DocumentNotProvidedErrorJs = require('@dashevo/dpp/lib/document/errors/DocumentNotProvidedError');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
-const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
-const { CONSOLE_APPENDER } = require('karma/lib/constants');
 
 let Document;
 let DocumentsBatchTransition;

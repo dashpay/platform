@@ -16,7 +16,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::with_js_error;
+use crate::{console_log, with_js_error};
 use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
@@ -181,11 +181,16 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
+        let mut value_to_set = if js_value_to_set.is_null() || js_value_to_set.is_undefined() {
+            serde_json::Value::Null
+        } else {
+            js_value_to_set.with_serde_to_json_value()?
+        };
+
         let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths();
         for property_path in identifier_paths {
             if property_path == path {
-                let id_value = js_value_to_set.with_serde_to_json_value()?;
-                let id_string = id_value
+                let id_string = value_to_set
                     .as_str()
                     .context("the value must be a string")
                     .with_js_error()?;
@@ -195,10 +200,11 @@ impl DocumentWasm {
                 return self.0.set(&path, new_value).with_js_error();
             } else if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
-                let mut value = js_value_to_set.with_serde_to_json_value()?;
+                // TODO run the tests
+                // let mut value = js_value_to_set.with_serde_to_json_value()?;
 
-                if value.get_value(suffix).is_ok() {
-                    let id_string = value
+                if value_to_set.get_value(suffix).is_ok() {
+                    let id_string = value_to_set
                         .remove_path_into::<String>(suffix)
                         .with_context(|| format!("unable convert `{path}` into string"))
                         .map_err(|e| format!("{e:#}"))?;
@@ -207,15 +213,16 @@ impl DocumentWasm {
                             .with_js_error()?
                             .into();
                     let new_value = serde_json::to_value(id.inner().as_bytes()).with_js_error()?;
-                    value.insert_with_path(suffix, new_value).with_js_error()?;
+                    value_to_set
+                        .insert_with_path(suffix, new_value)
+                        .with_js_error()?;
 
-                    return self.0.set(&path, value).with_js_error();
+                    return self.0.set(&path, value_to_set).with_js_error();
                 }
             }
         }
 
-        let value = js_value_to_set.with_serde_to_json_value()?;
-        self.0.set(&path, value).with_js_error()
+        self.0.set(&path, value_to_set).with_js_error()
     }
 
     #[wasm_bindgen(js_name=get)]

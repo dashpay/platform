@@ -20,8 +20,8 @@ impl InconsistentCompoundIndexDataErrorWasm {
 
 #[wasm_bindgen(js_class=InconsistentCompoundIndexDataError)]
 impl InconsistentCompoundIndexDataErrorWasm {
-    #[wasm_bindgen(js_name=getIndexProperties)]
-    pub fn get_index_properties(&self) -> js_sys::Array {
+    #[wasm_bindgen(js_name=getIndexedProperties)]
+    pub fn get_indexed_properties(&self) -> js_sys::Array {
         self.index_properties
             .iter()
             .map(|string| JsString::from(string.as_ref()))
