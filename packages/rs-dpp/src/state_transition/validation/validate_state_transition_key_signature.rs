@@ -96,7 +96,6 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
         .fetch_public_key_hash(asset_lock_proof.to_owned(), execution_context)
         .await
         .with_context(|| format!("public key hash fetching failed for {:?}", asset_lock_proof))?;
-
     let operation = SignatureVerificationOperation::new(KeyType::ECDSA_SECP256K1);
     state_transition
         .get_execution_context()
@@ -149,7 +148,7 @@ mod test {
         },
         prelude::Identity,
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransition, StateTransitionLike},
+        state_transition::{StateTransition, StateTransitionConvert, StateTransitionLike},
         tests::{
             fixtures::{
                 identity_create_transition_fixture_json, identity_topup_transition_fixture_json,
@@ -211,6 +210,7 @@ mod test {
             bls,
         } = setup_test();
         let private_key_hex = "af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837";
+
         let secret_key = SecretKey::from_slice(&hex::decode(private_key_hex).unwrap())
             .expect("secret key should be created");
 
