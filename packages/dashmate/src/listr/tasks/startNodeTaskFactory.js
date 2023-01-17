@@ -30,8 +30,7 @@ function startNodeTaskFactory(
   function startNodeTask(config) {
     // check core is not reindexing
     if (config.get('core.reindex.enable', true)) {
-      console.log(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
-      this.exit()
+      throw new Error(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
     }
 
     // Check external IP is set
@@ -75,7 +74,7 @@ function startNodeTaskFactory(
         title: 'Check node is not started',
         task: async () => {
           if (await dockerCompose.isServiceRunning(config.toEnvs())) {
-            throw new Error('Running services detected. Please ensure all services are stopped for this config before starting')
+            throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
       },

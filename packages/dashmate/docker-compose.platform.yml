@@ -37,8 +37,6 @@ services:
       - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT}
     command: yarn workspace @dashevo/drive abci
     stop_grace_period: 30s
-    ports:
-      - "26658:26658"
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
