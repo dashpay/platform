@@ -53,12 +53,14 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
-use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, PathKeyInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use crate::fee::{calculate_fee, FeeResult};
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -68,6 +70,7 @@ use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
+use crate::fee::result::FeeResult;
 use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
@@ -139,10 +142,12 @@ impl Drive {
 
         self.update_document_for_contract_apply_and_add_to_operations(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract,
                 document_type,
-                owner_id,
             },
             &block_info,
             estimated_costs_only_with_layer_info,
@@ -209,10 +214,12 @@ impl Drive {
 
         self.update_document_for_contract_apply_and_add_to_operations(
             DocumentAndContractInfo {
-                document_info,
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
                 contract,
                 document_type,
-                owner_id,
             },
             &block_info,
             estimated_costs_only_with_layer_info,
@@ -237,6 +244,7 @@ impl Drive {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -253,13 +261,13 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
-
         if !document_and_contract_info.document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
@@ -267,13 +275,17 @@ impl Drive {
         }
 
         // If we are going for estimated costs do an add instead as it always worse than an update
-        if document_and_contract_info.document_info.is_document_size()
+        if document_and_contract_info
+            .owned_document_info
+            .document_info
+            .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
             return self.add_document_for_contract_operations(
                 document_and_contract_info,
                 true, // we say we should override as this skips an unnecessary check
                 block_info,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
             );
@@ -281,10 +293,10 @@ impl Drive {
 
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
-        let owner_id = document_and_contract_info.owner_id;
+        let owner_id = document_and_contract_info.owned_document_info.owner_id;
 
         if let DocumentRefAndSerialization((document, _serialized_document, storage_flags)) =
-            document_and_contract_info.document_info
+            document_and_contract_info.owned_document_info.document_info
         {
             // we need to construct the path for documents on the contract
             // the path is
@@ -418,6 +430,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
+                            previous_batch_operations,
                             &mut batch_operations,
                         )?;
                         if inserted {
@@ -482,6 +495,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
+                                previous_batch_operations,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -512,6 +526,7 @@ impl Drive {
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsert,
                                 transaction,
+                                previous_batch_operations,
                                 &mut batch_operations,
                             )?;
                             if inserted {
@@ -557,6 +572,7 @@ impl Drive {
                                 is_known_to_be_subtree_with_sum: Some((false, false)),
                             },
                             transaction,
+                            &previous_batch_operations,
                             &mut batch_operations,
                         )?;
                     } else {
@@ -569,6 +585,7 @@ impl Drive {
                                 is_known_to_be_subtree_with_sum: Some((false, false)),
                             },
                             transaction,
+                            &previous_batch_operations,
                             &mut batch_operations,
                         )?;
                     }
@@ -582,6 +599,7 @@ impl Drive {
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsert,
                             transaction,
+                            previous_batch_operations,
                             &mut batch_operations,
                         )?;
                         index_path.push(vec![0]);
@@ -619,6 +637,8 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use dpp::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
+    use dpp::state_repository::MockStateRepositoryLike;
     use grovedb::TransactionArg;
     use std::default::Default;
     use std::option::Option::None;
@@ -643,6 +663,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
+    use crate::fee::credits::Creditable;
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::query::DriveQuery;
     use crate::{
@@ -750,14 +771,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &alice_profile,
-                        alice_profile_cbor.as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &alice_profile,
+                            alice_profile_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::default(),
@@ -841,14 +864,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &alice_profile,
-                        alice_profile_cbor.as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &alice_profile,
+                            alice_profile_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::default(),
@@ -952,14 +977,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &alice_profile,
-                        alice_profile_cbor.as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &alice_profile,
+                            alice_profile_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::default(),
@@ -1514,13 +1541,18 @@ mod tests {
                 &person_0_original,
                 transaction.as_ref(),
             );
-            let removed_bytes = deletion_fees
-                .removed_bytes_from_epochs_by_identities
+
+            let removed_credits = deletion_fees
+                .fee_refunds
                 .get(&owner_id)
                 .unwrap()
-                .get(0)
+                .get(&0)
                 .unwrap();
-            assert_eq!(original_bytes, *removed_bytes as u64);
+
+            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+            assert_eq!(original_bytes, removed_bytes);
+
             // let's re-add it again
             let original_fees = apply_person(
                 &drive,
@@ -1530,7 +1562,9 @@ mod tests {
                 true,
                 transaction.as_ref(),
             );
+
             let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
             assert_eq!(original_bytes, expected_added_bytes);
         }
 
@@ -1626,13 +1660,18 @@ mod tests {
                 &person_0_original,
                 transaction.as_ref(),
             );
-            let removed_bytes = deletion_fees
-                .removed_bytes_from_epochs_by_identities
+
+            let removed_credits = deletion_fees
+                .fee_refunds
                 .get(&owner_id)
                 .unwrap()
-                .get(0)
+                .get(&0)
                 .unwrap();
-            assert_eq!(original_bytes, *removed_bytes as u64);
+
+            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
+            assert_eq!(original_bytes, removed_bytes);
+
             // let's re-add it again
             let original_fees = apply_person(
                 &drive,
@@ -1642,11 +1681,13 @@ mod tests {
                 true,
                 transaction.as_ref(),
             );
+
             let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+
             assert_eq!(original_bytes, expected_added_bytes);
         }
-        // now let's update it
 
+        // now let's update it
         let update_fees = apply_person(
             &drive,
             &contract,
@@ -1658,20 +1699,22 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        let removed_bytes = update_fees
-            .removed_bytes_from_epochs_by_identities
+
+        let removed_credits = update_fees
+            .fee_refunds
             .get(&owner_id)
             .unwrap()
-            .get(0)
+            .get(&0)
             .unwrap();
+
+        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
         let expected_added_bytes = if using_history { 607 } else { 605 };
         assert_eq!(added_bytes, expected_added_bytes);
 
         let expected_removed_bytes = if using_history { 604 } else { 602 };
-
-        assert_eq!(*removed_bytes, expected_removed_bytes);
+        assert_eq!(removed_bytes, expected_removed_bytes);
     }
 
     #[test]
@@ -1998,14 +2041,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            document_cbor.as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 block_info,
@@ -2307,7 +2352,7 @@ mod tests {
         let document_factory = DocumentFactory::new(
             1,
             document_validator,
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         // Create a document
@@ -2323,7 +2368,7 @@ mod tests {
             )
             .expect("should create a document");
 
-        let document_cbor = document.to_cbor().expect("should encode to cbor");
+        let document_cbor = document.to_buffer().expect("should encode to buffer");
 
         let storage_flags = StorageFlags::SingleEpochOwned(0, owner_id.to_buffer());
 
@@ -2349,7 +2394,7 @@ mod tests {
             .set("name", Value::String("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
-        let document_cbor = document.to_cbor().expect("should encode to cbor");
+        let document_cbor = document.to_buffer().expect("should encode to buffer");
 
         let block_info = BlockInfo::default_with_time(10000);
 

@@ -3,7 +3,7 @@ use std::convert::{Infallible, TryInto};
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
@@ -19,7 +19,7 @@ impl From<Infallible> for ProtocolError {
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(test, automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
+#[cfg_attr(any(test, feature="mocks"), automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     type ConversionError: Into<ProtocolError>;

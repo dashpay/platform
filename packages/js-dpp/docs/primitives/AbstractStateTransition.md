@@ -73,14 +73,6 @@
 
 **Returns**: {boolean}
 
-## .calculateFee()
-
-**Description**: Calculate ST fee in credits
-
-**Parameters**: None.
-
-**Returns**: {number}
-
 ## .toObject(options)
 
 **Description**: Return state transition as plain object

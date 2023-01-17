@@ -64,9 +64,10 @@ use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
-use crate::fee::{calculate_fee, FeeResult};
+use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
 /// The global root path for all contracts
@@ -112,7 +113,7 @@ pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
 }
 
 /// Contract and fetch information
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct ContractFetchInfo {
     /// The contract
     pub contract: Contract,
@@ -640,6 +641,7 @@ impl Drive {
                             storage_flags.as_ref(),
                             apply_type,
                             transaction,
+                            &mut None,
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -849,9 +851,15 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> CostResult<Option<Arc<ContractFetchInfo>>, Error> {
-        let CostContext { value, cost } =
-            self.grove
-                .get(contract_root_path(&contract_id), &[0], transaction);
+        // As we want deterministic costs, we want the cost to always be the same for
+        // fetching the contract.
+        // We need to pass allow cache to false
+        let CostContext { value, cost } = self.grove.get_raw_caching_optional(
+            contract_root_path(&contract_id),
+            &[0],
+            false,
+            transaction,
+        );
 
         match value {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
@@ -1032,8 +1040,12 @@ mod tests {
     use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
+    use crate::drive::object_size_info::{
+        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
+    };
     use crate::drive::Drive;
+
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
     fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix
@@ -1147,14 +1159,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentInfo::DocumentRefAndSerialization((
-                        &document,
-                        document.to_cbor().as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefAndSerialization((
+                            &document,
+                            document.to_cbor().as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(random_owner_id),
                 },
                 false,
                 BlockInfo::default(),
@@ -1184,14 +1198,16 @@ mod tests {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentInfo::DocumentRefAndSerialization((
-                        &document,
-                        document.to_cbor().as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefAndSerialization((
+                            &document,
+                            document.to_cbor().as_slice(),
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(random_owner_id),
                 },
                 false,
                 BlockInfo::default(),
@@ -1296,11 +1312,12 @@ mod tests {
             .expect("expected to apply contract successfully");
     }
 
-    mod get_contract_with_fetch_info_and_add_to_operations {
+    mod get_contract_with_fetch_info {
         use super::*;
+        use dpp::prelude::Identifier;
 
         #[test]
-        fn test_get_contract_from_global_and_transactional_cache() {
+        fn should_get_contract_from_global_and_block_cache() {
             let (drive, mut contract, _) = setup_reference_contract();
 
             let transaction = drive.grove.start_transaction();
@@ -1337,41 +1354,271 @@ mod tests {
         }
 
         #[test]
-        fn test_get_non_existent_contract() {
-            let tmp_dir = TempDir::new().unwrap();
-            let drive: Drive =
-                Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
-            drive
-                .create_initial_state_structure(None)
-                .expect("expected to create state structure");
-            let contract_id = rand::thread_rng().gen::<[u8; 32]>();
+        fn should_return_none_if_contract_not_exist() {
+            let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info(contract_id, None, None)
+                .get_contract_with_fetch_info([0; 32], None, None)
                 .expect("should get contract");
+
+            assert!(result.0.is_none());
+            assert!(result.1.is_none());
+        }
+
+        #[test]
+        fn should_return_fees_for_non_existing_contract_if_epoch_is_passed() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let result = drive
+                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), None)
+                .expect("should get contract");
+
+            assert!(matches!(
+                result.0,
+                Some(FeeResult {
+                    processing_fee: 6000,
+                    ..
+                })
+            ));
 
             assert!(result.1.is_none());
         }
 
         #[test]
-        fn test_get_non_existent_contract_has_fees() {
-            let tmp_dir = TempDir::new().unwrap();
-            let drive: Drive =
-                Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        fn should_always_have_then_same_cost() {
+            // Merk trees have own cache and depends on does contract node cached or not
+            // we get could get different costs. To avoid of it we fetch contracts without tree caching
 
+            let (drive, mut ref_contract, _) = setup_reference_contract();
+
+            /*
+             * Firstly, we create multiple contracts during block processing (in transaction)
+             */
+
+            let ref_contract_id_buffer = Identifier::from([0; 32]).to_buffer();
+
+            let transaction = drive.grove.start_transaction();
+
+            // Create more contracts to trigger re-balancing
+            for i in 0..150u8 {
+                ref_contract.id = Identifier::from([i; 32]);
+
+                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
+
+                drive
+                    .apply_contract(
+                        &ref_contract,
+                        ref_contract_cbor,
+                        BlockInfo::default(),
+                        true,
+                        StorageFlags::optional_default_as_ref(),
+                        Some(&transaction),
+                    )
+                    .expect("expected to apply contract successfully");
+            }
+
+            // Create a deep placed contract
+            let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
+            let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+            let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+                .expect("expected to deserialize the contract");
             drive
-                .create_initial_state_structure(None)
-                .expect("expected to create state structure");
-            let contract_id = rand::thread_rng().gen::<[u8; 32]>();
+                .apply_contract(
+                    &deep_contract,
+                    contract_cbor,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_ref(),
+                    Some(&transaction),
+                )
+                .expect("expected to apply contract successfully");
 
-            let result = drive
-                .get_contract_with_fetch_info(contract_id, Some(&Epoch::new(0)), None)
-                .expect("should get contract");
+            let mut ref_contract_fetch_info_transactional = drive
+                .get_contract_with_fetch_info(
+                    ref_contract_id_buffer,
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
 
-            let fees = result.0;
-            assert!(fees.is_some());
-            assert_eq!(fees.unwrap().processing_fee, 6000)
+            let mut deep_contract_fetch_info_transactional = drive
+                .get_contract_with_fetch_info(
+                    deep_contract.id().to_buffer(),
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            /*
+             * Then we commit the block
+             */
+
+            // Commit transaction and merge block (transactional) cache to global cache
+            transaction.commit().expect("expected to commit");
+
+            let mut drive_cache = drive.cache.borrow_mut();
+            drive_cache.cached_contracts.merge_block_cache();
+            drop(drive_cache);
+
+            /*
+             * Contracts fetched with user query and during block execution must have equal costs
+             */
+
+            let deep_contract_fetch_info = drive
+                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            let ref_contract_fetch_info = drive
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional,
+                deep_contract_fetch_info
+            );
+
+            assert_eq!(
+                ref_contract_fetch_info_transactional,
+                ref_contract_fetch_info
+            );
+
+            /*
+             * User restarts the node
+             */
+
+            // Drop cache so contract will be fetched once again
+            drive.drop_cache();
+
+            /*
+             * Other nodes weren't restarted so contracts queried by user after restart
+             * must have the same costs as transactional contracts and contracts before
+             * restart
+             */
+
+            let deep_contract_fetch_info_without_cache = drive
+                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            let ref_contract_fetch_info_without_cache = drive
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            // Remove fees to match with fetch with epoch provided
+            let mut deep_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut deep_contract_fetch_info_transactional);
+
+            deep_contract_fetch_info_transactional_without_arc.fee = None;
+
+            let mut ref_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut ref_contract_fetch_info_transactional);
+
+            ref_contract_fetch_info_transactional_without_arc.fee = None;
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional,
+                deep_contract_fetch_info_without_cache
+            );
+            assert_eq!(
+                ref_contract_fetch_info_transactional,
+                ref_contract_fetch_info_without_cache
+            );
+
+            /*
+             * Let's imagine that many blocks were executed and the node is restarted again
+             */
+            drive.drop_cache();
+
+            /*
+             * Drive executes a new block
+             */
+
+            let transaction = drive.grove.start_transaction();
+
+            // Create more contracts to trigger re-balancing
+            for i in 150..200u8 {
+                ref_contract.id = Identifier::from([i; 32]);
+
+                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
+
+                drive
+                    .apply_contract(
+                        &ref_contract,
+                        ref_contract_cbor,
+                        BlockInfo::default(),
+                        true,
+                        StorageFlags::optional_default_as_ref(),
+                        Some(&transaction),
+                    )
+                    .expect("expected to apply contract successfully");
+            }
+
+            /*
+             * Other nodes weren't restarted so contracts fetched during block execution
+             * should have the same cost as previously fetched contracts
+             */
+
+            let mut deep_contract_fetch_info_transactional2 = drive
+                .get_contract_with_fetch_info(
+                    deep_contract.id().to_buffer(),
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            let mut ref_contract_fetch_info_transactional2 = drive
+                .get_contract_with_fetch_info(
+                    ref_contract_id_buffer,
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            // Remove fees to match with fetch with epoch provided
+            let mut deep_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut deep_contract_fetch_info_transactional2);
+
+            deep_contract_fetch_info_transactional_without_arc.fee = None;
+
+            let mut ref_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut ref_contract_fetch_info_transactional2);
+
+            ref_contract_fetch_info_transactional_without_arc.fee = None;
+
+            assert_eq!(
+                ref_contract_fetch_info_transactional,
+                ref_contract_fetch_info_transactional2,
+            );
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional.contract,
+                deep_contract_fetch_info_transactional2.contract
+            );
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional.storage_flags,
+                deep_contract_fetch_info_transactional2.storage_flags
+            );
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional.cost,
+                deep_contract_fetch_info_transactional2.cost
+            );
         }
     }
 }

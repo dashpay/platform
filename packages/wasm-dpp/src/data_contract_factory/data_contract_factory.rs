@@ -12,7 +12,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     data_contract::errors::InvalidDataContractError,
-    errors::{consensus_error::from_consensus_error, from_dpp_err, RustConversionError},
+    errors::{
+        consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
+        RustConversionError,
+    },
+    validation::ValidationResultWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
 
@@ -25,9 +29,9 @@ impl From<DataContractValidator> for DataContractValidatorWasm {
     }
 }
 
-impl Into<DataContractValidator> for DataContractValidatorWasm {
-    fn into(self) -> DataContractValidator {
-        self.0
+impl From<DataContractValidatorWasm> for DataContractValidator {
+    fn from(val: DataContractValidatorWasm) -> Self {
+        val.0
     }
 }
 
@@ -36,6 +40,17 @@ impl DataContractValidatorWasm {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         DataContractValidator::new(std::sync::Arc::new(ProtocolVersionValidator::default())).into()
+    }
+
+    #[wasm_bindgen(js_name=validate)]
+    pub fn validate(&self, raw_data_contract: JsValue) -> Result<ValidationResultWasm, JsValue> {
+        let parameters: DataContractParameters =
+            with_js_error!(serde_wasm_bindgen::from_value(raw_data_contract))?;
+        let json_object = serde_json::to_value(parameters).expect("Implements Serialize");
+        self.0
+            .validate(&json_object)
+            .map(Into::into)
+            .map_err(from_protocol_error)
     }
 }
 
@@ -48,9 +63,9 @@ impl From<DataContractFactory> for DataContractFactoryWasm {
     }
 }
 
-impl Into<DataContractFactory> for DataContractFactoryWasm {
-    fn into(self) -> DataContractFactory {
-        self.0
+impl From<DataContractFactoryWasm> for DataContractFactory {
+    fn from(val: DataContractFactoryWasm) -> Self {
+        val.0
     }
 }
 
@@ -65,10 +80,10 @@ extern "C" {
 impl EntropyGenerator for ExternalEntropyGenerator {
     fn generate(&self) -> [u8; 32] {
         // TODO: think about changing API to return an error but does it worth it for JS?
-        let res = ExternalEntropyGenerator::generate(self)
+
+        ExternalEntropyGenerator::generate(self)
             .try_into()
-            .expect("Bad entropy generator provided: should return 32 bytes");
-        res
+            .expect("Bad entropy generator provided: should return 32 bytes")
     }
 }
 #[wasm_bindgen(js_class=DataContractFactory)]
@@ -86,7 +101,7 @@ impl DataContractFactoryWasm {
                 Box::new(external_entropy_generator),
             )
         } else {
-            DataContractFactory::new(protocol_version, validate_data_contract.into()).into()
+            DataContractFactory::new(protocol_version, validate_data_contract.into())
         }
         .into()
     }
@@ -139,7 +154,7 @@ impl DataContractFactoryWasm {
             .create_from_buffer(buffer, skip_validation.unwrap_or(false))
             .await
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .map_err(from_protocol_error)
     }
 
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]

@@ -67,6 +67,16 @@ impl GroveDbOpBatch {
         self.operations.push(op);
     }
 
+    /// Appends operations into a list of GroveDB ops.
+    pub fn append(&mut self, other: &mut Self) {
+        self.operations.append(&mut other.operations);
+    }
+
+    /// Extend operations into a list of GroveDB ops.
+    pub fn extend<I: IntoIterator<Item = GroveDbOp>>(&mut self, other_ops: I) {
+        self.operations.extend(other_ops);
+    }
+
     /// Puts a list of GroveDB operations into a batch.
     pub fn from_operations(operations: Vec<GroveDbOp>) -> Self {
         GroveDbOpBatch { operations }
@@ -76,6 +86,12 @@ impl GroveDbOpBatch {
     pub fn add_insert_empty_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations
             .push(GroveDbOp::insert_op(path, key, Element::empty_tree()))
+    }
+
+    /// Adds an `Insert` operation with an empty sum tree at the specified path and key to a list of GroveDB ops.
+    pub fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
+        self.operations
+            .push(GroveDbOp::insert_op(path, key, Element::empty_sum_tree()))
     }
 
     /// Adds an `Insert` operation with an empty tree with storage flags to a list of GroveDB ops.
@@ -112,5 +128,14 @@ impl GroveDbOpBatch {
     /// Verify consistency of operations
     pub fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
         GroveDbOp::verify_consistency_of_operations(&self.operations)
+    }
+}
+
+impl IntoIterator for GroveDbOpBatch {
+    type Item = GroveDbOp;
+    type IntoIter = std::vec::IntoIter<GroveDbOp>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.operations.into_iter()
     }
 }

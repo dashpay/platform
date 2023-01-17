@@ -1,10 +1,15 @@
+use std::sync::Arc;
+
 use getrandom::getrandom;
 use serde_json::json;
 
 use crate::{
-    document::{document_factory::DocumentFactory, Document},
-    mocks,
+    document::{
+        document_factory::DocumentFactory,
+        fetch_and_validate_data_contract::DataContractFetcherAndValidator, Document,
+    },
     prelude::Identifier,
+    state_repository::MockStateRepositoryLike,
     tests::utils::{generate_random_identifier, generate_random_identifier_struct},
     version::LATEST_VERSION,
 };
@@ -31,7 +36,7 @@ pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> Docum
     let document_factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),
-        mocks::FetchAndValidateDataContract {},
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
     );
     let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id.clone()));
     let mut pre_order_salt = [0u8; 32];

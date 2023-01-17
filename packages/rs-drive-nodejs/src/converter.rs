@@ -1,6 +1,5 @@
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
-use drive::fee::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -135,9 +134,13 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
     js_object.set(cx, "type", js_type_string)?;
 
     let maybe_js_value: Option<Handle<JsValue>> = match element {
-        Element::Item(item, _) | Element::SumItem(item, ..) => {
+        Element::Item(item, _) => {
             let js_buffer = JsBuffer::external(cx, item);
             Some(js_buffer.upcast())
+        }
+        Element::SumItem(number, _) => {
+            let js_number = cx.number(number as f64).upcast();
+            Some(js_number)
         }
         Element::Reference(reference, _, _) => {
             let reference = reference_to_dictionary(cx, reference)?;
@@ -217,6 +220,13 @@ pub fn reference_to_dictionary<'a, C: Context<'a>>(
 
             js_object.set(cx, "type", js_type_name)?;
             js_object.set(cx, "key", js_key)?;
+        }
+        ReferencePathType::RemovedCousinReference(path) => {
+            let js_type_name = cx.string("removedCousin");
+            let js_path = nested_vecs_to_js(cx, path)?;
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "path", js_path)?;
         }
     }
 
@@ -341,15 +351,16 @@ fn js_object_to_query<'a, C: Context<'a>>(
         }
     }
 
-    let subquery_key = js_value_to_option::<JsBuffer, _>(js_object.get(cx, "subqueryKey")?, cx)?
-        .map(|x| js_buffer_to_vec_u8(x, cx));
+    let subquery_path = js_value_to_option::<JsArray, _>(js_object.get(cx, "subqueryPath")?, cx)?
+        .map(|x| js_array_of_buffers_to_vec(x, cx))
+        .transpose()?;
     let subquery = js_value_to_option::<JsObject, _>(js_object.get(cx, "subquery")?, cx)?
         .map(|x| js_object_to_query(x, cx))
         .transpose()?;
     let left_to_right = js_value_to_option::<JsBoolean, _>(js_object.get(cx, "leftToRight")?, cx)?
         .map(|x| x.value(cx));
 
-    query.default_subquery_branch.subquery_key = subquery_key;
+    query.default_subquery_branch.subquery_path = subquery_path;
     query.default_subquery_branch.subquery = subquery.map(Box::new);
     query.left_to_right = left_to_right.unwrap_or(true);
 

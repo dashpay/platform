@@ -9,6 +9,8 @@ describe('DataContractFactory', () => {
   let DataContractValidator;
   let DataContract;
   let InvalidDataContractError;
+  let SerializedObjectParsingError;
+  let JsonSchemaError;
 
   let factory;
   let jsDataContract;
@@ -17,7 +19,12 @@ describe('DataContractFactory', () => {
 
   before(async () => {
     ({
-      DataContractFactory, DataContractValidator, DataContract, InvalidDataContractError,
+      DataContractFactory,
+      DataContractValidator,
+      DataContract,
+      InvalidDataContractError,
+      SerializedObjectParsingError,
+      JsonSchemaError,
     } = await loadWasmDpp());
   });
 
@@ -73,8 +80,9 @@ describe('DataContractFactory', () => {
         expect(e).to.be.an.instanceOf(InvalidDataContractError);
         expect(e.getRawDataContract()).to.deep.equal(alteredContract);
         expect(e.getErrors()).to.have.length(1);
-        // TODO JsonSchemaError binding type required
-        // const [consensusError] = error.getErrors();
+
+        const [consensusError] = e.getErrors();
+        expect(consensusError).to.be.an.instanceOf(JsonSchemaError);
       }
     });
   });
@@ -99,9 +107,8 @@ describe('DataContractFactory', () => {
         await factory.createFromBuffer(serializedDataContract);
         expect.fail('should throw InvalidDataContractError');
       } catch (e) {
-        // TODO SerializedObjectParsingError binding type required
-        // expect(e).to.be.an.instanceOf(SerializedObjectPasingError);
-        expect(e).to.match(/Parsing of serialized object failed/);
+        expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
+        expect(e.getParsingError()).to.match(/Decode protocol entity/);
       }
     });
   });

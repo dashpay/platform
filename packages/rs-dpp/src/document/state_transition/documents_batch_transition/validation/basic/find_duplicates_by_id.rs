@@ -1,49 +1,43 @@
+use anyhow::Context;
+use serde_json::Value as JsonValue;
 use std::collections::{hash_map::Entry, HashMap};
-
-use crate::document::document_transition::{DocumentBaseTransition, DocumentTransition};
-use crate::util::string_encoding::Encoding;
 
 /// Find the duplicates in the collection of Document Transitions
 pub fn find_duplicates_by_id<'a>(
-    document_transitions: impl IntoIterator<Item = &'a DocumentTransition>,
-) -> Vec<&'a DocumentTransition> {
-    let mut fingerprints: HashMap<String, ()> = HashMap::new();
-    let mut duplicates: Vec<&DocumentTransition> = vec![];
+    document_transitions: impl IntoIterator<Item = &'a JsonValue>,
+) -> Result<Vec<JsonValue>, anyhow::Error> {
+    let mut fingerprints: HashMap<String, JsonValue> = HashMap::new();
+    let mut duplicates: Vec<JsonValue> = vec![];
 
-    for dt in document_transitions {
-        match fingerprints.entry(create_fingerprint(dt)) {
-            Entry::Occupied(_) => {
-                duplicates.push(dt);
+    for transition in document_transitions {
+        let fingerprint = create_fingerprint(transition)
+            .context("Can't create fingerprint from a document transition")?;
+        match fingerprints.entry(fingerprint.clone()) {
+            Entry::Occupied(val) => {
+                duplicates.push(val.get().clone());
             }
             Entry::Vacant(v) => {
-                v.insert(());
+                v.insert(transition.clone());
             }
         }
     }
-    duplicates
+    Ok(duplicates)
 }
 
-fn create_fingerprint(document_transition: &DocumentTransition) -> String {
-    match document_transition {
-        DocumentTransition::Create(ref dt) => fingerprint(&dt.base),
-        DocumentTransition::Delete(ref dt) => fingerprint(&dt.base),
-        DocumentTransition::Replace(ref dt) => fingerprint(&dt.base),
-    }
-}
-fn fingerprint(document: &DocumentBaseTransition) -> String {
-    format!(
+fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
+    Some(format!(
         "{}:{}",
-        document.data_contract_id.to_string(Encoding::Base58),
-        document.document_type
-    )
+        document_transition.as_object()?.get("$type")?,
+        document_transition.as_object()?.get("$id")?,
+    ))
 }
 
 #[cfg(test)]
 mod test {
+    use crate::document::document_transition::DocumentTransitionObjectLike;
     use crate::{
         document::document_transition::{
             DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-            DocumentTransition,
         },
         tests::utils::generate_random_identifier_struct,
     };
@@ -66,14 +60,19 @@ mod test {
         dt_delete.base.id = generate_random_identifier_struct();
         dt_delete.base.document_type = String::from("c");
 
-        let input: Vec<DocumentTransition> = vec![
-            DocumentTransition::Create(dt_create),
-            DocumentTransition::Create(dt_create_duplicate),
-            DocumentTransition::Replace(dt_replace),
-            DocumentTransition::Delete(dt_delete),
+        let create_json = dt_create.to_json().unwrap();
+        let dt_create_duplicate_json = dt_create_duplicate.to_json().unwrap();
+        let dt_replace_json = dt_replace.to_json().unwrap();
+        let dt_delete_json = dt_delete.to_json().unwrap();
+
+        let input = vec![
+            create_json,
+            dt_create_duplicate_json,
+            dt_replace_json,
+            dt_delete_json,
         ];
 
-        let duplicates = find_duplicates_by_id(input.iter());
+        let duplicates = find_duplicates_by_id(input.iter()).unwrap();
         assert_eq!(duplicates.len(), 1);
     }
 }

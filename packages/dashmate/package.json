@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.0-dev.10",
+  "version": "0.24.0-dev.12",
   "description": "Distribution package for Dash Masternode installation",
   "scripts": {
     "lint": "eslint .",
@@ -8,7 +8,8 @@
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": "",
+    "test": "yarn run test:unit",
+    "test:unit": "mocha --recursive test/unit",
     "helper": "node scripts/helper.js"
   },
   "repository": {
@@ -48,7 +49,7 @@
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.19.44",
-    "@dashevo/dashd-rpc": "^2.4.2",
+    "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/docker-compose": "^0.24.1",
     "@dashevo/dpns-contract": "workspace:*",
@@ -61,7 +62,6 @@
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
-    "axios": "^0.27.2",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
     "cron": "^2.1.0",
@@ -76,7 +76,7 @@
     "listr2": "3.5.0",
     "lodash": "^4.17.21",
     "memory-streams": "^0.1.3",
-    "node-fetch": "^2.6.1",
+    "node-fetch": "^2.6.7",
     "node-forge": "^1.3.1",
     "node-graceful": "^3.0.1",
     "pretty-bytes": "^5.3.0",
@@ -85,15 +85,21 @@
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
     "semver": "^7.3.2",
-    "strip-ansi": "^6.0.1",
     "table": "^5.4.6"
   },
   "devDependencies": {
+    "chai": "^4.3.4",
+    "chai-as-promised": "^7.1.1",
+    "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "globby": "^11",
-    "oclif": "^3.4.2"
+    "mocha": "^9.1.2",
+    "mocha-sinon": "^2.1.2",
+    "oclif": "^3.4.2",
+    "sinon": "^11.1.2",
+    "sinon-chai": "^3.7.0"
   },
   "files": [
     "bin",

@@ -199,11 +199,9 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut replace_document = Document::from_raw_document(
-        documents[0].to_object(false).unwrap(),
-        data_contract.clone(),
-    )
-    .expect("document should be created");
+    let mut replace_document =
+        Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
+            .expect("document should be created");
     replace_document.revision = 3;
 
     documents[0].created_at = replace_document.created_at;
@@ -258,18 +256,14 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut replace_document = Document::from_raw_document(
-        documents[0].to_object(false).unwrap(),
-        data_contract.clone(),
-    )
-    .expect("document should be created");
+    let mut replace_document =
+        Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
+            .expect("document should be created");
     replace_document.revision = 1;
 
-    let mut fetched_document = Document::from_raw_document(
-        documents[0].to_object(false).unwrap(),
-        data_contract.clone(),
-    )
-    .expect("document should be created");
+    let mut fetched_document =
+        Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
+            .expect("document should be created");
     let another_owner_id = generate_random_identifier_struct();
     fetched_document.owner_id = another_owner_id.clone();
 
@@ -538,16 +532,12 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut fetched_document_1 = Document::from_raw_document(
-        documents[1].to_object(false).unwrap(),
-        data_contract.clone(),
-    )
-    .unwrap();
-    let mut fetched_document_2 = Document::from_raw_document(
-        documents[2].to_object(false).unwrap(),
-        data_contract.clone(),
-    )
-    .unwrap();
+    let mut fetched_document_1 =
+        Document::from_raw_document(documents[1].to_object().unwrap(), data_contract.clone())
+            .unwrap();
+    let mut fetched_document_2 =
+        Document::from_raw_document(documents[2].to_object().unwrap(), data_contract.clone())
+            .unwrap();
     fetched_document_1.revision = 1;
     fetched_document_2.revision = 1;
     fetched_document_1.owner_id = owner_id.clone();

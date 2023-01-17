@@ -25,12 +25,12 @@ impl InvalidIdentityPublicKeySecurityLevelErrorWasm {
         self.inner.public_key_id() as u32
     }
 
-    #[wasm_bindgen(js_name=getPurpose)]
+    #[wasm_bindgen(js_name=getPublicKeyPurpose)]
     pub fn purpose(&self) -> u8 {
         self.inner.purpose() as u8
     }
 
-    #[wasm_bindgen(js_name=getSecurityLevel)]
+    #[wasm_bindgen(js_name=getPublicKeySecurityLevel)]
     pub fn security_level(&self) -> u8 {
         self.inner.security_level() as u8
     }

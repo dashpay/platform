@@ -37,8 +37,8 @@ use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
-use drive::fee::FeeResult;
-use serde::{Deserialize, Serialize};
+use drive::fee::epoch::CreditsPerEpoch;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -82,8 +82,30 @@ pub struct BlockBeginResponse {
 pub struct BlockEndRequest {
     /// The fees for the block
     /// Avoid of serialization to optimize transfer through Node.JS binding
-    #[serde(skip)]
-    pub fees: FeeResult,
+    pub fees: BlockFees,
+}
+
+/// Aggregated fees after block execution
+#[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockFees {
+    /// Processing fee
+    pub processing_fee: u64,
+    /// Storage fee
+    pub storage_fee: u64,
+    /// Fee refunds
+    pub fee_refunds: CreditsPerEpoch,
+}
+
+impl BlockFees {
+    /// Create block fee result from fees
+    pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
+        Self {
+            storage_fee,
+            processing_fee,
+            ..Default::default()
+        }
+    }
 }
 
 /// A struct for handling block end responses
@@ -94,6 +116,8 @@ pub struct BlockEndResponse {
     pub proposers_paid_count: Option<u16>,
     /// Index of the last epoch that marked as paid
     pub paid_epoch_index: Option<u16>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<usize>,
 }
 
 impl BlockEndResponse {
@@ -114,6 +138,7 @@ impl BlockEndResponse {
         Self {
             proposers_paid_count,
             paid_epoch_index,
+            refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
         }
     }
 }
@@ -141,15 +166,15 @@ impl<'a> Serializable<'a> for AfterFinalizeBlockRequest {}
 impl<'a> Serializable<'a> for AfterFinalizeBlockResponse {}
 
 /// A trait for serializing or deserializing ABCI messages
-pub trait Serializable<'a>: Serialize + Deserialize<'a> {
+pub trait Serializable<'a>: Serialize + DeserializeOwned {
     /// Serialize ABCI message
     fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let mut bytes = vec![];
 
-        ciborium::ser::into_writer(&self, &mut bytes).map_err(|_| {
-            Error::Serialization(SerializationError::CorruptedSerialization(
-                "can't serialize ABCI message",
-            ))
+        ciborium::ser::into_writer(&self, &mut bytes).map_err(|e| {
+            let message = format!("can't deserialize ABCI message: {}", e);
+
+            Error::Serialization(SerializationError::CorruptedSerialization(message))
         })?;
 
         Ok(bytes)
@@ -157,10 +182,10 @@ pub trait Serializable<'a>: Serialize + Deserialize<'a> {
 
     /// Deserialize ABCI message
     fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        ciborium::de::from_reader(bytes).map_err(|_| {
-            Error::Serialization(SerializationError::CorruptedDeserialization(
-                "can't deserialize ABCI message",
-            ))
+        ciborium::de::from_reader(bytes).map_err(|e| {
+            let message = format!("can't deserialize ABCI message: {}", e);
+
+            Error::Serialization(SerializationError::CorruptedDeserialization(message))
         })
     }
 }

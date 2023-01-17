@@ -885,7 +885,7 @@ impl<'a> DriveQuery<'a> {
                             );
                             query.add_conditional_subquery(
                                 QueryItem::Key(b"".to_vec()),
-                                Some(vec![0]),
+                                Some(vec![vec![0]]),
                                 Some(inner_query),
                             );
                         }
@@ -905,7 +905,7 @@ impl<'a> DriveQuery<'a> {
 
                             query.add_conditional_subquery(
                                 QueryItem::Key(b"".to_vec()),
-                                Some(vec![0]),
+                                Some(vec![vec![0]]),
                                 Some(inner_query),
                             );
                         }
@@ -1253,10 +1253,11 @@ impl<'a> DriveQuery<'a> {
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
         let mut values = vec![];
-        for (_, value, _) in key_value_elements.iter_mut() {
-            let element = Element::deserialize(value).unwrap();
+        for proved_key_value in key_value_elements.into_iter() {
+            let element = Element::deserialize(proved_key_value.value.as_slice()).unwrap();
             match element {
-                Element::Item(val, _) | Element::SumItem(val, _) => values.push(val),
+                Element::Item(val, _) => values.push(val),
+                Element::SumItem(val, _) => values.push(val.to_be_bytes().to_vec()),
                 Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
                     return Err(Error::GroveDB(GroveError::InvalidQuery(
                         "path query should only point to items: got trees",

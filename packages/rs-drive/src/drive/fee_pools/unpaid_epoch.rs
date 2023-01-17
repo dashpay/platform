@@ -32,65 +32,58 @@
 
 use crate::drive::fee_pools::pools_path;
 use crate::drive::Drive;
-use crate::error::fee::FeeError;
+use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::epoch::EpochIndex;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Returns the index of the unpaid Epoch.
-    pub fn get_unpaid_epoch_index(&self, transaction: TransactionArg) -> Result<u16, Error> {
+    pub fn get_unpaid_epoch_index(&self, transaction: TransactionArg) -> Result<EpochIndex, Error> {
         let element = self
             .grove
             .get(pools_path(), KEY_UNPAID_EPOCH_INDEX, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if let Element::Item(item, _) = element {
-            Ok(u16::from_be_bytes(item.as_slice().try_into().map_err(
-                |_| {
-                    Error::Fee(FeeError::CorruptedUnpaidEpochIndexItemLength(
-                        "item have an invalid length",
-                    ))
-                },
-            )?))
-        } else {
-            Err(Error::Fee(FeeError::CorruptedUnpaidEpochIndexNotItem(
+        let Element::Item(encoded_epoch_index, _) = element else {
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "must be an item",
-            )))
-        }
+            )));
+        };
+
+        let epoch_index =
+            EpochIndex::from_be_bytes(encoded_epoch_index.as_slice().try_into().map_err(|_| {
+                Error::Drive(DriveError::CorruptedSerialization(
+                    "item have an invalid length",
+                ))
+            })?);
+
+        Ok(epoch_index)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::common::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+
     mod get_unpaid_epoch_index {
-        use crate::common::helpers::setup::{
-            setup_drive, setup_drive_with_initial_state_structure,
-        };
-        use crate::drive::fee_pools::pools_path;
-        use crate::error;
-        use crate::error::fee::FeeError;
-        use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
-        use grovedb::Element;
+        use super::*;
 
         #[test]
         fn test_error_if_fee_pools_tree_is_not_initiated() {
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
-            match drive.get_unpaid_epoch_index(Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to get unpaid epoch if fee pools tree is not initialized"
-                ),
-                Err(e) => match e {
-                    error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_unpaid_epoch_index(Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            ));
         }
 
         #[test]
@@ -122,15 +115,12 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_unpaid_epoch_index(Some(&transaction)) {
-                Ok(_) => assert!(false, "must be an error"),
-                Err(e) => match e {
-                    error::Error::Fee(FeeError::CorruptedUnpaidEpochIndexNotItem(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_unpaid_epoch_index(Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::UnexpectedElementType(_)))
+            ));
         }
 
         #[test]
@@ -150,15 +140,12 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            match drive.get_unpaid_epoch_index(Some(&transaction)) {
-                Ok(_) => assert!(false, "must be an error"),
-                Err(e) => match e {
-                    error::Error::Fee(FeeError::CorruptedUnpaidEpochIndexItemLength(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result = drive.get_unpaid_epoch_index(Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedSerialization(_)))
+            ));
         }
     }
 }

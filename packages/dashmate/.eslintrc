@@ -1,5 +1,9 @@
 {
   "extends": "airbnb-base",
+  "env": {
+    "commonjs": true,
+    "node": true
+  },
   "rules": {
     "no-plusplus": 0,
     "eol-last": [

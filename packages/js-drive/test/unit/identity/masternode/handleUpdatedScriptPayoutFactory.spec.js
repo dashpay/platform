@@ -54,11 +54,15 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     const newPubKeyData = Buffer.alloc(20, '0');
 
-    await handleUpdatedScriptPayout(
+    const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
       identity.publicKeys[0].getData(),
     );
+
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     expect(identityRepositoryMock.update).to.not.be.called();
     expect(publicKeyToIdentitiesRepositoryMock.store).to.not.be.called();
@@ -68,7 +72,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     const newPubKeyData = Buffer.alloc(20, '0');
     const identityPublicKeys = identity.getPublicKeys();
 
-    await handleUpdatedScriptPayout(
+    const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
       identity.publicKeys[0].getData(),
@@ -98,13 +102,20 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.getId(),
       { useTransaction: true },
     );
+
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(1);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
+    expect(result.updatedEntities[0]).to.be.instanceOf(Identity);
+    expect(result.updatedEntities[0].toJSON()).to.deep.equal(identityToStore.toJSON());
   });
 
   it('should store add public keys to the stored identity', async () => {
     const newPubKeyData = Buffer.alloc(20, '0');
     const identityPublicKeys = identity.getPublicKeys();
 
-    await handleUpdatedScriptPayout(
+    const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
       new Script(),
@@ -131,5 +142,12 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.getId(),
       { useTransaction: true },
     );
+
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(1);
+    expect(result.removedEntities).to.have.lengthOf(0);
+
+    expect(result.updatedEntities[0]).to.be.instanceOf(Identity);
+    expect(result.updatedEntities[0].toJSON()).to.deep.equal(identityToStore.toJSON());
   });
 });

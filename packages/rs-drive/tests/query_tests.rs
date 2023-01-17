@@ -52,8 +52,8 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
 use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentAndContractInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
@@ -202,14 +202,16 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &document_cbor,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -276,14 +278,16 @@ pub fn setup_family_tests_with_nulls(
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &document_cbor,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -351,14 +355,16 @@ pub fn setup_family_tests_only_first_name_index(
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &document_cbor,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -455,14 +461,16 @@ pub fn add_domains_to_contract(
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &document_cbor,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -550,14 +558,16 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &domain,
-                            &domain_cbor,
-                            storage_flags.as_ref(),
-                        )),
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefAndSerialization((
+                                &domain,
+                                &domain_cbor,
+                                storage_flags.as_ref(),
+                            )),
+                            owner_id: None,
+                        },
                         contract: &contract,
                         document_type,
-                        owner_id: None,
                     },
                     false,
                     BlockInfo::genesis(),
@@ -598,14 +608,16 @@ fn test_query_many() {
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &document_cbor,
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &document,
+                            &document_cbor,
+                            storage_flags.as_ref(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: None,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -1508,14 +1520,16 @@ fn test_family_basic_queries() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &person_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &person_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -1555,14 +1569,16 @@ fn test_family_basic_queries() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &person_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &person_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -2511,8 +2527,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        34, 224, 252, 113, 29, 226, 223, 232, 197, 98, 204, 14, 239, 120, 201, 1, 142, 169, 40,
-        120, 12, 16, 188, 196, 199, 69, 240, 240, 14, 21, 1, 18,
+        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
+        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3013,8 +3029,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        34, 224, 252, 113, 29, 226, 223, 232, 197, 98, 204, 14, 239, 120, 201, 1, 142, 169, 40,
-        120, 12, 16, 188, 196, 199, 69, 240, 240, 14, 21, 1, 18,
+        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
+        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3099,8 +3115,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        34, 224, 252, 113, 29, 226, 223, 232, 197, 98, 204, 14, 239, 120, 201, 1, 142, 169, 40,
-        120, 12, 16, 188, 196, 199, 69, 240, 240, 14, 21, 1, 18,
+        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
+        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3185,8 +3201,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        34, 224, 252, 113, 29, 226, 223, 232, 197, 98, 204, 14, 239, 120, 201, 1, 142, 169, 40,
-        120, 12, 16, 188, 196, 199, 69, 240, 240, 14, 21, 1, 18,
+        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
+        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3271,8 +3287,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        34, 224, 252, 113, 29, 226, 223, 232, 197, 98, 204, 14, 239, 120, 201, 1, 142, 169, 40,
-        120, 12, 16, 188, 196, 199, 69, 240, 240, 14, 21, 1, 18,
+        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
+        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3383,14 +3399,16 @@ fn test_dpns_query_start_at_with_null_id() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document0,
-                    &document_cbor0,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document0,
+                        &document_cbor0,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -3424,14 +3442,16 @@ fn test_dpns_query_start_at_with_null_id() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document1,
-                    &document_cbor1,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document1,
+                        &document_cbor1,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -3455,8 +3475,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        65, 203, 190, 77, 87, 246, 14, 218, 15, 153, 246, 248, 236, 156, 189, 16, 206, 90, 87, 58,
-        10, 234, 27, 9, 6, 220, 161, 88, 110, 101, 136, 189,
+        229, 114, 86, 69, 111, 102, 210, 191, 104, 3, 186, 247, 5, 71, 153, 25, 127, 247, 89, 59,
+        203, 69, 239, 117, 5, 148, 26, 222, 232, 104, 176, 0,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3575,14 +3595,16 @@ fn test_dpns_query_start_after_with_null_id() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document0,
-                    &document_cbor0,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document0,
+                        &document_cbor0,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -3617,14 +3639,16 @@ fn test_dpns_query_start_after_with_null_id() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document1,
-                    &document_cbor1,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document1,
+                        &document_cbor1,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -3648,8 +3672,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        65, 203, 190, 77, 87, 246, 14, 218, 15, 153, 246, 248, 236, 156, 189, 16, 206, 90, 87, 58,
-        10, 234, 27, 9, 6, 220, 161, 88, 110, 101, 136, 189,
+        229, 114, 86, 69, 111, 102, 210, 191, 104, 3, 186, 247, 5, 71, 153, 25, 127, 247, 89, 59,
+        203, 69, 239, 117, 5, 148, 26, 222, 232, 104, 176, 0,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3770,14 +3794,16 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document0,
-                    &document_cbor0,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document0,
+                        &document_cbor0,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -3812,14 +3838,16 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document1,
-                    &document_cbor1,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document1,
+                        &document_cbor1,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -3843,8 +3871,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        65, 203, 190, 77, 87, 246, 14, 218, 15, 153, 246, 248, 236, 156, 189, 16, 206, 90, 87, 58,
-        10, 234, 27, 9, 6, 220, 161, 88, 110, 101, 136, 189,
+        229, 114, 86, 69, 111, 102, 210, 191, 104, 3, 186, 247, 5, 71, 153, 25, 127, 247, 89, 59,
+        203, 69, 239, 117, 5, 148, 26, 222, 232, 104, 176, 0,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
