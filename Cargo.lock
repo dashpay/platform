@@ -587,7 +587,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#0c597818b12ca3b31e525e54a1e615e01d64ebad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#f4e0d0a8767de62c18bfd603fbc088ef0edeba0f"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1285,7 +1285,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#0c597818b12ca3b31e525e54a1e615e01d64ebad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#f4e0d0a8767de62c18bfd603fbc088ef0edeba0f"
 dependencies = [
  "bincode",
  "costs",
@@ -1719,7 +1719,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#0c597818b12ca3b31e525e54a1e615e01d64ebad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#f4e0d0a8767de62c18bfd603fbc088ef0edeba0f"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2781,7 +2781,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#0c597818b12ca3b31e525e54a1e615e01d64ebad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#f4e0d0a8767de62c18bfd603fbc088ef0edeba0f"
 dependencies = [
  "blake3",
  "costs",
@@ -3168,7 +3168,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#0c597818b12ca3b31e525e54a1e615e01d64ebad"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/query-item-intersect4#f4e0d0a8767de62c18bfd603fbc088ef0edeba0f"
 dependencies = [
  "hex",
  "itertools",
