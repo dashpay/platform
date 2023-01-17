@@ -390,9 +390,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateInstantAssetLockProofStructure(
-      rawProof,
-    );
+    const result = await validateInstantAssetLockProofStructure(rawProof);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
