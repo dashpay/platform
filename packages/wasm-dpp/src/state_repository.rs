@@ -92,7 +92,7 @@ extern "C" {
     #[wasm_bindgen(structural, method, js_name=markAssetLockTransactionOutPointAsUsed)]
     pub fn mark_asset_lock_transaction_out_point_as_used(
         this: &ExternalStateRepositoryLike,
-        out_point_buffer: Vec<u8>,
+        out_point_buffer: Buffer,
     );
 
     // TODO add missing declarations
@@ -327,7 +327,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .mark_asset_lock_transaction_out_point_as_used(out_point_buffer.to_owned()))
+            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer)))
     }
 
     async fn fetch_sml_store<T>(&self) -> anyhow::Result<T>

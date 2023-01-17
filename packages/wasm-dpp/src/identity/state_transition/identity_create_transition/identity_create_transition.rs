@@ -121,7 +121,7 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .to_vec()
             .into_iter()
-            .map(|key| key.with_serde_to_json_value().unwrap())
+            .map(|key| key.with_serde_to_json_value().unwrap()) // TODO: use generic_from_js_value instead?
             .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
             .collect::<Vec<IdentityPublicKey>>();
 
@@ -136,7 +136,7 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .to_vec()
             .into_iter()
-            .map(|key| key.with_serde_to_json_value().unwrap())
+            .map(|key| key.with_serde_to_json_value().unwrap()) // TODO: use generic_from_js_value instead?
             .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
             .collect::<Vec<IdentityPublicKey>>();
 
@@ -216,12 +216,6 @@ impl IdentityCreateTransitionWasm {
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
         }
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"identityId".to_owned().into(),
-            &Buffer::from_bytes(object.identity_id.buffer.as_slice()),
-        )?;
-
         let asset_lock_proof_object = match object.asset_lock_proof {
             AssetLockProof::Instant(instant_asset_lock_proof) => {
                 InstantAssetLockProofWasm::from(instant_asset_lock_proof).to_object()?
@@ -275,12 +269,6 @@ impl IdentityCreateTransitionWasm {
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
         }
-
-        js_sys::Reflect::set(
-            &js_object,
-            &"identityId".to_owned().into(),
-            &object.identity_id.to_string(Encoding::Base58).into(),
-        )?;
 
         let asset_lock_proof_json = match object.asset_lock_proof {
             AssetLockProof::Instant(instant_asset_lock_proof) => {
@@ -338,6 +326,11 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=setExecutionContext)]
     pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
     }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]

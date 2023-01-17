@@ -33,8 +33,9 @@ describe('applyIdentityCreateTransitionFactory', () => {
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    const stateTransitionJS = getIdentityCreateTransitionFixture();
-    stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
+    stateTransition = new IdentityCreateTransition(
+      getIdentityCreateTransitionFixture().toObject(),
+    );
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -48,7 +49,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
     );
   });
 
-  it('should store identity created from state transition', async () => {
+  it('should store identity created from state transition', async function () {
     await applyIdentityCreateTransition(stateTransition);
 
     const balance = convertSatoshiToCredits(
@@ -63,25 +64,27 @@ describe('applyIdentityCreateTransitionFactory', () => {
       revision: 0,
     });
 
-    const { args: createIdentityArgs } = stateRepositoryMock.createIdentity.firstCall;
+    const { match } = this.sinonSandbox;
 
-    expect(createIdentityArgs[0].toObject()).to.deep.equal(identity.toObject());
-    expect(createIdentityArgs[1]).to.be.instanceOf(StateTransitionExecutionContext);
+    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(
+      match((arg) => expect(arg.toObject()).to.deep.equal(identity.toObject())),
+      match.instanceOf(StateTransitionExecutionContext),
+    );
 
     const publicKeyHashes = identity
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    const { args: storePublicKeyHashesArgs } = stateRepositoryMock
-      .storeIdentityPublicKeyHashes.firstCall;
-    expect(storePublicKeyHashesArgs[0].toBuffer()).to.deep.equal(identity.getId().toBuffer());
-    expect(storePublicKeyHashesArgs[1]).to.deep.equal(publicKeyHashes);
-    expect(storePublicKeyHashesArgs[2]).to.be.instanceOf(StateTransitionExecutionContext);
+    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
+      match((arg) => expect(arg.toBuffer()).to.deep.equal(identity.getId().toBuffer())),
+      match((arg) => expect(arg).to.deep.equal(publicKeyHashes)),
+      match.instanceOf(StateTransitionExecutionContext),
+    );
 
-    const { args: markAsUsedArgs } = stateRepositoryMock
-      .markAssetLockTransactionOutPointAsUsed.firstCall;
-
-    expect(markAsUsedArgs[0]).to
-      .deep.equal(stateTransition.getAssetLockProof().getOutPoint());
+    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
+    expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
+      .calledOnceWithExactly(
+        match((arg) => Buffer.from(arg).equals(outPoint)),
+      );
   });
 });
