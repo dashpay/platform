@@ -34,7 +34,6 @@
 
 use crate::fee::credits::{Credits, SignedCredits};
 use nohash_hasher::IntMap;
-use rust_decimal::Decimal;
 
 pub mod distribution;
 
