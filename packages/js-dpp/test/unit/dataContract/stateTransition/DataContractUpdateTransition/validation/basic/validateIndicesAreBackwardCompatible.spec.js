@@ -24,7 +24,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(result.isValid()).to.be.false();
 
-    const error = result.getErrors()[0];
+    const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataContractIndicesChangedError);
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[0].name);
@@ -37,7 +37,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(result.isValid()).to.be.false();
 
-    const error = result.getErrors()[0];
+    const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
@@ -50,7 +50,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(result.isValid()).to.be.false();
 
-    const error = result.getErrors()[0];
+    const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
@@ -69,7 +69,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(result.isValid()).to.be.false();
 
-    const error = result.getErrors()[0];
+    const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataContractHaveNewIndexWithOldPropertiesError);
     expect(error.getIndexName()).to.equal('index_other');
@@ -88,7 +88,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(result.isValid()).to.be.false();
 
-    const error = result.getErrors()[0];
+    const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataContractHaveNewUniqueIndexError);
     expect(error.getIndexName()).to.equal('index_other');
@@ -108,7 +108,9 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(result.isValid()).to.be.false();
 
-    // TODO: Check an error
+    const [error] = result.getErrors();
+    expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
+    expect(error.getIndexName()).to.equal('oldFieldIndex');
   });
 
   it('should return valid result if indices are not changed', async () => {

@@ -126,12 +126,7 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
     (indexDefinition) => indexDefinition.name,
   );
 
-  const existingIndexedProperties = new Set((existingSchema.indices || []).reduce(
-    (properties, indexDefinition) => [
-      ...properties,
-      ...indexDefinition.properties.map((definition) => Object.keys(definition)[0]),
-    ], [],
-  ));
+  const existingProperties = new Set(Object.keys(existingSchema.properties));
 
   // Build an index of all possible allowed combinations
   // of old indices to check later
@@ -150,22 +145,22 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
   );
 
   return (newIndices || []).find((indexDefinition) => {
-    const existingProperties = indexDefinition.properties.filter(
-      (prop) => existingIndexedProperties.has(Object.keys(prop)[0]),
+    const usedOldProperties = indexDefinition.properties.filter(
+      (prop) => existingProperties.has(Object.keys(prop)[0]),
     );
 
     // if no old properties being used - skip
-    if (existingProperties.length === 0) {
+    if (usedOldProperties.length === 0) {
       return false;
     }
 
     // build a partial snapshot of the new index
     // containing only first part of it with a
     // length equal to number of old properties used
-    // sine they should be in the beginning of the
+    // since they should be in the beginning of the
     // index we can check it with previously built snapshot combinations
     const partialNewIndexSnapshot = serializer.encode(
-      indexDefinition.properties.slice(0, existingProperties.length),
+      indexDefinition.properties.slice(0, usedOldProperties.length),
     ).toString('hex');
 
     return !existingIndexSnapshots.includes(partialNewIndexSnapshot);
