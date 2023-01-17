@@ -89,8 +89,14 @@ function endBlockFactory(
         currentEpochIndex,
         proposersPaidCount: rsResponse.proposersPaidCount,
         paidEpochIndex: rsResponse.paidEpochIndex,
+      }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
+    }
+
+    if (rsResponse.refundedEpochsCount) {
+      consensusLogger.debug({
+        currentEpochIndex,
         refundedEpochsCount: rsResponse.refundedEpochsCount,
-      }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}. ${rsResponse.refundedEpochsCount} epochs were refunded.`);
+      }, `${rsResponse.refundedEpochsCount} epochs were refunded`);
     }
 
     const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);

@@ -125,14 +125,13 @@ impl BlockEndResponse {
     pub(crate) fn from_process_block_fees_result(
         process_block_fees_result: &ProcessedBlockFeesResult,
     ) -> Self {
-        let (proposers_paid_count, paid_epoch_index, refunded_epochs_count) =
+        let (proposers_paid_count, paid_epoch_index) =
             process_block_fees_result.payouts.as_ref().map_or(
-                (None, None, None),
+                (None, None),
                 |proposer_payouts| {
                     (
                         Some(proposer_payouts.proposers_paid_count),
                         Some(proposer_payouts.paid_epoch_index),
-                        process_block_fees_result.refunded_epochs_count,
                     )
                 },
             );
@@ -140,7 +139,7 @@ impl BlockEndResponse {
         Self {
             proposers_paid_count,
             paid_epoch_index,
-            refunded_epochs_count,
+            refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
         }
     }
 }
