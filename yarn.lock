@@ -5686,6 +5686,7 @@ __metadata:
     glob: ^7.1.6
     globby: ^11
     hasbin: ^1.2.3
+    is-wsl: 2.2.0
     jayson: ^3.3.4
     listr2: 3.5.0
     lodash.clonedeep: ^4.5.0
@@ -8563,7 +8564,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"is-wsl@npm:^2.2.0":
+"is-wsl@npm:2.2.0, is-wsl@npm:^2.2.0":
   version: 2.2.0
   resolution: "is-wsl@npm:2.2.0"
   dependencies:

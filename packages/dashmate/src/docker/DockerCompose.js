@@ -11,6 +11,8 @@ const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError'
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
+cosnt isWsl = require('is-wsl');
+
 const { HOME_DIR_PATH } = require('../constants');
 
 class DockerCompose {
@@ -399,11 +401,15 @@ class DockerCompose {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      CORE_WSL2_FIX: (new Date()).getTime(),
+    };
+
+    if (isWsl) {
       // Solving issue under WSL when after restart conainer volume is not being mounted properly
       // https://github.com/docker/for-win/issues/4812
       // Following fix forces container recreation
-      CORE_WSL2_FIX: (new Date()).getTime(),
-    };
+      env.CORE_WSL2_FIX = (new Date()).getTime();
+    }
 
     return {
       cwd: path.join(__dirname, '..', '..'),
