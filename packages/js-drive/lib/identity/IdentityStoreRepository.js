@@ -13,6 +13,90 @@ class IdentityStoreRepository {
   }
 
   /**
+   * Fetch identity by id from database
+   *
+   * @param {Identifier} id
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {BlockInfo} [options.blockInfo]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<null|Identity>>}
+   */
+  async fetch(id, options = { }) {
+    if (options.dryRun) {
+      return new StorageResult(
+        null,
+        [],
+      );
+    }
+
+    if (options && options.blockInfo) {
+      const [identity, feeResult] = await this.storage.getDrive().fetchIdentityWithCosts(
+        id,
+        options.blockInfo.epoch,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        identity,
+        [new PreCalculatedOperation(feeResult)],
+      );
+    }
+
+    const identity = await this.storage.getDrive().fetchIdentity(
+      id,
+      Boolean(options.useTransaction),
+    );
+
+    return new StorageResult(
+      identity,
+      [],
+    );
+  }
+
+  /**
+   * Fetch deserialized identities by public key hash
+   *
+   * @param {Buffer} publicKeyHash
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<Identity[]>>}
+   */
+  async fetchByPublicKeyHash(publicKeyHash, options = {}) {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * Fetch deserialized identities by multiple public key hashes
+   *
+   * @param {Buffer[]} publicKeyHashes
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<Identity[]>>}
+   */
+  async fetchManyByPublicKeyHashes(publicKeyHashes, options = {}) {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * Prove identities by multiple public key hashes
+   *
+   * @param {Buffer[]} publicKeyHashes
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<Buffer>>}
+   */
+  async proveManyByPublicKeyHashes(publicKeyHashes, options = {}) {
+    throw new Error('not implemented');
+  }
+
+  /**
    * Create Identity in database
    *
    * @param {Identity} identity
@@ -179,48 +263,7 @@ class IdentityStoreRepository {
     }
   }
 
-  /**
-   * Fetch identity by id from database
-   *
-   * @param {Identifier} id
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {BlockInfo} [options.blockInfo]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<null|Identity>>}
-   */
-  async fetch(id, options = { }) {
-    if (options.dryRun) {
-      return new StorageResult(
-        null,
-        [],
-      );
-    }
 
-    if (options && options.blockInfo) {
-      const [identity, feeResult] = await this.storage.getDrive().fetchIdentityWithCosts(
-        id,
-        options.blockInfo.epoch,
-        Boolean(options.useTransaction),
-      );
-
-      return new StorageResult(
-        identity,
-        [new PreCalculatedOperation(feeResult)],
-      );
-    }
-
-    const identity = await this.storage.getDrive().fetchIdentity(
-      id,
-      Boolean(options.useTransaction),
-    );
-
-    return new StorageResult(
-      identity,
-      [],
-    );
-  }
 
   /**
    * Prove identity by id

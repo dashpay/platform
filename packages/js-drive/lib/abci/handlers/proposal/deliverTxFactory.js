@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { FeeResult } = require('@dashevo/rs-drive');
 
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const AbstractDocumentTransition = require(
@@ -135,26 +136,20 @@ function deliverTxFactory(
       }, `Actual fees are greater than predicted for ${actualStateTransitionFees.desiredAmount - predictedStateTransitionFees.desiredAmount} credits`);
     }
 
+    const feeResult = FeeResult.create(
+      actualStateTransitionFees.storageFee,
+      actualStateTransitionFees.processingFee,
+      actualStateTransitionFees.feeRefunds,
+    );
+
     const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
 
-    if (actualStateTransitionFees.desiredAmount < 0) {
-      // Add to balance if refund is higher than storage and processing fees
-      await identityRepository.addToBalance(
-        stateTransition.getOwnerId(),
-        Math.abs(actualStateTransitionFees.desiredAmount),
-        blockInfo,
-        { useTransaction: true },
-      );
-    } else {
-      // Remove from balance otherwise
-      await identityRepository.removeFromBalance(
-        stateTransition.getOwnerId(),
-        actualStateTransitionFees.requiredAmount,
-        actualStateTransitionFees.desiredAmount,
-        blockInfo,
-        { useTransaction: true },
-      );
-    }
+    await identityRepository.applyStateTransitionFeesToBalance(
+      stateTransition.getOwnerId(),
+      feeResult,
+      blockInfo,
+      { useTransaction: true },
+    );
 
     // Logging
     /* istanbul ignore next */
@@ -265,6 +260,7 @@ function deliverTxFactory(
       `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.desiredAmount} credits`,
     );
 
+    // TODO: ...
     let feeRefunds = {};
     if (actualStateTransitionFees.feeRefunds.length > 0) {
       feeRefunds = actualStateTransitionFees.feeRefunds[0].creditsPerEpoch;

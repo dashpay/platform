@@ -297,20 +297,6 @@ class CachedStateRepositoryDecorator {
   async fetchLatestPlatformBlockTime() {
     return this.stateRepository.fetchLatestPlatformBlockTime();
   }
-
-  /**
-   * Calculates storage fee to epochs distribution amount and leftovers
-   *
-   * @param {number} storageFee
-   * @param {number} startEpochIndex
-   * @returns {Promise<[number, number]>}
-   */
-  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
-    return this.stateRepository.calculateStorageFeeDistributionAmountAndLeftovers(
-      storageFee,
-      startEpochIndex,
-    );
-  }
 }
 
 module.exports = CachedStateRepositoryDecorator;

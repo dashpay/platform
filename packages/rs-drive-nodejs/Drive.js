@@ -678,6 +678,7 @@ class Drive {
 
 // eslint-disable-next-line max-len
 Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDistributionAmountAndLeftoversWithStack;
+Drive.FeeResult = FeeResult;
 
 /**
  * @typedef RawBlockInfo

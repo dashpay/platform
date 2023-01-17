@@ -74,8 +74,8 @@ class FeeResult {
    *
    * @returns {FeeResult}
    */
-  static create(storageFee = 0, processingFee = 0) {
-    const inner = feeResultCreateWithStack(storageFee, processingFee);
+  static create(storageFee, processingFee, feeRefunds) {
+    const inner = feeResultCreateWithStack(storageFee, processingFee, feeRefunds);
 
     return new FeeResult(inner);
   }

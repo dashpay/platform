@@ -587,26 +587,6 @@ class LoggedStateRepositoryDecorator {
       this.log('enqueueWithdrawalTransaction', { index, transactionBytes }, response);
     }
   }
-
-  /**
-   * Calculates storage fee to epochs distribution amount and leftovers
-   *
-   * @param {number} storageFee
-   * @param {number} startEpochIndex
-   * @returns {Promise<[number, number]>}
-   */
-  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
-    let response;
-
-    try {
-      response = await this.stateRepository.calculateStorageFeeDistributionAmountAndLeftovers(
-        storageFee,
-        startEpochIndex,
-      );
-    } finally {
-      this.log('calculateStorageFeeDistributionAmountAndLeftovers', { storageFee, startEpochIndex }, response);
-    }
-  }
 }
 
 module.exports = LoggedStateRepositoryDecorator;

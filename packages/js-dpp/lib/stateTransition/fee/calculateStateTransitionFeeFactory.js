@@ -24,28 +24,17 @@ function calculateStateTransitionFeeFactory(stateRepository, calculateOperationF
       feeRefunds,
     } = calculatedFees;
 
-    if (feeRefunds.length > 1) {
-      throw new Error('State Transition removed bytes from several identities that is not defined by protocol');
-    }
+    const creditsPerEpoch = feeRefunds
+      .find((refunds) => stateTransition.getOwnerId().equals(refunds.identifier));
 
     let feeRefundsSum = 0;
-    if (feeRefunds.length > 0) {
-      const stateTransitionIdentifier = stateTransition.getOwnerId();
 
-      if (!stateTransitionIdentifier.equals(feeRefunds[0].identifier)) {
-        throw new Error('State Transition removed bytes from different identity');
-      }
-
-      feeRefundsSum = await Object.entries(feeRefunds[0].creditsPerEpoch)
-        .reduce(async (sum, [epochIndex, credits]) => {
-          const [amount, leftovers] = await stateRepository
-            .calculateStorageFeeDistributionAmountAndLeftovers(credits, Number(epochIndex));
-
-          return (await sum) + amount + leftovers;
-        }, 0);
+    if (creditsPerEpoch) {
+      feeRefundsSum = await Object.entries(creditsPerEpoch)
+        .reduce((sum, [, credits]) => sum + credits, 0);
     }
 
-    // TODO: we should prepay for balance update after ST execution
+    // TODO: we need to introduce base fee for ST that includes balance update
 
     const requiredAmount = (storageFee - feeRefundsSum) + DEFAULT_USER_TIP;
     const desiredAmount = (storageFee + processingFee - feeRefundsSum) + DEFAULT_USER_TIP;

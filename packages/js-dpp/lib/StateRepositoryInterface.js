@@ -243,14 +243,3 @@
  * @name StateRepository#fetchLatestPlatformBlockTime
  * @returns {Promise<number>}
  */
-
-/**
- * Calculates storage fee to epochs distribution amount and leftovers
- *
- * @async
- * @method
- * @name StateRepository#calculateStorageFeeDistributionAmountAndLeftovers
- * @param {number} storageFee
- * @param {number} startEpochIndex
- * @returns {Promise<[number, number]>}
- */

@@ -80,21 +80,13 @@ pub fn distribute_storage_fee_to_epochs_collection(
         storage_fee,
         start_epoch_index,
         |epoch_index, epoch_fee_share| {
-            match credits_per_epochs.entry(epoch_index) {
-                Entry::Occupied(entry) => {
-                    let epoch_credits = entry.into_mut();
-                    *epoch_credits = epoch_credits
-                        .checked_add_unsigned(epoch_fee_share)
-                        .ok_or_else(|| {
-                            get_overflow_error(
-                                "updated epoch credits are not fitting to credits min size",
-                            )
-                        })?;
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(epoch_fee_share.to_signed()?);
-                }
-            }
+            let epoch_credits = credits_per_epochs.entry(epoch_index).or_default();
+
+            *epoch_credits = epoch_credits
+                .checked_add_unsigned(epoch_fee_share)
+                .ok_or_else(|| {
+                    get_overflow_error("updated epoch credits are not fitting to credits max size")
+                })?;
 
             Ok(())
         },
@@ -114,21 +106,14 @@ pub fn subtract_refunds_from_epoch_credits_collection(
         start_epoch_index,
         current_epoch_index + 1,
         |epoch_index, epoch_fee_share| {
-            match credits_per_epochs.entry(epoch_index) {
-                Entry::Occupied(entry) => {
-                    let epoch_credits = entry.into_mut();
-                    *epoch_credits = epoch_credits
-                        .checked_sub_unsigned(epoch_fee_share)
-                        .ok_or_else(|| {
-                            get_overflow_error(
-                                "updated epoch credits are not fitting to credits min size",
-                            )
-                        })?;
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(-epoch_fee_share.to_signed()?);
-                }
-            }
+            let epoch_credits = credits_per_epochs.entry(epoch_index).or_default();
+
+            *epoch_credits = epoch_credits
+                .checked_sub_unsigned(epoch_fee_share)
+                .ok_or_else(|| {
+                    get_overflow_error("updated epoch credits are not fitting to credits min size")
+                })?;
+
             Ok(())
         },
     )?;

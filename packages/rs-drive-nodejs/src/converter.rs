@@ -1,6 +1,8 @@
 use drive::dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
+use drive::fee::credits::Credits;
+use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -8,6 +10,7 @@ use neon::prelude::*;
 use neon::types::buffer::TypedArray;
 use num::FromPrimitive;
 use std::borrow::Borrow;
+use std::num::ParseIntError;
 
 fn element_to_string(element: &Element) -> &'static str {
     match element {
@@ -481,4 +484,27 @@ pub fn js_array_to_keys<'a, C: Context<'a>>(
         .collect::<Result<_, _>>()?;
 
     Ok(keys)
+}
+
+pub fn js_object_to_fee_refunds<'a, C: Context<'a>>(
+    cx: &mut C,
+    js_object: Handle<JsObject>,
+) -> NeonResult<CreditsPerEpoch> {
+    let mut fee_refunds: CreditsPerEpoch = Default::default();
+
+    for js_epoch_index_value in js_object.get_own_property_names(cx)?.to_vec(cx)? {
+        let js_epoch_index = js_epoch_index_value.downcast_or_throw::<JsString, _>(cx)?;
+
+        let epoch_index = js_epoch_index
+            .value(cx)
+            .parse()
+            .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
+
+        let js_credits: Handle<JsNumber> = js_fee_refunds.get(cx, js_epoch_index)?;
+        let credits = js_credits.value(cx) as Credits;
+
+        fee_refunds.insert(epoch_index, credits);
+    }
+
+    Ok(fee_refunds)
 }

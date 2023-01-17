@@ -575,27 +575,6 @@ class DriveStateRepository {
   }
 
   /**
-   * Calculates storage fee to epochs distribution amount and leftovers
-   *
-   * @param {number} storageFee
-   * @param {number} startEpochIndex
-   * @returns {Promise<[number, number]>}
-   */
-  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
-    const epochInfo = this.blockExecutionContext.getEpochInfo();
-
-    if (!epochInfo) {
-      throw new Error('epoch info is not set');
-    }
-
-    return calculateStorageFeeDistributionAmountAndLeftovers(
-      storageFee,
-      startEpochIndex,
-      epochInfo.currentEpochIndex,
-    );
-  }
-
-  /**
    * @private
    * @param {StateTransitionExecutionContext} [executionContext]
    * @return {{dryRun: boolean, useTransaction: boolean}}

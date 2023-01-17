@@ -49,6 +49,8 @@ function validateStateTransitionFeeFactory(
             return result;
           }
 
+          // TODO: We should take into account negative balance as well
+
           balance += identity.getBalance();
         }
 

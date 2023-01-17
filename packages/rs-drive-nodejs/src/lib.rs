@@ -4,6 +4,7 @@ mod fee;
 use std::num::ParseIntError;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
+use crate::converter::js_object_to_fee_refunds;
 use crate::fee::result::FeeResultWrapper;
 use drive::dpp::identity::{KeyID, TimestampMillis};
 use drive::dpp::prelude::Revision;
@@ -2576,24 +2577,7 @@ impl PlatformWrapper {
 
         let js_fee_refunds: Handle<JsObject> = js_fees.get(&mut cx, "feeRefunds")?;
 
-        let mut fee_refunds: CreditsPerEpoch = Default::default();
-
-        for js_epoch_index_value in js_fee_refunds
-            .get_own_property_names(&mut cx)?
-            .to_vec(&mut cx)?
-        {
-            let js_epoch_index = js_epoch_index_value.downcast_or_throw::<JsString, _>(&mut cx)?;
-
-            let epoch_index = js_epoch_index
-                .value(&mut cx)
-                .parse()
-                .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
-
-            let js_credits: Handle<JsNumber> = js_fee_refunds.get(&mut cx, js_epoch_index)?;
-            let credits = js_credits.value(&mut cx) as Credits;
-
-            fee_refunds.insert(epoch_index, credits);
-        }
+        let fee_refunds = js_object_to_fee_refunds(&mut cx, js_fee_refunds);
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {

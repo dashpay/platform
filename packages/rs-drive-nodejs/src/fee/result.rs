@@ -1,4 +1,6 @@
-use drive::fee::result::FeeResult;
+use crate::converter::{js_buffer_to_vec_u8, js_object_to_fee_refunds};
+use drive::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
+use drive::fee::result::{refunds, FeeResult};
 use neon::prelude::*;
 use std::ops::Deref;
 
@@ -12,8 +14,29 @@ impl FeeResultWrapper {
     pub fn create(mut cx: FunctionContext) -> JsResult<JsBox<FeeResultWrapper>> {
         let storage_fee = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
         let processing_fee = cx.argument::<JsNumber>(1)?.value(&mut cx) as u64;
+        let js_fee_refunds = cx.argument::<JsArray>(2)?.to_vec(&mut cx)?;
 
-        let fee_result = FeeResult::default_with_fees(storage_fee, processing_fee);
+        let mut credits_per_epoch_by_identifier = CreditsPerEpochByIdentifier::new();
+        for item in js_fee_refunds {
+            let js_refunds = item.downcast_or_throw::<JsObject, _>(&mut cx)?;
+
+            let js_identifier: Handle<JsBuffer> = js_refunds.get(&mut cx, "identifier")?;
+            let identifier = js_buffer_to_vec_u8(js_identifier, &mut cx)?;
+
+            let js_credits_per_epoch: Handle<JsObject> =
+                js_refunds.get(&mut cx, "creditsPerEpoch")?;
+
+            let credits_per_epoch = js_object_to_fee_refunds(&mut cx, js_credits_per_epoch)?;
+
+            credits_per_epoch_by_identifier.insert(identifier, credits_per_epoch);
+        }
+
+        let fee_result = FeeResult {
+            storage_fee,
+            processing_fee,
+            fee_refunds: FeeRefunds(credits_per_epoch_by_identifier),
+            ..Default::default()
+        };
 
         Ok(cx.boxed(Self::new(fee_result)))
     }
@@ -88,7 +111,7 @@ impl FeeResultWrapper {
         let js_fee_refunds: Handle<JsArray> = cx.empty_array();
 
         for (index, (identifier, credits_per_epoch)) in
-            fee_result.fee_refunds.0.into_iter().enumerate()
+            fee_result.fee_refunds.into_iter().enumerate()
         {
             let js_epoch_index_map = cx.empty_object();
 
