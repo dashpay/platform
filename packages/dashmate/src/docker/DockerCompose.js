@@ -401,11 +401,10 @@ class DockerCompose {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
-      CORE_WSL2_FIX: (new Date()).getTime(),
     };
 
     if (isWsl) {
-      // Solving issue under WSL when after restart conainer volume is not being mounted properly
+      // Solving issue under WSL when after restart container volume is not being mounted properly
       // https://github.com/docker/for-win/issues/4812
       // Following fix forces container recreation
       env.CORE_WSL2_FIX = (new Date()).getTime();
