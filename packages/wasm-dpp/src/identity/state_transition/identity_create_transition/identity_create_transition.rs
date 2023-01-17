@@ -2,6 +2,7 @@ use std::convert::TryInto;
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -21,7 +22,7 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::generic_of_js_val;
 use dpp::{
     identifier::Identifier,
     identity::{
@@ -117,32 +118,34 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<(), JsValue> {
+    pub fn set_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
         let public_keys = public_keys
-            .to_vec()
-            .into_iter()
-            .map(|key| key.with_serde_to_json_value().unwrap()) // TODO: use generic_from_js_value instead?
-            .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
-            .collect::<Vec<IdentityPublicKey>>();
+            .iter()
+            .map(|value| {
+                let public_key: Ref<IdentityPublicKeyWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWasm>(value, "IdentityPublicKey")?;
+                Ok(public_key.clone().into())
+            })
+            .collect::<Result<Vec<IdentityPublicKey>, JsValue>>()?;
 
         self.0.set_public_keys(public_keys);
 
-        // TODO: consider returning self as it's done in the internal set_public_keys method
         Ok(())
     }
 
     #[wasm_bindgen(js_name=addPublicKeys)]
-    pub fn add_public_keys(&mut self, public_keys: js_sys::Array) -> Result<(), JsValue> {
+    pub fn add_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
         let mut public_keys = public_keys
-            .to_vec()
-            .into_iter()
-            .map(|key| key.with_serde_to_json_value().unwrap()) // TODO: use generic_from_js_value instead?
-            .map(|key_json| IdentityPublicKey::from_json_object(key_json).unwrap())
-            .collect::<Vec<IdentityPublicKey>>();
+            .iter()
+            .map(|value| {
+                let public_key: Ref<IdentityPublicKeyWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWasm>(value, "IdentityPublicKey")?;
+                Ok(public_key.clone().into())
+            })
+            .collect::<Result<Vec<IdentityPublicKey>, JsValue>>()?;
 
         self.0.add_public_keys(&mut public_keys);
 
-        // TODO: consider returning self as it's done in the internal add_public_keys method
         Ok(())
     }
 

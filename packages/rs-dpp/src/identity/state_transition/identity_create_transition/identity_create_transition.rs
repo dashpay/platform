@@ -10,8 +10,7 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
-    state_transition_helpers, StateTransition, StateTransitionConvert, StateTransitionLike,
-    StateTransitionType,
+    StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;

@@ -3,6 +3,7 @@ mod instant;
 
 pub use chain::*;
 pub use instant::*;
+use std::convert::TryInto;
 use std::sync::Arc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::__rt::Ref;
@@ -22,8 +23,8 @@ use crate::utils::generic_of_js_val;
 use crate::validation::ValidationResultWasm;
 use crate::{Deserialize, StateTransitionExecutionContextWasm};
 use dpp::identity::state_transition::asset_lock_proof::{
-    AssetLockProof, AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,
-    AssetLockTransactionValidator,
+    AssetLockProof, AssetLockProofType, AssetLockPublicKeyHashFetcher,
+    AssetLockTransactionOutputFetcher, AssetLockTransactionValidator,
 };
 
 #[derive(Deserialize, Clone)]
@@ -65,12 +66,12 @@ impl AssetLockProofWasm {
         let lock_type = get_lock_type(&raw_asset_lock_proof)?;
 
         match lock_type {
-            0 => Ok(InstantAssetLockProofWasm::new(raw_asset_lock_proof)?.into()),
-            1 => Ok(ChainAssetLockProofWasm::new(raw_asset_lock_proof)?.into()),
-            _ => Err(
-                RustConversionError::Error(String::from("unrecognized asset lock type"))
-                    .to_js_value(),
-            ),
+            AssetLockProofType::Instant => {
+                Ok(InstantAssetLockProofWasm::new(raw_asset_lock_proof)?.into())
+            }
+            AssetLockProofType::Chain => {
+                Ok(ChainAssetLockProofWasm::new(raw_asset_lock_proof)?.into())
+            }
         }
     }
 
@@ -99,17 +100,16 @@ impl AssetLockProofWasm {
     }
 }
 
-fn get_lock_type(raw_asset_lock_proof: &JsValue) -> Result<u8, JsValue> {
-    let lock_type = js_sys::Reflect::get(&raw_asset_lock_proof, &JsValue::from_str("type"))
+fn get_lock_type(raw_asset_lock_proof: &JsValue) -> Result<AssetLockProofType, JsValue> {
+    (js_sys::Reflect::get(&raw_asset_lock_proof, &JsValue::from_str("type"))
         .map_err(|_| {
             RustConversionError::Error(String::from("error getting type from raw asset lock"))
                 .to_js_value()
         })?
         .as_f64()
-        .ok_or_else(|| JsValue::from_str("asset lock type must be a number"))?
-        as u8;
-
-    Ok(lock_type)
+        .ok_or(JsValue::from_str("asset lock type must be a number"))? as u64)
+        .try_into()
+        .map_err(|_| JsValue::from_str("unrecognized asset lock proof type"))
 }
 
 #[wasm_bindgen(js_name=createAssetLockProofInstance)]
@@ -117,11 +117,10 @@ pub fn create_asset_lock_proof_instance(raw_parameters: JsValue) -> Result<JsVal
     let lock_type = get_lock_type(&raw_parameters)?;
 
     match lock_type {
-        0 => InstantAssetLockProofWasm::new(raw_parameters).map(|v| v.into()),
-        1 => ChainAssetLockProofWasm::new(raw_parameters).map(|v| v.into()),
-        _ => Err(
-            RustConversionError::Error(String::from("unrecognized asset lock type")).to_js_value(),
-        ),
+        AssetLockProofType::Instant => {
+            InstantAssetLockProofWasm::new(raw_parameters).map(|v| v.into())
+        }
+        AssetLockProofType::Chain => ChainAssetLockProofWasm::new(raw_parameters).map(|v| v.into()),
     }
 }
 
@@ -138,28 +137,30 @@ pub fn create_asset_lock_proof_from_wasm_instance(
         .dyn_ref::<js_sys::Function>()
         .ok_or(default_error.clone())?;
 
-    let lock_type = get_type_function
+    let raw_lock_type = get_type_function
         .call0(&js_value)?
         .as_f64()
-        .ok_or(default_error.clone())? as u8;
+        .ok_or(default_error.clone())? as u64;
 
-    if lock_type == 0 {
-        let instant: Ref<InstantAssetLockProofWasm> =
-            generic_of_js_val::<InstantAssetLockProofWasm>(js_value, "InstantAssetLockProof")?;
+    let lock_type: AssetLockProofType = raw_lock_type.try_into().map_err(|_| {
+        UnknownAssetLockProofTypeErrorWasm::from(UnknownAssetLockProofTypeError::new(Some(
+            raw_lock_type as u8,
+        )))
+    })?;
 
-        Ok(AssetLockProof::Instant(instant.clone().into()))
-    } else if lock_type == 1 {
-        let chain: Ref<ChainAssetLockProofWasm> =
-            generic_of_js_val::<ChainAssetLockProofWasm>(js_value, "ChainAssetLockProof")?;
+    match lock_type {
+        AssetLockProofType::Instant => {
+            let instant: Ref<InstantAssetLockProofWasm> =
+                generic_of_js_val::<InstantAssetLockProofWasm>(js_value, "InstantAssetLockProof")?;
 
-        Ok(AssetLockProof::Chain(chain.clone().into()))
-    } else {
-        Err(
-            UnknownAssetLockProofTypeErrorWasm::from(UnknownAssetLockProofTypeError::new(Some(
-                lock_type,
-            )))
-            .into(),
-        )
+            Ok(AssetLockProof::Instant(instant.clone().into()))
+        }
+        AssetLockProofType::Chain => {
+            let chain: Ref<ChainAssetLockProofWasm> =
+                generic_of_js_val::<ChainAssetLockProofWasm>(js_value, "ChainAssetLockProof")?;
+
+            Ok(AssetLockProof::Chain(chain.clone().into()))
+        }
     }
 }
 
