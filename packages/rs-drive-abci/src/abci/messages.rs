@@ -132,7 +132,7 @@ impl BlockEndResponse {
                     (
                         Some(proposer_payouts.proposers_paid_count),
                         Some(proposer_payouts.paid_epoch_index),
-                        Some(proposer_payouts.refunded_epochs_count),
+                        process_block_fees_result.refunded_epochs_count,
                     )
                 },
             );

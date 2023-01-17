@@ -57,8 +57,6 @@ pub struct ProposersPayouts {
     pub proposers_paid_count: u16,
     /// Index of last epoch marked as paid
     pub paid_epoch_index: u16,
-    /// A number of epochs which had refunded
-    pub refunded_epochs_count: usize,
 }
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
@@ -102,7 +100,6 @@ impl Platform {
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
-        refunded_epochs_count: usize,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<Option<ProposersPayouts>, Error> {
@@ -148,7 +145,6 @@ impl Platform {
         Ok(Some(ProposersPayouts {
             proposers_paid_count,
             paid_epoch_index: unpaid_epoch.epoch_index,
-            refunded_epochs_count,
         }))
     }
 
@@ -453,7 +449,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    0,
                     Some(&transaction),
                     &mut batch,
                 )
@@ -515,7 +510,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    0,
                     Some(&transaction),
                     &mut batch,
                 )
@@ -531,7 +525,6 @@ mod tests {
                 Some(ProposersPayouts {
                     proposers_paid_count: 50,
                     paid_epoch_index: 0,
-                    refunded_epochs_count: 0,
                 })
             ));
         }
@@ -604,7 +597,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    0,
                     Some(&transaction),
                     &mut batch,
                 )
@@ -620,7 +612,6 @@ mod tests {
                 Some(ProposersPayouts {
                     proposers_paid_count: 100,
                     paid_epoch_index: 0,
-                    refunded_epochs_count: 0
                 })
             ));
         }
@@ -708,7 +699,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    1,
                     Some(&transaction),
                     &mut batch,
                 )
@@ -724,7 +714,6 @@ mod tests {
                 Some(ProposersPayouts {
                     proposers_paid_count: 150,
                     paid_epoch_index: 0,
-                    refunded_epochs_count: 1
                 })
             ));
         }
@@ -780,7 +769,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    0,
                     Some(&transaction),
                     &mut batch,
                 )
@@ -873,7 +861,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    0,
                     Some(&transaction),
                     &mut batch,
                 )
@@ -889,7 +876,6 @@ mod tests {
                 Some(ProposersPayouts {
                     proposers_paid_count: proposers_count,
                     paid_epoch_index: 0,
-                    refunded_epochs_count: 0
                 })
             ));
 
@@ -909,7 +895,6 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    0,
                     Some(&transaction),
                     &mut batch,
                 )
