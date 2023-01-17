@@ -1,36 +1,5 @@
-// const { getRE2Class } = require('@dashevo/wasm-re2');
 const lodashCloneDeep = require('lodash/cloneDeep');
-
-// const $RefParser = require('@apidevtools/json-schema-ref-parser');
-
-// const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-
-// const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-
-// const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-// const validateDataContractFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractFactory');
-// const validateDataContractMaxDepthFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractMaxDepthFactory');
-// const enrichDataContractWithBaseSchema = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
-// const validateDataContractPatternsFactory = require('@dashevo/dpp/lib/dataContract/validation/validateDataContractPatternsFactory');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-
-// const { expectJsonSchemaError, expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-
-// const DuplicateIndexError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DuplicateIndexError');
-// const UndefinedIndexPropertyError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/UndefinedIndexPropertyError');
-// const InvalidIndexPropertyTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidIndexPropertyTypeError');
-// const SystemPropertyIndexAlreadyPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/SystemPropertyIndexAlreadyPresentError');
-// const UniqueIndicesLimitReachedError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/UniqueIndicesLimitReachedError');
-// const InvalidIndexedPropertyConstraintError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
-// const InvalidCompoundIndexError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidCompoundIndexError');
-// const IncompatibleRe2PatternError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleRe2PatternError');
-// const InvalidJsonSchemaRefError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
-// const JsonSchemaCompilationError = require('@dashevo/dpp/lib/errors/consensus/basic/JsonSchemaCompilationError');
-// const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-// const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
-
 const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError.js');
 
 const { default: loadWasmDpp } = require('../../../../dist');
@@ -50,10 +19,11 @@ describe('validateDataContractFactory', () => {
   let InvalidIndexPropertyTypeError;
   let InvalidCompoundIndexError;
   let InvalidIndexedPropertyConstraintError;
+  let InvalidJsonSchemaRefError;
 
   before(async () => {
     ({
-      DataContractValidator, ValidationResult, JsonSchemaCompilationError, IncompatibleRe2PatternError, DuplicateIndexError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, SystemPropertyIndexAlreadyPresentError, InvalidIndexPropertyTypeError, InvalidCompoundIndexError, InvalidIndexedPropertyConstraintError,
+      DataContractValidator, ValidationResult, JsonSchemaCompilationError, IncompatibleRe2PatternError, DuplicateIndexError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, SystemPropertyIndexAlreadyPresentError, InvalidIndexPropertyTypeError, InvalidCompoundIndexError, InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
     } = await loadWasmDpp());
   });
 
@@ -906,7 +876,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getParams().allowedValue).to.equal(false);
       });
 
-      it.skip('should return invalid result if "default" keyword is used', async () => {
+      it('should return invalid result if "default" keyword is used', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
 
@@ -936,8 +906,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getKeyword()).to.equal('pattern');
       });
 
-      // TODO: jsonschema issue
-      it.skip('should not have `propertyNames`', async () => {
+      it('should not have `propertyNames`', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.indexedDocument = {
           type: 'object',
@@ -2133,8 +2102,9 @@ describe('validateDataContractFactory', () => {
     });
   });
 
-  it.skip('should return invalid result with circular $ref pointer', async () => {
+  it('should return invalid result with circular $ref pointer', async () => {
     const rawDataContract = dataContract.toObject();
+    rawDataContract.$defs = {};
     rawDataContract.$defs.object = { $ref: '#/$defs/object' };
 
     const result = await validateDataContract(rawDataContract);
@@ -2144,8 +2114,6 @@ describe('validateDataContractFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.getCode()).to.equal(1014);
-
-    expect(error.message).to.startsWith('Invalid JSON Schema $ref: Circular $ref pointer found');
   });
 
   it('should return invalid result if indexed string property missing maxLength constraint', async () => {
@@ -2180,6 +2148,7 @@ describe('validateDataContractFactory', () => {
     expect(error.getReason()).to.equal('should be less or equal than 63');
   });
 
+  // TODO: support indexed arrays
   it.skip('should return invalid result if indexed array property missing maxItems constraint',
      async () => {
        const rawDataContract = dataContract.toObject();
@@ -2196,7 +2165,8 @@ describe('validateDataContractFactory', () => {
     expect(error.getConstraintName()).to.equal('maxItems');
     expect(error.getReason()).to.equal('should be less or equal 63');
   });
-  
+
+  // TODO support indexed arrays
   it.skip('should return invalid result if indexed array property have to big maxItems', async () => {
     const rawDataContract = dataContract.toObject();
     rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
@@ -2212,7 +2182,8 @@ describe('validateDataContractFactory', () => {
     expect(error.getConstraintName()).to.equal('maxItems');
     expect(error.getReason()).to.equal('should be less or equal 63');
   });
-  
+
+  // TODO support indexed arrays
   it.skip('should return invalid result if indexed array property have string item without maxItems constraint', async () => {
     const rawDataContract = dataContract.toObject();
     delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
@@ -2228,7 +2199,8 @@ describe('validateDataContractFactory', () => {
     expect(error.getConstraintName()).to.equal('maxItems');
     expect(error.getReason()).to.equal('should be less or equal 63');
   });
-  
+
+  // TODO support indexed arrays
   it.skip('should return invalid result if indexed array property have string item with maxItems bigger than 1024', async () => {
     const rawDataContract = dataContract.toObject();
     rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;

@@ -1046,7 +1046,6 @@ mod documents {
     }
 
     #[test]
-    #[ignore = "unevaluatedProperties is waiting for implementation https://github.com/Stranger6667/jsonschema-rs/issues/288"]
     fn should_return_invalid_result_if_default_keyword_is_used() {
         let TestData {
             mut raw_data_contract,
@@ -1095,7 +1094,6 @@ mod documents {
     }
 
     #[test]
-    #[ignore = "unevaluatedProperties is waiting for implementation https://github.com/Stranger6667/jsonschema-rs/issues/288"]
     fn documents_should_not_have_property_names() {
         let TestData {
             mut raw_data_contract,
