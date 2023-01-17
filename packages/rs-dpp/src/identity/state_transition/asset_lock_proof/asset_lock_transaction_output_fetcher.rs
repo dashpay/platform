@@ -87,6 +87,7 @@ pub async fn fetch_asset_lock_transaction_output(
 
 #[cfg(test)]
 mod test {
+    use crate::state_repository::FetchTransactionResponse;
     use crate::{
         identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof,
         state_repository::MockStateRepositoryLike,
@@ -101,8 +102,8 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
 
         state_repository_mock
-            .expect_fetch_transaction::<Vec<u8>>()
-            .return_once(|_, _| Ok(None));
+            .expect_fetch_transaction()
+            .return_once(|_, _| Ok(FetchTransactionResponse::default()));
         execution_context.enable_dry_run();
 
         let result = fetch_asset_lock_transaction_output(

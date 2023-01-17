@@ -17,7 +17,7 @@ impl From<Infallible> for ProtocolError {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct FetchTransactionResponse {
     pub height: Option<u32>,
     pub data: Option<Vec<u8>>,
