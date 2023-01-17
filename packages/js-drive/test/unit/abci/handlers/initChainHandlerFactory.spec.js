@@ -34,6 +34,7 @@ describe('initChainHandlerFactory', () => {
   let rsAbciMock;
   let createCoreChainLockUpdateMock;
   let coreChainLockUpdate;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     initialCoreChainLockedHeight = 1;
@@ -78,6 +79,7 @@ describe('initChainHandlerFactory', () => {
     });
 
     createCoreChainLockUpdateMock = this.sinon.stub().resolves(coreChainLockUpdate);
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
     initChainHandler = initChainHandlerFactory(
       updateSimplifiedMasternodeListMock,
@@ -90,6 +92,7 @@ describe('initChainHandlerFactory', () => {
       groveDBStoreMock,
       rsAbciMock,
       createCoreChainLockUpdateMock,
+      createContextLoggerMock,
     );
   });
 
@@ -147,5 +150,9 @@ describe('initChainHandlerFactory', () => {
 
     expect(createCoreChainLockUpdateMock)
       .to.be.calledOnceWithExactly(initialCoreChainLockedHeight, 0, loggerMock);
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      height: request.initialHeight.toString(),
+      abciMethod: 'initChain',
+    });
   });
 });

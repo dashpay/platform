@@ -21,10 +21,10 @@ function createConsensusParamUpdateFactory(
    * @typedef createConsensusParamUpdate
    * @param {number} height
    * @param {number} round
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<ConsensusParams>}
    */
-  async function createConsensusParamUpdate(height, round, consensusLogger) {
+  async function createConsensusParamUpdate(height, round, contextLogger) {
     const contextVersion = proposalBlockExecutionContext.getVersion();
 
     // Update consensus params feature flag
@@ -52,7 +52,7 @@ function createConsensusParamUpdateFactory(
         version,
       });
 
-      consensusLogger.info(
+      contextLogger.info(
         {
           consensusParamUpdates,
         },
