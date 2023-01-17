@@ -108,13 +108,11 @@ impl IdentityPublicKeyWasm {
         self.0.get_readonly()
     }
 
-    // TODO: fix - make timestamp js_sys::Date
     #[wasm_bindgen(js_name=setDisabledAt)]
     pub fn set_disabled_at(&mut self, timestamp: u32) {
         self.0.set_disabled_at(timestamp as u64);
     }
 
-    // TODO: fix - return js_sys::Date
     #[wasm_bindgen(js_name=getDisabledAt)]
     pub fn get_disabled_at(&self) -> Option<u32> {
         self.0.get_disabled_at().map(|timestamp| timestamp as u32)

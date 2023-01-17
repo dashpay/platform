@@ -111,7 +111,6 @@ impl ExternalStateRepositoryLikeWrapper {
     }
 }
 
-// TODO: move to a dedicated module together with all From traits?
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FetchTransactionResponse {
     pub height: Option<u32>,

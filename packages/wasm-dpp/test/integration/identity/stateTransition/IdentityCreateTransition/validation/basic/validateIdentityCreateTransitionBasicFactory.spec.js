@@ -68,7 +68,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     const stateTransitionJS = getIdentityCreateTransitionFixture();
     stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
 
-    const privateKey = new PrivateKey();
+    const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey();
 
     const identityPublicKey = mockIdentityPublicKey(publicKey.toBuffer());
