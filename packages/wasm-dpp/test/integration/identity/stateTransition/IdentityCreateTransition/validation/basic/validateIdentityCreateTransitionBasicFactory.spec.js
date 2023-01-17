@@ -86,9 +86,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     stateTransition.setPublicKeys([identityPublicKey]);
 
     rawStateTransition = stateTransition.toObject();
-
-    // TODO: must not be present?
-    delete rawStateTransition.identityId;
   });
 
   describe('protocolVersion', () => {
@@ -282,8 +279,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       stateTransition.setPublicKeys([identityPublicKey]);
 
       rawStateTransition = stateTransition.toObject();
-      // TODO: remove identity Id?
-      delete rawStateTransition.identityId;
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
@@ -308,8 +303,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       stateTransition.setPublicKeys([identityPublicKey]);
 
       rawStateTransition = stateTransition.toObject();
-      // TODO: remove identity Id?
-      delete rawStateTransition.identityId;
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
