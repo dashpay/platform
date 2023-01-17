@@ -571,7 +571,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 769120,
+                    processing_fee: 774720,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

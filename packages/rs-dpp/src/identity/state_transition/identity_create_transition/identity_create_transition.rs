@@ -181,7 +181,11 @@ impl IdentityCreateTransition {
         }
 
         if !options.skip_identifiers_conversion {
-            let bytes = self.signature.iter().map(|num| JsonValue::from(*num));
+            let bytes = self
+                .identity_id
+                .as_bytes()
+                .iter()
+                .map(|num| JsonValue::from(*num));
             json_map.insert(
                 property_names::IDENTITY_ID.to_string(),
                 JsonValue::Array(bytes.collect()),
@@ -233,6 +237,20 @@ impl StateTransitionConvert for IdentityCreateTransition {
     }
     fn binary_property_paths() -> Vec<&'static str> {
         vec![]
+    }
+
+    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+        let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
+        Ok(json_value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {

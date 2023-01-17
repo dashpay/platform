@@ -15,7 +15,7 @@ where
     Self: StateTransitionLike,
 {
     fn get_owner_id(&self) -> &Identifier;
-    fn get_signature_public_key_id(&self) -> KeyID;
+    fn get_signature_public_key_id(&self) -> Option<KeyID>;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
 
     fn sign(
@@ -88,7 +88,7 @@ where
             });
         }
 
-        if self.get_signature_public_key_id() != public_key.id {
+        if self.get_signature_public_key_id() != Some(public_key.id) {
             return Err(ProtocolError::PublicKeyMismatchError {
                 public_key: public_key.clone(),
             });
@@ -259,8 +259,8 @@ mod test {
             SecurityLevel::HIGH
         }
 
-        fn get_signature_public_key_id(&self) -> KeyID {
-            self.signature_public_key_id
+        fn get_signature_public_key_id(&self) -> Option<KeyID> {
+            Some(self.signature_public_key_id)
         }
 
         fn set_signature_public_key_id(&mut self, key_id: KeyID) {
@@ -404,7 +404,7 @@ mod test {
     fn get_signature_public_key_id() {
         let st = get_mock_state_transition();
         let keys = get_test_keys();
-        assert_eq!(keys.public_key_id, st.get_signature_public_key_id())
+        assert_eq!(Some(keys.public_key_id), st.get_signature_public_key_id())
     }
 
     #[test]
@@ -558,7 +558,7 @@ mod test {
         let mut st = get_mock_state_transition();
         let public_key_id = 2;
         st.set_signature_public_key_id(public_key_id);
-        assert_eq!(public_key_id, st.get_signature_public_key_id());
+        assert_eq!(Some(public_key_id), st.get_signature_public_key_id());
     }
 
     #[test]

@@ -47,7 +47,7 @@ impl PublicKeysValidatorWasm {
         &self,
         public_key: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let pk_serde_json = public_key.to_serde_json_value()?;
+        let pk_serde_json = public_key.with_serde_to_json_value()?;
 
         self.public_key_validator
             .validate_public_key_structure(&pk_serde_json)

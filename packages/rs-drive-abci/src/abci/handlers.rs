@@ -98,8 +98,8 @@ impl TenderdashAbci for Platform {
     ) -> Result<BlockBeginResponse, Error> {
         // Set genesis time
         let genesis_time_ms = if request.block_height == 1 {
-            self.drive
-                .init_genesis_time(request.block_time_ms, transaction)?;
+            self.drive.set_genesis_time(request.block_time_ms);
+
             request.block_time_ms
         } else {
             self.drive

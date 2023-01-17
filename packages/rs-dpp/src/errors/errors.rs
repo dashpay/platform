@@ -2,9 +2,8 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::data_contract::{errors::*, DataContract};
-use crate::document::document_transition::DocumentTransition;
-use crate::document::{errors::*, Document};
+use crate::data_contract::errors::*;
+use crate::document::errors::*;
 use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use crate::prelude::Identifier;
 use crate::state_transition::StateTransition;
@@ -76,29 +75,6 @@ pub enum ProtocolError {
     #[error("Invalid signature public key")]
     InvalidSignaturePublicKeyError { public_key: Vec<u8> },
 
-    // Documents
-    //? This error is duplicated by `[crate::errors::consensus::abstract_basic_error::BasicError]`
-    #[error("Data Contract doesn't define document wit type '{document_type}'")]
-    InvalidDocumentTypeError {
-        document_type: String,
-        data_contract: DataContract,
-    },
-
-    #[error("Invalid Document: {errors:?}")]
-    InvalidDocumentError {
-        errors: Vec<ConsensusError>,
-        raw_document: JsonValue,
-    },
-
-    #[error("No documents were supplied to state transition")]
-    NoDocumentsSuppliedError,
-
-    #[error("Documents have mixed owner ids")]
-    MismatchOwnerIdsError { documents: Vec<Document> },
-
-    #[error("Invalid Document initial revision {}", document.revision)]
-    InvalidInitialRevisionError { document: Document },
-
     // TODO decide if it should be a string
     #[error("Non-Consensus error: {0}")]
     NonConsensusError(String),
@@ -133,11 +109,6 @@ pub enum ProtocolError {
 
     #[error("Public key is disabled")]
     PublicKeyIsDisabledError { public_key: IdentityPublicKey },
-
-    #[error("Document was not provided for apply of state transition")]
-    DocumentNotProvided {
-        document_transition: DocumentTransition,
-    },
 }
 
 impl From<NonConsensusError> for ProtocolError {
@@ -167,6 +138,12 @@ impl From<ConsensusError> for ProtocolError {
 impl From<DataContractError> for ProtocolError {
     fn from(e: DataContractError) -> Self {
         ProtocolError::DataContractError(e)
+    }
+}
+
+impl From<DocumentError> for ProtocolError {
+    fn from(e: DocumentError) -> Self {
+        ProtocolError::Document(Box::new(e))
     }
 }
 
