@@ -209,7 +209,7 @@ function deliverTxFactory(
               documentId: transition.getId().toString(),
               dataContractId: dataContract.getId().toString(),
             },
-            `Document ${description} with id: ${transition.getId()} for contract id: ${dataContract.getId()}`,
+            `Document ${description} with id: ${transition.getId()}`,
           );
         });
 
