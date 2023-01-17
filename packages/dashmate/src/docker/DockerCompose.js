@@ -399,6 +399,9 @@ class DockerCompose {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      // Solving issue under WSL when after restart conainer volume is not being mounted properly
+      // https://github.com/docker/for-win/issues/4812
+      // Following fix forces container recreation
       CORE_WSL2_FIX: (new Date()).getTime(),
     };
 

@@ -14,6 +14,9 @@ services:
       - dashd
     stop_grace_period: 30s
     environment:
+      # Solving issue under WSL when after restart conainer volume is not being mounted properly
+      # https://github.com/docker/for-win/issues/4812
+      # Following fix forces container recreation
       - WSL2_FIX=${CORE_WSL2_FIX}
 
 volumes:
