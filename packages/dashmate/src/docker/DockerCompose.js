@@ -11,7 +11,7 @@ const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError'
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
-cosnt isWsl = require('is-wsl');
+const isWsl = require('is-wsl');
 
 const { HOME_DIR_PATH } = require('../constants');
 
