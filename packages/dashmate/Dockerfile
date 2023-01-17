@@ -53,7 +53,7 @@ ENV NODE_ENV ${NODE_ENV}
 
 RUN apk update && \
     apk --no-cache upgrade && \
-    apk add --no-cache docker-cli
+    apk add --no-cache docker-cli docker-cli-compose
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Dashmate Helper Node.JS"

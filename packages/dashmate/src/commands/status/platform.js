@@ -55,6 +55,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       p2pPortState,
       rpcService,
       tenderdash,
+      drive
     } = scope;
 
     const plain = {
@@ -67,10 +68,20 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       'RPC service': rpcService,
     };
 
+    const {dockerStatus: tenderdashDockerStatus} = tenderdash
+    const {serviceStatus: tenderdashServiceStatus} = tenderdash
+
+    const {dockerStatus: driveDockerStatus} = drive
+    const {serviceStatus: driveServiceStatus} = drive
+
+    plain['Tenderdash Docker Status'] = colors.docker(tenderdashDockerStatus)(tenderdashDockerStatus);
+    plain['Tenderdash Service Status'] = colors.status(tenderdashServiceStatus)(tenderdashServiceStatus);
+
+    plain['Drive Docker Status'] = colors.docker(driveDockerStatus)(driveDockerStatus);
+    plain['Drive Service Status'] = colors.status(driveServiceStatus)(driveServiceStatus);
+
     if (tenderdash.version) {
       const {
-        dockerStatus,
-        serviceStatus,
         version: tenderdashVersion,
         lastBlockHeight: platformBlockHeight,
         latestAppHash: platformLatestAppHash,
@@ -78,8 +89,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         network: tenderdashNetwork,
       } = tenderdash;
 
-      plain['Docker Status'] = dockerStatus;
-      plain['Service Status'] = colors.status(serviceStatus)(serviceStatus);
       plain['Network'] = tenderdashNetwork;
       plain['Tenderdash Version'] = tenderdashVersion;
       plain['Block height'] = platformBlockHeight;

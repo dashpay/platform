@@ -406,6 +406,22 @@ class DockerCompose {
       env,
     };
   }
+
+  /**
+   * Resolve container internal IP
+   *
+   * @param {Object} envs
+   * @param {string} serviceName
+   * @return {Promise<string>}
+   */
+  async getContainerIp(envs, serviceName) {
+    const containerInfo = await this.inspectService(envs, serviceName)
+
+    const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks)
+    const {IPAddress: containerIP} = containerInfo.NetworkSettings.Networks[firstNetwork]
+
+    return containerIP
+  }
 }
 
 DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '2.0.0';

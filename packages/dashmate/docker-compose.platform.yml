@@ -117,6 +117,8 @@ services:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
+    environment:
+      - 'DASHMATE_HELPER=true'
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/root/.dashmate
       - /var/run/docker.sock:/var/run/docker.sock
