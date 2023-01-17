@@ -92,6 +92,13 @@ function endBlockFactory(
       }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
 
+    if (rsResponse.refundedEpochsCount) {
+      consensusLogger.debug({
+        currentEpochIndex,
+        refundedEpochsCount: rsResponse.refundedEpochsCount,
+      }, `${rsResponse.refundedEpochsCount} epochs were refunded`);
+    }
+
     const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);
 
     const validatorSetUpdate = await rotateAndCreateValidatorSetUpdate(

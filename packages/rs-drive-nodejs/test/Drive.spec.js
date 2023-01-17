@@ -580,6 +580,7 @@ describe('Drive', () => {
 
         expect(response).to.have.property('proposersPaidCount');
         expect(response).to.have.property('paidEpochIndex');
+        expect(response).to.have.property('refundedEpochsCount');
       });
     });
 

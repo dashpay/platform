@@ -116,6 +116,8 @@ pub struct BlockEndResponse {
     pub proposers_paid_count: Option<u16>,
     /// Index of the last epoch that marked as paid
     pub paid_epoch_index: Option<u16>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<usize>,
 }
 
 impl BlockEndResponse {
@@ -136,6 +138,7 @@ impl BlockEndResponse {
         Self {
             proposers_paid_count,
             paid_epoch_index,
+            refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
         }
     }
 }
