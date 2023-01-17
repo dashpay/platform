@@ -95,7 +95,9 @@ impl Drive {
         let max_encoded_epoch_index =
             paths::encode_epoch_index_key(max_epoch_index.to_owned())?.to_vec();
 
-        if max_epoch_index - min_epoch_index + 1 != credits_per_epochs.len() as EpochIndex {
+        let credits_per_epochs_length = credits_per_epochs.len();
+
+        if max_epoch_index - min_epoch_index + 1 != credits_per_epochs_length as EpochIndex {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "gaps in credits per epoch are not supported",
             )));
@@ -122,6 +124,8 @@ impl Drive {
 
         let storage_fee_pools = storage_fee_pools_result.to_elements();
 
+        let mut negative_credits_from_previous_epochs: SignedCredits = 0;
+
         for (i, (epoch_index, credits)) in credits_per_epochs
             .into_iter()
             .sorted_by_key(|x| x.0)
@@ -137,11 +141,26 @@ impl Drive {
                 }
             };
 
-            let credits_to_update = existing_storage_fee.checked_add(credits).ok_or_else(|| {
-                get_overflow_error("can't add credits to existing epoch pool storage fee")
-            })?;
+            let mut credits_to_update =
+                existing_storage_fee.checked_add(credits).ok_or_else(|| {
+                    get_overflow_error("can't add credits to existing epoch pool storage fee")
+                })?;
 
+            // Subtract negative credits from previous epochs
+            if negative_credits_from_previous_epochs != 0 {
+                credits_to_update += negative_credits_from_previous_epochs;
+                negative_credits_from_previous_epochs = 0;
+            }
+
+            // Epoch storage fee pool can't be negative so we keep negative amount
+            // for the future epochs
             if credits_to_update < 0 {
+                negative_credits_from_previous_epochs += credits_to_update;
+                credits_to_update = 0;
+            }
+
+            // If we still have negative credits for the last pool it's not good
+            if negative_credits_from_previous_epochs != 0 && i == credits_per_epochs_length - 1 {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "epoch storage pool went bellow zero",
                 )));
@@ -248,6 +267,70 @@ mod tests {
 
                 assert_eq!(credits, 10);
             }
+        }
+
+        #[test]
+        fn should_subtract_negative_credits_from_future_epochs() {
+            let drive = setup_drive_with_initial_state_structure();
+            let transaction = drive.grove.start_transaction();
+
+            const TO_EPOCH_INDEX: EpochIndex = 10;
+
+            // Store initial epoch storage pool values
+            let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
+                .into_iter()
+                .enumerate()
+                .map(|(i, epoch_index)| {
+                    let credits = 10 - i as Credits;
+
+                    let epoch = Epoch::new(epoch_index);
+
+                    epoch.update_storage_fee_pool_operation(credits)
+                })
+                .collect::<Result<_, _>>()
+                .expect("should add operations");
+
+            let batch = GroveDbOpBatch::from_operations(operations);
+
+            drive
+                .grove_apply_batch(batch, false, Some(&transaction))
+                .expect("should apply batch");
+
+            let mut credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX
+                ..TO_EPOCH_INDEX)
+                .enumerate()
+                .map(|(credits, epoch_index)| (epoch_index, credits as SignedCredits))
+                .collect();
+
+            // Add negative credits to update
+            credits_to_epochs.insert(GENESIS_EPOCH_INDEX, -15);
+
+            let mut batch = GroveDbOpBatch::new();
+
+            drive
+                .add_update_epoch_storage_fee_pools_sequence_operations(
+                    &mut batch,
+                    credits_to_epochs,
+                    Some(&transaction),
+                )
+                .expect("should update epoch storage pools");
+
+            assert_eq!(batch.len(), TO_EPOCH_INDEX as usize);
+
+            let updated_credits: Vec<_> = batch
+                .into_iter()
+                .map(|operation| {
+                    let Op::Insert{ element: Element::SumItem (credits, _)} = operation.op else {
+                    panic!("invalid operation");
+                };
+
+                    credits
+                })
+                .collect();
+
+            let expected_credits = [0, 5, 10, 10, 10, 10, 10, 10, 10, 10];
+
+            assert_eq!(updated_credits, expected_credits);
         }
     }
 }
