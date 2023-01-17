@@ -202,10 +202,12 @@ function deliverTxFactory(
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
+          const dataContract = transition.getDataContract();
 
           txConsensusLogger.info(
             {
               documentId: transition.getId().toString(),
+              dataContractId: dataContract.getId().toString(),
             },
             `Document ${description} with id: ${transition.getId()}`,
           );
