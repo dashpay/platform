@@ -3,30 +3,17 @@ use dpp::identity::state_transition::asset_lock_proof::{
 };
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::ProtocolError;
-use serde::{Deserialize, Serialize};
-use serde_with::skip_serializing_none;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
+use crate::utils::ToSerdeJSONExt;
 use crate::{
     errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation::ValidationResultWasm,
-    with_js_error, StateTransitionExecutionContextWasm,
+    StateTransitionExecutionContextWasm,
 };
-
-#[skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawInstantAssetLockProof {
-    // TODO: consider using with_serde_to_json_value() instead of this struct
-    #[serde(rename = "type")]
-    lock_type: Option<u8>,
-    instant_lock: Option<Vec<u8>>,
-    transaction: Option<Vec<u8>>,
-    output_index: Option<u32>,
-}
 
 #[wasm_bindgen(js_name=validateInstantAssetLockProofStructure)]
 pub async fn validate_instant_asset_lock_proof_structure(
@@ -37,11 +24,7 @@ pub async fn validate_instant_asset_lock_proof_structure(
     let state_repository_wrapper =
         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
 
-    let parsed_asset_lock_proof: RawInstantAssetLockProof =
-        with_js_error!(serde_wasm_bindgen::from_value(raw_asset_lock_proof))?;
-
-    let asset_lock_proof_json =
-        serde_json::to_value(parsed_asset_lock_proof).map_err(|e| from_dpp_err(e.into()))?;
+    let asset_lock_proof_json = raw_asset_lock_proof.with_serde_to_json_value()?;
 
     let tx_validator = Arc::new(AssetLockTransactionValidator::new(
         state_repository_wrapper.clone(),

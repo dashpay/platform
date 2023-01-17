@@ -74,8 +74,14 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be equal to 0', async () => {
       rawProof.type = -1;
 
-      await expect(validateInstantAssetLockProofStructure(rawProof))
-        .to.be.rejectedWith('Conversion Error: Error: invalid type: floating point `-1`, expected u8');
+      const result = await validateInstantAssetLockProofStructure(rawProof);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/type');
+      expect(error.getKeyword()).to.equal('const');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
     });
@@ -101,8 +107,14 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be a byte array', async () => {
       rawProof.instantLock = new Array(165).fill('string');
 
-      await expect(validateInstantAssetLockProofStructure(rawProof))
-        .to.be.rejectedWith('Conversion Error: Error: invalid type: string "string", expected u8');
+      const result = await validateInstantAssetLockProofStructure(rawProof);
+
+      await expectJsonSchemaError(result, 165);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/instantLock/0');
+      expect(error.getKeyword()).to.equal('type');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
     });
@@ -211,8 +223,14 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be a byte array', async () => {
       rawProof.transaction = new Array(65).fill('string');
 
-      await expect(validateInstantAssetLockProofStructure(rawProof))
-        .to.be.rejectedWith('Conversion Error: Error: invalid type: string "string", expected u8');
+      const result = await validateInstantAssetLockProofStructure(rawProof);
+
+      await expectJsonSchemaError(result, 65);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/transaction/0');
+      expect(error.getKeyword()).to.equal('type');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
     });
@@ -283,8 +301,14 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be an integer', async () => {
       rawProof.outputIndex = 1.1;
 
-      await expect(validateInstantAssetLockProofStructure(rawProof))
-        .to.be.rejectedWith('Conversion Error: Error: invalid type: floating point `1.1`, expected u32');
+      const result = await validateInstantAssetLockProofStructure(rawProof);
+
+      await expectJsonSchemaError(result, 1);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/outputIndex');
+      expect(error.getKeyword()).to.equal('type');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
     });
@@ -292,8 +316,14 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should not be less than 0', async () => {
       rawProof.outputIndex = -1;
 
-      await expect(validateInstantAssetLockProofStructure(rawProof))
-        .to.be.rejectedWith('Conversion Error: Error: invalid type: floating point `-1`, expected u32');
+      const result = await validateInstantAssetLockProofStructure(rawProof);
+
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/outputIndex');
+      expect(error.getKeyword()).to.equal('minimum');
 
       expect(stateRepositoryMock.verifyInstantLock).to.not.be.called();
     });
