@@ -1,6 +1,8 @@
 const path = require('path');
 const { Observable } = require('rxjs');
 
+const isWsl = require('is-wsl');
+
 const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
@@ -10,8 +12,6 @@ const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
-
-const isWsl = require('is-wsl');
 
 const { HOME_DIR_PATH } = require('../constants');
 
