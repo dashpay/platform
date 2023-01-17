@@ -49,12 +49,14 @@ use drive::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
+use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
 use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::InitChainRequest;
 use drive_abci::common::helpers::setup::setup_platform_raw;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::engine::ExecutionEvent;
+use drive_abci::execution::fee_pools::epoch::EpochInfo;
 use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -201,6 +203,7 @@ impl Strategy {
                             .query_documents(any_item_query, Some(&block_info.epoch), None)
                             .expect("expect to execute query")
                             .items;
+
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
@@ -315,6 +318,7 @@ fn run_chain_for_strategy(
     let mut rng = StdRng::seed_from_u64(seed);
     let mut platform = setup_platform_raw(Some(config));
     let mut current_time_ms = 0;
+    let first_block_time = 0;
     let mut current_identities = vec![];
     let quorum_size = 100;
     let mut i = 0;
@@ -331,11 +335,23 @@ fn run_chain_for_strategy(
         create_test_masternode_identities_with_rng(&platform.drive, quorum_size, &mut rng, None);
 
     for block_height in 1..=block_count {
+        let epoch_info = EpochInfo::calculate(
+            first_block_time,
+            current_time_ms,
+            platform
+                .state
+                .last_block_info
+                .as_ref()
+                .map(|block_info| block_info.time_ms),
+        )
+        .expect("should calculate epoch info");
+
         let block_info = BlockInfo {
             time_ms: current_time_ms,
             height: block_height,
-            epoch: Default::default(),
+            epoch: Epoch::new(epoch_info.current_epoch_index),
         };
+
         let proposer = proposers.get(i as usize).unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
             &platform,

@@ -14,7 +14,7 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// The outcome of paying for a fee
-pub struct FeeRemovalOutcome {
+pub struct ApplyBalanceChangeOutcome {
     /// The actual fee paid by the identity
     pub actual_fee_paid: FeeResult,
 }
@@ -262,7 +262,7 @@ impl Drive {
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
-    ) -> Result<FeeRemovalOutcome, Error> {
+    ) -> Result<ApplyBalanceChangeOutcome, Error> {
         let (batch_operations, actual_fee_paid) =
             self.apply_balance_change_from_fee_to_identity_operations(balance_change, transaction)?;
 
@@ -275,7 +275,7 @@ impl Drive {
             &mut drive_operations,
         )?;
 
-        Ok(FeeRemovalOutcome { actual_fee_paid })
+        Ok(ApplyBalanceChangeOutcome { actual_fee_paid })
     }
 
     /// Applies a balance change based on Fee Result

@@ -106,6 +106,8 @@ impl Platform {
                             Some(transaction),
                         )?;
 
+                        println!("State transition fees {:#?}", outcome.actual_fee_paid);
+
                         println!(
                             "Identity balance {:?} changed {:#?}",
                             identity.balance,

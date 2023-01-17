@@ -399,7 +399,7 @@ impl Platform {
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
             None => self
                 .drive
-                .get_aggregate_storage_fees_from_distribution_pool(transaction)?,
+                .get_storage_fees_from_distribution_pool(transaction)?,
             Some(storage_fees) => storage_fees,
         };
 
@@ -1367,7 +1367,7 @@ mod tests {
 
             let stored_storage_fee_credits = platform
                 .drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction))
                 .expect("should get storage fee pool");
 
             assert_eq!(stored_processing_fee_credits, processing_fees);
@@ -1421,7 +1421,7 @@ mod tests {
 
             let stored_storage_fee_credits = platform
                 .drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction))
                 .expect("should get storage fee pool");
 
             assert_eq!(stored_processing_fee_credits, processing_fees);

@@ -63,7 +63,7 @@ impl Platform {
     ) -> Result<StorageFeeDistributionOutcome, Error> {
         let storage_distribution_fees = self
             .drive
-            .get_aggregate_storage_fees_from_distribution_pool(transaction)?;
+            .get_storage_fees_from_distribution_pool(transaction)?;
 
         let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 

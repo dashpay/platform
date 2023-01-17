@@ -500,7 +500,7 @@ mod tests {
 
                 let aggregated_storage_fees = platform
                     .drive
-                    .get_aggregate_storage_fees_from_distribution_pool(transaction)
+                    .get_storage_fees_from_distribution_pool(transaction)
                     .expect("should get storage fees from distribution pool");
 
                 if epoch_info.is_epoch_change {
@@ -579,7 +579,7 @@ mod tests {
              */
 
             let epoch_index = GENESIS_EPOCH_INDEX;
-            let block_height = 1;
+            let mut block_height = 1;
 
             let block_info = helpers::process_and_validate_block_fees(
                 &platform,
@@ -599,7 +599,7 @@ mod tests {
              */
 
             let epoch_index = GENESIS_EPOCH_INDEX;
-            let block_height = 2;
+            block_height += 1;
 
             let block_info = helpers::process_and_validate_block_fees(
                 &platform,
@@ -618,8 +618,8 @@ mod tests {
             Should pay to proposers from epoch 0
              */
 
-            let epoch_index = 1;
-            let block_height = 3;
+            let epoch_index = GENESIS_EPOCH_INDEX + 1;
+            block_height += 1;
 
             let block_info = helpers::process_and_validate_block_fees(
                 &platform,
@@ -634,12 +634,12 @@ mod tests {
             /*
             Process second block of epoch 1
 
-            Should change epoch to 1
+            Should not change epoch
             Should not pay to proposers 0
              */
 
-            let epoch_index = 1;
-            let block_height = 4;
+            let epoch_index = GENESIS_EPOCH_INDEX + 1;
+            block_height += 1;
 
             let block_info = helpers::process_and_validate_block_fees(
                 &platform,
@@ -654,12 +654,12 @@ mod tests {
             /*
             Process first block of epoch 3, skipping epoch 2 (i.e. chain halt)
 
-            Should change epoch to
+            Should change epoch to 3
             Should pay to proposers for epoch 1
              */
 
-            let epoch_index = 3;
-            let block_height = 5;
+            let epoch_index = GENESIS_EPOCH_INDEX + 3;
+            block_height += 1;
 
             let block_info = helpers::process_and_validate_block_fees(
                 &platform,
@@ -674,12 +674,12 @@ mod tests {
             /*
             Process second block of epoch 3
 
-            Should not change epoch to
+            Should not change epoch
             Should not pay to proposers
              */
 
-            let epoch_index = 3;
-            let block_height = 6;
+            let epoch_index = GENESIS_EPOCH_INDEX + 3;
+            block_height += 1;
 
             helpers::process_and_validate_block_fees(
                 &platform,
