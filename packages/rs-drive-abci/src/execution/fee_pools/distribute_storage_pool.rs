@@ -164,7 +164,6 @@ mod tests {
             Distribute since epoch 2 with refunds
             */
 
-            let storage_pool = 1000000;
             let current_epoch_index = 3;
 
             let mut batch = GroveDbOpBatch::new();
@@ -231,26 +230,18 @@ mod tests {
                 .map(|(epoch_index, credits)| {
                     let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
-                    let leftovers = distribute_storage_fee_to_epochs_collection(
+                    subtract_refunds_from_epoch_credits_collection(
                         &mut credits_per_epochs,
                         credits,
                         epoch_index,
+                        current_epoch_index,
                     )
-                    .expect("should distribute refunds");
+                    .expect("should subtract refunds");
 
-                    let already_paid_epochs = current_epoch_index as u64 - epoch_index as u64 + 1;
-
-                    let already_paid_credits = if already_paid_epochs > 0 {
-                        credits_per_epochs
-                            .into_iter()
-                            .take(already_paid_epochs as usize)
-                            .map(|(_, credits)| credits.to_unsigned())
-                            .sum()
-                    } else {
-                        0
-                    };
-
-                    credits - leftovers - already_paid_credits
+                    credits_per_epochs
+                        .into_values()
+                        .map(|credits| credits.to_unsigned())
+                        .sum::<Credits>()
                 })
                 .sum();
 
