@@ -164,6 +164,20 @@ impl IdentityPublicKeyWasm {
     }
 }
 
+impl IdentityPublicKeyWasm {
+    pub fn into_inner(self) -> IdentityPublicKey {
+        self.0
+    }
+
+    pub fn inner(&self) -> &IdentityPublicKey {
+        &self.0
+    }
+
+    pub fn inner_mut(&mut self) -> &mut IdentityPublicKey {
+        &mut self.0
+    }
+}
+
 impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
     fn from(v: IdentityPublicKey) -> Self {
         IdentityPublicKeyWasm(v)

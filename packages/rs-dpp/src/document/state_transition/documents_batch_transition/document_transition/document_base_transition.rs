@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 
 use anyhow::bail;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 pub use serde_json::Value as JsonValue;
 use serde_repr::*;
@@ -12,27 +13,26 @@ use crate::{
     util::json_value::{JsonValueExt, ReplaceWith},
 };
 
-const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$dataContractId"];
+pub const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$dataContractId"];
 
-#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug,
+    Serialize_repr,
+    Deserialize_repr,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    TryFromPrimitive,
+    IntoPrimitive,
+)]
 #[repr(u8)]
 pub enum Action {
     Create = 0,
     Replace = 1,
     // 2 - reserved for update
     Delete = 3,
-}
-
-impl TryFrom<u8> for Action {
-    type Error = anyhow::Error;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Action::Create),
-            1 => Ok(Action::Replace),
-            3 => Ok(Action::Delete),
-            v => bail!("unknown document transition action: '{}'", v),
-        }
-    }
 }
 
 impl Default for Action {
@@ -72,45 +72,42 @@ impl TryFrom<String> for Action {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentBaseTransition {
-    #[serde(rename = "$id")]
     /// The document ID
+    #[serde(rename = "$id")]
     pub id: Identifier,
-    #[serde(rename = "$type")]
     /// Name of document type found int the data contract associated with the `data_contract_id`
+    #[serde(rename = "$type")]
     pub document_type: String,
-    #[serde(rename = "$action")]
     /// Action the platform should take for the associated document
+    #[serde(rename = "$action")]
     pub action: Action,
-    #[serde(rename = "$dataContractId")]
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
+    #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
+
     #[serde(skip)]
     pub data_contract: DataContract,
 }
 
-impl DocumentBaseTransition {
-    pub fn identifiers_to_strings(
-        raw_document_transition: &mut JsonValue,
-    ) -> Result<(), ProtocolError> {
-        raw_document_transition.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-        Ok(())
-    }
-}
-
 impl DocumentTransitionObjectLike for DocumentBaseTransition {
-    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
-        let mut document: DocumentBaseTransition = serde_json::from_str(json_str)?;
+    fn from_json_object(
+        json_value: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError> {
+        let mut document: DocumentBaseTransition = serde_json::from_value(json_value)?;
+
         document.data_contract_id = data_contract.id.clone();
         document.data_contract = data_contract;
         Ok(document)
     }
 
-    fn from_raw_document(
+    fn from_raw_object(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransition, ProtocolError> {
-        Self::identifiers_to_strings(&mut raw_transition)?;
+        raw_transition.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
         let mut document: DocumentBaseTransition = serde_json::from_value(raw_transition)?;
+
         document.data_contract_id = data_contract.id.clone();
         document.data_contract = data_contract;
 
@@ -118,14 +115,14 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut object = serde_json::to_value(&self)?;
+        let mut object = serde_json::to_value(self)?;
 
         object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
         Ok(object)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(&self)?;
+        let value = serde_json::to_value(self)?;
         Ok(value)
     }
 }
@@ -133,12 +130,14 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
 pub trait DocumentTransitionObjectLike {
     /// Creates the Document Transition from JSON representation. The JSON representation contains
     /// binary data encoded in base64, Identifiers encoded in base58
-    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError>
+    fn from_json_object(
+        json_str: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
     where
         Self: std::marker::Sized;
     /// Creates the document transition from Raw Object
-    // TODO change the name to from_raw_object
-    fn from_raw_document(
+    fn from_raw_object(
         raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>

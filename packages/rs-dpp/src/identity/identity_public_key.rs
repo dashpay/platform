@@ -6,6 +6,7 @@ use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 use anyhow::bail;
 use ciborium::value::Value as CborValue;
 use lazy_static::lazy_static;
+use num_enum::IntoPrimitive;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -64,7 +65,9 @@ impl Into<CborValue> for KeyType {
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, IntoPrimitive,
+)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
@@ -100,7 +103,17 @@ impl std::fmt::Display for Purpose {
 
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, PartialOrd, Ord,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Hash,
+    Serialize_repr,
+    Deserialize_repr,
+    PartialOrd,
+    Ord,
+    IntoPrimitive,
 )]
 pub enum SecurityLevel {
     MASTER = 0,

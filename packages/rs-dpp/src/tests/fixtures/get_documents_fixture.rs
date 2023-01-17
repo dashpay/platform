@@ -1,8 +1,17 @@
+use std::sync::Arc;
+
 use serde_json::json;
 
 use crate::{
-    document::document_factory::DocumentFactory, mocks, prelude::*,
-    tests::utils::generate_random_identifier_struct as gen_owner_id, version::LATEST_VERSION,
+    document::{
+        document_factory::DocumentFactory,
+        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
+    },
+    mocks,
+    prelude::*,
+    state_repository::{MockStateRepositoryLike, StateRepositoryLike},
+    tests::utils::generate_random_identifier_struct as gen_owner_id,
+    version::LATEST_VERSION,
 };
 
 use super::get_document_validator_fixture;
@@ -10,10 +19,12 @@ use super::get_document_validator_fixture;
 pub fn get_documents_fixture_with_owner_id_from_contract(
     data_contract: DataContract,
 ) -> Result<Vec<Document>, ProtocolError> {
+    let data_contract_fetcher_and_validator =
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new()));
     let factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),
-        mocks::FetchAndValidateDataContract {},
+        data_contract_fetcher_and_validator,
     );
     let owner_id = data_contract.owner_id().clone();
 
@@ -21,18 +32,20 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
 }
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
+    let data_contract_fetcher_and_validator =
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new()));
     let factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),
-        mocks::FetchAndValidateDataContract {},
+        data_contract_fetcher_and_validator,
     );
     let owner_id = gen_owner_id();
 
     get_documents(factory, data_contract, owner_id)
 }
 
-fn get_documents(
-    factory: DocumentFactory,
+fn get_documents<ST: StateRepositoryLike>(
+    factory: DocumentFactory<ST>,
     data_contract: DataContract,
     owner_id: Identifier,
 ) -> Result<Vec<Document>, ProtocolError> {

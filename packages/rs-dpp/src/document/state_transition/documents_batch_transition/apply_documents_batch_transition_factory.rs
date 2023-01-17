@@ -4,8 +4,11 @@ use dashcore::Block;
 use serde_json::Value;
 
 use crate::{
-    document::Document, prelude::Identifier, state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike, ProtocolError,
+    document::{errors::DocumentError, Document},
+    prelude::Identifier,
+    state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
+    ProtocolError,
 };
 
 use super::{
@@ -81,7 +84,7 @@ pub async fn apply_documents_batch_transition(
                 } else {
                     let mut document = fetched_documents_by_id
                         .get(&dt.base.id)
-                        .ok_or(ProtocolError::DocumentNotProvided {
+                        .ok_or(DocumentError::DocumentNotProvidedError {
                             document_transition: document_transition.clone(),
                         })?
                         .to_owned()
