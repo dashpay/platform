@@ -1,6 +1,9 @@
 use dpp::{data_contract::extra::IndexProperty, util::json_schema::Index};
+use serde::{
+    ser::{SerializeMap, SerializeSeq},
+    Serialize, Serializer,
+};
 use wasm_bindgen::prelude::*;
-use serde::Serialize;
 
 use crate::{errors::RustConversionError, with_js_error};
 
@@ -41,6 +44,51 @@ impl From<Index> for IndexDefinitionWasm {
     }
 }
 
+/// Wrapper structure to serialize `Index` the way js-dpp expects it.
+#[derive(Debug)]
+struct IndexSerializeJs<'a>(&'a Index);
+
+impl Serialize for IndexSerializeJs<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("name", &self.0.name)?;
+        if self.0.unique {
+            map.serialize_entry("unique", &true)?;
+        }
+        map.serialize_entry(
+            "properties",
+            &self
+                .0
+                .properties
+                .iter()
+                .map(IndexPropertySerializeJs)
+                .collect::<Vec<_>>(),
+        )?;
+
+        map.end()
+    }
+}
+
+/// Wrapper structure to serialize `InderProperty` the way js-dpp expects it.
+#[derive(Debug)]
+struct IndexPropertySerializeJs<'a>(&'a IndexProperty);
+
+impl Serialize for IndexPropertySerializeJs<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(1))?;
+        let order_str = if self.0.ascending { "asc" } else { "desc" };
+        map.serialize_entry(&self.0.name, order_str)?;
+
+        map.end()
+    }
+}
+
 #[wasm_bindgen(js_class=IndexDefinition)]
 impl IndexDefinitionWasm {
     #[wasm_bindgen(js_name=getName)]
@@ -65,7 +113,7 @@ impl IndexDefinitionWasm {
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        let object = with_js_error!(self.inner.serialize(&serializer))?;
+        let object = with_js_error!(IndexSerializeJs(&self.inner).serialize(&serializer))?;
         Ok(object)
     }
 }

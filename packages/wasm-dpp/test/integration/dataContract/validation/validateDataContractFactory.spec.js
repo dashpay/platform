@@ -936,6 +936,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getKeyword()).to.equal('pattern');
       });
 
+      // TODO: jsonschema issue
       it.skip('should not have `propertyNames`', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.indexedDocument = {
@@ -1302,7 +1303,7 @@ describe('validateDataContractFactory', () => {
       expect(error.getKeyword()).to.equal('minItems');
     });
 
-    it.skip('should return invalid result if there are duplicated indices', async () => {
+    it('should return invalid result if there are duplicated indices', async () => {
       const rawDataContract = dataContract.toObject();
       const indexDefinition = {
         ...rawDataContract.documents.indexedDocument.indices[0],
@@ -1626,7 +1627,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getDocumentType()).to.equal('indexedDocument');
       });
 
-      it.skip('should return invalid result if $id is specified as an indexed property', async () => {
+      it('should return invalid result if $id is specified as an indexed property', async () => {
         const rawDataContract = dataContract.toObject();
         const indexDefinition = {
           name: 'index_1',
@@ -1652,7 +1653,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
-      it.skip('should return invalid result if indices has undefined property', async () => {
+      it('should return invalid result if indices has undefined property', async () => {
         const rawDataContract = dataContract.toObject();
         const indexDefinition = rawDataContract.documents.indexedDocument.indices[0];
 
@@ -1672,7 +1673,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
-      it.skip('should return invalid result if index property is object', async () => {
+      it('should return invalid result if index property is object', async () => {
         const rawDataContract = dataContract.toObject();
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
 
@@ -1707,7 +1708,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
-      it.skip('should return invalid result if index property is an array', async () => {
+      it('should return invalid result if index property is an array', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.indexedArray = {
           type: 'object',
@@ -1751,7 +1752,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
-      it.skip('should return invalid result if index property is array of objects', async () => {
+      it('should return invalid result if index property is array of objects', async () => {
         const rawDataContract = dataContract.toObject();
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
       
@@ -1789,6 +1790,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
+      // TODO: support indexed arrays
       it.skip('should return invalid result if index property is an array of different types',
          async () => {
            const rawDataContract = dataContract.toObject();
@@ -1820,6 +1822,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
       
+      // TODO: support indexed arrays
       it.skip('should return invalid result if index property contained prefixItems array of arrays', async () => {
         const rawDataContract = dataContract.toObject();
 
@@ -1848,6 +1851,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
+      // TODO: support indexed arrays
       it.skip('should return invalid result if index property contained prefixItems array of objects', async () => {
         const rawDataContract = dataContract.toObject();
 
@@ -1879,7 +1883,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
       
-      it.skip('should return invalid result if index property is array of arrays', async () => {
+      it('should return invalid result if index property is array of arrays', async () => {
         const rawDataContract = dataContract.toObject();
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
       
@@ -1914,7 +1918,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
-      it.skip('should return invalid result if index property is array with different item definitions', async () => {
+      it('should return invalid result if index property is array with different item definitions', async () => {
         const rawDataContract = dataContract.toObject();
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
 
@@ -1953,7 +1957,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
       });
 
-      it.skip('should return invalid result if unique compound index contains both required and optional properties', async () => {
+      it('should return invalid result if unique compound index contains both required and optional properties', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.optionalUniqueIndexedDocument.required.splice(-1);
 
