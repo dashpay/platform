@@ -209,6 +209,15 @@ impl Drive {
             .map_err(Error::GroveDB)
     }
 
+    /// The query getting all keys and balance and revision
+    pub fn full_identities_query(identity_ids: Vec<[u8; 32]>) -> Result<PathQuery, Error> {
+        let path_queries: Vec<PathQuery> = identity_ids
+            .into_iter()
+            .map(|identity_id| Self::full_identity_query(identity_id))
+            .collect::<Result<Vec<PathQuery>, Error>>()?;
+        PathQuery::merge(path_queries.iter().map(|query| query).collect()).map_err(Error::GroveDB)
+    }
+
     /// Fetches an identity with all its information from storage.
     pub fn fetch_proved_full_identity(
         &self,
@@ -226,6 +235,53 @@ impl Drive {
             Err(e) => Err(e),
         }
     }
+
+    /// Fetches an identity with all its information from storage.
+    pub fn fetch_proved_full_identities(
+        &self,
+        identity_ids: Vec<[u8; 32]>,
+        transaction: TransactionArg,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let query = Self::full_identities_query(identity_ids)?;
+        let result = self.grove_get_proved_path_query(&query, transaction, &mut drive_operations);
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            | Err(Error::GroveDB(grovedb::Error::PathNotFound(_))) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    // /// Fetches an identity with all its information from storage.
+    // pub fn fetch_full_identities(
+    //     &self,
+    //     identity_ids: Vec<[u8; 32]>,
+    //     transaction: TransactionArg,
+    // ) -> Result<BTreeMap<[u8; 32],Identity>, Error> {
+    //     let mut drive_operations: Vec<DriveOperation> = vec![];
+    //     let query = Self::full_identities_query(identity_ids)?;
+    //     let result = self.grove_get_path_query_with_optional(&query, transaction, &mut drive_operations)?;
+    //     result.into_iter().map(|(_, key, element)| {
+    //
+    //     }).collect()
+    // }
+
+    // /// Fetches identities with all its information from storage.
+    // pub fn fetch_full_identities_operations(
+    //     &self,
+    //     identity_ids: Vec<[u8; 32]>,
+    //     transaction: TransactionArg,
+    //     drive_operations: &mut Vec<DriveOperation>,
+    // ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
+    //     let mut drive_operations: Vec<DriveOperation> = vec![];
+    //     let query = Self::full_identities_query(identity_ids)?;
+    //     let result = self.grove_get_path_query_with_optional(&query, transaction, &mut drive_operations)?;
+    //     result.into_iter().map(|(_, key, element)| {
+    //
+    //     }).collect()
+    // }
 
     /// Fetches an identity with all its information from storage.
     pub fn fetch_full_identity(

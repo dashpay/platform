@@ -17,6 +17,7 @@ use dpp::identity::Identity;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetches an identity id with all its information from storage.
@@ -66,6 +67,60 @@ impl Drive {
 
             Err(e) => Err(e),
         }
+    }
+
+    /// Fetches identity ids with all its information from storage.
+    pub fn fetch_identity_ids_by_unique_public_key_hashes(
+        &self,
+        public_key_hashes: Vec<[u8; 20]>,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.fetch_identity_ids_by_unique_public_key_hashes_operations(
+            public_key_hashes,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Given public key hashes, fetches identity ids from storage.
+    pub(crate) fn fetch_identity_ids_by_unique_public_key_hashes_operations(
+        &self,
+        public_key_hashes: Vec<[u8; 20]>,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
+        let unique_key_hashes = unique_key_hashes_tree_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(
+            public_key_hashes
+                .into_iter()
+                .map(|key_hash| key_hash.to_vec())
+                .collect(),
+        );
+        let path_query = PathQuery::new_unsized(unique_key_hashes, query);
+        self.grove_get_raw_path_query_with_optional(&path_query, transaction, drive_operations)?
+            .into_iter()
+            .map(|(_, key, element)| {
+                let identity_key_hash: [u8; 20] = key.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
+                })?;
+                match element {
+                    Some(Item(identity_id_vec, ..)) => {
+                        let identity_id: [u8; 32] = identity_id_vec.try_into().map_err(|_| {
+                            Error::Drive(DriveError::CorruptedCodeExecution(
+                                "key hash not 20 bytes",
+                            ))
+                        })?;
+                        Ok((identity_key_hash, Some(identity_id)))
+                    }
+                    None => Ok((identity_key_hash, None)),
+                    _ => Err(Error::Drive(DriveError::CorruptedDriveState(
+                        "unique public key hashes containing non identity ids".to_string(),
+                    ))),
+                }
+            })
+            .collect()
     }
 
     /// Does a key with that public key hash already exist in the unique tree?
@@ -183,6 +238,35 @@ impl Drive {
         } else {
             Ok(None)
         }
+    }
+
+    /// Fetches identities with all its information from storage.
+    pub fn fetch_full_identities_by_unique_public_key_hashes(
+        &self,
+        public_key_hash: Vec<[u8; 20]>,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        self.fetch_full_identities_by_unique_public_key_hashes_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Given an identity, fetches the identity with its flags from storage.
+    pub(crate) fn fetch_full_identities_by_unique_public_key_hashes_operations(
+        &self,
+        public_key_hash: Vec<[u8; 20]>,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
+        let identity_ids = self.fetch_identity_ids_by_unique_public_key_hashes_operations(
+            public_key_hash,
+            transaction,
+            drive_operations,
+        )?;
+        todo!()
     }
 
     /// The query for the identity revision
