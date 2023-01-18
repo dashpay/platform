@@ -2279,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-68c73a1420-9f404e8177.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-69fbb104fd-aaf41ab7fa.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2656,7 +2656,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
@@ -7695,6 +7695,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["glob", "npm:7.2.0"],\
             ["globby", "npm:11.1.0"],\
             ["hasbin", "npm:1.2.3"],\
+            ["is-wsl", "npm:2.2.0"],\
             ["jayson", "npm:3.6.5"],\
             ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
             ["lodash", "npm:4.17.21"],\
