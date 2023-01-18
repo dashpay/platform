@@ -166,7 +166,11 @@ impl Strategy {
                             .random_documents_with_rng(count as u32, rng);
                         for mut document in documents {
                             let identity_num = rng.gen_range(0..current_identities.len());
-                            let identity = current_identities.get(identity_num).unwrap().clone().into_partial_identity_info();
+                            let identity = current_identities
+                                .get(identity_num)
+                                .unwrap()
+                                .clone()
+                                .into_partial_identity_info();
 
                             document.owner_id = identity.id.to_buffer();
                             let storage_flags = StorageFlags::new_single_epoch(
@@ -241,7 +245,10 @@ impl Strategy {
             .map(|(identity, operations)| {
                 (
                     identity.clone(),
-                    ExecutionEvent::new_identity_insertion(identity.into_partial_identity_info(), operations),
+                    ExecutionEvent::new_identity_insertion(
+                        identity.into_partial_identity_info(),
+                        operations,
+                    ),
                 )
             })
             .unzip();
@@ -255,7 +262,10 @@ impl Strategy {
                 .map(|operation| {
                     let identity_num = rng.gen_range(0..current_identities.len());
                     let an_identity = current_identities.get(identity_num).unwrap().clone();
-                    ExecutionEvent::new_contract_operation(an_identity.into_partial_identity_info(), operation)
+                    ExecutionEvent::new_contract_operation(
+                        an_identity.into_partial_identity_info(),
+                        operation,
+                    )
                 })
                 .collect();
             execution_events.append(&mut contract_execution_events);
@@ -427,8 +437,8 @@ mod tests {
             verify_sum_trees: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
-        let outcome = run_chain_for_strategy(100, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len(), 100);
+        let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
+        assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -549,8 +559,8 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change()
-    {
+    fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
+    ) {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
@@ -681,5 +691,72 @@ mod tests {
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
     }
-}
 
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+    ) {
+        let contract_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            Some(PROTOCOL_VERSION),
+        );
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("contract should be deserialized");
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionInsert,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let strategy = Strategy {
+            contracts: vec![contract],
+            operations: vec![
+                (
+                    document_insertion_op,
+                    Frequency {
+                        times_per_block_range: 1..40,
+                        chance_per_block: None,
+                    },
+                ),
+                (
+                    document_deletion_op,
+                    Frequency {
+                        times_per_block_range: 1..15,
+                        chance_per_block: None,
+                    },
+                ),
+            ],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..30,
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            drive_config: Default::default(),
+            verify_sum_trees: true,
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let block_count = 30;
+        let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, 368);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+    }
+}
