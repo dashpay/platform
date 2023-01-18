@@ -1,9 +1,7 @@
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::identity_topup_transition::IdentityTopUpTransition, IdentityPublicKey,
-    },
+    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
     state_transition::StateTransitionLike,
 };
 use serde::Deserialize;

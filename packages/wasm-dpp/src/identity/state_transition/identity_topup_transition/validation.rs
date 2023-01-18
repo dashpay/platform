@@ -4,20 +4,15 @@ use dpp::identity::state_transition::asset_lock_proof::{
 };
 use dpp::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use dpp::identity::state_transition::identity_topup_transition::validation::state::validate_identity_topup_transition_state;
-use dpp::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
-use dpp::identity::validation::{
-    PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator, PUBLIC_KEY_SCHEMA_FOR_TRANSITION,
-};
+
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::ProtocolError;
 
-use dpp::prelude::ValidationResult;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 use crate::{

@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::__rt::Ref;
+
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -12,9 +12,8 @@ use crate::{
     buffer::Buffer,
     create_asset_lock_proof_from_wasm_instance,
     errors::RustConversionError,
-    identity::{
-        state_transition::asset_lock_proof::{ChainAssetLockProofWasm, InstantAssetLockProofWasm},
-        IdentityPublicKeyWasm,
+    identity::state_transition::asset_lock_proof::{
+        ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
     state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
@@ -22,14 +21,11 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::generic_of_js_val;
+
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::{
-            asset_lock_proof::AssetLockProof, identity_topup_transition::IdentityTopUpTransition,
-        },
-        IdentityPublicKey,
+    identity::state_transition::{
+        asset_lock_proof::AssetLockProof, identity_topup_transition::IdentityTopUpTransition,
     },
     state_transition::StateTransitionLike,
     util::string_encoding,
