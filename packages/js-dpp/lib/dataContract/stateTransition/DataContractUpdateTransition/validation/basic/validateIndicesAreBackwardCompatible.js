@@ -150,8 +150,6 @@ function getWronglyConstructedNewIndex(
     ], [],
   );
 
-  // return notNewProperty !== undefined;
-
   // Gather only newly defined indices
   const newIndices = (newSchemaIndices || []).filter(
     (indexDefinition) => !existingIndexNames.includes(indexDefinition.name),
