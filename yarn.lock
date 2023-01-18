@@ -1281,14 +1281,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908":
+"@dashevo/abci@github:dashpay/js-abci#0ed8258034f3e7521a110053570f5c5c024eab67":
   version: 0.24.0-dev.1
-  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=10cec4765e54c8e248be966d9116550e2d254908"
+  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
     protocol-buffers-encodings: ^1.1.0
-  checksum: 9f404e8177dcf8d2c90afdece98ad942a7ee86be2f0e3986b1eae3a0f984f9fb8616c199cea92707d3964d24c239ff65d542182611914ec1dfbe5f7d6cb937f3
+  checksum: aaf41ab7fada6504606daf6ef238f2240bac4307ecde77bd77b8c10aecfd0b73fb8cfb40b2ad91a5bc6440572c93580da51013e188bb85dc46c4120b7c8c2236
   languageName: node
   linkType: hard
 
@@ -1634,7 +1634,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908"
+    "@dashevo/abci": "github:dashpay/js-abci#0ed8258034f3e7521a110053570f5c5c024eab67"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dashd-rpc": ^18.2.0
