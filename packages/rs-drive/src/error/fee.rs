@@ -10,6 +10,10 @@ pub enum FeeError {
     #[error("insufficient balance error: {0}")]
     InsufficientBalance(&'static str),
 
+    /// Operation not allowed error
+    #[error("operation not allowed error: {0}")]
+    OperationNotAllowed(&'static str),
+
     /// Corrupted estimated layer info missing error
     #[error("corrupted estimated layer info missing error: {0}")]
     CorruptedEstimatedLayerInfoMissing(String),

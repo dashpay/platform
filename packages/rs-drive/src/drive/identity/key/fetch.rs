@@ -20,6 +20,10 @@ use grovedb::Element::Item;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
+use crate::error::fee::FeeError;
+use crate::fee::credits::Credits;
+use crate::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
+use crate::fee_pools::epochs::Epoch;
 
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
@@ -247,6 +251,14 @@ pub struct IdentityKeysRequest {
 }
 
 impl IdentityKeysRequest {
+    /// Gets the processing cost of an identity keys request
+    pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
+        match &self.request_type {
+            AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed("You can not get costs for requesting all keys"))),
+            SpecificKeys(keys) => Ok(keys.len() as u64 * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
+            SearchKey(search) => todo!(),
+        }
+    }
     /// Make a request for all current keys for the identity
     pub fn new_all_current_keys_query(identity_id: [u8; 32]) -> Self {
         let mut sec_btree_map = BTreeMap::new();

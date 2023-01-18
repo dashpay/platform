@@ -266,7 +266,13 @@ impl Drive {
             transaction,
             drive_operations,
         )?;
-        todo!()
+        identity_ids.into_iter().map(|(public_key_hash, maybe_identity_id)| {
+            let identity = maybe_identity_id
+            .map(|identity_id| self.fetch_full_identity(identity_id, transaction))
+                .transpose()?
+                .flatten();
+            Ok((public_key_hash, identity))
+        }).collect::<Result<BTreeMap<[u8; 20], Option<Identity>>, Error>>()
     }
 
     /// The query for the identity revision

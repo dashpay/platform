@@ -54,6 +54,7 @@ use crate::fee::op::DriveOperation::{
 };
 use crate::fee::result::refunds::FeeRefunds;
 use crate::fee::{get_overflow_error, FeeResult};
+use crate::fee::default_costs::KnownCostItem::{StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte, StorageSeekCost};
 use crate::fee_pools::epochs::Epoch;
 
 /// Base ops
@@ -406,21 +407,22 @@ impl DriveCost for OperationCost {
             storage_loaded_bytes,
             hash_node_calls,
         } = self;
+        let epoch_cost_for_processing_credit_per_byte = epoch.cost_for_known_cost_item(StorageProcessingCreditPerByte);
         let seek_cost = (*seek_count as u64)
-            .checked_mul(STORAGE_SEEK_COST)
+            .checked_mul(epoch.cost_for_known_cost_item(StorageSeekCost))
             .ok_or_else(|| get_overflow_error("seek cost overflow"))?;
         let storage_added_bytes_ephemeral_cost = (storage_cost.added_bytes as u64)
-            .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
+            .checked_mul(epoch_cost_for_processing_credit_per_byte)
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         let storage_replaced_bytes_ephemeral_cost = (storage_cost.replaced_bytes as u64)
-            .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
+            .checked_mul(epoch_cost_for_processing_credit_per_byte)
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         let storage_removed_bytes_ephemeral_cost =
             (storage_cost.removed_bytes.total_removed_bytes() as u64)
-                .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
+                .checked_mul(epoch_cost_for_processing_credit_per_byte)
                 .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
-            .checked_mul(STORAGE_LOAD_CREDIT_PER_BYTE)
+            .checked_mul(epoch.cost_for_known_cost_item(StorageLoadCreditPerByte))
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
         // this can't overflow
         let hash_node_cost =
@@ -435,11 +437,11 @@ impl DriveCost for OperationCost {
     }
 
     /// Return the storage cost from the operation
-    fn storage_cost(&self, _epoch: &Epoch) -> Result<u64, Error> {
+    fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost { storage_cost, .. } = self;
         (storage_cost.added_bytes as u64)
-            .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
+            .checked_mul(epoch.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))
     }
 }
