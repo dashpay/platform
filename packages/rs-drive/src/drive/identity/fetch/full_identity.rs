@@ -213,23 +213,31 @@ mod tests {
     use grovedb::GroveDb;
 
     mod fetch_full_identities {
-        use crate::drive::block_info::BlockInfo;
         use super::*;
+        use crate::drive::block_info::BlockInfo;
 
         #[test]
         fn should_get_full_identities() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identities: BTreeMap<[u8;32], Option<Identity>> = Identity::random_identities(10,3, Some(14)).into_iter().map(|identity| (identity.id.to_buffer(), Some(identity))).collect();
+            let identities: BTreeMap<[u8; 32], Option<Identity>> =
+                Identity::random_identities(10, 3, Some(14))
+                    .into_iter()
+                    .map(|identity| (identity.id.to_buffer(), Some(identity)))
+                    .collect();
 
             for identity in identities.values() {
-                drive.add_new_identity(identity.as_ref().unwrap().clone(), &BlockInfo::default(), true, None).expect("expected to add an identity");
+                drive
+                    .add_new_identity(
+                        identity.as_ref().unwrap().clone(),
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                    )
+                    .expect("expected to add an identity");
             }
             let fetched_identities = drive
-                .fetch_full_identities(
-                    identities.keys().copied().collect(),
-                    None,
-                )
+                .fetch_full_identities(identities.keys().copied().collect(), None)
                 .expect("should get identities");
 
             assert_eq!(identities, fetched_identities);
@@ -237,8 +245,8 @@ mod tests {
     }
 
     mod fetch_full_identity {
-        use crate::drive::block_info::BlockInfo;
         use super::*;
+        use crate::drive::block_info::BlockInfo;
 
         #[test]
         fn should_return_none_if_identity_is_not_present() {
@@ -264,12 +272,11 @@ mod tests {
             let identity = Identity::random_identity(3, Some(14));
 
             let identity_id = identity.id.to_buffer();
-            drive.add_new_identity(identity.clone(), &BlockInfo::default(), true, None).expect("expected to add an identity");
+            drive
+                .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
             let fetched_identity = drive
-                .fetch_full_identity(
-                    identity_id,
-                    None,
-                )
+                .fetch_full_identity(identity_id, None)
                 .expect("should not error when fetching an identity")
                 .expect("should find an identity");
 
@@ -277,12 +284,68 @@ mod tests {
         }
     }
 
+    mod fetch_proved_full_identities {
+        use super::*;
+        use crate::drive::block_info::BlockInfo;
+        use grovedb::query_result_type::QueryResultType;
+        use grovedb::QueryItem;
+        use std::ops::RangeFull;
+
+        #[test]
+        fn test_proved_full_identities_query_no_tx() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identities: BTreeMap<[u8; 32], Option<Identity>> =
+                Identity::random_identities(2, 5, Some(14))
+                    .into_iter()
+                    .map(|identity| (identity.id.to_buffer(), Some(identity)))
+                    .collect();
+
+            for identity in identities.values() {
+                drive
+                    .add_new_identity(
+                        identity.as_ref().unwrap().clone(),
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                    )
+                    .expect("expected to add an identity");
+            }
+
+            let path_query = Drive::full_identities_query(identities.keys().copied().collect())
+                .expect("expected to get query");
+
+            let (elements, _) = drive
+                .grove
+                .query_raw(
+                    &path_query,
+                    true,
+                    QueryResultType::QueryPathKeyElementTrioResultType,
+                    None,
+                )
+                .unwrap()
+                .expect("expected to run the path query");
+            assert_eq!(elements.len(), 70);
+
+            let fetched_identities = drive
+                .fetch_proved_full_identities(identities.keys().copied().collect(), None)
+                .expect("should fetch an identity")
+                .expect("should have an identity");
+
+            let (_hash, proof) = GroveDb::verify_query(fetched_identities.as_slice(), &path_query)
+                .expect("expected to verify query");
+
+            // We want to get a proof on the balance, the revision and 5 keys
+            assert_eq!(proof.len(), 70);
+        }
+    }
+
     mod fetch_proved_full_identity {
         use super::*;
-        use grovedb::query_result_type::QueryResultType;
-        use std::ops::RangeFull;
-        use grovedb::QueryItem;
         use crate::drive::block_info::BlockInfo;
+        use grovedb::query_result_type::QueryResultType;
+        use grovedb::QueryItem;
+        use std::ops::RangeFull;
 
         #[test]
         fn test_full_identity_query_construction() {

@@ -545,7 +545,9 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            drive.add_new_identity(identity.clone(), &BlockInfo::default(), true, None).expect("expected to add an identity");
+            drive
+                .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
 
@@ -573,10 +575,7 @@ mod tests {
                 )
                 .expect("should get the cost of the disabling a few keys");
 
-            assert_eq!(
-                expected_fee_result.storage_fee,
-                fee_result.storage_fee,
-            );
+            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee,);
         }
     }
 
