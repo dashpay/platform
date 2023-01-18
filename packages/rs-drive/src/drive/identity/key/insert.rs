@@ -75,6 +75,7 @@ impl Drive {
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
         storage_flags: &StorageFlags,
+        change_in_bytes: i32,
         _estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -84,13 +85,14 @@ impl Drive {
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path_vec(identity_id);
 
-        drive_operations.push(DriveOperation::replace_for_known_path_key_element(
+        drive_operations.push(DriveOperation::patch_for_known_path_key_element(
             identity_key_tree,
             key_id_bytes.to_vec(),
             Element::new_item_with_flags(
                 serialized_identity_key,
                 storage_flags.to_some_element_flags(),
             ),
+            change_in_bytes,
         ));
 
         Ok(())

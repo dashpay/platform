@@ -184,6 +184,8 @@ impl Drive {
             )));
         }
 
+        const DISABLE_KEY_TIME_BYTE_COST: i32 = 9;
+
         for (_, mut key) in keys {
             key.set_disabled_at(disable_at);
 
@@ -194,6 +196,7 @@ impl Drive {
                 &key,
                 &key_id_bytes,
                 &StorageFlags::SingleEpoch(epoch.index),
+                DISABLE_KEY_TIME_BYTE_COST,
                 estimated_costs_only_with_layer_info,
                 &mut drive_operations,
             )?;
@@ -534,6 +537,46 @@ mod tests {
                     processing_fee: 5870930,
                     ..Default::default()
                 }
+            );
+        }
+
+        #[test]
+        fn estimated_costs_should_have_same_storage_cost() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            drive.add_new_identity(identity.clone(), &BlockInfo::default(), true, None).expect("expected to add an identity");
+
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
+
+            let expected_fee_result = drive
+                .disable_identity_keys(
+                    identity.id.to_buffer(),
+                    vec![0, 1],
+                    disable_at,
+                    &block_info,
+                    false,
+                    None,
+                )
+                .expect("should estimate the disabling of a few keys");
+
+            let fee_result = drive
+                .disable_identity_keys(
+                    identity.id.to_buffer(),
+                    vec![0, 1],
+                    disable_at,
+                    &block_info,
+                    true,
+                    None,
+                )
+                .expect("should get the cost of the disabling a few keys");
+
+            assert_eq!(
+                expected_fee_result.storage_fee,
+                fee_result.storage_fee,
             );
         }
     }

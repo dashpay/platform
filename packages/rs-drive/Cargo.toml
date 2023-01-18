@@ -37,15 +37,15 @@ lazy_static = "1.4.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/query-item-intersect4"
+branch = "feat/patchingEstimatedCosts"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/query-item-intersect4"
+branch = "feat/patchingEstimatedCosts"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/query-item-intersect4"
+branch = "feat/patchingEstimatedCosts"
 
 [dev-dependencies]
 criterion = "0.3.5"
