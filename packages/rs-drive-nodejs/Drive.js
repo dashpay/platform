@@ -27,6 +27,7 @@ const {
   driveDisableIdentityKeys,
   driveUpdateIdentityRevision,
   driveRemoveFromIdentityBalance,
+  driveApplyFeesToIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
   driveEnqueueWithdrawalTransaction,
   abciInitChain,
@@ -73,6 +74,9 @@ const driveDisableIdentityKeysAsync = appendStackAsync(promisify(driveDisableIde
 const driveUpdateIdentityRevisionAsync = appendStackAsync(promisify(driveUpdateIdentityRevision));
 const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
   promisify(driveRemoveFromIdentityBalance),
+);
+const driveApplyFeesToIdentityBalanceAsync = appendStackAsync(
+  promisify(driveApplyFeesToIdentityBalance),
 );
 const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
 const abciBlockBeginAsync = appendStackAsync(promisify(abciBlockBegin));
@@ -465,6 +469,26 @@ class Drive {
 
   /**
    * @param {Identifier} identityId
+   * @param {FeeResult} fees
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async applyFeesToIdentityBalance(
+    identityId,
+    fees,
+    useTransaction = false,
+  ) {
+    return driveApplyFeesToIdentityBalanceAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      fees.inner,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
    * @param {IdentityPublicKey[]} keys
    * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
@@ -719,15 +743,14 @@ Drive.FeeResult = FeeResult;
 
 /**
  * @typedef BlockEndRequest
- * @property {BlockFeeResult} fees
+ * @property {BlockFees} fees
  */
 
 /**
- * @typedef BlockFeeResult
+ * @typedef BlockFees
  * @property {number} storageFee
  * @property {number} processingFee
- * @property {Object<string, number>} feeRefunds
- * @property {number} feeRefundsSum
+ * @property {Object<string, number>} refundsPerEpoch
  */
 
 /**

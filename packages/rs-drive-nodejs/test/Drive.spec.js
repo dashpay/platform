@@ -625,6 +625,36 @@ describe('Drive', () => {
     });
   });
 
+  describe('#applyFeesToIdentityBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should change balance according to provided fees', async () => {
+      blockInfo.epoch = 3;
+
+      await drive.insertIdentity(identity, blockInfo);
+
+      const feeResult = FeeResult.create(10000, 10, [{
+        identifier: identity.getId().toBuffer(),
+        creditsPerEpoch: { 0: 1000000 },
+      }]);
+
+      const result = await drive.applyFeesToIdentityBalance(
+        identity.getId(),
+        feeResult,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getBalance()).to.not.equals(
+        identity.getBalance(),
+      );
+    });
+  });
+
   describe('#addKeysToIdentity', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();
@@ -665,7 +695,7 @@ describe('Drive', () => {
 
       expectFeeResult(result);
 
-      expect(await drive.getGroveDB().getRootHash()).to.equals(initialRootHash);
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
     });
   });
 
@@ -756,9 +786,12 @@ describe('Drive', () => {
         true,
       );
 
-      expectFeeResult(result);
+      expect(result).to.be.an.instanceOf(FeeResult);
 
-      expect(await drive.getGroveDB().getRootHash()).to.equals(initialRootHash);
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
     });
   });
 
@@ -864,12 +897,9 @@ describe('Drive', () => {
       it('should process a block', async () => {
         const request = {
           fees: {
-            storageFee: 100,
-            processingFee: 100,
-            feeRefunds: {
-              1: 15,
-              2: 16,
-            },
+            storageFee: 0,
+            processingFee: 0,
+            refundsPerEpoch: { },
           },
         };
 
@@ -884,10 +914,6 @@ describe('Drive', () => {
       beforeEach(async function beforeEach() {
         this.timeout(10000);
 
-        await drive.createInitialStateStructure();
-
-        await drive.createContract(dataContract, blockInfo);
-
         await drive.getAbci().initChain({});
 
         await drive.getAbci().blockBegin({
@@ -899,9 +925,9 @@ describe('Drive', () => {
 
         await drive.getAbci().blockEnd({
           fees: {
-            storageFee: 100,
-            processingFee: 100,
-            feeRefunds: {},
+            storageFee: 0,
+            processingFee: 0,
+            refundsPerEpoch: {},
           },
         });
       });

@@ -1,5 +1,4 @@
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const StorageResult = require('../storage/StorageResult');
 
 class IdentityPublicKeyStoreRepository {
@@ -35,7 +34,7 @@ class IdentityPublicKeyStoreRepository {
       const feeResult = await this.storage.getDrive().addKeysToIdentity(
         identityId,
         keys,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
       );
@@ -82,7 +81,7 @@ class IdentityPublicKeyStoreRepository {
         identityId,
         keyIds,
         disabledAt,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
       );

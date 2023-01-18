@@ -162,10 +162,7 @@ impl FeeResult {
     }
 
     /// Convenience method to get required removed balance
-    pub fn into_balance_change(
-        self,
-        identity_id: [u8; 32],
-    ) -> Result<BalanceChangeForIdentity, Error> {
+    pub fn into_balance_change(self, identity_id: [u8; 32]) -> BalanceChangeForIdentity {
         let storage_credits_returned = self
             .fee_refunds
             .calculate_refunds_amount_for_identity(identity_id)
@@ -200,11 +197,11 @@ impl FeeResult {
             }
         };
 
-        Ok(BalanceChangeForIdentity {
+        BalanceChangeForIdentity {
             identity_id,
             fee_result: self,
             change: balance_change,
-        })
+        }
     }
 
     /// Creates a FeeResult instance with specified storage and processing fees

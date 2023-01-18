@@ -367,7 +367,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
+                            refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 
@@ -528,7 +528,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
+                            refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 

@@ -1,6 +1,6 @@
-use crate::converter::{js_buffer_to_vec_u8, js_object_to_fee_refunds};
+use crate::converter::{js_buffer_to_identifier, js_object_to_fee_refunds};
 use drive::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
-use drive::fee::result::{refunds, FeeResult};
+use drive::fee::result::FeeResult;
 use neon::prelude::*;
 use std::ops::Deref;
 
@@ -21,7 +21,7 @@ impl FeeResultWrapper {
             let js_refunds = item.downcast_or_throw::<JsObject, _>(&mut cx)?;
 
             let js_identifier: Handle<JsBuffer> = js_refunds.get(&mut cx, "identifier")?;
-            let identifier = js_buffer_to_vec_u8(js_identifier, &mut cx)?;
+            let identifier = js_buffer_to_identifier(&mut cx, js_identifier)?;
 
             let js_credits_per_epoch: Handle<JsObject> =
                 js_refunds.get(&mut cx, "creditsPerEpoch")?;
@@ -100,7 +100,7 @@ impl FeeResultWrapper {
         Ok(cx.boxed(Self::new(fee_result_sum)))
     }
 
-    pub fn get_fee_refunds(mut cx: FunctionContext) -> JsResult<JsArray> {
+    pub fn get_refunds(mut cx: FunctionContext) -> JsResult<JsArray> {
         let fee_result_wrapper_self = cx
             .this()
             .downcast_or_throw::<JsBox<FeeResultWrapper>, _>(&mut cx)?;
@@ -133,6 +133,26 @@ impl FeeResultWrapper {
         }
 
         Ok(js_fee_refunds)
+    }
+
+    pub fn get_refunds_per_epoch(mut cx: FunctionContext) -> JsResult<JsObject> {
+        let fee_result_wrapper_self = cx
+            .this()
+            .downcast_or_throw::<JsBox<FeeResultWrapper>, _>(&mut cx)?;
+
+        // Clone fee result because IntMap doesn't implement iterator for reference
+        let fee_result = fee_result_wrapper_self.deref().deref().deref().clone();
+
+        let js_credits_per_epoch = cx.empty_object();
+
+        for (epoch_index, epoch_credits) in fee_result.fee_refunds.sum_per_epoch() {
+            // TODO: We could miss fees here
+            let js_credits = cx.number(epoch_credits as f64);
+
+            js_credits_per_epoch.set(&mut cx, epoch_index.to_string().as_str(), js_credits)?;
+        }
+
+        Ok(js_credits_per_epoch)
     }
 }
 

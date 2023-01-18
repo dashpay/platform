@@ -24,24 +24,24 @@ function calculateStateTransitionFeeFactory(stateRepository, calculateOperationF
       feeRefunds,
     } = calculatedFees;
 
-    const creditsPerEpoch = feeRefunds
+    const ownerRefunds = feeRefunds
       .find((refunds) => stateTransition.getOwnerId().equals(refunds.identifier));
 
-    let feeRefundsSum = 0;
+    let totalRefunds = 0;
 
-    if (creditsPerEpoch) {
-      feeRefundsSum = await Object.entries(creditsPerEpoch)
+    if (ownerRefunds) {
+      totalRefunds = await Object.entries(ownerRefunds.creditsPerEpoch)
         .reduce((sum, [, credits]) => sum + credits, 0);
     }
 
     // TODO: we need to introduce base fee for ST that includes balance update
 
-    const requiredAmount = (storageFee - feeRefundsSum) + DEFAULT_USER_TIP;
-    const desiredAmount = (storageFee + processingFee - feeRefundsSum) + DEFAULT_USER_TIP;
+    const requiredAmount = (storageFee - totalRefunds) + DEFAULT_USER_TIP;
+    const desiredAmount = (storageFee + processingFee - totalRefunds) + DEFAULT_USER_TIP;
 
     executionContext.setLastCalculatedFeeDetails({
       ...calculatedFees,
-      feeRefundsSum,
+      totalRefunds,
       requiredAmount,
       desiredAmount,
     });

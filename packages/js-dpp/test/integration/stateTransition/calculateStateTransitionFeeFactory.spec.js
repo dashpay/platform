@@ -27,70 +27,12 @@ describe('calculateStateTransitionFeeFactory', () => {
     );
   });
 
-  it('should throw an error if more than two identities have refunds', async () => {
-    const calculatedOperationsFeesResult = {
-      storageFee: 10000,
-      processingFee: 1000,
-      feeRefunds: [
-        {
-          identifier: stateTransition.getOwnerId().toBuffer(),
-          creditsPerEpoch: {
-            0: 100,
-            1: 50,
-          },
-        },
-        {
-          identifier: stateTransition.getOwnerId().toBuffer(),
-          creditsPerEpoch: {
-            1: 50,
-          },
-        },
-      ],
-    };
-
-    calculateOperationFeesMock.returns(calculatedOperationsFeesResult);
-
-    try {
-      await calculateStateTransitionFee(stateTransition);
-
-      expect.fail('should fail');
-    } catch (e) {
-      expect(e.message).to.equals('State Transition removed bytes from several identities that is not defined by protocol');
-    }
-  });
-
-  it('should throw an error if refunded identity is not owner of state transition', async () => {
-    const calculatedOperationsFeesResult = {
-      storageFee: 10000,
-      processingFee: 1000,
-      feeRefunds: [
-        {
-          identifier: Buffer.alloc(32, 1),
-          creditsPerEpoch: {
-            0: 100,
-            1: 50,
-          },
-        },
-      ],
-    };
-
-    calculateOperationFeesMock.returns(calculatedOperationsFeesResult);
-
-    try {
-      await calculateStateTransitionFee(stateTransition);
-
-      expect.fail('should fail');
-    } catch (e) {
-      expect(e.message).to.equals('State Transition removed bytes from different identity');
-    }
-  });
-
   it('should calculate fee based on executed operations', async () => {
     const storageFee = 10000;
     const processingFee = 1000;
-    const feeRefundsSum = 450 + 995 + 400 + 400;
-    const requiredAmount = storageFee - feeRefundsSum;
-    const desiredAmount = storageFee + processingFee - feeRefundsSum;
+    const totalRefunds = 1000 + 500;
+    const requiredAmount = storageFee - totalRefunds;
+    const desiredAmount = storageFee + processingFee - totalRefunds;
 
     const calculatedOperationsFeesResult = {
       storageFee,
@@ -108,28 +50,16 @@ describe('calculateStateTransitionFeeFactory', () => {
 
     calculateOperationFeesMock.returns(calculatedOperationsFeesResult);
 
-    stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers
-      .onCall(0).resolves([995, 400]);
-
-    stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers
-      .onCall(1).resolves([450, 400]);
-
     const result = await calculateStateTransitionFee(stateTransition);
 
     expect(result).to.equal(desiredAmount);
-
-    expect(stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers)
-      .to.have.been.calledWithExactly(1000, 0);
-
-    expect(stateRepositoryMock.calculateStorageFeeDistributionAmountAndLeftovers)
-      .to.have.been.calledWithExactly(500, 1);
 
     const lastCalculatedFeeDetails = stateTransition.getExecutionContext()
       .getLastCalculatedFeeDetails();
 
     expect(lastCalculatedFeeDetails).to.be.deep.equal({
       ...calculatedOperationsFeesResult,
-      feeRefundsSum,
+      totalRefunds,
       requiredAmount,
       desiredAmount,
     });

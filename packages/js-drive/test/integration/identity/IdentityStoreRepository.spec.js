@@ -168,7 +168,6 @@ describe('IdentityStoreRepository', () => {
       const result = await repository.removeFromBalance(
         identity.getId(),
         amount,
-        amount,
         blockInfo,
       );
 
@@ -189,7 +188,6 @@ describe('IdentityStoreRepository', () => {
 
       await repository.removeFromBalance(
         identity.getId(),
-        amount,
         amount,
         blockInfo,
         { useTransaction: true },
@@ -328,6 +326,131 @@ describe('IdentityStoreRepository', () => {
         await store.commitTransaction();
 
         const storedIdentityResult = await repository.fetch(identity.getId());
+
+        const storedIdentity = storedIdentityResult.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+      });
+    });
+
+    context('with block info', () => {
+      it('should fetch null if identity not found', async () => {
+        const result = await repository.fetch(identity.getId(), { blockInfo });
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(1);
+
+        expect(result.getValue()).to.be.null();
+      });
+
+      it('should fetch an identity', async () => {
+        await rsDrive.insertIdentity(identity, blockInfo);
+
+        const result = await repository.fetch(identity.getId(), { blockInfo });
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(1);
+
+        const storedIdentity = result.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+      });
+
+      it('should fetch an identity using transaction', async () => {
+        await store.startTransaction();
+
+        await rsDrive.insertIdentity(identity, blockInfo, true);
+
+        const notFoundIdentityResult = await repository.fetch(identity.getId(), {
+          blockInfo,
+          useTransaction: false,
+        });
+
+        expect(notFoundIdentityResult.getValue()).to.be.null();
+
+        const transactionalIdentityResult = await repository.fetch(identity.getId(), {
+          blockInfo,
+          useTransaction: true,
+        });
+
+        const transactionalIdentity = transactionalIdentityResult.getValue();
+
+        expect(transactionalIdentity).to.be.an.instanceof(Identity);
+        expect(transactionalIdentity.toObject()).to.deep.equal(identity.toObject());
+
+        await store.commitTransaction();
+
+        const storedIdentityResult = await repository.fetch(identity.getId(), {
+          blockInfo,
+        });
+
+        const storedIdentity = storedIdentityResult.getValue();
+
+        expect(storedIdentity).to.be.an.instanceof(Identity);
+        expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
+      });
+    });
+  });
+
+  describe('#fetchByPublicKeyHash', () => {
+    context('without block info', () => {
+      it('should return empty array if identity with public key hash not found', async () => {
+        const result = await repository.fetchByPublicKeyHash(Buffer.alloc(32));
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(1);
+
+        expect(result.getValue()).to.be.instanceOf(Array);
+        expect(result.getValue()).to.be.empty();
+      });
+
+      it('should fetch an identity', async () => {
+        await rsDrive.insertIdentity(identity, blockInfo);
+
+        const publicKeyHash = identity.getPublicKeys()[0].hash();
+
+        const result = await repository.fetchByPublicKeyHash(publicKeyHash);
+
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.equal(1);
+
+        expect(result.getValue()).to.have.lengthOf(1);
+
+        const [fetchedIdentity] = result.getValue();
+
+        expect(fetchedIdentity).to.be.instanceOf(Identity);
+        expect(fetchedIdentity).to.deep.equal(identity.toObject());
+      });
+
+      it('should fetch an identity using transaction', async () => {
+        await store.startTransaction();
+
+        await rsDrive.insertIdentity(identity, blockInfo, true);
+
+        const publicKeyHash = identity.getPublicKeys()[0].hash();
+
+        const emptyIdentitiesResult = await repository.fetchByPublicKeyHash(publicKeyHash, {
+          useTransaction: true,
+        });
+
+        expect(emptyIdentitiesResult.isEmpty()).to.be.true();
+
+        const transactionalIdentitiesResult = await repository.fetchByPublicKeyHash(publicKeyHash, {
+          useTransaction: false,
+        });
+
+        expect(transactionalIdentitiesResult.getValue()).to.have.lengthOf(1);
+
+        const [transactionalIdentity] = transactionalIdentitiesResult.getValue();
+
+        expect(transactionalIdentity).to.be.instanceOf(Identity);
+        expect(transactionalIdentity).to.deep.equal(identity.toObject());
+
+        await store.commitTransaction();
+
+        const storedIdentityResult = await repository.fetchByPublicKeyHash(publicKeyHash);
 
         const storedIdentity = storedIdentityResult.getValue();
 

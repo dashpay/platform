@@ -1,16 +1,12 @@
-use crate::drive::block_info::BlockInfo;
-use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::credits::Credits;
 use crate::fee::default_costs::KnownCostItem::FetchIdentityBalanceProcessingCost;
-use crate::fee::epoch::EpochIndex;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, PartialIdentityInfo};
+use dpp::identity::PartialIdentityInfo;
 use grovedb::TransactionArg;
 
 impl Drive {

@@ -71,7 +71,7 @@ class StateTransitionExecutionContext {
    *   storageFee: number,
    *   processingFee: number,
    *   feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[],
-   *   feeRefundsSum: number,
+   *   totalRefunds: number,
    *   total: number,
    *   desiredAmount: number,
    *   requiredAmount: number,
@@ -86,7 +86,7 @@ class StateTransitionExecutionContext {
    *   storageFee:number,
    *   processingFee:number,
    *   feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[],
-   *   feeRefundsSum: number,
+   *   totalRefunds: number,
    *   desiredAmount: number,
    *   requiredAmount: number,
    * }} lastCalculatedFees

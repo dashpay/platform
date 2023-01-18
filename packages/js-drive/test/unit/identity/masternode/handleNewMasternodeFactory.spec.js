@@ -69,11 +69,12 @@ describe('handleNewMasternodeFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    expect(result.createdEntities[0].toJSON()).to.deep.equal(identityFixture.toJSON());
-    expect(result.createdEntities[1].toJSON()).to.deep.equal(identityFixture.toJSON());
+    expect(result.createdEntities[0].toObject()).to.deep.equal(identityFixture.toObject());
+    expect(result.createdEntities[1].toObject()).to.deep.equal(identityFixture.toObject());
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
+      blockInfo,
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -81,6 +82,7 @@ describe('handleNewMasternodeFactory', () => {
     );
 
     expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
+      blockInfo,
       Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -109,6 +111,7 @@ describe('handleNewMasternodeFactory', () => {
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
+      blockInfo,
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -139,19 +142,22 @@ describe('handleNewMasternodeFactory', () => {
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledThrice();
-    expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWith(
+    expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
+      blockInfo,
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
       undefined,
     );
-    expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWith(
+    expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
+      blockInfo,
       operatorIdentifier,
       Buffer.from('08b66151b81bd6a08bad2e68810ea07014012d6d804859219958a7fbc293689aa902bd0cd6db7a4699c9e88a4ae8c2c0', 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
       operatorPayoutScript,
     );
-    expect(createMasternodeIdentityMock.getCall(2)).to.be.calledWith(
+    expect(createMasternodeIdentityMock.getCall(2)).to.be.calledWithExactly(
+      blockInfo,
       votingIdentifier,
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,

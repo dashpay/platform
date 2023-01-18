@@ -95,8 +95,8 @@ pub struct BlockFees {
     pub processing_fee: u64,
     /// Storage fee
     pub storage_fee: u64,
-    /// Fee refunds
-    pub fee_refunds: CreditsPerEpoch,
+    /// Fee refunds per epoch
+    pub refunds_per_epoch: CreditsPerEpoch,
 }
 
 impl BlockFees {
@@ -113,7 +113,7 @@ impl BlockFees {
         Self {
             storage_fee: fee_result.storage_fee,
             processing_fee: fee_result.processing_fee,
-            fee_refunds: fee_result.fee_refunds.sum_per_epoch(),
+            refunds_per_epoch: fee_result.fee_refunds.sum_per_epoch(),
         }
     }
 }

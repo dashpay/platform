@@ -63,7 +63,7 @@ class IdentityStoreRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    *
-   * @return {Promise<StorageResult<Identity[]>>}
+   * @return {Promise<StorageResult<Identity>>}
    */
   async fetchByPublicKeyHash(publicKeyHash, options = {}) {
     throw new Error('not implemented');
@@ -111,7 +111,7 @@ class IdentityStoreRepository {
     try {
       const feeResult = await this.storage.getDrive().insertIdentity(
         identity,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
       );
@@ -150,7 +150,7 @@ class IdentityStoreRepository {
       const feeResult = await this.storage.getDrive().addToIdentityBalance(
         identityId,
         amount,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
       );
@@ -173,11 +173,47 @@ class IdentityStoreRepository {
   }
 
   /**
+   * Apply fees to identity balance in database
+   *
+   * @param {Identifier} identityId
+   * @param {FeeResult} fees
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<FeeResult>>}
+   */
+  async applyFeesToBalance(
+    identityId,
+    fees,
+    options = {},
+  ) {
+    try {
+      const feeResult = await this.storage.getDrive().applyFeesToIdentityBalance(
+        identityId,
+        fees,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        feeResult,
+        [],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          identity_id: identityId.toString(),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'applyFeesToBalance');
+      }
+    }
+  }
+
+  /**
    * Remove balance from identity in database
    *
    * @param {Identifier} identityId
-   * @param {number} requiredAmount
-   * @param {number} desiredAmount
+   * @param {number} amount
    * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
@@ -187,17 +223,15 @@ class IdentityStoreRepository {
    */
   async removeFromBalance(
     identityId,
-    requiredAmount,
-    desiredAmount,
+    amount,
     blockInfo,
     options = {},
   ) {
     try {
       const feeResult = await this.storage.getDrive().removeFromIdentityBalance(
         identityId,
-        requiredAmount,
-        desiredAmount,
-        blockInfo,
+        amount,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
       );
@@ -241,7 +275,7 @@ class IdentityStoreRepository {
       const feeResult = await this.storage.getDrive().updateIdentityRevision(
         identityId,
         revision,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
         Boolean(options.dryRun),
       );
@@ -262,8 +296,6 @@ class IdentityStoreRepository {
       }
     }
   }
-
-
 
   /**
    * Prove identity by id

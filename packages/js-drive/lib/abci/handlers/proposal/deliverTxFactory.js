@@ -20,7 +20,6 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
 };
 
 const TIMERS = require('../timers');
-const BlockInfo = require('../../../blockExecution/BlockInfo');
 
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
@@ -46,7 +45,7 @@ function deliverTxFactory(
    * @param {BaseLogger} consensusLogger
    * @return {Promise<{
    *  code: number,
-   *  fees: BlockFeeResult}>}
+   *  fees: BlockFees}>}
    */
   async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
@@ -142,14 +141,13 @@ function deliverTxFactory(
       actualStateTransitionFees.feeRefunds,
     );
 
-    const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
-
-    await identityRepository.applyStateTransitionFeesToBalance(
+    const applyFeesToBalanceResult = await identityRepository.applyFeesToBalance(
       stateTransition.getOwnerId(),
       feeResult,
-      blockInfo,
       { useTransaction: true },
     );
+
+    const transactionFees = applyFeesToBalanceResult.getValue();
 
     // Logging
     /* istanbul ignore next */
@@ -241,7 +239,7 @@ function deliverTxFactory(
           predicted: {
             storage: predictedStateTransitionFees.storageFee,
             processing: predictedStateTransitionFees.processingFee,
-            refunds: predictedStateTransitionFees.feeRefundsSum,
+            refunds: predictedStateTransitionFees.totalRefunds,
             requiredAmount: predictedStateTransitionFees.requiredAmount,
             desiredAmount: predictedStateTransitionFees.desiredAmount,
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
@@ -249,7 +247,7 @@ function deliverTxFactory(
           actual: {
             storage: actualStateTransitionFees.storageFee,
             processing: actualStateTransitionFees.processingFee,
-            refunds: actualStateTransitionFees.feeRefundsSum,
+            refunds: actualStateTransitionFees.totalRefunds,
             requiredAmount: actualStateTransitionFees.requiredAmount,
             desiredAmount: actualStateTransitionFees.desiredAmount,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
@@ -260,19 +258,12 @@ function deliverTxFactory(
       `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.desiredAmount} credits`,
     );
 
-    // TODO: ...
-    let feeRefunds = {};
-    if (actualStateTransitionFees.feeRefunds.length > 0) {
-      feeRefunds = actualStateTransitionFees.feeRefunds[0].creditsPerEpoch;
-    }
-
     return {
       code: 0,
       fees: {
-        storageFee: actualStateTransitionFees.storageFee,
-        processingFee: actualStateTransitionFees.processingFee,
-        feeRefunds,
-        feeRefundsSum: actualStateTransitionFees.feeRefundsSum,
+        storageFee: transactionFees.storageFee,
+        processingFee: transactionFees.processingFee,
+        refundsPerEpoch: transactionFees.sumFeeRefundsPerEpoch(),
       },
     };
   }

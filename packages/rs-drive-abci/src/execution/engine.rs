@@ -5,7 +5,7 @@ use crate::abci::messages::{
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
-use drive::dpp::identity::{Identity, PartialIdentityInfo};
+use drive::dpp::identity::PartialIdentityInfo;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
@@ -109,9 +109,8 @@ impl Platform {
                             .apply_drive_operations(operations, true, block_info, Some(transaction))
                             .map_err(Error::Drive)?;
 
-                        let balance_change = individual_fee_result
-                            .into_balance_change(identity.id.to_buffer())
-                            .map_err(Error::Drive)?;
+                        let balance_change =
+                            individual_fee_result.into_balance_change(identity.id.to_buffer());
 
                         let outcome = self.drive.apply_balance_change_from_fee_to_identity(
                             balance_change.clone(),
@@ -164,7 +163,7 @@ impl Platform {
 
         // println!("Block #{}", block_info.height);
 
-        let block_begin_response = self
+        let _block_begin_response = self
             .block_begin(block_begin_request, Some(&transaction))
             .unwrap_or_else(|_| {
                 panic!(
@@ -181,7 +180,7 @@ impl Platform {
 
         let block_end_request = BlockEndRequest { fees };
 
-        let block_end_response = self
+        let _block_end_response = self
             .block_end(block_end_request, Some(&transaction))
             .unwrap_or_else(|e| {
                 panic!(

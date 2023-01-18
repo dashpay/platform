@@ -62,7 +62,7 @@ class LastSyncedCoreHeightRepository {
   }
 }
 
-LastSyncedCoreHeightRepository.TREE_PATH = [Buffer.from([5])];
+LastSyncedCoreHeightRepository.TREE_PATH = [Buffer.from([112])];
 LastSyncedCoreHeightRepository.KEY = Buffer.from('lastSyncedCoreHeight');
 
 module.exports = LastSyncedCoreHeightRepository;

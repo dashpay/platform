@@ -1,7 +1,7 @@
 mod converter;
 mod fee;
 
-use std::num::ParseIntError;
+use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::converter::js_object_to_fee_refunds;
@@ -13,8 +13,6 @@ use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;
-use drive::fee::credits::Credits;
-use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
@@ -1189,6 +1187,69 @@ impl PlatformWrapper {
                         Ok(fee_result) => {
                             let js_fee_result =
                                 task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_apply_fees_to_identity_balance(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_fee_result = cx.argument::<JsBox<FeeResultWrapper>>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let fee_result = js_fee_result.deref().deref().deref().clone();
+        let balance_change = fee_result.into_balance_change(identity_id);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .apply_balance_change_from_fee_to_identity(balance_change, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(outcome) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(outcome.actual_fee_paid));
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
@@ -2575,9 +2636,9 @@ impl PlatformWrapper {
         let js_storage_fee: Handle<JsNumber> = js_fees.get(&mut cx, "storageFee")?;
         let storage_fee = js_storage_fee.value(&mut cx) as u64;
 
-        let js_fee_refunds: Handle<JsObject> = js_fees.get(&mut cx, "feeRefunds")?;
+        let js_refunds_per_epoch: Handle<JsObject> = js_fees.get(&mut cx, "refundsPerEpoch")?;
 
-        let fee_refunds = js_object_to_fee_refunds(&mut cx, js_fee_refunds);
+        let refunds_per_epoch = js_object_to_fee_refunds(&mut cx, js_refunds_per_epoch)?;
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2595,7 +2656,7 @@ impl PlatformWrapper {
                     fees: BlockFees {
                         processing_fee,
                         storage_fee,
-                        fee_refunds,
+                        refunds_per_epoch,
                     },
                 };
 
@@ -2838,6 +2899,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         PlatformWrapper::js_remove_from_identity_balance,
     )?;
     cx.export_function(
+        "driveApplyFeesToIdentityBalance",
+        PlatformWrapper::js_apply_fees_to_identity_balance,
+    )?;
+    cx.export_function(
         "driveAddKeysToIdentity",
         PlatformWrapper::js_add_keys_to_identity,
     )?;
@@ -2924,7 +2989,11 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("feeResultAdd", FeeResultWrapper::add)?;
     cx.export_function("feeResultAddFees", FeeResultWrapper::add_fees)?;
     cx.export_function("feeResultCreate", FeeResultWrapper::create)?;
-    cx.export_function("feeResultGetRefunds", FeeResultWrapper::get_fee_refunds)?;
+    cx.export_function("feeResultGetRefunds", FeeResultWrapper::get_refunds)?;
+    cx.export_function(
+        "feeResultSumRefundsPerEpoch",
+        FeeResultWrapper::get_refunds_per_epoch,
+    )?;
 
     cx.export_function(
         "calculateStorageFeeDistributionAmountAndLeftovers",

@@ -1,6 +1,5 @@
 use crate::drive::block_info::BlockInfo;
 
-use crate::drive::flags::StorageFlags;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -414,6 +413,8 @@ mod tests {
                     ..Default::default()
                 }
             );
+
+            todo!("storage should be > 0")
         }
     }
 

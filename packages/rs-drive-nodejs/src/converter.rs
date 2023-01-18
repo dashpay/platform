@@ -500,7 +500,7 @@ pub fn js_object_to_fee_refunds<'a, C: Context<'a>>(
             .parse()
             .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
 
-        let js_credits: Handle<JsNumber> = js_fee_refunds.get(cx, js_epoch_index)?;
+        let js_credits: Handle<JsNumber> = js_object.get(cx, js_epoch_index)?;
         let credits = js_credits.value(cx) as Credits;
 
         fee_refunds.insert(epoch_index, credits);

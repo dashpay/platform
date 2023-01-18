@@ -124,7 +124,7 @@ impl Platform {
         self.drive
             .add_delete_pending_epoch_refunds_except_specified_operations(
                 batch,
-                &block_fees.fee_refunds,
+                &block_fees.refunds_per_epoch,
                 transaction,
             )?;
 
@@ -205,11 +205,11 @@ impl Platform {
         let pending_epoch_refunds = if !epoch_info.is_epoch_change {
             self.drive
                 .fetch_and_add_pending_epoch_refunds_to_collection(
-                    block_fees.fee_refunds,
+                    block_fees.refunds_per_epoch,
                     transaction,
                 )?
         } else {
-            block_fees.fee_refunds
+            block_fees.refunds_per_epoch
         };
 
         add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds)?;
@@ -319,7 +319,7 @@ mod tests {
                 let block_fees = BlockFees {
                     storage_fee: 1000000000,
                     processing_fee: 10000,
-                    fee_refunds: CreditsPerEpoch::from_iter([(0, 10000)]),
+                    refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 10000)]),
                 };
 
                 let mut batch = GroveDbOpBatch::new();
@@ -488,7 +488,7 @@ mod tests {
                 let block_fees = BlockFees {
                     storage_fee: 100000,
                     processing_fee: 10000,
-                    fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
+                    refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
                 };
 
                 let storage_fee_distribution_outcome = platform

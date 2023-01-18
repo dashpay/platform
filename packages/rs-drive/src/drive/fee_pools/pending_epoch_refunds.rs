@@ -102,16 +102,16 @@ impl Drive {
     /// Fetches pending epoch refunds and adds them to specified collection
     pub fn fetch_and_add_pending_epoch_refunds_to_collection(
         &self,
-        mut credits_per_epoch: CreditsPerEpoch,
+        mut refunds_per_epoch: CreditsPerEpoch,
         transaction: TransactionArg,
     ) -> Result<CreditsPerEpoch, Error> {
-        if credits_per_epoch.is_empty() {
-            return Ok(credits_per_epoch);
+        if refunds_per_epoch.is_empty() {
+            return Ok(refunds_per_epoch);
         }
 
         let mut query = Query::new();
 
-        for epoch_index in credits_per_epoch.keys() {
+        for epoch_index in refunds_per_epoch.keys() {
             let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
             query.insert_key(epoch_index_key);
@@ -138,7 +138,7 @@ impl Drive {
                     ))
                 })?);
 
-            let existing_credits = credits_per_epoch.get_mut(&epoch_index).ok_or(Error::Drive(
+            let existing_credits = refunds_per_epoch.get_mut(&epoch_index).ok_or(Error::Drive(
                 DriveError::CorruptedCodeExecution(
                     "pending epoch refunds should contain fetched epochs",
                 ),
@@ -155,14 +155,14 @@ impl Drive {
             }
         }
 
-        Ok(credits_per_epoch)
+        Ok(refunds_per_epoch)
     }
 
     /// Adds operations to delete pending epoch refunds except epochs from provided collection
     pub fn add_delete_pending_epoch_refunds_except_specified_operations(
         &self,
         batch: &mut GroveDbOpBatch,
-        credits_per_epoch: &CreditsPerEpoch,
+        refunds_per_epoch: &CreditsPerEpoch,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         // TODO: Replace with key iterator
@@ -189,7 +189,7 @@ impl Drive {
                     ))
                 })?);
 
-            if credits_per_epoch.contains_key(&epoch_index) {
+            if refunds_per_epoch.contains_key(&epoch_index) {
                 continue;
             }
 
@@ -203,9 +203,9 @@ impl Drive {
 /// Adds GroveDB batch operations to update pending epoch storage pool updates
 pub fn add_update_pending_epoch_refunds_operations(
     batch: &mut GroveDbOpBatch,
-    credits_per_epoch: CreditsPerEpoch,
+    refunds_per_epoch: CreditsPerEpoch,
 ) -> Result<(), Error> {
-    for (epoch_index, credits) in credits_per_epoch {
+    for (epoch_index, credits) in refunds_per_epoch {
         let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
         let element = Element::new_sum_item(-credits.to_signed()?);
