@@ -43,6 +43,7 @@ function validateStateTransitionFeeFactory(
         if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
           const identityId = stateTransition.getOwnerId();
 
+          // TODO: We should fetch only balance
           const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
           if (executionContext.isDryRun()) {
@@ -62,6 +63,7 @@ function validateStateTransitionFeeFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getOwnerId();
 
+        // TODO: We should fetch only balance
         const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
         if (executionContext.isDryRun()) {

@@ -29,6 +29,8 @@ function validateIdentityCreateTransitionStateFactory(
     // Check if identity with such id already exists
     const executionContext = stateTransition.getExecutionContext();
     const identityId = stateTransition.getIdentityId();
+
+    // TODO Change to fetch balance
     const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
     if (executionContext.isDryRun()) {

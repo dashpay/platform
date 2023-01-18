@@ -63,6 +63,8 @@ async function createContactRequestDataTrigger(documentTransition, context) {
     }
   }
 
+  // TODO: Replace to fetch balance
+
   // toUserId identity exists
   const identity = await stateRepository.fetchIdentity(
     toUserId,

@@ -37,6 +37,8 @@ function validateStateTransitionKeySignatureFactory(
       // identity to proceed with following logic
       const tmpExecutionContext = new StateTransitionExecutionContext();
 
+      // TODO: Change to get balance or create special identity exists method
+
       // Target identity must exist
       const identity = await stateRepository.fetchIdentity(targetIdentityId, tmpExecutionContext);
 
