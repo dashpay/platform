@@ -33,7 +33,7 @@
         },
         "message": {
           "type": "string",
-          "maxLength": 128
+          "maxLength": 63
         }
       },
       "required": [

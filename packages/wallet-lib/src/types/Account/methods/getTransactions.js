@@ -5,7 +5,7 @@
 module.exports = function getTransactions() {
   const chainStore = this.storage.getChainStore(this.network);
   const walletStore = this.storage.getWalletStore(this.walletId);
-  const transactions = [];
+  const transactions = {};
 
   const { addresses } = walletStore.getPathState(this.accountPath);
 

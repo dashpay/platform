@@ -1,4 +1,4 @@
-const lodashMerge = require('lodash.merge');
+const lodashMerge = require('lodash/merge');
 
 const {
   NETWORK_MAINNET,
@@ -23,6 +23,7 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
     rpc: {
       port: 9998,
     },
+    indexes: false,
   },
   network: NETWORK_MAINNET,
 });

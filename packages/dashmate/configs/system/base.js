@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.1.0-rc.1',
+      image: 'dashpay/dashd:18.2.0',
     },
     p2p: {
       port: 20001,
@@ -43,6 +43,11 @@ module.exports = {
       port: 20002,
       user: 'dashrpc',
       password: 'rpcpassword',
+      allowIps: [
+        '127.0.0.1',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+      ],
     },
     spork: {
       address: null,
@@ -66,6 +71,10 @@ module.exports = {
       },
     },
     debug: 0,
+    logIps: 0,
+    indexes: true,
+    minimumDifficultyBlocks: 0,
+    powTargetSpacing: 150,
     reindex: {
       enable: false,
       containerId: null,
@@ -103,14 +112,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23.0-alpha',
+          image: 'dashpay/dapi:0.24.0-dev',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23.0-alpha',
+          image: 'dashpay/drive:0.24.0-dev',
         },
         log: {
           stdout: {
@@ -131,7 +140,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.10.0-dev.5',
+          image: 'dashpay/tenderdash:0.10.0-dev.6',
         },
         p2p: {
           port: 26656,
@@ -146,12 +155,7 @@ module.exports = {
           createEmptyBlocksInterval: '3m',
         },
         log: {
-          level: {
-            main: 'info',
-            state: 'info',
-            statesync: 'info',
-            '*': 'error',
-          },
+          level: 'debug',
           format: 'plain',
         },
         nodeKey: {

@@ -104,8 +104,12 @@ describe('Fee Pools', () => {
 
       const blockEndRequest = {
         fees: {
-          processingFees: 10000,
-          storageFees: 10000,
+          processingFee: 1000,
+          storageFee: 10000 - 15,
+          feeRefunds: {
+            1: 15,
+          },
+          feeRefundsSum: 15,
         },
       };
 
@@ -118,7 +122,7 @@ describe('Fee Pools', () => {
     const fetchedMnIdentity = fetchedMnIdentityResult.getValue();
     const fetchedShareIdentity = fetchedShareIdentityResult.getValue();
 
-    expect(fetchedMnIdentity.getBalance()).to.equal(180510);
-    expect(fetchedShareIdentity.getBalance()).to.equal(9510);
+    expect(fetchedMnIdentity.getBalance()).to.equal(18060);
+    expect(fetchedShareIdentity.getBalance()).to.equal(960);
   });
 });

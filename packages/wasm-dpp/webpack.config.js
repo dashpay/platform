@@ -1,8 +1,9 @@
 const path = require('path');
 const webpack = require('webpack');
+const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = {
-  entry: './index.ts',
+  entry: './lib/index.ts',
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'index.js',
@@ -13,6 +14,14 @@ module.exports = {
     // This is needed to prevent ReferenceError: self is not defined,
     // as webpack names global object "self" for some reason
     globalObject: 'this',
+  },
+  optimization: {
+    minimize: true,
+    minimizer: [new TerserPlugin({
+      terserOptions: {
+        keep_classnames: true,
+      },
+    })],
   },
   mode: 'production',
   module: {

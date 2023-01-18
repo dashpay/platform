@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use anyhow::Context;
 use jsonschema::{JSONSchema, KeywordDefinition};
@@ -45,11 +45,15 @@ impl JsonSchemaValidator {
     }
 
     /// creates a new json schema validator from the json schema and allows to add the definitions
-    pub fn new_with_definitions(
+    pub fn new_with_definitions<'a>(
         mut schema_json: Value,
-        definitions: &BTreeMap<String, Value>,
+        definitions: impl IntoIterator<Item = (&'a String, &'a Value)>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let _ = schema_json.insert(String::from("$defs"), json!(definitions));
+        let defs: HashMap<&str, &'a Value> = definitions
+            .into_iter()
+            .map(|(k, v)| (k.as_ref(), v))
+            .collect();
+        let _ = schema_json.insert(String::from("$defs"), json!(defs));
 
         let mut json_schema_validator = Self {
             raw_schema_json: schema_json,
@@ -102,19 +106,17 @@ impl JsonSchemaValidator {
     }
 
     /// Uses predefined meta-schemas to validate data contract schema
-    pub fn validate_data_contract_schema(
-        data_contract_schema: &Value,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    pub fn validate_data_contract_schema(data_contract_schema: &Value) -> ValidationResult<()> {
         let mut validation_result = ValidationResult::new(None);
         let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 
         match res {
-            Ok(_) => Ok(validation_result),
+            Ok(_) => validation_result,
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(ConsensusError::from).collect();
                 validation_result.add_errors(errors);
-                Ok(validation_result)
+                validation_result
             }
         }
     }

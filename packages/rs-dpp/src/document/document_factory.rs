@@ -1,11 +1,14 @@
+use anyhow::Context;
 use chrono::Utc;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
-    data_contract::DataContract,
-    mocks,
+    data_contract::{errors::DataContractError, DataContract},
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
+    state_repository::StateRepositoryLike,
     util::entropy_generator,
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
@@ -14,10 +17,13 @@ use crate::{
 use super::{
     document_transition::{self, Action},
     document_validator::DocumentValidator,
+    errors::DocumentError,
+    fetch_and_validate_data_contract::{self, DataContractFetcherAndValidator},
     generate_document_id::generate_document_id,
-    Document, DocumentsBatchTransition,
+    property_names, Document, DocumentsBatchTransition,
 };
 
+// TODO remove these const and use ones from super::document::property_names
 const PROPERTY_DOCUMENT_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -50,22 +56,34 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 ];
 
 /// Factory for creating documents
-pub struct DocumentFactory {
+pub struct DocumentFactory<ST> {
     protocol_version: u32,
     document_validator: DocumentValidator,
-    fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
+    data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
 }
 
-impl DocumentFactory {
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FactoryOptions {
+    #[serde(default)]
+    pub skip_validation: bool,
+    #[serde(default)]
+    pub action: Action,
+}
+
+impl<ST> DocumentFactory<ST>
+where
+    ST: StateRepositoryLike,
+{
     pub fn new(
         protocol_version: u32,
         validate_document: DocumentValidator,
-        fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
+        data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
     ) -> Self {
         DocumentFactory {
             protocol_version,
             document_validator: validate_document,
-            fetch_and_validate_data_contract,
+            data_contract_fetcher_and_validator,
         }
     }
 
@@ -77,13 +95,14 @@ impl DocumentFactory {
         data: JsonValue,
     ) -> Result<Document, ProtocolError> {
         if !data_contract.is_document_defined(&document_type) {
-            return Err(ProtocolError::InvalidDocumentTypeError {
-                document_type,
+            return Err(DataContractError::InvalidDocumentTypeError {
+                doc_type: document_type,
                 data_contract,
-            });
+            }
+            .into());
         }
 
-        let document_entropy = entropy_generator::generate();
+        let document_entropy = entropy_generator::generate()?; // TODO use EntropyGenerator
 
         let document_required_fields = data_contract
             .get_document_schema(&document_type)?
@@ -123,12 +142,13 @@ impl DocumentFactory {
         let validation_result = self
             .document_validator
             .validate(&raw_document, &data_contract)?;
-
         if !validation_result.is_valid() {
-            return Err(ProtocolError::InvalidDocumentError {
-                errors: validation_result.errors,
-                raw_document,
-            });
+            return Err(ProtocolError::Document(Box::new(
+                DocumentError::InvalidDocumentError {
+                    errors: validation_result.errors,
+                    raw_document,
+                },
+            )));
         }
 
         let mut document = Document::from_raw_document(raw_document, data_contract)?;
@@ -144,21 +164,22 @@ impl DocumentFactory {
         let mut raw_documents_transitions: Vec<JsonValue> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
         let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
-        let flattened_documents = documents.iter().flat_map(|(_, v)| v);
+        let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
 
-        if Self::is_empty(flattened_documents.clone()) {
-            return Err(ProtocolError::NoDocumentsSuppliedError);
+        if Self::is_empty(flattened_documents_iter.clone()) {
+            return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
         let is_the_same =
-            Self::is_ownership_the_same(flattened_documents.clone().map(|d| &d.owner_id));
+            Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id));
         if !is_the_same {
-            return Err(ProtocolError::MismatchOwnerIdsError {
+            return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
-            });
+            }
+            .into());
         }
 
-        let owner_id = flattened_documents
+        let owner_id = flattened_documents_iter
             .clone()
             .next()
             .unwrap()
@@ -177,7 +198,7 @@ impl DocumentFactory {
         }
 
         if raw_documents_transitions.is_empty() {
-            return Err(ProtocolError::NoDocumentsSuppliedError);
+            return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
         let raw_batch_transition = json!({
@@ -189,15 +210,93 @@ impl DocumentFactory {
         DocumentsBatchTransition::from_raw_object(raw_batch_transition, data_contracts)
     }
 
+    pub async fn create_from_buffer(
+        &self,
+        buffer: impl AsRef<[u8]>,
+        options: FactoryOptions,
+    ) -> Result<Document, ProtocolError> {
+        let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
+
+        match result {
+            Err(ProtocolError::AbstractConsensusError(err)) => {
+                Err(DocumentError::InvalidDocumentError {
+                    errors: vec![*err],
+                    raw_document: JsonValue::Null,
+                }
+                .into())
+            }
+            Err(err) => Err(err),
+            Ok((version, mut raw_document)) => {
+                raw_document
+                    .insert(property_names::PROTOCOL_VERSION.to_string(), json!(version))?;
+                self.create_from_object(raw_document, options).await
+            }
+        }
+    }
+
+    pub async fn create_from_object(
+        &self,
+        raw_document: JsonValue,
+        options: FactoryOptions,
+    ) -> Result<Document, ProtocolError> {
+        let data_contract = self
+            .validate_data_contract_for_document(&raw_document, options)
+            .await?;
+
+        Document::from_raw_document(raw_document, data_contract)
+    }
+
+    async fn validate_data_contract_for_document(
+        &self,
+        raw_document: &JsonValue,
+        options: FactoryOptions,
+    ) -> Result<DataContract, ProtocolError> {
+        let mut result = self
+            .data_contract_fetcher_and_validator
+            .validate(raw_document)
+            .await?;
+
+        if !result.is_valid() {
+            return Err(ProtocolError::Document(Box::new(
+                DocumentError::InvalidDocumentError {
+                    errors: result.errors,
+                    raw_document: raw_document.clone(),
+                },
+            )));
+        }
+        let data_contract = result
+            .take_data()
+            .context("Validator didn't return Data Contract. This shouldn't happen")?;
+
+        if !options.skip_validation {
+            let result = self
+                .document_validator
+                .validate(raw_document, &data_contract)?;
+            if !result.is_valid() {
+                return Err(ProtocolError::Document(Box::new(
+                    DocumentError::InvalidDocumentError {
+                        errors: result.errors,
+                        raw_document: raw_document.clone(),
+                    },
+                )));
+            }
+        }
+
+        Ok(data_contract)
+    }
+
     fn raw_document_create_transitions(
         documents: Vec<Document>,
     ) -> Result<Vec<JsonValue>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
             if document.revision != document_transition::INITIAL_REVISION {
-                return Err(ProtocolError::InvalidInitialRevisionError { document });
+                return Err(DocumentError::InvalidInitialRevisionError {
+                    document: Box::new(document),
+                }
+                .into());
             }
-            let mut raw_document = document.to_object(false)?;
+            let mut raw_document = document.to_object()?;
 
             if let Some(map) = raw_document.as_object_mut() {
                 map.retain(|key, _| {
@@ -224,7 +323,7 @@ impl DocumentFactory {
         let mut raw_transitions = vec![];
         for document in documents {
             let document_revision = document.revision;
-            let mut raw_document = document.to_object(false)?;
+            let mut raw_document = document.to_object()?;
 
             if let Some(map) = raw_document.as_object_mut() {
                 map.retain(|key, _| {
@@ -264,23 +363,22 @@ impl DocumentFactory {
             .collect())
     }
 
-    // TODO implement rest methods
-    //   async createFromObject(rawDocument, options = {}) {
-    //   async createFromBuffer(buffer, options = {}) {
-
     fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
         data.into_iter().next().is_none()
     }
 
-    fn is_ownership_the_same<'a>(docs: impl IntoIterator<Item = &'a Identifier>) -> bool {
-        docs.into_iter().all_equal()
+    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
+        ids.into_iter().all_equal()
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use crate::{
         assert_error_contains,
+        state_repository::MockStateRepositoryLike,
         tests::{
             fixtures::{
                 get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
@@ -300,7 +398,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         let name = "Cutie";
         let contract_id = Identifier::from_string(
@@ -324,7 +422,6 @@ mod test {
                 json!({ "name": name }),
             )
             .expect("document creation shouldn't fail");
-
         assert_eq!(document_type, document.document_type);
         assert_eq!(
             name,
@@ -342,7 +439,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         let result = factory.create_state_transition(vec![]);
@@ -357,7 +454,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         documents[0].owner_id = generate_random_identifier_struct();
 
@@ -374,10 +471,10 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
-        assert_error_contains!(result, "Invalid Document initial revision 3")
+        assert_error_contains!(result, "Invalid Document initial revision '3'")
     }
 
     #[test]
@@ -387,7 +484,7 @@ mod test {
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
-            mocks::FetchAndValidateDataContract {},
+            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
         );
 
         let new_document = documents[0].clone();

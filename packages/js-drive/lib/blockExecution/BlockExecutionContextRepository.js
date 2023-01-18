@@ -23,7 +23,8 @@ class BlockExecutionContextRepository {
     await this.db.putAux(
       BlockExecutionContextRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(blockExecutionContext.toObject({
-        skipConsensusLogger: true,
+        skipContextLogger: true,
+        skipPrepareProposalResult: true,
       })),
       options,
     );

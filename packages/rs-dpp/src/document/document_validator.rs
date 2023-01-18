@@ -11,7 +11,7 @@ use crate::{
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
     },
     util::json_value::JsonValueExt,
-    validation::{JsonSchemaValidator, ValidationResult},
+    validation::{DataValidator, JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
 };
@@ -73,11 +73,16 @@ impl DocumentValidator {
             .get_document_schema(document_type)?
             .to_owned();
 
-        let json_schema_validator =
-            JsonSchemaValidator::new_with_definitions(document_schema, &data_contract.defs)
-                .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
+        let json_schema_validator = if let Some(defs) = &data_contract.defs {
+            JsonSchemaValidator::new_with_definitions(document_schema, defs.iter())
+        } else {
+            JsonSchemaValidator::new(document_schema)
+        }
+        .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
+
         let json_schema_validation_result = json_schema_validator.validate(raw_document)?;
         result.merge(json_schema_validation_result);
+
         if !result.is_valid() {
             return Ok(result);
         }
@@ -124,7 +129,7 @@ mod test {
         let documents = get_documents_fixture(data_contract.clone()).unwrap();
         let raw_document = documents
             .iter()
-            .map(|d| d.to_object(false))
+            .map(|d| d.to_object())
             .next()
             .expect("at least one Document should be present")
             .expect("Document should be converted to Object");
@@ -471,7 +476,7 @@ mod test {
         let document = documents.get(8).unwrap();
 
         let data = [0u8; 32];
-        let mut raw_document = document.to_object(false).unwrap();
+        let mut raw_document = document.to_object().unwrap();
         raw_document
             .insert("byteArrayField".to_string(), json!(data))
             .unwrap();

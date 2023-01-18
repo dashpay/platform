@@ -61,7 +61,10 @@ pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
 
 /// Sets up Drive with the initial state structure.
 pub fn setup_drive_with_initial_state_structure() -> Drive {
-    let drive = setup_drive(None);
+    let drive = setup_drive(Some(DriveConfig {
+        batching_consistency_verification: true,
+        ..Default::default()
+    }));
     drive
         .create_initial_state_structure(None)
         .expect("should create root tree successfully");

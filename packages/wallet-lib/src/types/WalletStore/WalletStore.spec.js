@@ -6,7 +6,6 @@ describe('WalletStore - Class', ()=> {
   describe('simple usage', () => {
     it('should create a walletStore', function () {
       walletStore = new WalletStore('squawk7700');
-      walletStore.state.lastKnownBlock.height = 100;
 
       expect(walletStore.walletId).to.equal('squawk7700');
     });
@@ -39,12 +38,6 @@ describe('WalletStore - Class', ()=> {
     });
     it('should get identity id by index', function () {
       expect(walletStore.getIdentityIdByIndex(0)).to.deep.equal('abcde1234')
-    });
-    it('should export and import state', function () {
-      const exportedState = walletStore.exportState();
-      const importedWalletStore = new WalletStore();
-      importedWalletStore.importState(exportedState);
-      expect(exportedState).to.deep.equal(importedWalletStore.exportState())
     });
   })
 })

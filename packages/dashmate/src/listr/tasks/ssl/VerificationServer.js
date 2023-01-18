@@ -32,9 +32,11 @@ class VerificationServer {
       throw new Error('Server is already setup');
     }
 
+    dots.templateSettings.strip = false;
+
     // Set up template
     const templatePath = path.join(__dirname, '..', '..', '..', 'ssl', 'templates', 'sslValidation.yaml.dot');
-    const templateString = fs.readFileSync(templatePath, 'utf8');
+    const templateString = fs.readFileSync(templatePath, 'utf-8');
     const template = dots.template(templateString);
 
     // set up envoy config

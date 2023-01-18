@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.24.0-dev.8",
+  "version": "0.24.0-dev.12",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -95,13 +95,10 @@
     "bls-signatures": "^0.2.5",
     "bs58": "^4.0.1",
     "cbor": "^8.0.0",
-    "fast-json-patch": "^3.1.0",
+    "fast-json-patch": "^3.1.1",
     "json-schema-diff-validator": "^0.4.1",
     "json-schema-traverse": "^1.0.0",
-    "lodash.clonedeep": "^4.5.0",
-    "lodash.clonedeepwith": "^4.5.0",
-    "lodash.get": "^4.4.2",
-    "lodash.set": "^4.3.2",
+    "lodash": "^4.17.21",
     "long": "^5.2.0"
   }
 }

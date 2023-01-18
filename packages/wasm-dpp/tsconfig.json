@@ -13,6 +13,6 @@
     ]
   },
   "include": [
-    "index.ts", "wasm/wasm_dpp.js, lib/*"
+    "lib/**/*.ts", "wasm/wasm_dpp.js"
   ],
 }

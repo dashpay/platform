@@ -1,3 +1,5 @@
+require('../../polyfills/fetch-polyfill');
+
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
@@ -18,6 +20,12 @@ beforeEach(function beforeEach() {
 
 afterEach(function afterEach() {
   this.sinon.restore();
+});
+
+before(function before() {
+  if (!this.sinon) {
+    this.sinon = sinon.createSandbox();
+  }
 });
 
 global.expect = expect;

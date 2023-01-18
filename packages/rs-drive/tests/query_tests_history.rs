@@ -46,8 +46,8 @@ use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
 use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentAndContractInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
@@ -210,14 +210,16 @@ pub fn setup(
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags.as_ref(),
-                        )),
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefAndSerialization((
+                                &document,
+                                &document_cbor,
+                                storage_flags.as_ref(),
+                            )),
+                            owner_id: None,
+                        },
                         contract: &contract,
                         document_type,
-                        owner_id: None,
                     },
                     true,
                     BlockInfo::default_with_time(block_time),
@@ -256,8 +258,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            172, 91, 214, 52, 75, 82, 199, 59, 140, 214, 98, 176, 78, 117, 136, 4, 206, 173, 202,
-            110, 251, 122, 65, 84, 82, 170, 169, 167, 237, 225, 148, 4
+            49, 205, 177, 218, 169, 224, 236, 206, 112, 34, 163, 112, 222, 73, 92, 82, 189, 120,
+            135, 32, 13, 65, 253, 139, 167, 209, 146, 1, 81, 127, 38, 61
         ]
     );
 
@@ -1028,14 +1030,16 @@ fn test_query_historical() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &person_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &person_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -1076,14 +1080,16 @@ fn test_query_historical() {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentRefAndSerialization((
-                    &document,
-                    &person_cbor,
-                    storage_flags.as_ref(),
-                )),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefAndSerialization((
+                        &document,
+                        &person_cbor,
+                        storage_flags.as_ref(),
+                    )),
+                    owner_id: None,
+                },
                 contract: &contract,
                 document_type,
-                owner_id: None,
             },
             true,
             BlockInfo::genesis(),
@@ -1535,8 +1541,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            24, 23, 196, 202, 192, 165, 122, 145, 140, 157, 74, 18, 23, 255, 138, 36, 203, 41, 67,
-            117, 241, 155, 227, 81, 16, 111, 146, 137, 157, 141, 1, 169
+            200, 234, 81, 179, 120, 70, 117, 20, 202, 219, 197, 168, 20, 96, 55, 130, 62, 243, 181,
+            198, 88, 50, 225, 68, 205, 54, 191, 136, 37, 65, 113, 200
         ]
     );
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.8",
+  "version": "0.24.0-dev.12",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -55,7 +55,6 @@
     "packages/js-grpc-common",
     "packages/bench-suite",
     "packages/dapi-grpc",
-    "packages/js-abci",
     "packages/js-dpp",
     "packages/dashpay-contract",
     "packages/dpns-contract",
@@ -77,6 +76,9 @@
     "elliptic": "^6.5.4",
     "bn.js": "4.12.0",
     "ejs": "^3.1.7",
+    "fast-json-patch": "^3.1.1",
+    "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
+    "qs": "^6.7.3",
     "engine.io": "^6.2.1"
   }
 }

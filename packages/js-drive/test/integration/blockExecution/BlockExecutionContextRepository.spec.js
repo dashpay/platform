@@ -57,7 +57,8 @@ describe('BlockExecutionContextRepository', () => {
     const rawBlockExecutionContext = cbor.decode(blockExecutionContextEncoded);
 
     expect(rawBlockExecutionContext).to.deep.equal(blockExecutionContext.toObject({
-      skipConsensusLogger: true,
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
     }));
   });
 
@@ -65,7 +66,7 @@ describe('BlockExecutionContextRepository', () => {
     await store.putAux(
       BlockExecutionContextRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(blockExecutionContext.toObject({
-        skipConsensusLogger: true,
+        skipContextLogger: true,
       })),
       options,
     );
@@ -75,9 +76,11 @@ describe('BlockExecutionContextRepository', () => {
     expect(fetchedBlockExecutionContext).to.be.instanceOf(BlockExecutionContext);
 
     expect(fetchedBlockExecutionContext.toObject({
-      skipConsensusLogger: true,
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
     })).to.deep.equal(blockExecutionContext.toObject({
-      skipConsensusLogger: true,
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
     }));
   });
 
@@ -99,9 +102,11 @@ describe('BlockExecutionContextRepository', () => {
     expect(fetchedBlockExecutionContext).to.be.instanceOf(BlockExecutionContext);
 
     expect(fetchedBlockExecutionContext.toObject({
-      skipConsensusLogger: true,
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
     })).to.deep.equal(blockExecutionContext.toObject({
-      skipConsensusLogger: true,
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
     }));
   });
 });

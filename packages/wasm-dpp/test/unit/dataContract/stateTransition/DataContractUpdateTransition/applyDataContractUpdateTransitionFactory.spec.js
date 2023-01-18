@@ -1,47 +1,51 @@
-const DataContractUpdateTransition = require(
-  '@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition',
-);
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const applyDataContractUpdateTransitionFactory = require(
-  '@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/applyDataContractUpdateTransitionFactory',
-);
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('applyDataContractUpdateTransitionFactory', () => {
   let stateTransition;
   let dataContract;
-  let stateRepositoryMock;
-  let applyDataContractUpdateTransition;
   let executionContext;
+  let dataContractStored;
+  let factory;
+  let DataContractUpdateTransition;
+  let ApplyDataContractUpdateTransition;
+  let StateTransitionExecutionContext;
 
-  beforeEach(function beforeEach() {
+  before(async () => {
+    ({
+      DataContractUpdateTransition,
+      ApplyDataContractUpdateTransition,
+      StateTransitionExecutionContext,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(() => {
     dataContract = getDataContractFixture();
 
     stateTransition = new DataContractUpdateTransition({
       dataContract: dataContract.toObject(),
+      protocolVersion: protocolVersion.latestVersion,
     });
 
     executionContext = new StateTransitionExecutionContext();
 
     stateTransition.setExecutionContext(executionContext);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    const stateRepositoryLike = {
+      storeDataContract: () => {
+        dataContractStored = true;
+      },
+    };
 
-    applyDataContractUpdateTransition = applyDataContractUpdateTransitionFactory(
-      stateRepositoryMock,
-    );
+    factory = new ApplyDataContractUpdateTransition(stateRepositoryLike);
+
+    dataContractStored = false;
   });
 
   it('should store a data contract from state transition in the repository', async () => {
-    await applyDataContractUpdateTransition(stateTransition);
-
-    expect(stateRepositoryMock.updateDataContract).to.have.been.calledOnceWithExactly(
-      stateTransition.getDataContract(),
-      executionContext,
-    );
+    await factory.applyDataContractUpdateTransition(stateTransition);
+    expect(dataContractStored).to.be.true();
   });
 });

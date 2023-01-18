@@ -6,6 +6,9 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const lodashCloneDeep = require('lodash/cloneDeep');
+const addToFeeTxResults = require('./proposal/fees/addToFeeTxResults');
+
 const txAction = {
   UNKNOWN: 0, // Unknown action
   UNMODIFIED: 1, // The Application did not modify this transaction.
@@ -20,6 +23,8 @@ const txAction = {
  * @param {beginBlock} beginBlock
  * @param {endBlock} endBlock
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
+ * @param {ExecutionTimer} executionTimer
+ * @param {createContextLogger} createContextLogger
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
@@ -29,6 +34,8 @@ function prepareProposalHandlerFactory(
   beginBlock,
   endBlock,
   createCoreChainLockUpdate,
+  executionTimer,
+  createContextLogger,
 ) {
   /**
    * @typedef prepareProposalHandler
@@ -47,19 +54,20 @@ function prepareProposalHandlerFactory(
       proposerProTxHash,
       round,
     } = request;
-    const consensusLogger = logger.child({
+
+    const contextLogger = createContextLogger(logger, {
       height: height.toString(),
+      round,
       abciMethod: 'prepareProposal',
     });
 
-    consensusLogger.info(
-      {
-        height,
-      },
-      `Prepare proposal #${height}`,
-    );
-    consensusLogger.debug('PrepareProposal ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
+    const requestToLog = lodashCloneDeep(request);
+    delete requestToLog.txs;
+
+    contextLogger.debug('PrepareProposal ABCI method requested');
+    contextLogger.trace({ abciRequest: requestToLog });
+
+    contextLogger.info(`Preparing a block proposal for height #${height} round #${round}`);
 
     await beginBlock(
       {
@@ -71,17 +79,22 @@ function prepareProposalHandlerFactory(
         proposerProTxHash: Buffer.from(proposerProTxHash),
         round,
       },
-      consensusLogger,
+      contextLogger,
     );
 
     let totalSizeBytes = 0;
 
     const txRecords = [];
     const txResults = [];
+    const feeResults = {
+      storageFee: 0,
+      processingFee: 0,
+      feeRefunds: { },
+      feeRefundsSum: 0,
+    };
+
     let validTxCount = 0;
     let invalidTxCount = 0;
-    let storageFeesTotal = 0;
-    let processingFeesTotal = 0;
 
     for (const tx of txs) {
       totalSizeBytes += tx.length;
@@ -98,15 +111,13 @@ function prepareProposalHandlerFactory(
       const {
         code,
         info,
-        processingFees,
-        storageFees,
-      } = await wrappedDeliverTx(tx, round, consensusLogger);
+        fees,
+      } = await wrappedDeliverTx(tx, round, contextLogger);
 
       if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        storageFeesTotal += storageFees;
-        processingFeesTotal += processingFees;
+        addToFeeTxResults(feeResults, fees);
       } else {
         invalidTxCount += 1;
       }
@@ -120,9 +131,11 @@ function prepareProposalHandlerFactory(
       txResults.push(txResult);
     }
 
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
-
-    const coreChainLockUpdate = await createCoreChainLockUpdate(round, consensusLogger);
+    const coreChainLockUpdate = await createCoreChainLockUpdate(
+      coreChainLockedHeight,
+      round,
+      contextLogger,
+    );
 
     const {
       consensusParamUpdates,
@@ -131,19 +144,31 @@ function prepareProposalHandlerFactory(
     } = await endBlock({
       height,
       round,
-      processingFees: processingFeesTotal,
-      storageFees: storageFeesTotal,
+      fees: feeResults,
       coreChainLockedHeight,
-    }, consensusLogger);
+    }, contextLogger);
 
-    consensusLogger.info(
+    const roundExecutionTime = executionTimer.getTimer('roundExecution', true);
+
+    const mempoolTxCount = txs.length - validTxCount - invalidTxCount;
+
+    contextLogger.info(
       {
+        roundExecutionTime,
         validTxCount,
         invalidTxCount,
+        mempoolTxCount,
       },
-      `Prepare proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
-      + ` (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
+      `Prepared block proposal for height #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
+      + ` in ${roundExecutionTime} seconds (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}, mempool txs = ${mempoolTxCount})`,
     );
+
+    proposalBlockExecutionContext.setPrepareProposalResult({
+      appHash,
+      txResults,
+      consensusParamUpdates,
+      validatorSetUpdate,
+    });
 
     return new ResponsePrepareProposal({
       appHash,

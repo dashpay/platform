@@ -48,6 +48,9 @@ pub enum BasicError {
     },
 
     #[error("$type is not present")]
+    MissingDocumentTransitionTypeError,
+
+    #[error("$type is not present")]
     MissingDocumentTypeError,
 
     #[error("$action is not present")]
@@ -68,6 +71,12 @@ pub enum BasicError {
 
     #[error("Document transitions with duplicate IDs {:?}", references)]
     DuplicateDocumentTransitionsWithIdsError { references: Vec<(String, Vec<u8>)> },
+
+    #[error(
+        "Document transitions with duplicate unique properties: {:?}",
+        references
+    )]
+    DuplicateDocumentTransitionsWithIndicesError { references: Vec<(String, Vec<u8>)> },
 
     #[error("$dataContractId is not present")]
     MissingDataContractIdError,
@@ -131,10 +140,10 @@ pub enum BasicError {
     },
 
     #[error("Identity key {public_key_id} has invalid signature")]
-    InvalidIdentityPublicKeySignatureError { public_key_id: KeyID },
+    InvalidIdentityKeySignatureError { public_key_id: KeyID },
 
     #[error("Data Contract Id must be {}, got {}", bs58::encode(expected_id).into_string(), bs58::encode(invalid_id).into_string())]
-    InvalidDataContractId {
+    InvalidDataContractIdError {
         expected_id: Vec<u8>,
         invalid_id: Vec<u8>,
     },

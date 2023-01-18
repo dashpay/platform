@@ -2,6 +2,7 @@ const {
   tendermint: {
     abci: {
       ResponseFinalizeBlock,
+      RequestProcessProposal,
     },
   },
 } = require('@dashevo/abci/types');
@@ -30,7 +31,8 @@ describe('finalizeBlockHandlerFactory', () => {
   let proposalBlockExecutionContextMock;
   let round;
   let block;
-  let processProposalHandlerMock;
+  let processProposalMock;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -95,7 +97,8 @@ describe('finalizeBlockHandlerFactory', () => {
       this.sinon,
     );
 
-    processProposalHandlerMock = this.sinon.stub();
+    processProposalMock = this.sinon.stub();
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
     finalizeBlockHandler = finalizeBlockHandlerFactory(
       groveDBStoreMock,
@@ -105,7 +108,8 @@ describe('finalizeBlockHandlerFactory', () => {
       executionTimerMock,
       latestBlockExecutionContextMock,
       proposalBlockExecutionContextMock,
-      processProposalHandlerMock,
+      processProposalMock,
+      createContextLoggerMock,
     );
   });
 
@@ -128,7 +132,14 @@ describe('finalizeBlockHandlerFactory', () => {
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
     expect(latestBlockExecutionContextMock.populate).to.be.calledOnce();
-    expect(processProposalHandlerMock).to.be.not.called();
+    expect(processProposalMock).to.be.not.called();
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        height: '42',
+        round,
+        abciMethod: 'finalizeBlock',
+      },
+    );
   });
 
   it('should send withdrawal transaction if vote extensions are present', async () => {
@@ -158,16 +169,24 @@ describe('finalizeBlockHandlerFactory', () => {
     await finalizeBlockHandler(requestMock);
 
     expect(coreRpcClientMock.sendRawTransaction).to.have.been.calledTwice();
-    expect(processProposalHandlerMock).to.be.not.called();
+    expect(processProposalMock).to.be.not.called();
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        height: '42',
+        round,
+        abciMethod: 'finalizeBlock',
+      },
+    );
   });
 
-  it('should call processProposalHandler if round is not equal to execution context', async () => {
+  it('should call processProposal if round is not equal to execution context', async () => {
     proposalBlockExecutionContextMock.getRound.returns(round + 1);
 
     const result = await finalizeBlockHandler(requestMock);
 
     expect(result).to.be.an.instanceOf(ResponseFinalizeBlock);
-    expect(processProposalHandlerMock).to.be.calledOnceWithExactly({
+
+    const processProposalRequest = new RequestProcessProposal({
       height: requestMock.height,
       txs: block.data.txs,
       coreChainLockedHeight: block.header.coreChainLockedHeight,
@@ -177,5 +196,14 @@ describe('finalizeBlockHandlerFactory', () => {
       proposerProTxHash: block.header.proposerProTxHash,
       round,
     });
+
+    expect(processProposalMock).to.be.calledOnceWithExactly(processProposalRequest, loggerMock);
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        height: '42',
+        round,
+        abciMethod: 'finalizeBlock',
+      },
+    );
   });
 });

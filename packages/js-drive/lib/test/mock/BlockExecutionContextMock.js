@@ -11,8 +11,8 @@
  * @method getLastCommitInfo
  * @method getValidTxCount
  * @method getInvalidTxCount
- * @method setConsensusLogger
- * @method getConsensusLogger
+ * @method setContextLogger
+ * @method getContextLogger
  * @method getRound
  * @method fromObject
  * @method toObject
@@ -40,8 +40,8 @@ class BlockExecutionContextMock {
     this.getVersion = sinon.stub();
     this.setLastCommitInfo = sinon.stub();
     this.getLastCommitInfo = sinon.stub();
-    this.setConsensusLogger = sinon.stub();
-    this.getConsensusLogger = sinon.stub();
+    this.setContextLogger = sinon.stub();
+    this.getContextLogger = sinon.stub();
     this.setWithdrawalTransactionsMap = sinon.stub();
     this.getWithdrawalTransactionsMap = sinon.stub();
     this.getRound = sinon.stub();
@@ -55,6 +55,8 @@ class BlockExecutionContextMock {
     this.getTimeMs = sinon.stub();
     this.setRound = sinon.stub();
     this.getRound = sinon.stub();
+    this.getPrepareProposalResult = sinon.stub();
+    this.setPrepareProposalResult = sinon.stub();
   }
 }
 

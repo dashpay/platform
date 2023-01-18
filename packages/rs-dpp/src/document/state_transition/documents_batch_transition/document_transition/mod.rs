@@ -1,19 +1,26 @@
 use std::convert::TryFrom;
 
+use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-pub use document_base_transition::*;
-pub use document_create_transition::*;
-pub use document_delete_transition::*;
-pub use document_replace_transition::*;
+use crate::{
+    data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
+};
+use document_base_transition::DocumentBaseTransition;
 
-use crate::{data_contract::DataContract, util::json_value::JsonValueExt, ProtocolError};
+pub mod document_base_transition;
+pub mod document_create_transition;
+pub mod document_delete_transition;
+pub mod document_replace_transition;
 
-mod document_base_transition;
-mod document_create_transition;
-mod document_delete_transition;
-mod document_replace_transition;
+pub use document_base_transition::{Action, DocumentTransitionObjectLike};
+pub use document_create_transition::DocumentCreateTransition;
+pub use document_delete_transition::DocumentDeleteTransition;
+pub use document_replace_transition::DocumentReplaceTransition;
 
+/// the initial revision of newly created document
+pub const INITIAL_REVISION: u32 = 1;
 pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {
@@ -23,11 +30,20 @@ pub trait DocumentTransitionExt {
     fn get_updated_at(&self) -> Option<i64>;
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
-    fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue>;
-
+    fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
+    ///  get the id
+    fn get_id(&self) -> &Identifier;
+    /// get the document type
+    fn get_document_type(&self) -> &String;
+    /// get the transition action
+    fn get_action(&self) -> Action;
+    /// get the data contract
+    fn get_data_contract(&self) -> &DataContract;
+    /// get the data contract id
+    fn get_data_contract_id(&self) -> &Identifier;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
-    fn insert_dynamic_property(&mut self, property_name: String, value: JsonValue);
+    fn insert_dynamic_property(&mut self, property_name: String, value: Value);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,40 +76,62 @@ macro_rules! call_method {
     };
 }
 
-impl DocumentTransitionObjectLike for DocumentTransition {
-    fn from_json_str(_json_str: &str, _data_contract: DataContract) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
+#[derive(Deserialize)]
+struct TransitionWithAction {
+    action: Action,
+}
 
-    fn from_raw_document(
-        raw_transition: JsonValue,
+impl DocumentTransitionObjectLike for DocumentTransition {
+    fn from_json_object(
+        json_value: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        let action: Action = TryFrom::try_from(raw_transition.get_u64(PROPERTY_ACTION)? as u8)?;
+        let action: Action = TryFrom::try_from(json_value.get_u64(PROPERTY_ACTION)? as u8)
+            .context("invalid document transition action")?;
+
         Ok(match action {
             Action::Create => DocumentTransition::Create(
-                DocumentCreateTransition::from_raw_document(raw_transition, data_contract)?,
+                DocumentCreateTransition::from_json_object(json_value, data_contract)?,
             ),
             Action::Replace => DocumentTransition::Replace(
-                DocumentReplaceTransition::from_raw_document(raw_transition, data_contract)?,
+                DocumentReplaceTransition::from_json_object(json_value, data_contract)?,
             ),
             Action::Delete => DocumentTransition::Delete(
-                DocumentDeleteTransition::from_raw_document(raw_transition, data_contract)?,
+                DocumentDeleteTransition::from_json_object(json_value, data_contract)?,
             ),
         })
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn from_raw_object(
+        raw_transition: Value,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let action: Action = TryFrom::try_from(raw_transition.get_u64(PROPERTY_ACTION)? as u8)
+            .context("invalid document transition action")?;
+        Ok(match action {
+            Action::Create => DocumentTransition::Create(
+                DocumentCreateTransition::from_raw_object(raw_transition, data_contract)?,
+            ),
+            Action::Replace => DocumentTransition::Replace(
+                DocumentReplaceTransition::from_raw_object(raw_transition, data_contract)?,
+            ),
+            Action::Delete => DocumentTransition::Delete(
+                DocumentDeleteTransition::from_raw_object(raw_transition, data_contract)?,
+            ),
+        })
+    }
+
+    fn to_json(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_json)
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_object)
     }
 }
@@ -129,9 +167,33 @@ impl DocumentTransition {
             None
         }
     }
+
+    pub fn action(&self) -> Action {
+        self.base().action
+    }
 }
 
 impl DocumentTransitionExt for DocumentTransition {
+    fn get_id(&self) -> &Identifier {
+        &self.base().id
+    }
+
+    fn get_document_type(&self) -> &String {
+        &self.base().document_type
+    }
+
+    fn get_action(&self) -> Action {
+        self.base().action
+    }
+
+    fn get_data_contract(&self) -> &DataContract {
+        &self.base().data_contract
+    }
+
+    fn get_data_contract_id(&self) -> &Identifier {
+        &self.base().data_contract_id
+    }
+
     fn get_updated_at(&self) -> Option<i64> {
         match self {
             DocumentTransition::Create(t) => t.updated_at,
@@ -148,7 +210,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue> {
+    fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
         match self {
             DocumentTransition::Create(t) => {
                 if let Some(ref data) = t.data {
@@ -169,7 +231,7 @@ impl DocumentTransitionExt for DocumentTransition {
     }
 
     #[cfg(test)]
-    fn insert_dynamic_property(&mut self, property_name: String, value: JsonValue) {
+    fn insert_dynamic_property(&mut self, property_name: String, value: Value) {
         match self {
             DocumentTransition::Create(ref mut t) => {
                 if let Some(ref mut data) = t.data {
@@ -184,4 +246,18 @@ impl DocumentTransitionExt for DocumentTransition {
             DocumentTransition::Delete(_) => {}
         }
     }
+}
+
+/// Assumes both values are maps and merges them together. In case of overlap, b is used.
+fn merge_serde_json_values(a: &mut Value, b: Value) -> Result<(), anyhow::Error> {
+    if let Value::Object(ref mut map_a) = a {
+        if let Value::Object(map_b) = b {
+            map_a.extend(map_b);
+        } else {
+            bail!("{} isn't a map", b)
+        }
+    } else {
+        bail!("{} isn't a map", a)
+    }
+    Ok(())
 }

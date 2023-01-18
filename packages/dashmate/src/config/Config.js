@@ -2,9 +2,9 @@ const Ajv = require('ajv');
 
 const nodePath = require('path');
 
-const lodashGet = require('lodash.get');
-const lodashSet = require('lodash.set');
-const lodashCloneDeep = require('lodash.clonedeep');
+const lodashGet = require('lodash/get');
+const lodashSet = require('lodash/set');
+const lodashCloneDeep = require('lodash/cloneDeep');
 
 const addFormats = require('ajv-formats');
 const configJsonSchema = require('../../configs/schema/configJsonSchema');

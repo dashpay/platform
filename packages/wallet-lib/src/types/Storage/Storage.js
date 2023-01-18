@@ -5,6 +5,7 @@ const CONSTANTS = require('../../CONSTANTS');
 const defaultOpts = {
   rehydrate: true,
   autosave: true,
+  purgeOnError: true,
   autosaveIntervalTime: CONSTANTS.STORAGE.autosaveIntervalTime,
   network: 'testnet',
 };
@@ -21,12 +22,11 @@ class Storage extends EventEmitter {
     this.currentNetwork = '';
     this.wallets = new Map();
     this.chains = new Map();
-    this.application = {
-      blockHeight: 0,
-    };
+    this.application = {};
 
     this.rehydrate = has(opts, 'rehydrate') ? opts.rehydrate : defaultOpts.rehydrate;
     this.autosave = has(opts, 'autosave') ? opts.autosave : defaultOpts.autosave;
+    this.purgeOnError = has(opts, 'purgeOnError') ? opts.purgeOnError : defaultOpts.purgeOnError;
     this.autosaveIntervalTime = has(opts, 'autosaveIntervalTime')
       ? opts.autosaveIntervalTime
       : defaultOpts.autosaveIntervalTime;
@@ -37,8 +37,22 @@ class Storage extends EventEmitter {
     this.configured = false;
   }
 
+  reset() {
+    this.wallets.forEach((wallet) => wallet.reset());
+    this.chains.forEach((chain) => chain.reset());
+    this.lastRehydrate = null;
+  }
+
   scheduleStateSave() {
     this.lastModified = Date.now();
+  }
+
+  getDefaultChainStore() {
+    return this.getChainStore(this.currentNetwork);
+  }
+
+  getDefaultWalletStore() {
+    return this.getWalletStore(this.currentWalletId);
   }
 }
 

@@ -5,6 +5,33 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
  *
+ * @param result {{
+ *  createdEntities: Array<Identity|Document>,
+ *  updatedEntities: Array<Identity>,
+ *  removedEntities: Array<Document>,
+ *  }}
+ * @param newData {{
+ *  createdEntities: Array<Identity|Document>,
+ *  updatedEntities: Array<Identity>,
+ *  removedEntities: Array<Document>,
+ *  }}
+ * @return {{
+ *  createdEntities: Array<Identity|Document>,
+ *  updatedEntities: Array<Identity>,
+ *  removedEntities: Array<Document>,
+ *  }}
+ */
+function mergeEntities(result, newData) {
+  return {
+    ...result,
+    createdEntities: result.createdEntities.concat(newData.createdEntities),
+    updatedEntities: result.updatedEntities.concat(newData.updatedEntities),
+    removedEntities: result.removedEntities.concat(newData.removedEntities),
+  };
+}
+
+/**
+ *
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {Identifier} masternodeRewardSharesContractId
@@ -38,15 +65,20 @@ function synchronizeMasternodeIdentitiesFactory(
    * @param {number} coreHeight
    * @param {BlockInfo} blockInfo
    * @return {Promise<{
-   *  created: Array<Identity|Document>,
-   *  updated: Array<Identity|Document>,
-   *  removed: Array<Document>,
+   *  createdEntities: Array<Identity|Document>,
+   *  updatedEntities: Array<Identity>,
+   *  removedEntities: Array<Document>,
    *  fromHeight: number,
    *  toHeight: number,
    * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
-    // TODO: We should either pass block info and transaction or just use state repository (?)
+    let result = {
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+    };
+
     if (!lastSyncedCoreHeight) {
       const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
         useTransaction: true,
@@ -56,10 +88,7 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     let newMasternodes;
-
     let previousMNList = [];
-
-    let updatedEntities = [];
 
     const currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
@@ -103,14 +132,14 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousMnEntry) {
-          updatedEntities = updatedEntities.concat(
-            await handleUpdatedPubKeyOperator(
-              mnEntry,
-              previousMnEntry,
-              dataContract,
-              blockInfo,
-            ),
+          const affectedEntities = await handleUpdatedPubKeyOperator(
+            mnEntry,
+            previousMnEntry,
+            dataContract,
+            blockInfo,
           );
+
+          result = mergeEntities(result, affectedEntities);
         }
 
         const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
@@ -119,11 +148,11 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousVotingMnEntry) {
-          updatedEntities = updatedEntities.concat(
-            await handleUpdatedVotingAddress(
-              mnEntry,
-            ),
+          const affectedEntities = await handleUpdatedVotingAddress(
+            mnEntry,
           );
+
+          result = mergeEntities(result, affectedEntities);
         }
 
         if (mnEntry.payoutAddress) {
@@ -138,12 +167,14 @@ function synchronizeMasternodeIdentitiesFactory(
               ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
               : undefined;
 
-            await handleUpdatedScriptPayout(
+            const affectedEntities = await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
               blockInfo,
               previousPayoutScript,
             );
+
+            result = mergeEntities(result, affectedEntities);
           }
         }
 
@@ -163,29 +194,32 @@ function synchronizeMasternodeIdentitiesFactory(
               ? new Script(Address.fromString(operatorPayoutAddress))
               : undefined;
 
-            await handleUpdatedScriptPayout(
+            const affectedEntities = await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
               blockInfo,
               previousOperatorPayoutScript,
             );
+
+            result = mergeEntities(result, affectedEntities);
           }
         }
       }
     }
 
     // Create identities and shares for new masternodes
-    let createdEntities = [];
 
     for (const newMasternodeEntry of newMasternodes) {
-      createdEntities = createdEntities.concat(
-        await handleNewMasternode(newMasternodeEntry, dataContract, blockInfo),
+      const affectedEntities = await handleNewMasternode(
+        newMasternodeEntry,
+        dataContract,
+        blockInfo,
       );
+
+      result = mergeEntities(result, affectedEntities);
     }
 
     // Remove masternode reward shares for invalid/removed masternodes
-
-    let removedEntities = [];
 
     const disappearedOrInvalidMasterNodes = previousMNList
       .filter((previousMnListEntry) =>
@@ -198,30 +232,23 @@ function synchronizeMasternodeIdentitiesFactory(
         Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
       );
 
-      removedEntities = removedEntities.concat(
-        await handleRemovedMasternode(
-          masternodeIdentifier,
-          dataContract,
-          blockInfo,
-        ),
+      const affectedEntities = await handleRemovedMasternode(
+        masternodeIdentifier,
+        dataContract,
+        blockInfo,
       );
+
+      result = mergeEntities(result, affectedEntities);
     }
 
-    const fromHeight = lastSyncedCoreHeight;
+    result.fromHeight = lastSyncedCoreHeight;
+    result.toHeight = coreHeight;
 
-    lastSyncedCoreHeight = coreHeight;
-
-    await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight, {
+    await lastSyncedCoreHeightRepository.store(coreHeight, {
       useTransaction: true,
     });
 
-    return {
-      fromHeight,
-      toHeight: coreHeight,
-      createdEntities,
-      updatedEntities,
-      removedEntities,
-    };
+    return result;
   }
 
   return synchronizeMasternodeIdentities;

@@ -1,7 +1,9 @@
+use std::convert::{Infallible, TryInto};
+
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
@@ -10,18 +12,26 @@ use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 
-#[cfg_attr(test, automock)]
+impl From<Infallible> for ProtocolError {
+    fn from(_: Infallible) -> Self {
+        unreachable!()
+    }
+}
+
+// Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
+#[cfg_attr(any(test, feature="mocks"), automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
+    type ConversionError: Into<ProtocolError>;
+    type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
+
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
-    async fn fetch_data_contract<T>(
+    async fn fetch_data_contract(
         &self,
         data_contract_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Option<Self::FetchDataContract>>;
 
     /// Store Data Contract
     async fn store_data_contract(

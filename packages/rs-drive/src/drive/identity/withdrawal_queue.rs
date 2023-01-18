@@ -36,6 +36,7 @@ use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
 
 use crate::drive::batch::GroveDbOpBatch;
+use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -158,7 +159,12 @@ impl Drive {
 
         let result_items = self
             .grove
-            .query_raw(&path_query, QueryKeyElementPairResultType, transaction)
+            .query_raw(
+                &path_query,
+                transaction.is_some(),
+                QueryKeyElementPairResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?
             .0
@@ -187,15 +193,17 @@ impl Drive {
                 self.batch_delete(
                     withdrawals_path,
                     id,
-                    true,
-                    true,
+                    // we know that we are not deleting a subtree
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
                     transaction,
                     &mut batch_operations,
                 )?;
             }
 
             self.apply_batch_drive_operations(
-                true,
+                None,
                 transaction,
                 batch_operations,
                 &mut drive_operations,

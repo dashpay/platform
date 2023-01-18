@@ -128,6 +128,7 @@ describe('ValidatorSet', () => {
         smlMock,
         validatorSetLLMQType,
         Buffer.from(smlDiffMock.blockHash, 'hex'),
+        coreHeight,
       );
 
       expect(fetchQuorumMembersMock).to.be.calledOnceWithExactly(
@@ -176,6 +177,7 @@ describe('ValidatorSet', () => {
         smlMock,
         validatorSetLLMQType,
         rotationEntropy,
+        coreHeight,
       );
 
       expect(fetchQuorumMembersMock).to.be.calledOnceWithExactly(

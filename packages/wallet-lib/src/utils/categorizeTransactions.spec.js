@@ -13,7 +13,10 @@ const mockedHDAccount = getFixtureHDAccountWithStorage();
 const prepareTransactionsWithMetadata = () => {
   const transactionsWithMetadata = [];
   each(transactionsWithMetadataFixtures, (transactionWithMetadataFixture) => {
-    transactionsWithMetadata.push([new Transaction(transactionWithMetadataFixture[0]), transactionWithMetadataFixture[1]])
+    const tx = transactionWithMetadataFixture[0]
+    const metadata = transactionWithMetadataFixture[1];
+    metadata.time = new Date(metadata.time);
+    transactionsWithMetadata.push([new Transaction(tx), metadata])
   });
   return transactionsWithMetadata;
 };

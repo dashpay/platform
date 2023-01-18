@@ -4,10 +4,16 @@ use serde_json::Value as JsonValue;
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
-    util::json_value::{self, ReplaceWith},
+    util::json_value::{JsonValueExt, ReplaceWith},
 };
 
-use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
+use super::{
+    document_base_transition, document_base_transition::DocumentBaseTransition,
+    merge_serde_json_values, Action, DocumentTransitionObjectLike,
+};
+
+/// Identifier fields in [`DocumentReplaceTransition`]
+pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,61 +29,62 @@ pub struct DocumentReplaceTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentReplaceTransition {
-    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
-        let mut document: DocumentReplaceTransition = serde_json::from_str(json_str)?;
+    fn from_json_object(
+        mut json_value: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError> {
+        let document_type = json_value.get_string("$type")?;
+
+        let (identifiers_paths, binary_paths) =
+            data_contract.get_identifiers_and_binary_paths(document_type);
+
+        // Only dynamic binary paths are replaced with Bytes (no static ones)
+        json_value.replace_binary_paths(binary_paths.into_iter(), ReplaceWith::Bytes)?;
+        // Only dynamic identifiers are replaced with Bytes
+        json_value.replace_identifier_paths(identifiers_paths, ReplaceWith::Bytes)?;
+        let mut document: DocumentReplaceTransition = serde_json::from_value(json_value)?;
+
         document.base.action = Action::Replace;
-        document.base.data_contract_id = data_contract.id.clone();
         document.base.data_contract = data_contract;
+
         Ok(document)
     }
 
-    fn from_raw_document(
+    fn from_raw_object(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {
-        DocumentBaseTransition::identifiers_to_strings(&mut raw_transition)?;
+        // Only static identifiers are replaced, as the dynamic ones are stored as Arrays
+        raw_transition.replace_identifier_paths(
+            document_base_transition::IDENTIFIER_FIELDS,
+            ReplaceWith::Base58,
+        )?;
 
         let mut document: DocumentReplaceTransition = serde_json::from_value(raw_transition)?;
         document.base.action = Action::Replace;
         document.base.data_contract = data_contract;
 
-        if let Some(ref mut dynamic_data) = document.data {
-            json_value::identifiers_to(
-                document
-                    .base
-                    .data_contract
-                    .get_binary_properties(&document.base.document_type)?,
-                dynamic_data,
-                ReplaceWith::Base58,
-            )?;
-        }
-
         Ok(document)
     }
 
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let object_base = self.base.to_object()?;
-        let mut object = serde_json::to_value(&self)?;
-        let object_base_map = object_base.as_object().unwrap().to_owned();
+        let transition_base_value = self.base.to_object()?;
+        let mut transition_create_value = serde_json::to_value(self)?;
 
-        json_value::identifiers_to(
-            self.base
-                .data_contract
-                .get_binary_properties(&self.base.document_type)?,
-            &mut object,
-            ReplaceWith::Bytes,
-        )?;
-
-        match object {
-            JsonValue::Object(ref mut o) => o.extend(object_base_map),
-            _ => return Err("The Document Base Transaction isn't an Object".into()),
-        }
-
-        Ok(object)
+        merge_serde_json_values(&mut transition_create_value, transition_base_value)?;
+        Ok(transition_create_value)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(&self)?;
+        let mut value = serde_json::to_value(self)?;
+        let (identifier_paths, binary_paths) = self
+            .base
+            .data_contract
+            .get_identifiers_and_binary_paths(&self.base.document_type);
+
+        value.replace_binary_paths(identifier_paths, ReplaceWith::Base58)?;
+        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+
         Ok(value)
     }
 }

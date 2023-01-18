@@ -23,11 +23,14 @@ class TxStreamDataResponseMock {
      */
   getRawTransactions() {
     const { rawTransactions } = this;
-    return {
-      getTransactionsList() {
-        return rawTransactions || [];
-      },
-    };
+    if (rawTransactions) {
+      return {
+        getTransactionsList() {
+          return rawTransactions || [];
+        },
+      };
+    }
+    return null;
   }
 
   getInstantSendLockMessages() {

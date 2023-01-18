@@ -1,4 +1,3 @@
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
@@ -21,7 +20,7 @@ class DataContractStoreRepository {
    * Create Data Contract in database
    *
    * @param {DataContract} dataContract
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -30,7 +29,7 @@ class DataContractStoreRepository {
    */
   async create(dataContract, blockInfo, options = {}) {
     try {
-      const { storageFee, processingFee } = await this.storage.getDrive().createContract(
+      const feeResult = await this.storage.getDrive().createContract(
         dataContract,
         blockInfo,
         Boolean(options.useTransaction),
@@ -40,10 +39,7 @@ class DataContractStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(
-            storageFee,
-            processingFee,
-          ),
+          new PreCalculatedOperation(feeResult),
         ],
       );
     } finally {
@@ -65,7 +61,7 @@ class DataContractStoreRepository {
    * Update Data Contract in database
    *
    * @param {DataContract} dataContract
-   * @param {BlockInfo} blockInfo
+   * @param {RawBlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -74,7 +70,7 @@ class DataContractStoreRepository {
    */
   async update(dataContract, blockInfo, options = {}) {
     try {
-      const { storageFee, processingFee } = await this.storage.getDrive().updateContract(
+      const feeResult = await this.storage.getDrive().updateContract(
         dataContract,
         blockInfo,
         Boolean(options.useTransaction),
@@ -84,10 +80,7 @@ class DataContractStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(
-            storageFee,
-            processingFee,
-          ),
+          new PreCalculatedOperation(feeResult),
         ],
       );
     } finally {
@@ -124,34 +117,19 @@ class DataContractStoreRepository {
       );
     }
 
-    const result = await this.storage.getDrive().fetchContract(
+    const [dataContract, feeResult] = await this.storage.getDrive().fetchContract(
       id,
       options && options.blockInfo ? options.blockInfo.epoch : undefined,
       Boolean(options.useTransaction),
     );
 
-    if (result.length === 0) {
-      return new StorageResult(
-        null,
-        [],
-      );
-    }
-
-    const [encodedDataContract, feeResult] = result;
-
-    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
-      encodedDataContract,
-    );
-
-    rawDataContract.protocolVersion = protocolVersion;
-
     const operations = [];
     if (feeResult) {
-      operations.push(new PreCalculatedOperation(feeResult.storageFee, feeResult.processingFee));
+      operations.push(new PreCalculatedOperation(feeResult));
     }
 
     return new StorageResult(
-      new DataContract(rawDataContract),
+      dataContract,
       operations,
     );
   }
@@ -187,7 +165,9 @@ class DataContractStoreRepository {
       query: {
         query: {
           items,
-          subqueryKey: DataContractStoreRepository.DATA_CONTRACT_KEY,
+          subqueryPath: [
+            DataContractStoreRepository.DATA_CONTRACT_KEY,
+          ],
         },
       },
     }, options);

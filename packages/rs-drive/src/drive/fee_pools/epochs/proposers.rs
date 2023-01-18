@@ -37,7 +37,6 @@ use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 
@@ -55,19 +54,22 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
-        if let Element::Item(item, _) = element {
-            Ok(u64::from_be_bytes(item.as_slice().try_into().map_err(
+        let Element::Item(encoded_proposer_block_count, _) = element else {
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
+                "epochs proposer block count must be an item",
+            )));
+        };
+
+        let proposer_block_count =
+            u64::from_be_bytes(encoded_proposer_block_count.as_slice().try_into().map_err(
                 |_| {
-                    Error::Fee(FeeError::CorruptedProposerBlockCountItemLength(
+                    Error::Drive(DriveError::CorruptedSerialization(
                         "epochs proposer block count item have an invalid length",
                     ))
                 },
-            )?))
-        } else {
-            Err(Error::Fee(FeeError::CorruptedProposerBlockCountNotItem(
-                "epochs proposer block count must be an item",
-            )))
-        }
+            )?);
+
+        Ok(proposer_block_count)
     }
 
     /// Returns true if the Epoch's Proposers Tree is empty
@@ -82,14 +84,12 @@ impl Drive {
             .unwrap()
         {
             Ok(result) => Ok(result),
-            Err(err) => match err {
-                grovedb::Error::PathNotFound(_) | grovedb::Error::PathParentLayerNotFound(_) => {
-                    Ok(true)
-                }
-                _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "internal grovedb error",
-                ))),
-            },
+            Err(grovedb::Error::PathNotFound(_) | grovedb::Error::PathParentLayerNotFound(_)) => {
+                Ok(true)
+            }
+            Err(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "internal grovedb error",
+            ))),
         }
     }
 
@@ -113,136 +113,134 @@ impl Drive {
 
         let key_elements = self
             .grove
-            .query_raw(&path_query, QueryKeyElementPairResultType, transaction)
+            .query_raw(
+                &path_query,
+                transaction.is_some(),
+                QueryKeyElementPairResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?
             .0
             .to_key_elements();
 
-        let result = key_elements
+        let proposers = key_elements
             .into_iter()
             .map(|(pro_tx_hash, element)| {
-                if let Element::Item(item, _) = element {
-                    let block_count =
-                        u64::from_be_bytes(item.as_slice().try_into().map_err(|_| {
-                            Error::Fee(FeeError::CorruptedProposerBlockCountItemLength(
-                                "epochs proposer block count item have an invalid length",
-                            ))
-                        })?);
-
-                    Ok((pro_tx_hash, block_count))
-                } else {
-                    Err(Error::Fee(FeeError::CorruptedProposerBlockCountNotItem(
+                let Element::Item(encoded_block_count, _) = element else {
+                    return Err(Error::Drive(DriveError::UnexpectedElementType(
                         "epochs proposer block count must be an item",
-                    )))
-                }
-            })
-            .collect::<Result<Vec<(Vec<u8>, u64)>, Error>>()?;
+                    )));
+                };
 
-        Ok(result)
+                let block_count = u64::from_be_bytes(
+                    encoded_block_count.as_slice().try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "epochs proposer block count must be u64",
+                        ))
+                    })?,
+                );
+
+                Ok((pro_tx_hash, block_count))
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(proposers)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use grovedb::Element;
-
-    use crate::error::{self, fee::FeeError};
-
+    use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::drive::batch::GroveDbOpBatch;
-    use crate::fee_pools::epochs::Epoch;
 
     mod get_epochs_proposer_block_count {
+        use super::*;
 
         #[test]
         fn test_error_if_value_has_invalid_length() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
             batch.add_insert(
                 epoch.get_proposers_vec_path(),
                 pro_tx_hash.to_vec(),
-                super::Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+                Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
             );
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction)) {
-                Ok(_) => assert!(false, "should not be able to decode stored value"),
-                Err(e) => match e {
-                    super::error::Error::Fee(
-                        super::FeeError::CorruptedProposerBlockCountItemLength(_),
-                    ) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result =
+                drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedSerialization(_),))
+            ));
         }
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = super::Epoch::new(7000);
+            let epoch = Epoch::new(7000);
 
-            match drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction)) {
-                Ok(_) => assert!(
-                    false,
-                    "should not be able to get proposer block count on uninit epochs pool"
-                ),
-                Err(e) => match e {
-                    super::error::Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)) => {
-                        assert!(true)
-                    }
-                    _ => assert!(false, "invalid error type"),
-                },
-            }
+            let result =
+                drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction));
+
+            assert!(matches!(
+                result,
+                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            ));
         }
     }
 
     mod is_epochs_proposers_tree_empty {
+        use super::*;
+
         #[test]
         fn test_check_if_empty() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
             let result = drive
                 .is_epochs_proposers_tree_empty(&epoch, Some(&transaction))
                 .expect("should check if tree is empty");
 
-            assert_eq!(result, true);
+            assert!(result);
         }
     }
 
     mod get_epoch_proposers {
+        use super::*;
+
         #[test]
         fn test_value() {
-            let drive = super::setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let pro_tx_hash: [u8; 32] = rand::random();
             let block_count = 42;
 
-            let epoch = super::Epoch::new(0);
+            let epoch = Epoch::new(0);
 
-            let mut batch = super::GroveDbOpBatch::new();
+            let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 

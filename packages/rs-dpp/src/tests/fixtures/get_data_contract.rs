@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use serde_json::json;
 
@@ -283,9 +283,8 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
         .create(owner_id, documents)
         .expect("data in fixture should be correct");
 
-    data_contract
-        .defs
-        .insert(String::from("lastName"), json!({ "type" : "string"}));
+    let defs: &mut BTreeMap<_, _> = data_contract.defs.get_or_insert(BTreeMap::new());
+    defs.insert(String::from("lastName"), json!({ "type" : "string"}));
 
     data_contract
 }

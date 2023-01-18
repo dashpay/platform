@@ -30,7 +30,10 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
    * @param {BlockInfo} blockInfo
-   * @return Promise<Array<Identity|Document>>
+   * @return Promise<{
+   *  createdEntities: Array<Identity|Document>,
+   *  removedEntities: Array<Document>,
+   * }>
    */
   async function handleUpdatedPubKeyOperator(
     masternodeEntry,
@@ -38,13 +41,17 @@ function handleUpdatedPubKeyOperatorFactory(
     dataContract,
     blockInfo,
   ) {
-    const result = [];
+    const createdEntities = [];
+    const removedEntities = [];
 
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
     // we need to crate reward shares only if it's enabled in proRegTx
     if (proRegTxPayload.operatorReward === 0) {
-      return result;
+      return {
+        createdEntities,
+        removedEntities,
+      };
     }
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
@@ -65,7 +72,7 @@ function handleUpdatedPubKeyOperatorFactory(
 
     //  Create an identity for operator if there is no identity exist with the same ID
     if (operatorIdentityResult.isNull()) {
-      result.push(
+      createdEntities.push(
         await createMasternodeIdentity(
           operatorIdentifier,
           operatorPublicKey,
@@ -91,7 +98,7 @@ function handleUpdatedPubKeyOperatorFactory(
     );
 
     if (rewardShareDocument) {
-      result.push(rewardShareDocument);
+      createdEntities.push(rewardShareDocument);
     }
 
     // Delete document from reward shares data contract with ID corresponding to the
@@ -122,10 +129,13 @@ function handleUpdatedPubKeyOperatorFactory(
         { useTransaction: true },
       );
 
-      result.push(previousDocument);
+      removedEntities.push(previousDocument);
     }
 
-    return result;
+    return {
+      createdEntities,
+      removedEntities,
+    };
   }
 
   return handleUpdatedPubKeyOperator;

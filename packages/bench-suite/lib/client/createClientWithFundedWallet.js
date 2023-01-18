@@ -1,6 +1,6 @@
 const Dash = require('dash');
 
-const clone = require('lodash.clone');
+const clone = require('lodash/clone');
 
 const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 

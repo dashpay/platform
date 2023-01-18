@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -53,7 +55,10 @@ pub async fn validate_data_contract_update_transition_state(
             &state_transition.data_contract.id,
             state_transition.get_execution_context(),
         )
-        .await?;
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     if state_transition.execution_context.is_dry_run() {
         return Ok(result);
@@ -73,12 +78,11 @@ pub async fn validate_data_contract_update_transition_state(
     // Version difference should be exactly 1
     let old_version = existing_data_contract.version;
     let new_version = state_transition.data_contract.version;
-    let version_diff = new_version - old_version;
 
-    if version_diff != 1 {
+    if new_version < old_version || new_version - old_version != 1 {
         let err = BasicError::InvalidDataContractVersionError {
             expected_version: old_version + 1,
-            version: old_version + version_diff,
+            version: new_version,
         };
         result.add_error(err);
     }
@@ -105,7 +109,7 @@ mod test {
         let mut mock_state_repository = MockStateRepositoryLike::new();
 
         mock_state_repository
-            .expect_fetch_data_contract::<Option<DataContract>>()
+            .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
         state_transition.get_execution_context().enable_dry_run();
 
