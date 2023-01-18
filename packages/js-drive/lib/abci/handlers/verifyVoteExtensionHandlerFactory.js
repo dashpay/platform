@@ -32,13 +32,13 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
       voteExtensions,
     } = request;
 
-    const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
+    const contextLogger = proposalBlockExecutionContext.getContextLogger()
       .child({
         abciMethod: 'verifyVoteExtension',
       });
 
-    consensusLogger.debug('VerifyVote ABCI method requested');
-    consensusLogger.trace({ request });
+    contextLogger.debug('VerifyVote ABCI method requested');
+    contextLogger.trace({ request });
 
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
@@ -68,7 +68,7 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
           Math.min(30, extensionString.length),
         );
 
-        consensusLogger.warn({
+        contextLogger.warn({
           type: nextExtension.type,
           extension: extensionString,
         }, `${nextExtension.type} vote extension ${extensionTruncatedString}... was not found in verify request`);
