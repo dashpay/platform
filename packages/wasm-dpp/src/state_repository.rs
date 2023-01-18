@@ -81,6 +81,13 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     );
 
+    #[wasm_bindgen(structural, method, js_name=updateIdentity)]
+    pub fn update_identity(
+        this: &ExternalStateRepositoryLike,
+        identity: IdentityWasm,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
     #[wasm_bindgen(structural, method, js_name=storeIdentityPublicKeyHashes)]
     pub fn store_identity_public_key_hashes(
         this: &ExternalStateRepositoryLike,
@@ -350,10 +357,14 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn update_identity(
         &self,
-        _identity: &Identity,
-        _execution_context: &StateTransitionExecutionContext,
+        identity: &Identity,
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        todo!()
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .update_identity(identity.clone().into(), execution_context.clone().into()))
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
