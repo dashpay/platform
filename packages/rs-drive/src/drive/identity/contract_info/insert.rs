@@ -61,7 +61,6 @@ impl Drive {
                         identity_id,
                         keys,
                         false,
-                        epoch,
                         estimated_costs_only_with_layer_info,
                         transaction,
                     )?;
