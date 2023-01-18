@@ -474,9 +474,9 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
+        let contract_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_contract_cbor);
         let apply = js_apply.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
@@ -542,10 +542,10 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
+        let contract_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_contract_cbor);
         let apply = js_apply.value(&mut cx);
 
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -616,12 +616,12 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let document_cbor = converter::js_buffer_to_vec_u8(js_document_cbor, &mut cx);
+        let document_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_document_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
         let owner_id = converter::js_buffer_to_identifier(&mut cx, js_owner_id)?;
         let override_document = js_override_document.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -698,11 +698,11 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let document_cbor = converter::js_buffer_to_vec_u8(js_document_cbor, &mut cx);
+        let document_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_document_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
         let owner_id = converter::js_buffer_to_identifier(&mut cx, js_owner_id)?;
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -780,7 +780,7 @@ impl PlatformWrapper {
         let document_id = converter::js_buffer_to_identifier(&mut cx, js_document_id)?;
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -849,8 +849,8 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let identity_cbor = converter::js_buffer_to_vec_u8(js_identity_cbor, &mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let identity_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_identity_cbor);
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -982,6 +982,98 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
+    fn js_fetch_many_identities_by_public_key_hashes(
+        mut cx: FunctionContext,
+    ) -> JsResult<JsUndefined> {
+        let js_public_key_hashes = cx.argument::<JsArray>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let public_key_hashes: Vec<[u8; 20]> =
+            converter::js_array_of_buffers_to_vec(&mut cx, js_public_key_hashes)?
+                .into_iter()
+                .map(|hash| {
+                    hash.try_into()
+                        .or_else(|hash| cx.throw_error("invalid hash size"))
+                })
+                .collect()?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result: Result<Vec<Option<Vec<u8>>>, String> =
+                    transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_full_identities_by_unique_public_key_hashes(
+                                public_key_hashes,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                            .and_then(|hashes_to_identities| {
+                                hashes_to_identities
+                                    .into_iter()
+                                    .map(|(hash, identity)| {
+                                        identity.map(|i| i.to_buffer()).transpose()
+                                    })
+                                    .collect::<Result<_, _>>()
+                                    .map_err(|err| err.to_string())
+                            })
+                    });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(hashes_to_identities) => {
+                            let js_array = task_context.empty_array();
+
+                            hashes_to_identities.into_iter().enumerate().try_for_each(
+                                |(i, identity)| {
+                                    let value = identity.map_or_else(
+                                        || task_context.null().upcast(),
+                                        |bytes| {
+                                            JsBuffer::external(&mut task_context, bytes).upcast()
+                                        },
+                                    );
+
+                                    js_array.set(&mut task_context, i as u32, value)
+                                },
+                            )?;
+
+                            vec![task_context.null().upcast(), js_array.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
     fn js_fetch_identity_with_costs(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
         let js_epoch_index = cx.argument::<JsNumber>(1)?;
@@ -1080,7 +1172,7 @@ impl PlatformWrapper {
 
         let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
         let balance_to_add = js_balance_to_add.value(&mut cx) as u64;
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1150,7 +1242,7 @@ impl PlatformWrapper {
 
         let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
         let amount = js_amount.value(&mut cx) as u64;
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1282,8 +1374,8 @@ impl PlatformWrapper {
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
         let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
-        let keys_to_add = converter::js_array_to_keys(js_keys_to_add, &mut cx)?;
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let keys_to_add = converter::js_array_to_keys(&mut cx, js_keys_to_add)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1368,7 +1460,7 @@ impl PlatformWrapper {
 
         let disabled_at = js_disable_at.value(&mut cx) as TimestampMillis;
 
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1441,7 +1533,7 @@ impl PlatformWrapper {
 
         let revision = js_revision.value(&mut cx) as Revision;
 
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1510,7 +1602,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
+        let query_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_query_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
 
@@ -1601,7 +1693,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
+        let query_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_query_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1805,8 +1897,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1871,8 +1963,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
         let element = converter::js_object_to_element(&mut cx, js_element)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1929,8 +2021,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
         let element = converter::js_object_to_element(&mut cx, js_element)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1992,8 +2084,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
-        let value = converter::js_buffer_to_vec_u8(js_value, &mut cx);
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
+        let value = converter::js_buffer_to_vec_u8(&mut cx, js_value);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2051,7 +2143,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2109,7 +2201,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let db = cx
             .this()
@@ -2175,7 +2267,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+        let path_query = converter::js_path_query_to_path_query(&mut cx, js_path_query)?;
 
         let skip_cache = js_skip_cache.value(&mut cx);
 
@@ -2242,7 +2334,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
-        let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+        let path_query = converter::js_path_query_to_path_query(&mut cx, js_path_query)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2313,8 +2405,8 @@ impl PlatformWrapper {
         for js_path_query in js_path_queries {
             let js_path_query = js_path_query.downcast_or_throw::<JsObject, _>(&mut cx)?;
             path_queries.push(converter::js_path_query_to_path_query(
-                js_path_query,
                 &mut cx,
+                js_path_query,
             )?);
         }
 
@@ -2445,8 +2537,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2511,7 +2603,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2569,7 +2661,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2700,7 +2792,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
 
         db.send_to_drive_thread(move |platform: &Platform, _, channel| {
             let result = AfterFinalizeBlockRequest::from_bytes(&request_bytes)
@@ -2807,7 +2899,7 @@ impl PlatformWrapper {
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
         let index = js_index.value(&mut cx);
-        let transaction_bytes = converter::js_buffer_to_vec_u8(js_core_transaction, &mut cx);
+        let transaction_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_core_transaction);
         let using_transaction = js_using_transaction.value(&mut cx);
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {

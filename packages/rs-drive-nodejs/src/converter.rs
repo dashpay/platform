@@ -52,7 +52,7 @@ pub fn js_object_to_element<'a, C: Context<'a>>(
     match element_type.as_str() {
         "item" => {
             let js_buffer: Handle<JsBuffer> = js_object.get(cx, "value")?;
-            let item = js_buffer_to_vec_u8(js_buffer, cx);
+            let item = js_buffer_to_vec_u8(cx, js_buffer);
 
             Ok(Element::new_item_with_flags(item, element_flags))
         }
@@ -77,13 +77,13 @@ fn js_object_to_reference<'a, C: Context<'a>>(
     match reference_type.as_str() {
         "absolutePathReference" => {
             let js_path: Handle<JsArray> = js_object.get(cx, "path")?;
-            let path = js_array_of_buffers_to_vec(js_path, cx)?;
+            let path = js_array_of_buffers_to_vec(cx, js_path)?;
 
             Ok(ReferencePathType::AbsolutePathReference(path))
         }
         "upstreamRootHeightReference" => {
             let js_path: Handle<JsArray> = js_object.get(cx, "path")?;
-            let path = js_array_of_buffers_to_vec(js_path, cx)?;
+            let path = js_array_of_buffers_to_vec(cx, js_path)?;
 
             let js_relativity_index: Handle<JsNumber> = js_object.get(cx, "relativityIndex")?;
             let relativity_index_f64: f64 = js_relativity_index.value(cx);
@@ -99,7 +99,7 @@ fn js_object_to_reference<'a, C: Context<'a>>(
         }
         "upstreamFromElementHeightReference" => {
             let js_path: Handle<JsArray> = js_object.get(cx, "path")?;
-            let path = js_array_of_buffers_to_vec(js_path, cx)?;
+            let path = js_array_of_buffers_to_vec(cx, js_path)?;
 
             let js_relativity_index: Handle<JsNumber> = js_object.get(cx, "relativityIndex")?;
             let relativity_index_f64: f64 = js_relativity_index.value(cx);
@@ -115,13 +115,13 @@ fn js_object_to_reference<'a, C: Context<'a>>(
         }
         "cousinReference" => {
             let js_key: Handle<JsBuffer> = js_object.get(cx, "key")?;
-            let key = js_buffer_to_vec_u8(js_key, cx);
+            let key = js_buffer_to_vec_u8(cx, js_key);
 
             Ok(ReferencePathType::CousinReference(key))
         }
         "siblingReference" => {
             let js_key: Handle<JsBuffer> = js_object.get(cx, "key")?;
-            let key = js_buffer_to_vec_u8(js_key, cx);
+            let key = js_buffer_to_vec_u8(cx, js_key);
 
             Ok(ReferencePathType::SiblingReference(key))
         }
@@ -251,7 +251,7 @@ pub fn js_buffer_to_identifier<'a, C: Context<'a>>(
     <[u8; 32]>::try_from(key_slice).or_else(|_| cx.throw_type_error("hash must be 32 bytes long"))
 }
 
-pub fn js_buffer_to_vec_u8<'a, C: Context<'a>>(js_buffer: Handle<JsBuffer>, cx: &mut C) -> Vec<u8> {
+pub fn js_buffer_to_vec_u8<'a, C: Context<'a>>(cx: &mut C, js_buffer: Handle<JsBuffer>) -> Vec<u8> {
     // let guard = cx.lock();
 
     let key_memory_view = js_buffer.borrow();
@@ -263,23 +263,23 @@ pub fn js_buffer_to_vec_u8<'a, C: Context<'a>>(js_buffer: Handle<JsBuffer>, cx: 
 }
 
 pub fn js_array_of_buffers_to_vec<'a, C: Context<'a>>(
-    js_array: Handle<JsArray>,
     cx: &mut C,
+    js_array: Handle<JsArray>,
 ) -> NeonResult<Vec<Vec<u8>>> {
     let buf_vec = js_array.to_vec(cx)?;
     let mut vec: Vec<Vec<u8>> = Vec::with_capacity(buf_vec.len());
 
     for buf in buf_vec {
         let js_buffer_handle = buf.downcast_or_throw::<JsBuffer, _>(cx)?;
-        vec.push(js_buffer_to_vec_u8(js_buffer_handle, cx));
+        vec.push(js_buffer_to_vec_u8(cx, js_buffer_handle));
     }
 
     Ok(vec)
 }
 
 pub fn js_value_to_option<'a, T: Value, C: Context<'a>>(
-    js_value: Handle<'a, JsValue>,
     cx: &mut C,
+    js_value: Handle<'a, JsValue>,
 ) -> NeonResult<Option<Handle<'a, T>>> {
     if js_value.is_a::<JsNull, _>(cx) || js_value.is_a::<JsUndefined, _>(cx) {
         Ok(None)
@@ -289,18 +289,18 @@ pub fn js_value_to_option<'a, T: Value, C: Context<'a>>(
 }
 
 fn js_object_get_vec_u8<'a, C: Context<'a>>(
+    cx: &mut C,
     js_object: Handle<JsObject>,
     field: &str,
-    cx: &mut C,
 ) -> NeonResult<Vec<u8>> {
     let buffer: Handle<JsBuffer> = js_object.get(cx, field)?;
 
-    Ok(js_buffer_to_vec_u8(buffer, cx))
+    Ok(js_buffer_to_vec_u8(cx, buffer))
 }
 
 fn js_object_to_query<'a, C: Context<'a>>(
-    js_object: Handle<JsObject>,
     cx: &mut C,
+    js_object: Handle<JsObject>,
 ) -> NeonResult<Query> {
     let items: Handle<JsArray> = js_object.get(cx, "items")?;
     let mut query = Query::new();
@@ -312,41 +312,41 @@ fn js_object_to_query<'a, C: Context<'a>>(
 
         match item_type.as_ref() {
             "key" => {
-                query.insert_key(js_object_get_vec_u8(item, "key", cx)?);
+                query.insert_key(js_object_get_vec_u8(cx, item, "key")?);
             }
             "range" => {
-                let from = js_object_get_vec_u8(item, "from", cx)?;
-                let to = js_object_get_vec_u8(item, "to", cx)?;
+                let from = js_object_get_vec_u8(cx, item, "from")?;
+                let to = js_object_get_vec_u8(cx, item, "to")?;
                 query.insert_range(from..to);
             }
             "rangeInclusive" => {
-                let from = js_object_get_vec_u8(item, "from", cx)?;
-                let to = js_object_get_vec_u8(item, "to", cx)?;
+                let from = js_object_get_vec_u8(cx, item, "from")?;
+                let to = js_object_get_vec_u8(cx, item, "to")?;
                 query.insert_range_inclusive(from..=to);
             }
             "rangeFull" => {
                 query.insert_all();
             }
             "rangeFrom" => {
-                query.insert_range_from(js_object_get_vec_u8(item, "from", cx)?..);
+                query.insert_range_from(js_object_get_vec_u8(cx, item, "from")?..);
             }
             "rangeTo" => {
-                query.insert_range_to(..js_object_get_vec_u8(item, "to", cx)?);
+                query.insert_range_to(..js_object_get_vec_u8(cx, item, "to")?);
             }
             "rangeToInclusive" => {
-                query.insert_range_to_inclusive(..=js_object_get_vec_u8(item, "to", cx)?);
+                query.insert_range_to_inclusive(..=js_object_get_vec_u8(cx, item, "to")?);
             }
             "rangeAfter" => {
-                query.insert_range_after(js_object_get_vec_u8(item, "after", cx)?..);
+                query.insert_range_after(js_object_get_vec_u8(cx, item, "after")?..);
             }
             "rangeAfterTo" => {
-                let after = js_object_get_vec_u8(item, "after", cx)?;
-                let to = js_object_get_vec_u8(item, "to", cx)?;
+                let after = js_object_get_vec_u8(cx, item, "after")?;
+                let to = js_object_get_vec_u8(cx, item, "to")?;
                 query.insert_range_after_to(after..to);
             }
             "rangeAfterToInclusive" => {
-                let after = js_object_get_vec_u8(item, "after", cx)?;
-                let to = js_object_get_vec_u8(item, "to", cx)?;
+                let after = js_object_get_vec_u8(cx, item, "after")?;
+                let to = js_object_get_vec_u8(cx, item, "to")?;
                 query.insert_range_after_to_inclusive(after..=to);
             }
             _ => {
@@ -355,13 +355,13 @@ fn js_object_to_query<'a, C: Context<'a>>(
         }
     }
 
-    let subquery_path = js_value_to_option::<JsArray, _>(js_object.get(cx, "subqueryPath")?, cx)?
-        .map(|x| js_array_of_buffers_to_vec(x, cx))
+    let subquery_path = js_value_to_option::<JsArray, _>(cx, js_object.get(cx, "subqueryPath")?)?
+        .map(|x| js_array_of_buffers_to_vec(cx, x))
         .transpose()?;
-    let subquery = js_value_to_option::<JsObject, _>(js_object.get(cx, "subquery")?, cx)?
-        .map(|x| js_object_to_query(x, cx))
+    let subquery = js_value_to_option::<JsObject, _>(cx, js_object.get(cx, "subquery")?)?
+        .map(|x| js_object_to_query(cx, x))
         .transpose()?;
-    let left_to_right = js_value_to_option::<JsBoolean, _>(js_object.get(cx, "leftToRight")?, cx)?
+    let left_to_right = js_value_to_option::<JsBoolean, _>(cx, js_object.get(cx, "leftToRight")?)?
         .map(|x| x.value(cx));
 
     query.default_subquery_branch.subquery_path = subquery_path;
@@ -372,19 +372,19 @@ fn js_object_to_query<'a, C: Context<'a>>(
 }
 
 fn js_object_to_sized_query<'a, C: Context<'a>>(
-    js_object: Handle<JsObject>,
     cx: &mut C,
+    js_object: Handle<JsObject>,
 ) -> NeonResult<SizedQuery> {
     let query: Handle<JsObject> = js_object.get(cx, "query")?;
-    let query = js_object_to_query(query, cx)?;
+    let query = js_object_to_query(cx, query)?;
 
-    let limit: Option<u16> = js_value_to_option::<JsNumber, _>(js_object.get(cx, "limit")?, cx)?
+    let limit: Option<u16> = js_value_to_option::<JsNumber, _>(cx, js_object.get(cx, "limit")?)?
         .map(|x| {
             u16::try_from(x.value(cx) as i64)
                 .or_else(|_| cx.throw_range_error("`limit` must fit in u16"))
         })
         .transpose()?;
-    let offset: Option<u16> = js_value_to_option::<JsNumber, _>(js_object.get(cx, "offset")?, cx)?
+    let offset: Option<u16> = js_value_to_option::<JsNumber, _>(cx, js_object.get(cx, "offset")?)?
         .map(|x| {
             u16::try_from(x.value(cx) as i64)
                 .or_else(|_| cx.throw_range_error("`offset` must fit in u16"))
@@ -395,18 +395,18 @@ fn js_object_to_sized_query<'a, C: Context<'a>>(
 }
 
 pub fn js_path_query_to_path_query<'a, C: Context<'a>>(
-    js_path_query: Handle<JsObject>,
     cx: &mut C,
+    js_path_query: Handle<JsObject>,
 ) -> NeonResult<PathQuery> {
-    let path = js_array_of_buffers_to_vec(js_path_query.get(cx, "path")?, cx)?;
-    let query = js_object_to_sized_query(js_path_query.get(cx, "query")?, cx)?;
+    let path = js_array_of_buffers_to_vec(cx, js_path_query.get(cx, "path")?)?;
+    let query = js_object_to_sized_query(cx, js_path_query.get(cx, "query")?)?;
 
     Ok(PathQuery::new(path, query))
 }
 
 pub fn js_object_to_block_info<'a, C: Context<'a>>(
-    js_object: Handle<JsObject>,
     cx: &mut C,
+    js_object: Handle<JsObject>,
 ) -> NeonResult<BlockInfo> {
     let js_height: Handle<JsNumber> = js_object.get(cx, "height")?;
     let js_epoch: Handle<JsNumber> = js_object.get(cx, "epoch")?;
@@ -424,8 +424,8 @@ pub fn js_object_to_block_info<'a, C: Context<'a>>(
 }
 
 pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
-    js_object: Handle<JsObject>,
     cx: &mut C,
+    js_object: Handle<JsObject>,
 ) -> NeonResult<IdentityPublicKey> {
     let js_id: Handle<JsNumber> = js_object.get(cx, "id")?;
     let js_purpose: Handle<JsNumber> = js_object.get(cx, "purpose")?;
@@ -448,9 +448,9 @@ pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
 
     let read_only = js_read_only.value(cx);
 
-    let data = js_buffer_to_vec_u8(js_data, cx);
+    let data = js_buffer_to_vec_u8(cx, js_data);
 
-    let disabled_at: Option<u64> = js_value_to_option::<JsNumber, _>(js_disabled_at, cx)?
+    let disabled_at: Option<u64> = js_value_to_option::<JsNumber, _>(cx, js_disabled_at)?
         .map(|x| {
             u64::try_from(x.value(cx) as i64)
                 .or_else(|_| cx.throw_range_error("`offset` must fit in u16"))
@@ -469,15 +469,15 @@ pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
 }
 
 pub fn js_array_to_keys<'a, C: Context<'a>>(
-    js_array: Handle<JsArray>,
     cx: &mut C,
+    js_array: Handle<JsArray>,
 ) -> NeonResult<Vec<IdentityPublicKey>> {
     let keys = js_array
         .to_vec(cx)?
         .into_iter()
         .map(|js_value| {
             let js_key = js_value.downcast_or_throw::<JsObject, _>(cx)?;
-            let key = js_object_to_identity_public_key(js_key, cx)?;
+            let key = js_object_to_identity_public_key(cx, js_key)?;
 
             Ok(key)
         })

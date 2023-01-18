@@ -1,22 +1,14 @@
-use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::identity::identity_path;
-use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_tree_path,
     unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec, Drive,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use crate::fee::op::DriveOperation;
-use dpp::identifier::Identifier;
 use dpp::identity::Identity;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use integer_encoding::VarInt;
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -57,7 +49,7 @@ impl Drive {
                         "identity id should be 32 bytes".to_string(),
                     ))
                 })
-                .map(|id| Some(id)),
+                .map(Some),
 
             Ok(None) => Ok(None),
 
@@ -243,12 +235,12 @@ impl Drive {
     /// Fetches identities with all its information from storage.
     pub fn fetch_full_identities_by_unique_public_key_hashes(
         &self,
-        public_key_hash: Vec<[u8; 20]>,
+        public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         self.fetch_full_identities_by_unique_public_key_hashes_operations(
-            public_key_hash,
+            public_key_hashes,
             transaction,
             &mut drive_operations,
         )
@@ -257,12 +249,12 @@ impl Drive {
     /// Given an identity, fetches the identity with its flags from storage.
     pub(crate) fn fetch_full_identities_by_unique_public_key_hashes_operations(
         &self,
-        public_key_hash: Vec<[u8; 20]>,
+        public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
         let identity_ids = self.fetch_identity_ids_by_unique_public_key_hashes_operations(
-            public_key_hash,
+            public_key_hashes,
             transaction,
             drive_operations,
         )?;
@@ -350,7 +342,6 @@ impl Drive {
 mod tests {
     use crate::common::helpers::setup::setup_drive;
     use crate::drive::block_info::BlockInfo;
-    use dpp::identity::Identity;
 
     use super::*;
 

@@ -56,7 +56,7 @@ class IdentityStoreRepository {
   }
 
   /**
-   * Fetch deserialized identities by public key hash
+   * Fetch many identities by public key hashes
    *
    * @param {Buffer} publicKeyHash
    * @param {Object} [options]
@@ -65,21 +65,7 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<Identity>>}
    */
-  async fetchByPublicKeyHash(publicKeyHash, options = {}) {
-    throw new Error('not implemented');
-  }
-
-  /**
-   * Fetch deserialized identities by multiple public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<Identity[]>>}
-   */
-  async fetchManyByPublicKeyHashes(publicKeyHashes, options = {}) {
+  async fetchManyByPublicKeyHashes(publicKeyHash, options = {}) {
     throw new Error('not implemented');
   }
 
