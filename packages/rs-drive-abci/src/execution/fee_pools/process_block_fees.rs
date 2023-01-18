@@ -486,7 +486,7 @@ mod tests {
                         .expect("should calculate epoch info");
 
                 let block_fees = BlockFees {
-                    storage_fee: 1000,
+                    storage_fee: 100000,
                     processing_fee: 10000,
                     fee_refunds: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
                 };

@@ -369,6 +369,17 @@ impl DriveOperation {
         GroveOperation(GroveDbOp::replace_op(path, key, element))
     }
 
+    /// Sets `GroveOperation` for patching of an element at the given path and key
+    /// This is different from replacement which does not add or delete bytes
+    pub fn patch_for_known_path_key_element(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        element: Element,
+        change_in_bytes: i32,
+    ) -> Self {
+        GroveOperation(GroveDbOp::patch_op(path, key, element, change_in_bytes))
+    }
+
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
     pub fn insert_for_estimated_path_key_element(
         path: KeyInfoPath,

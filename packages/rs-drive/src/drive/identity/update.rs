@@ -120,7 +120,6 @@ impl Drive {
             identity_id,
             keys_ids,
             disable_at,
-            &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -144,7 +143,6 @@ impl Drive {
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
         disable_at: TimestampMillis,
-        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -184,6 +182,8 @@ impl Drive {
             )));
         }
 
+        const DISABLE_KEY_TIME_BYTE_COST: i32 = 9;
+
         for (_, mut key) in keys {
             key.set_disabled_at(disable_at);
 
@@ -193,8 +193,7 @@ impl Drive {
                 identity_id.as_slice(),
                 &key,
                 &key_id_bytes,
-                &StorageFlags::SingleEpoch(epoch.index),
-                estimated_costs_only_with_layer_info,
+                DISABLE_KEY_TIME_BYTE_COST,
                 &mut drive_operations,
             )?;
         }
@@ -220,7 +219,6 @@ impl Drive {
             identity_id,
             keys_to_add,
             true,
-            &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
@@ -241,7 +239,6 @@ impl Drive {
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,
         with_references: bool,
-        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -260,7 +257,6 @@ impl Drive {
                 identity_id,
                 key,
                 with_references,
-                &StorageFlags::SingleEpoch(epoch.index),
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut drive_operations,
@@ -309,8 +305,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 14364000,
-                    processing_fee: 2502490,
+                    storage_fee: 14148000,
+                    processing_fee: 2457690,
                     ..Default::default()
                 }
             );
@@ -357,8 +353,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 350676000,
-                    processing_fee: 9864200,
+                    storage_fee: 345492000,
+                    processing_fee: 9693000,
                     ..Default::default()
                 }
             );
@@ -413,8 +409,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 17415000,
-                    processing_fee: 12549360,
+                    storage_fee: 17091000,
+                    processing_fee: 12544560,
                     ..Default::default()
                 }
             );
@@ -470,7 +466,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1646460,
+                    processing_fee: 1614460,
                     ..Default::default()
                 }
             );
@@ -530,11 +526,50 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 0,
-                    processing_fee: 5870930,
+                    storage_fee: 486000,
+                    processing_fee: 5864530,
                     ..Default::default()
                 }
             );
+        }
+
+        #[test]
+        fn estimated_costs_should_have_same_storage_cost() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identity = Identity::random_identity(5, Some(12345));
+
+            drive
+                .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
+
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+
+            let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
+
+            let expected_fee_result = drive
+                .disable_identity_keys(
+                    identity.id.to_buffer(),
+                    vec![0, 1],
+                    disable_at,
+                    &block_info,
+                    false,
+                    None,
+                )
+                .expect("should estimate the disabling of a few keys");
+
+            let fee_result = drive
+                .disable_identity_keys(
+                    identity.id.to_buffer(),
+                    vec![0, 1],
+                    disable_at,
+                    &block_info,
+                    true,
+                    None,
+                )
+                .expect("should get the cost of the disabling a few keys");
+
+            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee,);
         }
     }
 
@@ -571,7 +606,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 774720,
+                    processing_fee: 768320,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

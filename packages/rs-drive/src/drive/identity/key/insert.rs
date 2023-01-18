@@ -44,10 +44,6 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
-        storage_flags: &StorageFlags,
-        _estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
@@ -58,10 +54,7 @@ impl Drive {
             PathFixedSizeKeyRefElement((
                 identity_key_tree,
                 key_id_bytes,
-                Element::new_item_with_flags(
-                    serialized_identity_key,
-                    storage_flags.to_some_element_flags(),
-                ),
+                Element::new_item_with_flags(serialized_identity_key, None),
             )),
             drive_operations,
         )
@@ -74,23 +67,18 @@ impl Drive {
         identity_id: &[u8],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
-        storage_flags: &StorageFlags,
-        _estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        change_in_bytes: i32,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path_vec(identity_id);
 
-        drive_operations.push(DriveOperation::replace_for_known_path_key_element(
+        drive_operations.push(DriveOperation::patch_for_known_path_key_element(
             identity_key_tree,
             key_id_bytes.to_vec(),
-            Element::new_item_with_flags(
-                serialized_identity_key,
-                storage_flags.to_some_element_flags(),
-            ),
+            Element::new_item_with_flags(serialized_identity_key, None),
+            change_in_bytes,
         ));
 
         Ok(())
@@ -101,7 +89,6 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
-        storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -158,7 +145,7 @@ impl Drive {
             // We need to insert the security level if it doesn't yet exist
             self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                 PathFixedSizeKey((purpose_path, vec![security_level as u8])),
-                Some(storage_flags),
+                None,
                 apply_type,
                 transaction,
                 drive_operations,
@@ -179,7 +166,7 @@ impl Drive {
                 key_id_bytes,
                 Element::new_reference_with_flags(
                     ReferencePathType::UpstreamRootHeightReference(2, key_reference),
-                    storage_flags.to_some_element_flags(),
+                    None,
                 ),
             )),
             drive_operations,
@@ -192,7 +179,6 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
         with_references: bool,
-        storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -212,8 +198,6 @@ impl Drive {
             identity_id,
             &identity_key,
             key_id_bytes.as_slice(),
-            storage_flags,
-            estimated_costs_only_with_layer_info,
             drive_operations,
         )?;
 
@@ -226,7 +210,6 @@ impl Drive {
                     identity_id,
                     &identity_key,
                     key_id_bytes.as_slice(),
-                    storage_flags,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     drive_operations,
@@ -240,7 +223,6 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         keys: Vec<IdentityPublicKey>,
-        storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -257,21 +239,20 @@ impl Drive {
         self.batch_insert_empty_tree(
             identity_path,
             IdentityTreeKeys.to_drive_key_info(),
-            Some(storage_flags),
+            None,
             &mut batch_operations,
         )?;
 
         self.batch_insert_empty_tree(
             identity_path,
             IdentityTreeKeyReferences.to_drive_key_info(),
-            Some(storage_flags),
+            None,
             &mut batch_operations,
         )?;
 
         // We create the query trees structure
         self.create_new_identity_key_query_trees_operations(
             identity_id,
-            storage_flags,
             estimated_costs_only_with_layer_info,
             &mut batch_operations,
         )?;
@@ -281,7 +262,6 @@ impl Drive {
                 identity_id,
                 key,
                 true,
-                storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut batch_operations,
@@ -295,7 +275,6 @@ impl Drive {
     fn create_new_identity_key_query_trees_operations(
         &self,
         identity_id: [u8; 32],
-        storage_flags: &StorageFlags,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -315,7 +294,7 @@ impl Drive {
             self.batch_insert_empty_tree(
                 identity_query_key_tree,
                 DriveKeyInfo::Key(vec![purpose as u8]),
-                Some(storage_flags),
+                None,
                 drive_operations,
             )?;
 
@@ -338,7 +317,7 @@ impl Drive {
             self.batch_insert_empty_tree(
                 identity_key_authentication_tree,
                 DriveKeyInfo::Key(vec![security_level as u8]),
-                Some(storage_flags),
+                None,
                 drive_operations,
             )?;
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
