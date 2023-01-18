@@ -116,17 +116,23 @@ function getNewUniqueIndex(documentType, existingSchema, newSchema) {
  * @param {string} documentType
  * @param {object} existingSchema
  * @param {object[]} newDocumentDefinitions
+ * @param {Object<string, Object>} nameIndexMap
  *
  * @returns {object}
  */
-function getWronglyConstructedNewIndex(documentType, existingSchema, newDocumentDefinitions) {
+function getWronglyConstructedNewIndex(documentType, existingSchema, newDocumentDefinitions, nameIndexMap) {
   const newSchemaIndices = lodashGet(newDocumentDefinitions, `${documentType}.indices`);
 
   const existingIndexNames = (existingSchema.indices || []).map(
     (indexDefinition) => indexDefinition.name,
   );
 
-  const existingProperties = new Set(Object.keys(existingSchema.properties));
+  const existingIndexedProperties = new Set((existingSchema.indices || []).reduce(
+    (properties, indexDefinition) => [
+      ...properties,
+      ...indexDefinition.properties.map((definition) => Object.keys(definition)[0]),
+    ], [],
+  ));
 
   // Build an index of all possible allowed combinations
   // of old indices to check later
@@ -139,18 +145,37 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
     ], [],
   );
 
+  // return notNewProperty !== undefined;
+
   // Gather only newly defined indices
   const newIndices = (newSchemaIndices || []).filter(
     (indexDefinition) => !existingIndexNames.includes(indexDefinition.name),
   );
 
   return (newIndices || []).find((indexDefinition) => {
-    const usedOldProperties = indexDefinition.properties.filter(
-      (prop) => existingProperties.has(Object.keys(prop)[0]),
+
+    const newIndexDefinition = nameIndexMap[indexDefinition.name];
+
+    const notNewProperty = newIndexDefinition.properties
+      .find((propertyWithOrder) => {
+        const propertyName = Object.keys(propertyWithOrder)[0];
+
+        return Boolean(
+          getPropertyDefinitionByPath(existingSchema, propertyName),
+        );
+      });
+
+    // index contains old property
+    if (notNewProperty) {
+      return true;
+    }
+
+    const existingProperties = indexDefinition.properties.filter(
+      (prop) => existingIndexedProperties.has(Object.keys(prop)[0]),
     );
 
     // if no old properties being used - skip
-    if (usedOldProperties.length === 0) {
+    if (existingProperties.length === 0) {
       return false;
     }
 
@@ -160,7 +185,7 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
     // since they should be in the beginning of the
     // index we can check it with previously built snapshot combinations
     const partialNewIndexSnapshot = serializer.encode(
-      indexDefinition.properties.slice(0, usedOldProperties.length),
+      indexDefinition.properties.slice(0, existingProperties.length),
     ).toString('hex');
 
     return !existingIndexSnapshots.includes(partialNewIndexSnapshot);
@@ -235,7 +260,7 @@ function validateIndicesAreBackwardCompatible(existingDocumentDefinitions, newDo
       }
 
       const wronglyConstructedNewIndex = getWronglyConstructedNewIndex(
-        documentType, existingSchema, newDocumentDefinitions,
+        documentType, existingSchema, newDocumentDefinitions, nameIndexMap,
       );
 
       if (wronglyConstructedNewIndex !== undefined) {
