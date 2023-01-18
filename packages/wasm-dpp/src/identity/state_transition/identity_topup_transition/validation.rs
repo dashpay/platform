@@ -2,7 +2,7 @@ use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockProofValidator, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,
     InstantAssetLockProofStructureValidator,
 };
-use dpp::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUoTransitionBasicValidator;
+use dpp::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use dpp::identity::state_transition::identity_topup_transition::validation::state::validate_identity_topup_transition_state;
 use dpp::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
 use dpp::identity::validation::{
@@ -13,6 +13,7 @@ use dpp::state_transition::state_transition_execution_context::StateTransitionEx
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::ProtocolError;
 
+use dpp::prelude::ValidationResult;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
@@ -41,80 +42,64 @@ pub async fn validate_identity_topup_transition_state_wasm(
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }
 
-// #[wasm_bindgen(js_name=validateIdentityCreateTransitionBasic)]
-// pub async fn validate_identity_create_transition_basic_wasm(
-//     state_repository: ExternalStateRepositoryLike,
-//     raw_state_transition: JsValue,
-//     js_bls: JsBlsAdapter,
-//     execution_context: &StateTransitionExecutionContextWasm,
-// ) -> Result<ValidationResultWasm, JsValue> {
-//     let execution_context: &StateTransitionExecutionContext = execution_context.into();
-//
-//     let state_repository_wrapper =
-//         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
-//
-//     let current_protocol_version =
-//         js_sys::Reflect::get(&raw_state_transition, &"protocolVersion".into())
-//             .map(|v| v.as_f64().unwrap_or(LATEST_VERSION as f64) as u32)
-//             .unwrap_or(LATEST_VERSION);
-//
-//     let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
-//
-//     let protocol_version_validator = ProtocolVersionValidator::new(
-//         current_protocol_version,
-//         LATEST_VERSION,
-//         COMPATIBILITY_MAP.clone(),
-//     );
-//
-//     let public_keys_validator = PublicKeysValidator::new_with_schema(
-//         PUBLIC_KEY_SCHEMA_FOR_TRANSITION.clone(),
-//         BlsAdapter(js_bls.clone()),
-//     )
-//     .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
-//
-//     let public_keys_transition_validator = RequiredPurposeAndSecurityLevelValidator::default();
-//
-//     let asset_lock_proof_validator: AssetLockProofValidator<ExternalStateRepositoryLikeWrapper>;
-//     {
-//         let tx_validator = Arc::new(AssetLockTransactionValidator::new(
-//             state_repository_wrapper.clone(),
-//         ));
-//
-//         let instant_asset_lock_proof_validator = InstantAssetLockProofStructureValidator::new(
-//             state_repository_wrapper.clone(),
-//             tx_validator.clone(),
-//         )
-//         .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
-//
-//         let chain_asset_lock_proof_validator = ChainAssetLockProofStructureValidator::new(
-//             state_repository_wrapper.clone(),
-//             tx_validator.clone(),
-//         )
-//         .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
-//
-//         asset_lock_proof_validator = AssetLockProofValidator::new(
-//             instant_asset_lock_proof_validator,
-//             chain_asset_lock_proof_validator,
-//         );
-//     }
-//
-//     let public_keys_signature_validator =
-//         PublicKeysSignaturesValidator::new(BlsAdapter(js_bls.clone()));
-//
-//     let validator = IdentityCreateTransitionBasicValidator::new(
-//         Arc::new(protocol_version_validator),
-//         Arc::new(public_keys_validator),
-//         Arc::new(public_keys_transition_validator),
-//         Arc::new(asset_lock_proof_validator),
-//         BlsAdapter(js_bls.clone()),
-//         public_keys_signature_validator,
-//     )
-//     .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
-//
-//     let validation_result = validator
-//         .validate(&state_transition_json, execution_context)
-//         .await
-//         .map_err(|e| from_dpp_err(e.into()))?;
-//
-//     Ok(validation_result.map(|_| JsValue::undefined()).into())
-// }
+#[wasm_bindgen(js_name=validateIdentityTopUpTransitionBasic)]
+pub async fn validate_identity_topup_transition_basic_wasm(
+    state_repository: ExternalStateRepositoryLike,
+    raw_state_transition: JsValue,
+    execution_context: &StateTransitionExecutionContextWasm,
+) -> Result<ValidationResultWasm, JsValue> {
+    let execution_context: &StateTransitionExecutionContext = execution_context.into();
+
+    let state_repository_wrapper =
+        Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+
+    let current_protocol_version =
+        js_sys::Reflect::get(&raw_state_transition, &"protocolVersion".into())
+            .map(|v| v.as_f64().unwrap_or(LATEST_VERSION as f64) as u32)
+            .unwrap_or(LATEST_VERSION);
+
+    let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+
+    let protocol_version_validator = ProtocolVersionValidator::new(
+        current_protocol_version,
+        LATEST_VERSION,
+        COMPATIBILITY_MAP.clone(),
+    );
+
+    let asset_lock_proof_validator: AssetLockProofValidator<ExternalStateRepositoryLikeWrapper>;
+    {
+        let tx_validator = Arc::new(AssetLockTransactionValidator::new(
+            state_repository_wrapper.clone(),
+        ));
+
+        let instant_asset_lock_proof_validator = InstantAssetLockProofStructureValidator::new(
+            state_repository_wrapper.clone(),
+            tx_validator.clone(),
+        )
+        .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
+
+        let chain_asset_lock_proof_validator = ChainAssetLockProofStructureValidator::new(
+            state_repository_wrapper.clone(),
+            tx_validator.clone(),
+        )
+        .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
+
+        asset_lock_proof_validator = AssetLockProofValidator::new(
+            instant_asset_lock_proof_validator,
+            chain_asset_lock_proof_validator,
+        );
+    }
+
+    let validator = IdentityTopUpTransitionBasicValidator::new(
+        Arc::new(protocol_version_validator),
+        Arc::new(asset_lock_proof_validator),
+    )
+    .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
+
+    let validation_result = validator
+        .validate(&state_transition_json, execution_context)
+        .await
+        .map_err(|e| from_dpp_err(e.into()))?;
+
+    Ok(validation_result.map(|_| JsValue::undefined()).into())
+}

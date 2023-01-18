@@ -1,68 +1,59 @@
-const { getRE2Class } = require('@dashevo/wasm-re2');
-
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-
 const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const validateIdentityTopUpTransitionBasicFactory = require(
-  '@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/validation/basic/validateIdentityTopUpTransitionBasicFactory',
-);
-
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const {
   expectJsonSchemaError,
   expectValidationError,
-} = require('@dashevo/dpp/lib/test/expect/expectError');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-const ChainAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+} = require('../../../../../../../lib/test/expect/expectError');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
-  let assetLockPublicKeyHash;
+
+  let stateRepositoryMock;
+
   let validateIdentityTopUpTransitionBasic;
-  let proofValidationFunctionsByTypeMock;
-  let validateProtocolVersionMock;
-  let executionContext;
+
+  let StateTransitionExecutionContext;
+  let IdentityTopUpTransition;
+  let IdentityPublicKey;
+  let UnsupportedProtocolVersionError;
+  let InvalidInstantAssetLockProofSignatureError;
+  let validateIdentityTopUpTransitionBasicDPP;
+
+  before(async () => {
+    ({
+      validateIdentityTopUpTransitionBasic: validateIdentityTopUpTransitionBasicDPP,
+      IdentityTopUpTransition,
+      StateTransitionExecutionContext,
+      IdentityPublicKey,
+      UnsupportedProtocolVersionError,
+      InvalidInstantAssetLockProofSignatureError,
+    } = await loadWasmDpp());
+  });
 
   beforeEach(async function beforeEach() {
-    assetLockPublicKeyHash = Buffer.alloc(20, 1);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.verifyInstantLock.returns(true);
 
-    const assetLockValidationResult = new ValidationResult();
-    assetLockValidationResult.setData(assetLockPublicKeyHash);
+    const executionContext = new StateTransitionExecutionContext();
 
-    proofValidationFunctionsByTypeMock = {
-      [InstantAssetLockProof.type]: this.sinonSandbox.stub().resolves(assetLockValidationResult),
-      [ChainAssetLockProof.type]: this.sinonSandbox.stub().resolves(assetLockValidationResult),
-    };
-
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
-
-    const jsonSchemaValidator = new JsonSchemaValidator(ajv);
-
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
-
-    validateIdentityTopUpTransitionBasic = validateIdentityTopUpTransitionBasicFactory(
-      jsonSchemaValidator,
-      proofValidationFunctionsByTypeMock,
-      validateProtocolVersionMock,
+    validateIdentityTopUpTransitionBasic = (st) => validateIdentityTopUpTransitionBasicDPP(
+      stateRepositoryMock,
+      st,
+      executionContext,
     );
 
-    executionContext = new StateTransitionExecutionContext();
-
-    stateTransition = getIdentityTopUpTransitionFixture();
+    const stateTransitionJS = getIdentityTopUpTransitionFixture();
+    stateTransition = new IdentityTopUpTransition(stateTransitionJS.toObject());
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    await stateTransition.signByPrivateKey(
+      Buffer.from(privateKey, 'hex'),
+      IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+    );
 
     rawStateTransition = stateTransition.toObject();
   });
@@ -73,7 +64,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -87,7 +78,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -96,26 +87,11 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      rawStateTransition.protocolVersion = -1;
-
-      const protocolVersionError = new SomeConsensusError('test');
-      const protocolVersionResult = new ValidationResult([
-        protocolVersionError,
-      ]);
-
-      validateProtocolVersionMock.returns(protocolVersionResult);
+      rawStateTransition.protocolVersion = 1000;
 
       const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
 
-      expectValidationError(result, SomeConsensusError);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(protocolVersionError);
-
-      expect(validateProtocolVersionMock).to.be.calledOnceWith(
-        rawStateTransition.protocolVersion,
-      );
+      await expectValidationError(result, UnsupportedProtocolVersionError);
     });
   });
 
@@ -125,7 +101,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -139,7 +115,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -157,7 +133,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -171,7 +147,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result, 1);
+      await expectJsonSchemaError(result, 1);
 
       const [error] = result.getErrors();
 
@@ -180,29 +156,17 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      const assetLockError = new SomeConsensusError('test');
-      const assetLockResult = new ValidationResult([
-        assetLockError,
-      ]);
-
-      proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
+      stateRepositoryMock.verifyInstantLock.returns(false);
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectValidationError(result);
+      await expectValidationError(result);
 
       const [error] = result.getErrors();
 
-      expect(error).to.equal(assetLockError);
-
-      expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
-        .to.be.calledOnceWithExactly(
-          rawStateTransition.assetLockProof,
-          executionContext,
-        );
+      expect(error).to.be.instanceOf(InvalidInstantAssetLockProofSignatureError);
     });
   });
 
@@ -212,10 +176,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -229,17 +192,14 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result, 32);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('/identityId/0');
       expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -247,14 +207,13 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/identityId');
+      expect(error.getInstancePath()).to.equal('/identityId');
       expect(error.getKeyword()).to.equal('minItems');
     });
 
@@ -263,14 +222,13 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/identityId');
+      expect(error.getInstancePath()).to.equal('/identityId');
       expect(error.getKeyword()).to.equal('maxItems');
     });
   });
@@ -281,14 +239,13 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
+      expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('signature');
     });
@@ -298,17 +255,14 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result, 65);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature/0');
+      expect(error.getInstancePath()).to.equal('/signature/0');
       expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be not shorter than 65 bytes', async () => {
@@ -316,14 +270,13 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature');
+      expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('minItems');
     });
 
@@ -332,14 +285,13 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
-        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature');
+      expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
     });
   });
@@ -347,15 +299,8 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   it('should return valid result', async () => {
     const result = await validateIdentityTopUpTransitionBasic(
       rawStateTransition,
-      executionContext,
     );
 
     expect(result.isValid()).to.be.true();
-
-    expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
-      .to.be.calledOnceWithExactly(
-        rawStateTransition.assetLockProof,
-        executionContext,
-      );
   });
 });

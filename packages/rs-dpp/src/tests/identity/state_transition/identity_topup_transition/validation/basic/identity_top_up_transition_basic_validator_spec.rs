@@ -9,7 +9,7 @@ use crate::identity::state_transition::asset_lock_proof::{
     AssetLockProofValidator, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,
     InstantAssetLockProofStructureValidator,
 };
-use crate::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUoTransitionBasicValidator;
+use crate::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use crate::state_repository::MockStateRepositoryLike;
 use crate::tests::utils::SerdeTestExtension;
 use crate::version::ProtocolVersionValidator;
@@ -19,7 +19,7 @@ pub fn setup_test(
     state_repository_mock: MockStateRepositoryLike,
 ) -> (
     Value,
-    IdentityTopUoTransitionBasicValidator<MockStateRepositoryLike>,
+    IdentityTopUpTransitionBasicValidator<MockStateRepositoryLike>,
 ) {
     let state_repository = Arc::new(state_repository_mock);
     let asset_lock_transaction_validator =
@@ -42,7 +42,7 @@ pub fn setup_test(
     let protocol_version_validator = ProtocolVersionValidator::default();
     (
         crate::tests::fixtures::identity_topup_transition_fixture_json(None),
-        IdentityTopUoTransitionBasicValidator::new(
+        IdentityTopUpTransitionBasicValidator::new(
             Arc::new(protocol_version_validator),
             asset_lock_proof_validator,
         )

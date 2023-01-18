@@ -20,13 +20,13 @@ lazy_static! {
 
 const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";
 
-pub struct IdentityTopUoTransitionBasicValidator<SR: StateRepositoryLike> {
+pub struct IdentityTopUpTransitionBasicValidator<SR: StateRepositoryLike> {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
     json_schema_validator: JsonSchemaValidator,
     asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
 }
 
-impl<SR: StateRepositoryLike> IdentityTopUoTransitionBasicValidator<SR> {
+impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
         asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,

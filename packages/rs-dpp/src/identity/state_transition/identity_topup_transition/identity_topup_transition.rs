@@ -192,6 +192,20 @@ impl StateTransitionConvert for IdentityTopUpTransition {
         vec![]
     }
 
+    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+        let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
+        Ok(json_value)
+    }
+
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json = serde_json::Value::Object(Default::default());
 
