@@ -92,6 +92,10 @@ impl IdentityTopUpTransition {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
+        if let Some(protocol_version) = transition_map.get(property_names::PROTOCOL_VERSION) {
+            state_transition.protocol_version = protocol_version.as_u64().unwrap() as u32;
+        }
+
         Ok(state_transition)
     }
 
@@ -105,8 +109,6 @@ impl IdentityTopUpTransition {
         &mut self,
         asset_lock_proof: AssetLockProof,
     ) -> Result<(), NonConsensusError> {
-        self.identity_id = asset_lock_proof.create_identifier()?;
-
         self.asset_lock_proof = asset_lock_proof;
 
         Ok(())

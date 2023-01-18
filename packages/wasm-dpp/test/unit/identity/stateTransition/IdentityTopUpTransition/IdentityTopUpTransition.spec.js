@@ -1,19 +1,28 @@
-const stateTransitionTypes = require(
-  '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
-);
-
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
 const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 
+const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
+  let IdentityTopUpTransition;
+  let InstantAssetLockProof;
+  let Identifier;
+
+  before(async () => {
+    ({
+      IdentityTopUpTransition, InstantAssetLockProof, Identifier,
+    } = await loadWasmDpp());
+  });
+
   beforeEach(() => {
-    stateTransition = getIdentityTopUpTransitionFixture();
+    stateTransition = new IdentityTopUpTransition(
+      getIdentityTopUpTransitionFixture().toObject(),
+    );
     rawStateTransition = stateTransition.toObject();
   });
 
@@ -22,9 +31,16 @@ describe('IdentityTopUpTransition', () => {
       expect(stateTransition.getAssetLockProof().toObject()).to.be.deep.equal(
         rawStateTransition.assetLockProof,
       );
-      expect(stateTransition.getIdentityId()).to.be.deep.equal(
+      expect(stateTransition.getIdentityId().toBuffer()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
+    });
+
+    it('should create instance with chain asset lock proof', () => {
+      rawStateTransition.assetLockProof = getChainAssetLockProofFixture().toObject();
+      stateTransition = new IdentityTopUpTransition(rawStateTransition);
+      expect(stateTransition.getAssetLockProof().toObject())
+        .to.deep.equal(rawStateTransition.assetLockProof);
     });
   });
 
@@ -36,13 +52,16 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#setAssetLockProof', () => {
     it('should set asset lock proof', () => {
-      stateTransition.setAssetLockProof(rawStateTransition.assetLockProof);
+      stateTransition.setAssetLockProof(
+        new InstantAssetLockProof(rawStateTransition.assetLockProof),
+      );
 
-      expect(stateTransition.assetLockProof).to.deep.equal(rawStateTransition.assetLockProof);
+      expect(stateTransition.assetLockProof.toObject())
+        .to.deep.equal(rawStateTransition.assetLockProof);
     });
   });
 
-  describe('#getAssetLock', () => {
+  describe('#getAssetLockProof', () => {
     it('should return currently set asset lock proof', () => {
       expect(stateTransition.getAssetLockProof().toObject()).to.deep.equal(
         rawStateTransition.assetLockProof,
@@ -52,7 +71,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId()).to.deep.equal(
+      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -60,7 +79,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId()).to.deep.equal(
+      expect(stateTransition.getOwnerId().toBuffer()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -99,7 +118,7 @@ describe('IdentityTopUpTransition', () => {
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.IDENTITY_TOP_UP,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
-        identityId: Identifier(rawStateTransition.identityId).toString(),
+        identityId: new Identifier(rawStateTransition.identityId).toString(),
         signature: undefined,
       });
     });
@@ -113,7 +132,7 @@ describe('IdentityTopUpTransition', () => {
       const identityId = result[0];
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId).to.be.deep.equal(rawStateTransition.identityId);
+      expect(identityId.toBuffer()).to.be.deep.equal(rawStateTransition.identityId);
     });
   });
 
