@@ -1,17 +1,34 @@
 const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const validateIdentityTopUpTransitionStateFactory = require(
-  '@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/validation/state/validateIdentityTopUpTransitionStateFactory',
-);
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validateIdentityTopUpTransitionStateFactory', () => {
   let validateIdentityTopUpTransitionState;
   let stateTransition;
+  let stateRepositoryMock;
 
-  beforeEach(() => {
-    validateIdentityTopUpTransitionState = validateIdentityTopUpTransitionStateFactory();
+  let IdentityTopUpTransition;
 
-    stateTransition = getIdentityTopUpTransitionFixture();
+  let validateIdentityTopUpTransitionStateDPP;
+
+  before(async () => {
+    ({
+      IdentityTopUpTransition,
+      validateIdentityTopUpTransitionState: validateIdentityTopUpTransitionStateDPP,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(function () {
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+
+    stateTransition = new IdentityTopUpTransition(
+      getIdentityTopUpTransitionFixture().toObject(),
+    );
+
+    validateIdentityTopUpTransitionState = (st) => validateIdentityTopUpTransitionStateDPP(
+      stateRepositoryMock, st,
+    );
   });
 
   it('should return valid result', async () => {
