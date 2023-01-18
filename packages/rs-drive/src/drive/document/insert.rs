@@ -1192,8 +1192,9 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
-    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::DriveOperation;
+    use crate::fee_pools::epochs::Epoch;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -1357,7 +1358,8 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 3247 * STORAGE_DISK_USAGE_CREDIT_PER_BYTE,
+                storage_fee: 3247
+                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
                 processing_fee: 2416920,
                 ..Default::default()
             }
@@ -1406,7 +1408,8 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1428 * STORAGE_DISK_USAGE_CREDIT_PER_BYTE,
+                storage_fee: 1428
+                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
                 processing_fee: 1570990,
                 ..Default::default()
             }
@@ -1457,7 +1460,8 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes =
+            storage_fee / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         assert_eq!(1428, added_bytes);
         assert_eq!(145174860, processing_fee);
     }
@@ -1673,7 +1677,8 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1986 * STORAGE_DISK_USAGE_CREDIT_PER_BYTE,
+                storage_fee: 1986
+                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
                 processing_fee: 2207870,
                 ..Default::default()
             }

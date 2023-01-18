@@ -40,10 +40,11 @@ const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::credits::Credits;
-use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{CreditsPerEpoch, EpochIndex};
 use crate::fee::get_overflow_error;
+use crate::fee_pools::epochs::Epoch;
 use bincode::Options;
 use costs::storage_cost::removal::{Identifier, StorageRemovalPerEpochByIdentifier};
 use serde::{Deserialize, Serialize};
@@ -75,7 +76,7 @@ impl FeeRefunds {
                         // TODO We should use multipliers
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
+                            .checked_mul(Epoch::new(current_epoch_index).cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
                             .ok_or_else(|| {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;

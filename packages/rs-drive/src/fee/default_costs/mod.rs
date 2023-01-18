@@ -67,9 +67,9 @@ lazy_static! {
             (KnownCostItem::StorageProcessingCreditPerByte, 400),
             (KnownCostItem::StorageLoadCreditPerByte, 400),
             (KnownCostItem::NonStorageLoadCreditPerByte, 30),
-            (KnownCostItem::StorageSeekCost, 400),
-            (KnownCostItem::FetchIdentityBalanceProcessingCost, 1000),
-            (KnownCostItem::FetchSingleIdentityKeyProcessingCost, 1000),
+            (KnownCostItem::StorageSeekCost, 4000),
+            (KnownCostItem::FetchIdentityBalanceProcessingCost, 10000),
+            (KnownCostItem::FetchSingleIdentityKeyProcessingCost, 10000),
         ]
         .into_iter()
         .collect()
@@ -96,17 +96,3 @@ impl Epoch {
         *specific_epoch_costs.get(&cost_item).unwrap()
     }
 }
-
-/// Storage disk usage credit per byte
-pub(crate) const STORAGE_DISK_USAGE_CREDIT_PER_BYTE: u64 = 27000;
-/// Storage processing credit per byte
-pub(crate) const STORAGE_PROCESSING_CREDIT_PER_BYTE: u64 = 400;
-/// Storage load credit per byte
-pub(crate) const STORAGE_LOAD_CREDIT_PER_BYTE: u64 = 400;
-/// Non storage load credit per byte
-pub(crate) const NON_STORAGE_LOAD_CREDIT_PER_BYTE: u64 = 30;
-/// Storage seek cost
-pub(crate) const STORAGE_SEEK_COST: u64 = 4000;
-
-/// Cost of fetching an identity balance
-pub(crate) const FETCH_IDENTITY_BALANCE_PROCESSING_COST: u64 = 50000;

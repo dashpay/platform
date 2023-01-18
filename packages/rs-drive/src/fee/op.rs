@@ -49,10 +49,6 @@ use crate::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
     StorageSeekCost,
 };
-use crate::fee::default_costs::{
-    STORAGE_DISK_USAGE_CREDIT_PER_BYTE, STORAGE_LOAD_CREDIT_PER_BYTE,
-    STORAGE_PROCESSING_CREDIT_PER_BYTE, STORAGE_SEEK_COST,
-};
 use crate::fee::op::DriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };

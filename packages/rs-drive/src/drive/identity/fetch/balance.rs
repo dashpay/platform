@@ -5,7 +5,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::default_costs::KnownCostItem::FetchIdentityBalanceProcessingCost;
-use crate::fee::default_costs::FETCH_IDENTITY_BALANCE_PROCESSING_COST;
 use crate::fee::epoch::EpochIndex;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;

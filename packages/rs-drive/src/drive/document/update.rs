@@ -666,7 +666,8 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
-    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
     use crate::{
         common::{json_document_to_cbor, setup_contract, value_to_cbor},
@@ -1391,7 +1392,8 @@ mod tests {
             true,
             transaction.as_ref(),
         );
-        let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let original_bytes = original_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1290
 
@@ -1552,8 +1554,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(*removed_credits, 27309075);
-            let refund_equivalent_bytes =
-                removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let refund_equivalent_bytes = removed_credits.to_unsigned()
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 1011); // we refunded 1011 instead of 1014
@@ -1568,7 +1570,8 @@ mod tests {
                 transaction.as_ref(),
             );
 
-            let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let original_bytes = original_fees.storage_fee
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1584,7 +1587,8 @@ mod tests {
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
-        let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = update_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 365 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -1653,7 +1657,8 @@ mod tests {
             true,
             transaction.as_ref(),
         );
-        let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let original_bytes = original_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history { 1290 } else { 1014 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
@@ -1674,8 +1679,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(*removed_credits, 27309075);
-            let refund_equivalent_bytes =
-                removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let refund_equivalent_bytes = removed_credits.to_unsigned()
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 1011); // we refunded 1011 instead of 1014
@@ -1690,7 +1695,8 @@ mod tests {
                 transaction.as_ref(),
             );
 
-            let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let original_bytes = original_fees.storage_fee
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1706,7 +1712,8 @@ mod tests {
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
-        let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = update_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let removed_credits = update_fees
             .fee_refunds
@@ -1721,8 +1728,8 @@ mod tests {
 
         let expected_removed_credits = if using_history { 16266750 } else { 16212825 };
         assert_eq!(*removed_credits, expected_removed_credits);
-        let refund_equivalent_bytes =
-            removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let refund_equivalent_bytes = removed_credits.to_unsigned()
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
         let expected_remove_bytes = if using_history { 602 } else { 600 };
@@ -1832,7 +1839,8 @@ mod tests {
             false,
             transaction.as_ref(),
         );
-        let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let original_bytes = original_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1290
 
@@ -1987,7 +1995,8 @@ mod tests {
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
-        let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = update_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 1291 } else { 1015 };
         assert_eq!(added_bytes, expected_added_bytes);

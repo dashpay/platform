@@ -789,7 +789,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
-    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
 
@@ -1498,7 +1498,8 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = fee_result.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1682 bytes
         assert_eq!(added_bytes, 1682);
 
@@ -1530,8 +1531,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(*removed_credits, 44959380);
-        let refund_equivalent_bytes =
-            removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let refund_equivalent_bytes = removed_credits.to_unsigned()
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
         assert_eq!(refund_equivalent_bytes, 1665); // we refunded 1665 instead of 1682
@@ -1579,7 +1580,8 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = fee_result.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1682 bytes
         assert_eq!(added_bytes, 1682);
 
