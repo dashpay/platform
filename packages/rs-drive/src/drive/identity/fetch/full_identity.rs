@@ -292,7 +292,7 @@ mod tests {
         use std::ops::RangeFull;
 
         #[test]
-        fn test_proved_full_identities_query_no_tx() {
+        fn test_proved_two_full_identities_query_no_tx() {
             let drive = setup_drive_with_initial_state_structure();
 
             let identities: BTreeMap<[u8; 32], Option<Identity>> =
@@ -325,7 +325,7 @@ mod tests {
                 )
                 .unwrap()
                 .expect("expected to run the path query");
-            assert_eq!(elements.len(), 70);
+            assert_eq!(elements.len(), 14);
 
             let fetched_identities = drive
                 .fetch_proved_full_identities(identities.keys().copied().collect(), None)
@@ -336,7 +336,55 @@ mod tests {
                 .expect("expected to verify query");
 
             // We want to get a proof on the balance, the revision and 5 keys
-            assert_eq!(proof.len(), 70);
+            assert_eq!(proof.len(), 14);
+        }
+
+        #[test]
+        fn test_proved_ten_full_identities_query_no_tx() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let identities: BTreeMap<[u8; 32], Option<Identity>> =
+                Identity::random_identities(10, 5, Some(14))
+                    .into_iter()
+                    .map(|identity| (identity.id.to_buffer(), Some(identity)))
+                    .collect();
+
+            for identity in identities.values() {
+                drive
+                    .add_new_identity(
+                        identity.as_ref().unwrap().clone(),
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                    )
+                    .expect("expected to add an identity");
+            }
+
+            let path_query = Drive::full_identities_query(identities.keys().copied().collect())
+                .expect("expected to get query");
+
+            let (elements, _) = drive
+                .grove
+                .query_raw(
+                    &path_query,
+                    true,
+                    QueryResultType::QueryPathKeyElementTrioResultType,
+                    None,
+                )
+                .unwrap()
+                .expect("expected to run the path query");
+            assert_eq!(elements.len(), 14);
+
+            let fetched_identities = drive
+                .fetch_proved_full_identities(identities.keys().copied().collect(), None)
+                .expect("should fetch an identity")
+                .expect("should have an identity");
+
+            let (_hash, proof) = GroveDb::verify_query(fetched_identities.as_slice(), &path_query)
+                .expect("expected to verify query");
+
+            // We want to get a proof on the balance, the revision and 5 keys
+            assert_eq!(proof.len(), 14);
         }
     }
 
