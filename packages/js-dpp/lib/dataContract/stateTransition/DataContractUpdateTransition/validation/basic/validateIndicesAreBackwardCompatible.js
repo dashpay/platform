@@ -120,7 +120,12 @@ function getNewUniqueIndex(documentType, existingSchema, newSchema) {
  *
  * @returns {object}
  */
-function getWronglyConstructedNewIndex(documentType, existingSchema, newDocumentDefinitions, nameIndexMap) {
+function getWronglyConstructedNewIndex(
+  documentType,
+  existingSchema,
+  newDocumentDefinitions,
+  nameIndexMap,
+) {
   const newSchemaIndices = lodashGet(newDocumentDefinitions, `${documentType}.indices`);
 
   const existingIndexNames = (existingSchema.indices || []).map(
