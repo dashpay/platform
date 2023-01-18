@@ -33,6 +33,7 @@ itertools = { version = "0.10.5" }
 dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, branch="master" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
+lazy_static = "1.4.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"

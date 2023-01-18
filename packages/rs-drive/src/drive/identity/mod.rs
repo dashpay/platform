@@ -44,7 +44,6 @@ mod balance;
 mod contract_info;
 mod estimation_costs;
 mod fetch;
-mod fetch_by_public_key_hashes;
 mod insert;
 mod key;
 mod update;

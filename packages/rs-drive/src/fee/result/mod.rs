@@ -147,6 +147,15 @@ impl BalanceChangeForIdentity {
 }
 
 impl FeeResult {
+    /// Convenience method to create a fee result from processing credits
+    pub fn new_from_processing_fee(credits: Credits) -> Self {
+        Self {
+            storage_fee: 0,
+            processing_fee: credits,
+            fee_refunds: Default::default(),
+            removed_bytes_from_system: 0,
+        }
+    }
     /// Convenience method to get total fee
     pub fn total_base_fee(&self) -> Credits {
         self.storage_fee + self.processing_fee
