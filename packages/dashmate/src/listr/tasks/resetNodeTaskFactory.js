@@ -82,7 +82,7 @@ function resetNodeTaskFactory(
       {
         title: 'Initialize Tenderdash',
         // todo disabled for testing... most likely not needed anymore
-        enabled: false,
+        enabled: () => false,
         // enabled: (ctx) => (
         //   !ctx.isHardReset && !ctx.skipPlatformInitialization && config.has('platform')
         // ),
