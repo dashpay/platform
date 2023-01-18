@@ -197,7 +197,6 @@ impl Drive {
                 &key_id_bytes,
                 &StorageFlags::SingleEpoch(epoch.index),
                 DISABLE_KEY_TIME_BYTE_COST,
-                estimated_costs_only_with_layer_info,
                 &mut drive_operations,
             )?;
         }

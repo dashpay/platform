@@ -213,9 +213,27 @@ mod tests {
     use grovedb::GroveDb;
 
     mod fetch_full_identities {
+        use crate::drive::block_info::BlockInfo;
         use super::*;
 
+        #[test]
+        fn should_get_full_identities() {
+            let drive = setup_drive_with_initial_state_structure();
 
+            let identities: BTreeMap<[u8;32], Option<Identity>> = Identity::random_identities(10,3, Some(14)).into_iter().map(|identity| (identity.id.to_buffer(), Some(identity))).collect();
+
+            for identity in identities.values() {
+                drive.add_new_identity(identity.as_ref().unwrap().clone(), &BlockInfo::default(), true, None).expect("expected to add an identity");
+            }
+            let fetched_identities = drive
+                .fetch_full_identities(
+                    identities.keys().copied().collect(),
+                    None,
+                )
+                .expect("should get identities");
+
+            assert_eq!(identities, fetched_identities);
+        }
     }
 
     mod fetch_full_identity {

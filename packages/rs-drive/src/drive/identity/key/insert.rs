@@ -76,9 +76,6 @@ impl Drive {
         key_id_bytes: &[u8],
         storage_flags: &StorageFlags,
         change_in_bytes: i32,
-        _estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
