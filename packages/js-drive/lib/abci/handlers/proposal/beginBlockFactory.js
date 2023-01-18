@@ -60,6 +60,7 @@ function beginBlockFactory(
       time,
       proposerProTxHash,
       round,
+      quorumHash,
     } = request;
 
     if (proposalBlockExecutionContext.isEmpty()) {
@@ -124,7 +125,7 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: proposalBlockExecutionContext.getTimeMs(),
       proposerProTxHash,
-      validatorSetQuorumHash: Buffer.alloc(32, 0),
+      validatorSetQuorumHash: quorumHash,
       coreChainLockedHeight,
       lastSyncedCoreHeight,
     };
