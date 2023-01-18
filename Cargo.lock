@@ -936,6 +936,7 @@ dependencies = [
  "integer-encoding",
  "intmap",
  "itertools",
+ "lazy_static",
  "moka",
  "nohash-hasher",
  "rand",

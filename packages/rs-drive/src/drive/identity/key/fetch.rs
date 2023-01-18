@@ -6,9 +6,13 @@ use crate::drive::identity::key::fetch::KeyKindRequestType::{
 use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, SearchKey, SpecificKeys};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
+use crate::fee::credits::Credits;
+use crate::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 use crate::fee::op::DriveOperation;
+use crate::fee_pools::epochs::Epoch;
 use crate::query::{Query, QueryItem};
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::prelude::IdentityPublicKey;
@@ -247,6 +251,17 @@ pub struct IdentityKeysRequest {
 }
 
 impl IdentityKeysRequest {
+    /// Gets the processing cost of an identity keys request
+    pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
+        match &self.request_type {
+            AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(
+                "You can not get costs for requesting all keys",
+            ))),
+            SpecificKeys(keys) => Ok(keys.len() as u64
+                * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
+            SearchKey(search) => todo!(),
+        }
+    }
     /// Make a request for all current keys for the identity
     pub fn new_all_current_keys_query(identity_id: [u8; 32]) -> Self {
         let mut sec_btree_map = BTreeMap::new();
