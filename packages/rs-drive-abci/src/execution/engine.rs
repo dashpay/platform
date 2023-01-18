@@ -4,19 +4,20 @@ use crate::abci::messages::{
 };
 use crate::error::Error;
 use crate::platform::Platform;
-use drive::dpp::identity::Identity;
+use drive::dpp::identity::{Identity, PartialIdentityInfo};
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
+use crate::error::execution::ExecutionError;
 
 /// An execution event
 pub enum ExecutionEvent<'a> {
     /// A drive event that is paid by an identity
     PaidDriveEvent {
         /// The identity requesting the event
-        identity: Identity,
+        identity: PartialIdentityInfo,
         /// Verify with dry run
         verify_balance_with_dry_run: bool,
         /// the operations that the identity is requesting to perform
@@ -31,7 +32,7 @@ pub enum ExecutionEvent<'a> {
 
 impl<'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
-    pub fn new_document_operation(identity: Identity, operation: DriveOperationType<'a>) -> Self {
+    pub fn new_document_operation(identity: PartialIdentityInfo, operation: DriveOperationType<'a>) -> Self {
         Self::PaidDriveEvent {
             identity,
             verify_balance_with_dry_run: true,
@@ -39,7 +40,7 @@ impl<'a> ExecutionEvent<'a> {
         }
     }
     /// Creates a new identity Insertion Event
-    pub fn new_contract_operation(identity: Identity, operation: DriveOperationType<'a>) -> Self {
+    pub fn new_contract_operation(identity: PartialIdentityInfo, operation: DriveOperationType<'a>) -> Self {
         Self::PaidDriveEvent {
             identity,
             verify_balance_with_dry_run: true,
@@ -48,7 +49,7 @@ impl<'a> ExecutionEvent<'a> {
     }
     /// Creates a new identity Insertion Event
     pub fn new_identity_insertion(
-        identity: Identity,
+        identity: PartialIdentityInfo,
         operations: Vec<DriveOperationType<'a>>,
     ) -> Self {
         Self::PaidDriveEvent {
@@ -74,6 +75,7 @@ impl Platform {
                     verify_balance_with_dry_run,
                     operations,
                 } => {
+                    let balance = identity.balance.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("partial identity info with no balance")))?;
                     let enough_balance = if verify_balance_with_dry_run {
                         let estimated_fee_result = self
                             .drive
@@ -86,7 +88,7 @@ impl Platform {
                             .map_err(Error::Drive)?;
 
                         // TODO: Should take into account refunds as well
-                        identity.balance >= estimated_fee_result.total_base_fee()
+                        balance >= estimated_fee_result.total_base_fee()
                     } else {
                         true
                     };
@@ -105,12 +107,6 @@ impl Platform {
                             balance_change.clone(),
                             Some(transaction),
                         )?;
-
-                        println!(
-                            "Identity balance {:?} changed {:#?}",
-                            identity.balance,
-                            balance_change.change()
-                        );
 
                         total_fees
                             .checked_add_assign(outcome.actual_fee_paid)
