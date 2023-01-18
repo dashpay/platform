@@ -153,7 +153,6 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
   );
 
   return (newIndices || []).find((indexDefinition) => {
-
     const newIndexDefinition = nameIndexMap[indexDefinition.name];
 
     const notNewProperty = newIndexDefinition.properties
