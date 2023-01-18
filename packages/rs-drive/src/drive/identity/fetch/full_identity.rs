@@ -1,3 +1,4 @@
+use crate::drive::balances::balance_path;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
@@ -9,11 +10,10 @@ use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
+use dpp::prelude::Revision;
+use grovedb::query_result_type::Path;
 use grovedb::{PathQuery, TransactionArg};
 use std::collections::{BTreeMap, BTreeSet};
-use grovedb::query_result_type::Path;
-use dpp::prelude::Revision;
-use crate::drive::balances::balance_path;
 
 impl Drive {
     /// Fetches an identity with all its information and
@@ -146,7 +146,15 @@ impl Drive {
         identity_ids: Vec<[u8; 32]>,
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
-        identity_ids.into_iter().map(|identity_id| Ok((identity_id, self.fetch_full_identity(identity_id, transaction)?))).collect()
+        identity_ids
+            .into_iter()
+            .map(|identity_id| {
+                Ok((
+                    identity_id,
+                    self.fetch_full_identity(identity_id, transaction)?,
+                ))
+            })
+            .collect()
     }
 
     /// Fetches an identity with all its information from storage.

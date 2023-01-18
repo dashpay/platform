@@ -45,6 +45,10 @@ use grovedb::{batch::GroveDbOp, Element};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::default_costs::KnownCostItem::{
+    StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
+    StorageSeekCost,
+};
 use crate::fee::default_costs::{
     STORAGE_DISK_USAGE_CREDIT_PER_BYTE, STORAGE_LOAD_CREDIT_PER_BYTE,
     STORAGE_PROCESSING_CREDIT_PER_BYTE, STORAGE_SEEK_COST,
@@ -54,7 +58,6 @@ use crate::fee::op::DriveOperation::{
 };
 use crate::fee::result::refunds::FeeRefunds;
 use crate::fee::{get_overflow_error, FeeResult};
-use crate::fee::default_costs::KnownCostItem::{StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte, StorageSeekCost};
 use crate::fee_pools::epochs::Epoch;
 
 /// Base ops
@@ -407,7 +410,8 @@ impl DriveCost for OperationCost {
             storage_loaded_bytes,
             hash_node_calls,
         } = self;
-        let epoch_cost_for_processing_credit_per_byte = epoch.cost_for_known_cost_item(StorageProcessingCreditPerByte);
+        let epoch_cost_for_processing_credit_per_byte =
+            epoch.cost_for_known_cost_item(StorageProcessingCreditPerByte);
         let seek_cost = (*seek_count as u64)
             .checked_mul(epoch.cost_for_known_cost_item(StorageSeekCost))
             .ok_or_else(|| get_overflow_error("seek cost overflow"))?;
