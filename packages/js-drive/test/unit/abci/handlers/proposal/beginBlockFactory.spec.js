@@ -179,7 +179,7 @@ describe('beginBlockFactory', () => {
     expect(executionTimerMock.startTimer.getCall(1)).to.be.calledWithExactly('roundExecution');
     expect(executionTimerMock.startTimer.getCall(0)).to.be.calledWithExactly('blockExecution');
 
-    expect(proposalBlockExecutionContextMock.setConsensusLogger)
+    expect(proposalBlockExecutionContextMock.setContextLogger)
       .to.be.calledOnceWithExactly(loggerMock);
     expect(proposalBlockExecutionContextMock.setHeight)
       .to.be.calledOnceWithExactly(blockHeight);

@@ -20,6 +20,8 @@ const lodashCloneDeep = require('lodash/cloneDeep');
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {processProposal} processProposal
  * @param {broadcastWithdrawalTransactions} broadcastWithdrawalTransactions
+ * @param {createContextLogger} createContextLogger
+ *
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
@@ -30,6 +32,7 @@ function finalizeBlockHandlerFactory(
   proposalBlockExecutionContext,
   processProposal,
   broadcastWithdrawalTransactions,
+  createContextLogger,
 ) {
   /**
    * @typedef finalizeBlockHandler
@@ -44,7 +47,7 @@ function finalizeBlockHandlerFactory(
       round,
     } = request;
 
-    const consensusLogger = logger.child({
+    const contextLogger = createContextLogger(logger, {
       height: height.toString(),
       round,
       abciMethod: 'finalizeBlock',
@@ -53,13 +56,13 @@ function finalizeBlockHandlerFactory(
     const requestToLog = lodashCloneDeep(request);
     delete requestToLog.block.data;
 
-    consensusLogger.debug('FinalizeBlock ABCI method requested');
-    consensusLogger.trace({ abciRequest: requestToLog });
+    contextLogger.debug('FinalizeBlock ABCI method requested');
+    contextLogger.trace({ abciRequest: requestToLog });
 
     const lastProcessedRound = proposalBlockExecutionContext.getRound();
 
     if (lastProcessedRound !== round) {
-      consensusLogger.warn({
+      contextLogger.warn({
         lastProcessedRound,
         round,
       }, `Finalizing previously executed round ${round} instead of the last known ${lastProcessedRound}`);
@@ -89,10 +92,7 @@ function finalizeBlockHandlerFactory(
         round,
       });
 
-      await processProposal(processProposalRequest, consensusLogger);
-
-      // Revert consensus logger
-      proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+      await processProposal(processProposalRequest, contextLogger);
     }
 
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
@@ -127,7 +127,7 @@ function finalizeBlockHandlerFactory(
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 
-    consensusLogger.info(
+    contextLogger.info(
       {
         timings: blockExecutionTimings,
       },

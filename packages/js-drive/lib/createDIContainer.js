@@ -8,6 +8,8 @@ const {
 
 const fs = require('fs');
 
+const { AsyncLocalStorage } = require('node:async_hooks');
+
 const Long = require('long');
 
 const RSDrive = require('@dashevo/rs-drive');
@@ -109,7 +111,7 @@ const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeight
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
-const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
+const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithContextLoggerFactory');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
@@ -143,6 +145,7 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
+const createContextLoggerFactory = require('./abci/errors/createContextLoggerFactory');
 
 /**
  *
@@ -744,6 +747,8 @@ function createDIContainer(options) {
    * Register ABCI handlers
    */
   container.register({
+    createContextLogger: asFunction(createContextLoggerFactory),
+    abciAsyncLocalStorage: asValue(new AsyncLocalStorage()),
     createQueryResponse: asFunction(createQueryResponseFactory).singleton(),
     createValidatorSetUpdate: asValue(createValidatorSetUpdate),
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
@@ -781,11 +786,10 @@ function createDIContainer(options) {
 
     wrappedDeliverTx: asFunction((
       wrapInErrorHandler,
-      enrichErrorWithConsensusError,
+      enrichErrorWithContextError,
       deliverTx,
     ) => wrapInErrorHandler(
-      enrichErrorWithConsensusError(deliverTx),
-      { respondWithInternalError: true },
+      enrichErrorWithContextError(deliverTx),
     )).singleton(),
 
     endBlock: asFunction(endBlockFactory).singleton(),
@@ -819,7 +823,7 @@ function createDIContainer(options) {
     verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
-    enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
+    enrichErrorWithContextError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
     errorHandler: asFunction(errorHandlerFactory).singleton(),
 
     abciHandlers: asFunction((
@@ -827,7 +831,7 @@ function createDIContainer(options) {
       checkTxHandler,
       initChainHandler,
       wrapInErrorHandler,
-      enrichErrorWithConsensusError,
+      enrichErrorWithContextError,
       queryHandler,
       extendVoteHandler,
       finalizeBlockHandler,
@@ -835,15 +839,15 @@ function createDIContainer(options) {
       processProposalHandler,
       verifyVoteExtensionHandler,
     ) => ({
-      info: infoHandler,
-      checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
-      initChain: initChainHandler,
-      query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
-      extendVote: enrichErrorWithConsensusError(extendVoteHandler),
-      finalizeBlock: enrichErrorWithConsensusError(finalizeBlockHandler),
-      prepareProposal: enrichErrorWithConsensusError(prepareProposalHandler),
-      processProposal: enrichErrorWithConsensusError(processProposalHandler),
-      verifyVoteExtension: enrichErrorWithConsensusError(verifyVoteExtensionHandler),
+      info: enrichErrorWithContextError(infoHandler),
+      checkTx: wrapInErrorHandler(enrichErrorWithContextError(checkTxHandler)),
+      initChain: enrichErrorWithContextError(initChainHandler),
+      query: wrapInErrorHandler(enrichErrorWithContextError(queryHandler)),
+      extendVote: enrichErrorWithContextError(extendVoteHandler),
+      finalizeBlock: enrichErrorWithContextError(finalizeBlockHandler),
+      prepareProposal: enrichErrorWithContextError(prepareProposalHandler),
+      processProposal: enrichErrorWithContextError(processProposalHandler),
+      verifyVoteExtension: enrichErrorWithContextError(verifyVoteExtensionHandler),
     })).singleton(),
 
     closeAbciServer: asFunction(closeAbciServerFactory).singleton(),

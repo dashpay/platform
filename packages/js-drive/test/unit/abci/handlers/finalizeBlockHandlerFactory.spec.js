@@ -32,6 +32,7 @@ describe('finalizeBlockHandlerFactory', () => {
   let block;
   let processProposalMock;
   let broadcastWithdrawalTransactions;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -97,6 +98,7 @@ describe('finalizeBlockHandlerFactory', () => {
     );
 
     processProposalMock = this.sinon.stub();
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
     broadcastWithdrawalTransactions = this.sinon.stub();
 
@@ -109,6 +111,7 @@ describe('finalizeBlockHandlerFactory', () => {
       proposalBlockExecutionContextMock,
       processProposalMock,
       broadcastWithdrawalTransactions,
+      createContextLoggerMock,
     );
   });
 
@@ -137,6 +140,14 @@ describe('finalizeBlockHandlerFactory', () => {
       proposalBlockExecutionContextMock,
       undefined,
       undefined,
+    );
+
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        height: '42',
+        round,
+        abciMethod: 'finalizeBlock',
+      },
     );
   });
 
@@ -167,6 +178,13 @@ describe('finalizeBlockHandlerFactory', () => {
     await finalizeBlockHandler(requestMock);
 
     expect(processProposalMock).to.be.not.called();
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        height: '42',
+        round,
+        abciMethod: 'finalizeBlock',
+      },
+    );
   });
 
   it('should call processProposal if round is not equal to execution context', async () => {
@@ -188,5 +206,12 @@ describe('finalizeBlockHandlerFactory', () => {
     });
 
     expect(processProposalMock).to.be.calledOnceWithExactly(processProposalRequest, loggerMock);
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(
+      loggerMock, {
+        height: '42',
+        round,
+        abciMethod: 'finalizeBlock',
+      },
+    );
   });
 });
