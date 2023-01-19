@@ -114,7 +114,7 @@ services:
     stop_grace_period: 10s
 
   dashmate_helper:
-    image: dashmate_local
+    image: pshenmic/dashmate_helper
     restart: unless-stopped
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
     environment:
