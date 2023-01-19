@@ -64,7 +64,7 @@ impl Drive {
     /// Fetches identity ids with all its information from storage.
     pub fn fetch_identity_ids_by_unique_public_key_hashes(
         &self,
-        public_key_hashes: Vec<[u8; 20]>,
+        public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -78,7 +78,7 @@ impl Drive {
     /// Given public key hashes, fetches identity ids from storage.
     pub(crate) fn fetch_identity_ids_by_unique_public_key_hashes_operations(
         &self,
-        public_key_hashes: Vec<[u8; 20]>,
+        public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
@@ -235,7 +235,7 @@ impl Drive {
     /// Fetches identities with all its information from storage.
     pub fn fetch_full_identities_by_unique_public_key_hashes(
         &self,
-        public_key_hashes: Vec<[u8; 20]>,
+        public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -249,7 +249,7 @@ impl Drive {
     /// Given an identity, fetches the identity with its flags from storage.
     pub(crate) fn fetch_full_identities_by_unique_public_key_hashes_operations(
         &self,
-        public_key_hashes: Vec<[u8; 20]>,
+        public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {

@@ -11,6 +11,14 @@ pub enum ProofError {
     #[error("wrong element count error: {0}")]
     WrongElementCount(&'static str),
 
+    /// Overflow error
+    #[error("overflow error: {0}")]
+    Overflow(&'static str),
+
+    /// Incomplete proof error
+    #[error("incomplete proof error: {0}")]
+    IncompleteProof(&'static str),
+
     /// Incorrect value size
     #[error("incorrect value size error: {0}")]
     IncorrectValueSize(&'static str),

@@ -1,14 +1,96 @@
+use crate::drive::defaults::PROTOCOL_VERSION;
+use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
-use crate::error::proof::ProofError::IncorrectElementPath;
 use crate::error::Error;
-use dpp::prelude::Identity;
+use dpp::identifier::Identifier;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::prelude::{Identity, Revision};
+use grovedb::operations::proof::verify::ProvedKeyValue;
 use grovedb::{Element, GroveDb};
 use std::collections::BTreeMap;
 
 pub type RootHash = [u8; 32];
 
 impl Drive {
+    /// Verifies the identity with a public key hash
+    pub fn verify_full_identity_by_public_key_hash(
+        proof: &[u8],
+        public_key_hash: [u8; 20],
+    ) -> Result<(RootHash, Option<Identity>), Error> {
+        let (root_hash, identity_id) =
+            Self::verify_identity_id_by_public_key_hash(proof, public_key_hash)?;
+        let maybe_identity = identity_id
+            .map(|identity_id| {
+                Self::verify_full_identity_by_identity_id(proof, identity_id)
+                    .map(|(_, maybe_identity)| maybe_identity)
+            })
+            .transpose()?
+            .flatten();
+        Ok((root_hash, maybe_identity))
+    }
+
+    /// Verifies the identity with its identity id
+    pub fn verify_full_identity_by_identity_id(
+        proof: &[u8],
+        identity_id: [u8; 32],
+    ) -> Result<(RootHash, Option<Identity>), Error> {
+        let path_query = Self::full_identity_query(&identity_id)?;
+        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let mut balance = None;
+        let mut revision = None;
+        let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
+        for proved_key_value in proved_key_values {
+            let ProvedKeyValue { key, value, .. } = proved_key_value;
+            let element = Element::deserialize(&value)?;
+
+            if key == identity_id {
+                //this is the balance
+                let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
+                if signed_balance < 0 {
+                    return Err(Error::Proof(ProofError::Overflow(
+                        "balance can't be negative",
+                    )));
+                }
+                balance = Some(signed_balance as u64);
+                continue;
+            }
+            let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+
+            if key == vec![IdentityTreeRevision as u8] && item_bytes.len() == 8 {
+                //this is the revision
+                revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
+                    |_| Error::Proof(ProofError::IncorrectValueSize("revision should be 8 bytes")),
+                )?));
+                continue;
+            }
+
+            let key = IdentityPublicKey::deserialize(&item_bytes)?;
+            keys.insert(key.id, key);
+        }
+        let maybe_identity = if balance.is_none() && revision.is_none() && keys.is_empty() {
+            Ok(None)
+        } else if balance.is_none() || revision.is_none() || keys.is_empty() {
+            // that means that one has stuff and the others don't
+            // this is an error
+            Err(Error::Proof(ProofError::IncompleteProof(
+                "identity proof is incomplete",
+            )))
+        } else {
+            Ok(Some(Identity {
+                protocol_version: PROTOCOL_VERSION,
+                id: Identifier::from(identity_id),
+                public_keys: keys,
+                balance: balance.unwrap(),
+                revision: revision.unwrap(),
+                asset_lock_proof: None,
+                metadata: None,
+            }))
+        }?;
+        Ok((root_hash, maybe_identity))
+    }
+
     /// Verifies the identity id with a public key hash
     pub fn verify_identity_id_by_public_key_hash(
         proof: &[u8],
