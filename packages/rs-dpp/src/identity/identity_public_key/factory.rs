@@ -34,7 +34,11 @@ impl IdentityPublicKey {
             .collect()
     }
 
-    pub fn random_authentication_keys(first_id: KeyID, count: KeyCount, seed: Option<u64>) -> Vec<Self> {
+    pub fn random_authentication_keys(
+        first_id: KeyID,
+        count: KeyCount,
+        seed: Option<u64>,
+    ) -> Vec<Self> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),

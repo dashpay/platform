@@ -1,3 +1,4 @@
+use dpp::identity::KeyID;
 use dpp::{
     document::{
         state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
@@ -13,7 +14,6 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
-use dpp::identity::KeyID;
 
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},

@@ -31,61 +31,6 @@ impl Drive {
         Ok((maybe_identity, fee))
     }
 
-    /// The query getting all keys and balance and revision
-    pub fn full_identity_query(identity_id: [u8; 32]) -> Result<PathQuery, Error> {
-        let balance_query = Self::identity_balance_query(identity_id);
-        let revision_query = Self::identity_revision_query(identity_id);
-        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
-        let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
-            .map_err(Error::GroveDB)
-    }
-
-    /// The query getting all keys and balance and revision
-    pub fn full_identities_query(identity_ids: Vec<[u8; 32]>) -> Result<PathQuery, Error> {
-        let path_queries: Vec<PathQuery> = identity_ids
-            .into_iter()
-            .map(|identity_id| Self::full_identity_query(identity_id))
-            .collect::<Result<Vec<PathQuery>, Error>>()?;
-        PathQuery::merge(path_queries.iter().map(|query| query).collect()).map_err(Error::GroveDB)
-    }
-
-    /// Fetches an identity with all its information from storage.
-    pub fn fetch_proved_full_identity(
-        &self,
-        identity_id: [u8; 32],
-        transaction: TransactionArg,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        let query = Self::full_identity_query(identity_id)?;
-        let result = self.grove_get_proved_path_query(&query, transaction, &mut drive_operations);
-        match result {
-            Ok(r) => Ok(Some(r)),
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
-            | Err(Error::GroveDB(grovedb::Error::PathNotFound(_))) => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Fetches an identity with all its information from storage.
-    pub fn fetch_proved_full_identities(
-        &self,
-        identity_ids: Vec<[u8; 32]>,
-        transaction: TransactionArg,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        let query = Self::full_identities_query(identity_ids)?;
-        let result = self.grove_get_proved_path_query(&query, transaction, &mut drive_operations);
-        match result {
-            Ok(r) => Ok(Some(r)),
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
-            | Err(Error::GroveDB(grovedb::Error::PathNotFound(_))) => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
     // /// Fetches identities with all its information from storage.
     // #[deprecated(since = "0.24.0", note = "please use exact fetching")]
     // pub fn fetch_full_identities_efficient(
@@ -289,6 +234,7 @@ mod tests {
         use crate::drive::block_info::BlockInfo;
         use grovedb::query_result_type::QueryResultType;
         use grovedb::QueryItem;
+        use std::borrow::Borrow;
         use std::ops::RangeFull;
 
         #[test]
@@ -312,8 +258,14 @@ mod tests {
                     .expect("expected to add an identity");
             }
 
-            let path_query = Drive::full_identities_query(identities.keys().copied().collect())
-                .expect("expected to get query");
+            let path_query = Drive::full_identities_query(
+                identities
+                    .keys()
+                    .copied()
+                    .collect::<Vec<[u8; 32]>>()
+                    .borrow(),
+            )
+            .expect("expected to get query");
 
             let (elements, _) = drive
                 .grove
@@ -328,9 +280,15 @@ mod tests {
             assert_eq!(elements.len(), 14);
 
             let fetched_identities = drive
-                .fetch_proved_full_identities(identities.keys().copied().collect(), None)
-                .expect("should fetch an identity")
-                .expect("should have an identity");
+                .proved_full_identities(
+                    identities
+                        .keys()
+                        .copied()
+                        .collect::<Vec<[u8; 32]>>()
+                        .borrow(),
+                    None,
+                )
+                .expect("should fetch an identity");
 
             let (_hash, proof) = GroveDb::verify_query(fetched_identities.as_slice(), &path_query)
                 .expect("expected to verify query");
@@ -360,8 +318,14 @@ mod tests {
                     .expect("expected to add an identity");
             }
 
-            let path_query = Drive::full_identities_query(identities.keys().copied().collect())
-                .expect("expected to get query");
+            let path_query = Drive::full_identities_query(
+                identities
+                    .keys()
+                    .copied()
+                    .collect::<Vec<[u8; 32]>>()
+                    .borrow(),
+            )
+            .expect("expected to get query");
 
             let query = path_query.query.query.clone();
             assert_eq!(path_query.path, Vec::<Vec<u8>>::new()); // it splits at the root
@@ -479,9 +443,15 @@ mod tests {
             assert_eq!(elements.len(), 70);
 
             let fetched_identities = drive
-                .fetch_proved_full_identities(identities.keys().copied().collect(), None)
-                .expect("should fetch an identity")
-                .expect("should have an identity");
+                .proved_full_identities(
+                    identities
+                        .keys()
+                        .copied()
+                        .collect::<Vec<[u8; 32]>>()
+                        .borrow(),
+                    None,
+                )
+                .expect("should fetch an identity");
 
             let (_hash, proof) = GroveDb::verify_query(fetched_identities.as_slice(), &path_query)
                 .expect("expected to verify query");
@@ -501,7 +471,7 @@ mod tests {
         #[test]
         fn test_full_identity_query_construction() {
             let identity = Identity::random_identity(5, Some(12345));
-            let query = Drive::full_identity_query(identity.id.to_buffer())
+            let query = Drive::full_identity_query(identity.id.as_bytes())
                 .expect("expected to make the query");
         }
         #[test]
@@ -514,7 +484,7 @@ mod tests {
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to insert identity");
 
-            let path_query = Drive::full_identity_query(identity.id.to_buffer())
+            let path_query = Drive::full_identity_query(identity.id.as_bytes())
                 .expect("expected to make the query");
 
             // The query is querying
@@ -610,9 +580,8 @@ mod tests {
             assert_eq!(elements.len(), 7);
 
             let fetched_identity = drive
-                .fetch_proved_full_identity(identity.id.to_buffer(), None)
-                .expect("should fetch an identity")
-                .expect("should have an identity");
+                .prove_full_identity(identity.id.to_buffer(), None)
+                .expect("should fetch an identity");
 
             let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &path_query)
                 .expect("expected to verify query");

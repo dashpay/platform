@@ -100,7 +100,8 @@ impl DocumentsBatchTransition {
                 .unwrap_or(LATEST_VERSION as u64) as u32,
             signature,
             signature_public_key_id: json_value
-                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID).ok()
+                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .ok()
                 .map(|v| v as KeyID),
             owner_id: Identifier::from_string(
                 json_value.get_string(property_names::OWNER_ID)?,

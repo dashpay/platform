@@ -1,4 +1,5 @@
 use self::drive::DriveError;
+use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
 use dpp::data_contract::extra::ContractError;
@@ -16,6 +17,8 @@ pub mod drive;
 pub mod fee;
 /// Identity module
 pub mod identity;
+/// Proof module
+pub mod proof;
 /// Query module
 pub mod query;
 /// Storage flags module
@@ -35,6 +38,9 @@ pub enum Error {
     /// Drive error
     #[error("drive: {0}")]
     Drive(#[from] DriveError),
+    /// Drive error
+    #[error("proof: {0}")]
+    Proof(#[from] ProofError),
     /// GroveDB error
     #[error("grovedb: {0}")]
     GroveDB(#[from] grovedb::Error),

@@ -21,6 +21,8 @@ const {
   driveProveDocumentsQuery,
   driveInsertIdentity,
   driveFetchIdentity,
+  driveFetchProvedIdentity,
+  driveFetchManyProvedIdentities,
   driveFetchIdentityWithCosts,
   driveAddToIdentityBalance,
   driveAddKeysToIdentity,
@@ -67,6 +69,10 @@ const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
 const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
+const driveFetchProvedIdentityAsync = appendStackAsync(promisify(driveFetchProvedIdentity));
+const driveFetchManyProvedIdentitiesAsync = appendStackAsync(
+  promisify(driveFetchManyProvedIdentities),
+);
 const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityWithCosts));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
@@ -383,6 +389,34 @@ class Drive {
 
       return new Identity(rawIdentity);
     });
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Buffer|null>}
+   */
+  async proveIdentity(id, useTransaction = false) {
+    return driveFetchProvedIdentityAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer[]|Identifier} ids
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Buffer|null>}
+   */
+  async proveManyIdentities(ids, useTransaction = false) {
+    return driveFetchManyProvedIdentitiesAsync.call(
+      this.drive,
+      ids,
+      useTransaction,
+    );
   }
 
   /**

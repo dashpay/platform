@@ -277,6 +277,21 @@ pub fn js_array_of_buffers_to_vec<'a, C: Context<'a>>(
     Ok(vec)
 }
 
+pub fn js_array_of_buffers_to_identifiers<'a, C: Context<'a>>(
+    cx: &mut C,
+    js_array: Handle<JsArray>,
+) -> NeonResult<Vec<[u8; 32]>> {
+    let buf_vec = js_array.to_vec(cx)?;
+    let mut vec: Vec<[u8; 32]> = Vec::with_capacity(buf_vec.len());
+
+    for buf in buf_vec {
+        let js_buffer_handle = buf.downcast_or_throw::<JsBuffer, _>(cx)?;
+        vec.push(js_buffer_to_identifier(cx, js_buffer_handle)?);
+    }
+
+    Ok(vec)
+}
+
 pub fn js_value_to_option<'a, T: Value, C: Context<'a>>(
     cx: &mut C,
     js_value: Handle<'a, JsValue>,

@@ -587,7 +587,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/patchingEstimatedCosts#9c0f5266188c0e636e081093c53527c169a73a60"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/PathQueryHelpers#316e792639abe6067f2da7bec2053da798fa8532"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -919,7 +919,7 @@ name = "drive"
 version = "0.24.0-dev.1"
 dependencies = [
  "array_tool",
- "base64 0.20.0",
+ "base64 0.21.0",
  "bincode",
  "bs58",
  "byteorder",
@@ -1286,7 +1286,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/patchingEstimatedCosts#9c0f5266188c0e636e081093c53527c169a73a60"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/PathQueryHelpers#316e792639abe6067f2da7bec2053da798fa8532"
 dependencies = [
  "bincode",
  "costs",
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/patchingEstimatedCosts#9c0f5266188c0e636e081093c53527c169a73a60"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/PathQueryHelpers#316e792639abe6067f2da7bec2053da798fa8532"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2782,7 +2782,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/patchingEstimatedCosts#9c0f5266188c0e636e081093c53527c169a73a60"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/PathQueryHelpers#316e792639abe6067f2da7bec2053da798fa8532"
 dependencies = [
  "blake3",
  "costs",
@@ -3085,9 +3085,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-bidi"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "099b7128301d285f79ddd55b9a83d5e6b9e97c92e0ea0daebee7263e932de992"
+checksum = "0046be40136ef78dc325e0edefccf84ccddacd0afcc1ca54103fa3c61bbdab1d"
 
 [[package]]
 name = "unicode-ident"
@@ -3169,7 +3169,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/patchingEstimatedCosts#9c0f5266188c0e636e081093c53527c169a73a60"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/PathQueryHelpers#316e792639abe6067f2da7bec2053da798fa8532"
 dependencies = [
  "hex",
  "itertools",

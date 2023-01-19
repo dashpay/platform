@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
 use crate::identifier::Identifier;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
+use std::collections::BTreeMap;
 
 /// An identity stub to get only data that is cared about from drive.
 #[derive(Debug, Clone, Eq, PartialEq)]
