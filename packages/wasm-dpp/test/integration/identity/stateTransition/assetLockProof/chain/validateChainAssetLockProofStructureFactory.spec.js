@@ -23,8 +23,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
   let IdentityAssetLockTransactionIsNotFoundError;
   let InvalidIdentityAssetLockTransactionOutputError;
   let InvalidAssetLockProofTransactionHeightError;
-
-  let validateChainAssetLockProofStructureDPP;
+  let ChainAssetLockProofStructureValidator;
 
   before(async () => {
     ({
@@ -34,7 +33,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
       IdentityAssetLockTransactionIsNotFoundError,
       InvalidIdentityAssetLockTransactionOutputError,
       InvalidAssetLockProofTransactionHeightError,
-      validateChainAssetLockProofStructure: validateChainAssetLockProofStructureDPP,
+      ChainAssetLockProofStructureValidator,
     } = await loadWasmDpp());
   });
 
@@ -63,10 +62,13 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
     publicKeyHash = Buffer.from('152073ca2300a86b510fa2f123d3ea7da3af68dc', 'hex');
 
+    const validator = new ChainAssetLockProofStructureValidator(
+      stateRepositoryMock,
+    );
+
     validateChainAssetLockProofStructure = (
       proof, context,
-    ) => validateChainAssetLockProofStructureDPP(
-      stateRepositoryMock,
+    ) => validator.validate(
       rawProof, context,
     );
   });

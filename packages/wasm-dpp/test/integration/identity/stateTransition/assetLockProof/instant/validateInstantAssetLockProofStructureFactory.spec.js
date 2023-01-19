@@ -20,9 +20,9 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
   let IdentityAssetLockProofLockedTransactionMismatchError;
   let InvalidInstantAssetLockProofSignatureError;
   let InvalidIdentityAssetLockTransactionError;
+  let InstantAssetLockProofStructureValidator;
 
   let validateInstantAssetLockProofStructure;
-  let validateInstantAssetLockProofStructureDPP;
 
   before(async () => {
     ({
@@ -32,7 +32,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       IdentityAssetLockProofLockedTransactionMismatchError,
       InvalidInstantAssetLockProofSignatureError,
       InvalidIdentityAssetLockTransactionError,
-      validateInstantAssetLockProofStructure: validateInstantAssetLockProofStructureDPP,
+      InstantAssetLockProofStructureValidator,
     } = await loadWasmDpp());
   });
 
@@ -47,10 +47,10 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
-    validateInstantAssetLockProofStructure = (proof) => validateInstantAssetLockProofStructureDPP(
-      stateRepositoryMock,
+    const validator = new InstantAssetLockProofStructureValidator(stateRepositoryMock);
+    validateInstantAssetLockProofStructure = (proof, context) => validator.validate(
       proof,
-      executionContext,
+      context,
     );
   });
 
@@ -58,7 +58,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be present', async () => {
       delete rawProof.type;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -74,7 +74,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be equal to 0', async () => {
       rawProof.type = -1;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -91,7 +91,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be present', async () => {
       delete rawProof.instantLock;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -107,7 +107,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be a byte array', async () => {
       rawProof.instantLock = new Array(165).fill('string');
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result, 165);
 
@@ -122,7 +122,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should not be shorter than 160 bytes', async () => {
       rawProof.instantLock = Buffer.alloc(159);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -137,7 +137,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should not be longer than 100 Kb', async () => {
       rawProof.instantLock = Buffer.alloc(100001);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -152,7 +152,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be valid', async () => {
       rawProof.instantLock = Buffer.alloc(200);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
       await expectValidationError(result, InvalidInstantAssetLockProofError);
 
       const [error] = result.getErrors();
@@ -169,7 +169,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       instantLockParsed.txid = txId.toString('hex');
       rawProof.instantLock = instantLockParsed.toBuffer();
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectValidationError(
         result,
@@ -188,7 +188,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should have valid signature', async () => {
       stateRepositoryMock.verifyInstantLock.resolves(false);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectValidationError(
         result,
@@ -207,7 +207,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be present', async () => {
       delete rawProof.transaction;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -223,7 +223,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be a byte array', async () => {
       rawProof.transaction = new Array(65).fill('string');
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result, 65);
 
@@ -238,7 +238,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should not be shorter than 1 byte', async () => {
       rawProof.transaction = Buffer.alloc(0);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -253,7 +253,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should not be longer than 100 Kb', async () => {
       rawProof.transaction = Buffer.alloc(100001);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -268,7 +268,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should should be valid', async () => {
       rawProof.transaction = Buffer.alloc(1000);
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectValidationError(result, InvalidIdentityAssetLockTransactionError);
 
@@ -285,7 +285,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be present', async () => {
       delete rawProof.outputIndex;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -301,7 +301,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should be an integer', async () => {
       rawProof.outputIndex = 1.1;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result, 1);
 
@@ -316,7 +316,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     it('should not be less than 0', async () => {
       rawProof.outputIndex = -1;
 
-      const result = await validateInstantAssetLockProofStructure(rawProof);
+      const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 
       await expectJsonSchemaError(result);
 
@@ -332,6 +332,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
   it('should return valid result', async () => {
     const result = await validateInstantAssetLockProofStructure(
       rawProof,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);

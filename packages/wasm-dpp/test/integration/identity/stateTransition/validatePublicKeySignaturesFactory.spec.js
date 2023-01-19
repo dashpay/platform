@@ -14,12 +14,13 @@ const { default: loadWasmDpp } = require('../../../../dist');
 describe('validatePublicKeySignaturesFactory', () => {
   let identityCreateTransition;
   let rawIdentityCreateTransition;
+  let validatePublicKeySignatures;
 
   let IdentityCreateTransition;
   let IdentityPublicKey;
   let InvalidIdentityKeySignatureError;
   let ValidationResult;
-  let validatePublicKeySignatures;
+  let PublicKeysSignaturesValidator;
   let blsAdapter;
 
   before(async () => {
@@ -27,7 +28,7 @@ describe('validatePublicKeySignaturesFactory', () => {
       IdentityCreateTransition,
       IdentityPublicKey,
       InvalidIdentityKeySignatureError,
-      validatePublicKeySignatures,
+      PublicKeysSignaturesValidator,
       ValidationResult,
     } = await loadWasmDpp());
   });
@@ -118,6 +119,9 @@ describe('validatePublicKeySignaturesFactory', () => {
     ]);
 
     rawIdentityCreateTransition = identityCreateTransition.toObject();
+
+    const validator = new PublicKeysSignaturesValidator(blsAdapter);
+    validatePublicKeySignatures = (stateTransition, keys) => validator.validate(stateTransition, keys);
   });
 
   it('should return InvalidIdentityKeySignatureError if signature is not valid', async () => {

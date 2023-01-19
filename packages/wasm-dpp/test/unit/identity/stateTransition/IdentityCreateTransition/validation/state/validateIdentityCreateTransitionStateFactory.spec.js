@@ -17,8 +17,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   let IdentityPublicKey;
   let IdentityAlreadyExistsError;
   let Identity;
-
-  let validateIdentityCreateTransitionStateDPP;
+  let IdentityCreateTransitionStateValidator;
 
   before(async () => {
     ({
@@ -26,7 +25,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
       IdentityAlreadyExistsError,
       IdentityPublicKey,
       Identity,
-      validateIdentityCreateTransitionState: validateIdentityCreateTransitionStateDPP,
+      IdentityCreateTransitionStateValidator,
     } = await loadWasmDpp());
   });
 
@@ -34,9 +33,8 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
     const privateKey = Buffer.from('af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837', 'hex');
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    validateIdentityCreateTransitionState = (st) => validateIdentityCreateTransitionStateDPP(
-      stateRepositoryMock, st,
-    );
+    const validator = new IdentityCreateTransitionStateValidator(stateRepositoryMock);
+    validateIdentityCreateTransitionState = (st) => validator.validate(st);
 
     stateTransition = new IdentityCreateTransition(
       getIdentityCreateTransitionFixture().toObject(),

@@ -13,6 +13,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
   let stateRepositoryMock;
   let mockIdentityPublicKey;
+  let executionContext;
 
   let validateIdentityCreateTransitionBasic;
 
@@ -24,11 +25,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let InvalidIdentityPublicKeySecurityLevelError;
   let InvalidIdentityPublicKeyDataError;
   let InvalidIdentityKeySignatureError;
-  let validateIdentityCreateTransitionBasicDPP;
+  let IdentityCreateTransitionBasicValidator;
 
   before(async () => {
     ({
-      validateIdentityCreateTransitionBasic: validateIdentityCreateTransitionBasicDPP,
       IdentityCreateTransition,
       StateTransitionExecutionContext,
       UnsupportedProtocolVersionError,
@@ -37,6 +37,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       InvalidIdentityPublicKeyDataError,
       InvalidIdentityKeySignatureError,
       IdentityPublicKey,
+      IdentityCreateTransitionBasicValidator,
     } = await loadWasmDpp());
 
     mockIdentityPublicKey = (publicKey, opts = {}) => new IdentityPublicKey({
@@ -54,16 +55,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.returns(true);
 
-    const executionContext = new StateTransitionExecutionContext();
+    executionContext = new StateTransitionExecutionContext();
 
     const blsAdapter = await getBlsAdapterMock();
 
-    validateIdentityCreateTransitionBasic = (st) => validateIdentityCreateTransitionBasicDPP(
-      stateRepositoryMock,
-      st,
-      blsAdapter,
-      executionContext,
-    );
+    const validator = new IdentityCreateTransitionBasicValidator(stateRepositoryMock, blsAdapter);
+    validateIdentityCreateTransitionBasic = (st, context) => validator.validate(st, context);
 
     const stateTransitionJS = getIdentityCreateTransitionFixture();
     stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
@@ -92,7 +89,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.protocolVersion;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -106,7 +106,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.protocolVersion = '1';
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -119,7 +122,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be valid', async () => {
       rawStateTransition.protocolVersion = 1000;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectValidationError(result, UnsupportedProtocolVersionError);
     });
@@ -129,7 +135,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.type;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -143,7 +152,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be equal to 2', async () => {
       rawStateTransition.type = 666;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -161,6 +173,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -175,7 +188,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be an object', async () => {
       rawStateTransition.assetLockProof = 1;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result, 1);
 
@@ -188,7 +204,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be valid', async () => {
       stateRepositoryMock.verifyInstantLock.returns(false);
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectValidationError(result);
 
@@ -204,6 +223,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -220,6 +240,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -239,6 +260,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -254,6 +276,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -282,6 +305,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectValidationError(result, InvalidIdentityPublicKeyDataError);
@@ -306,6 +330,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectValidationError(result, InvalidIdentityPublicKeySecurityLevelError);
@@ -318,6 +343,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectValidationError(result, InvalidIdentityKeySignatureError);
@@ -328,7 +354,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.signature;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -342,7 +371,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be a byte array', async () => {
       rawStateTransition.signature = new Array(65).fill('string');
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result, 65);
 
@@ -359,7 +391,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be not shorter than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -372,7 +407,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be not longer than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(66);
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -384,7 +422,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+    const result = await validateIdentityCreateTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
 
     expect(result.isValid()).to.be.true();
   });
