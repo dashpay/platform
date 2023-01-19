@@ -43,7 +43,7 @@ function handleUpdatedScriptPayoutFactory(
 
     const identity = identityResult.getValue();
 
-    let identityPublicKeys = identity
+    const identityPublicKeys = identity
       .getPublicKeys();
 
     if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
@@ -59,15 +59,21 @@ function handleUpdatedScriptPayoutFactory(
         previousPubKeyType,
       );
 
-      identityPublicKeys = identityPublicKeys.map((pk) => {
-        if (pk.getData().equals(previousPubKeyData)) {
-          pk.setDisabledAt(
-            blockInfo.timeMs,
-          );
-        }
+      const keyIds = identityPublicKeys
+        .filter((pk) => pk.getData().equals(previousPubKeyData))
+        .map((pk) => pk.getId());
 
-        return pk;
-      });
+      if (keyIds.length > 0) {
+        await identityPublicKeyRepository.disable(
+          identityId,
+          keyIds,
+          blockInfo.timeMs,
+          blockInfo,
+          { useTransaction: true },
+        );
+
+        result.updatedEntities.push({ disabledKeys: keyIds });
+      }
     }
 
     // add new
@@ -82,24 +88,20 @@ function handleUpdatedScriptPayoutFactory(
       .setReadOnly(true)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
-    identityPublicKeys.push(
-      newWithdrawalIdentityPublicKey,
+    await identityPublicKeyRepository.add(
+      identityId,
+      [newWithdrawalIdentityPublicKey],
+      blockInfo,
+      { useTransaction: true },
     );
 
-    identity.setPublicKeys(identityPublicKeys);
+    result.createdEntities.push(newWithdrawalIdentityPublicKey);
 
     identity.setRevision(identity.getRevision() + 1);
 
     await identityRepository.updateRevision(
       identityId,
       identity.getRevision(),
-      blockInfo,
-      { useTransaction: true },
-    );
-
-    await identityPublicKeyRepository.add(
-      identityId,
-      [newWithdrawalIdentityPublicKey],
       blockInfo,
       { useTransaction: true },
     );

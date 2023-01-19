@@ -1,21 +1,21 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const IdentityPublicKeyStoreRepository = require('../../../lib/identity/IdentityPublicKeyStoreRepository');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
+const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 
 describe('IdentityPublicKeyStoreRepository', () => {
   let rsDrive;
   let store;
   let publicKeyRepository;
   let identityRepository;
-  let publicKeyHash;
   let identity;
+  let blockInfo;
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
@@ -36,8 +36,9 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
     publicKeyRepository = new IdentityPublicKeyStoreRepository(store, decodeProtocolEntity);
 
-    publicKeyHash = Buffer.alloc(20).fill(1);
     identity = getIdentityFixture();
+
+    blockInfo = new BlockInfo(1, 1, Date.now());
   });
 
   afterEach(async () => {
@@ -46,295 +47,125 @@ describe('IdentityPublicKeyStoreRepository', () => {
     fs.rmSync('./db/grovedb_test', { recursive: true, force: true });
   });
 
-  describe('#store', () => {
-    it('should store public key to identities', async () => {
-      await identityRepository.create(identity);
+  describe('#add', () => {
+    it('should add public keys to identity', async () => {
+      const publicKey = identity.getPublicKeys().pop();
 
-      const result = await publicKeyRepository.store(
-        publicKeyHash,
+      await identityRepository.create(identity, blockInfo);
+
+      const result = await publicKeyRepository.add(
         identity.getId(),
+        [publicKey],
+        blockInfo,
       );
 
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
+      expect(result.getOperations().length).to.equal(1);
 
-      const fetchedIdentityResult = await store.get(
-        IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
-        identity.getId().toBuffer(),
-      );
+      const fetchedIdentityResult = await identityRepository.fetch(identity.getId());
 
-      expect(fetchedIdentityResult).to.be.instanceOf(StorageResult);
-      expect(fetchedIdentityResult.getValue()).to.be.deep.equal(identity.toBuffer());
+      const fetchedIdentity = fetchedIdentityResult.getValue();
+
+      identity.getPublicKeys().push(publicKey);
+
+      expect(fetchedIdentity.toObject()).to.deep.equals(identity.toObject());
     });
 
     it('should store public key to identities using transaction', async () => {
-      await identityRepository.create(identity);
+      const publicKey = identity.getPublicKeys().pop();
+
+      await identityRepository.create(identity, blockInfo);
 
       await store.startTransaction();
 
-      await publicKeyRepository.store(
-        publicKeyHash,
+      await publicKeyRepository.add(
         identity.getId(),
+        [publicKey],
+        blockInfo,
         { useTransaction: true },
       );
 
-      const emptyIdentitiesResult = await store.get(
-        IdentityPublicKeyStoreRepository.TREE_PATH,
-        publicKeyHash,
-      );
+      const noKeyIdentityResult = await identityRepository.fetch(identity.getId());
 
-      expect(emptyIdentitiesResult).to.be.instanceOf(StorageResult);
-      expect(emptyIdentitiesResult.isNull()).to.be.true();
+      const noKeyIdentity = noKeyIdentityResult.getValue();
 
-      const transactionalIdentitiesResult = await store.get(
-        IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
-        identity.getId().toBuffer(),
-        { useTransaction: true },
-      );
+      expect(noKeyIdentity.toObject()).to.deep.equals(identity.toObject());
 
-      expect(transactionalIdentitiesResult).to.be.instanceOf(StorageResult);
-      expect(transactionalIdentitiesResult.getValue()).to.be.deep.equal(identity.toBuffer());
-
-      await store.commitTransaction();
-
-      const committedIdentitiesResult = await store.get(
-        IdentityPublicKeyStoreRepository.TREE_PATH.concat([publicKeyHash]),
-        identity.getId().toBuffer(),
-      );
-
-      expect(committedIdentitiesResult).to.be.instanceOf(StorageResult);
-      expect(committedIdentitiesResult.getValue()).to.be.deep.equal(identity.toBuffer());
-    });
-  });
-
-  describe('#fetch', () => {
-    it('should fetch empty array if public key to identities not found', async () => {
-      const result = await publicKeyRepository.fetch(publicKeyHash);
-
-      expect(result).to.be.empty();
-    });
-
-    it('should fetch an public key to identity ids map', async () => {
-      await identityRepository.create(identity);
-
-      await publicKeyRepository.store(
-        publicKeyHash,
-        identity.getId(),
-      );
-
-      const result = await publicKeyRepository.fetch(publicKeyHash);
-
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
-
-      expect(result.getValue()).to.deep.have.lengthOf(1);
-
-      const [fetchedIdentity] = result.getValue();
-
-      expect(fetchedIdentity).to.be.instanceOf(Identity);
-      expect(fetchedIdentity).to.deep.equal(identity.toObject());
-    });
-
-    it('should fetch an public key to identities using transaction', async () => {
-      await store.startTransaction();
-
-      await identityRepository.create(identity, { useTransaction: true });
-
-      await publicKeyRepository.store(
-        publicKeyHash,
-        identity.getId(),
-        { useTransaction: true },
-      );
-
-      const emptyIdentitiesResult = await publicKeyRepository.fetch(publicKeyHash, {
-        useTransaction: false,
-      });
-
-      expect(emptyIdentitiesResult.isEmpty()).to.be.true();
-
-      const transactionalIdentitiesResult = await publicKeyRepository.fetch(publicKeyHash, {
+      const transactionalIdentityResult = await identityRepository.fetch(identity.getId(), {
         useTransaction: true,
       });
 
-      expect(transactionalIdentitiesResult.getValue()).to.deep.equal([identity]);
+      const transactionalIdentity = transactionalIdentityResult.getValue();
+
+      identity.getPublicKeys().push(publicKey);
+
+      expect(transactionalIdentity.toObject()).to.deep.equals(identity.toObject());
 
       await store.commitTransaction();
 
-      const storedIdentitiesResult = await publicKeyRepository.fetch(publicKeyHash);
+      const committedIdentityResult = await identityRepository.fetch(identity.getId());
 
-      expect(storedIdentitiesResult.getValue()).to.deep.equal([identity]);
+      const committedIdentity = committedIdentityResult.getValue();
+
+      expect(committedIdentity.toObject()).to.deep.equals(identity.toObject());
     });
   });
 
-  describe('#fetchMany', () => {
-    let publicKeyHash2;
+  describe('#disable', () => {
+    it('should disable public keys in identity', async () => {
+      await identityRepository.create(identity, blockInfo);
 
-    beforeEach(async () => {
-      publicKeyHash2 = Buffer.alloc(20).fill(2);
-    });
-
-    it('should fetch empty array if public key to identities map not found', async () => {
-      const result = await publicKeyRepository.fetchMany([publicKeyHash, publicKeyHash2]);
-
-      expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getValue()).to.be.empty();
-    });
-
-    it('should fetch an public key to identities', async () => {
-      await identityRepository.create(identity);
-
-      await publicKeyRepository.store(
-        publicKeyHash,
+      const result = await publicKeyRepository.disable(
         identity.getId(),
+        [0, 1],
+        Date.now(),
+        blockInfo,
       );
 
-      await publicKeyRepository.store(
-        publicKeyHash2,
-        identity.getId(),
-      );
-
-      const result = await publicKeyRepository.fetchMany([publicKeyHash, publicKeyHash2]);
-
       expect(result).to.be.instanceOf(StorageResult);
-      expect(result.getOperations().length).to.equal(0);
+      expect(result.getOperations().length).to.equal(1);
 
-      expect(result.getValue()).to.deep.equal([identity, identity]);
+      const fetchedIdentityResult = await identityRepository.fetch(identity.getId());
+
+      const fetchedIdentity = fetchedIdentityResult.getValue();
+
+      expect(fetchedIdentity.toObject()).to.not.deep.equals(identity.toObject());
     });
 
-    it('should fetch an public key to identities map using transaction', async () => {
+    it('should store public key to identities using transaction', async () => {
+      await identityRepository.create(identity, blockInfo);
+
       await store.startTransaction();
 
-      await identityRepository.create(identity, { useTransaction: true });
-
-      await publicKeyRepository.store(
-        publicKeyHash,
+      await publicKeyRepository.disable(
         identity.getId(),
+        [0, 1],
+        Date.now(),
+        blockInfo,
         { useTransaction: true },
       );
 
-      await publicKeyRepository.store(
-        publicKeyHash2,
-        identity.getId(),
-        { useTransaction: true },
-      );
+      const noChangeIdentityResult = await identityRepository.fetch(identity.getId());
 
-      const emptyIdentitiesResult = await publicKeyRepository.fetchMany(
-        [publicKeyHash, publicKeyHash2],
-        {
-          useTransaction: false,
-        },
-      );
+      const noChangeIdentity = noChangeIdentityResult.getValue();
 
-      expect(emptyIdentitiesResult.isEmpty()).to.be.true();
+      expect(noChangeIdentity.toObject()).to.deep.equals(identity.toObject());
 
-      const transactionalIdentitiesResult = await publicKeyRepository.fetchMany(
-        [publicKeyHash, publicKeyHash2],
-        {
-          useTransaction: true,
-        },
-      );
+      const transactionalIdentityResult = await identityRepository.fetch(identity.getId(), {
+        useTransaction: true,
+      });
 
-      expect(transactionalIdentitiesResult.getValue()).to.deep.equal([identity, identity]);
+      const transactionalIdentity = transactionalIdentityResult.getValue();
+
+      expect(transactionalIdentity.toObject()).to.not.deep.equals(identity.toObject());
 
       await store.commitTransaction();
 
-      const storedIdentitiesResult = await publicKeyRepository.fetchMany(
-        [publicKeyHash, publicKeyHash2],
-      );
+      const committedIdentityResult = await identityRepository.fetch(identity.getId());
 
-      expect(storedIdentitiesResult.getValue()).to.deep.equal([identity, identity]);
-    });
-  });
+      const committedIdentity = committedIdentityResult.getValue();
 
-  describe('#prove', () => {
-    let publicKeyHash2;
-
-    beforeEach(async () => {
-      publicKeyHash2 = Buffer.alloc(20).fill(2);
-    });
-
-    it('should fetch proof if public key to identities map not found', async () => {
-      const result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
-
-      expect(result).to.be.instanceOf(StorageResult);
-
-      expect(result.getValue()).to.be.an.instanceOf(Buffer);
-      expect(result.getValue().length).to.be.greaterThan(0);
-    });
-
-    it('should return proof', async () => {
-      await identityRepository.create(identity);
-
-      await publicKeyRepository.store(
-        publicKeyHash,
-        identity.getId(),
-      );
-
-      await publicKeyRepository.store(
-        publicKeyHash2,
-        identity.getId(),
-      );
-
-      const result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
-
-      expect(result).to.be.instanceOf(StorageResult);
-
-      expect(result.getOperations().length).to.equal(0);
-
-      expect(result.getValue()).to.be.an.instanceOf(Buffer);
-      expect(result.getValue().length).to.be.greaterThan(0);
-    });
-
-    // TODO: Enable when transactions will be supported for queries with proofs
-    it.skip('should return proof map using transaction', async () => {
-      await store.startTransaction();
-
-      await identityRepository.create(identity, { useTransaction: true });
-
-      await publicKeyRepository.store(
-        publicKeyHash,
-        identity.getId(),
-        { useTransaction: true },
-      );
-
-      await publicKeyRepository.store(
-        publicKeyHash2,
-        identity.getId(),
-        { useTransaction: true },
-      );
-
-      // Should return proof of non-existence
-      let result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
-
-      expect(result).to.be.instanceOf(StorageResult);
-
-      expect(result.getValue()).to.be.an.instanceOf(Buffer);
-      expect(result.getValue().length).to.be.greaterThan(0);
-
-      // Should return proof of existence
-      result = await publicKeyRepository.proveMany(
-        [publicKeyHash, publicKeyHash2],
-        { useTransaction: true },
-      );
-
-      expect(result).to.be.instanceOf(StorageResult);
-
-      expect(result.getOperations().length).to.equal(0);
-
-      expect(result.getValue()).to.be.an.instanceOf(Buffer);
-      expect(result.getValue().length).to.be.greaterThan(0);
-
-      await store.commitTransaction();
-
-      // Should return proof of existence
-      result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
-
-      expect(result).to.be.instanceOf(StorageResult);
-
-      expect(result.getOperations().length).to.equal(0);
-
-      expect(result.getValue()).to.be.an.instanceOf(Buffer);
-      expect(result.getValue().length).to.be.greaterThan(0);
+      expect(committedIdentity.toObject()).to.not.deep.equals(identity.toObject());
     });
   });
 });

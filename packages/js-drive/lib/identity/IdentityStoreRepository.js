@@ -58,28 +58,63 @@ class IdentityStoreRepository {
   /**
    * Fetch many identities by public key hashes
    *
-   * @param {Buffer} publicKeyHash
+   * @param {Buffer[]} hashes
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.dryRun=false]
    *
-   * @return {Promise<StorageResult<Identity>>}
+   * @return {Promise<StorageResult<Array<Identity|null>>>}
    */
-  async fetchManyByPublicKeyHashes(publicKeyHash, options = {}) {
-    throw new Error('not implemented');
+  async fetchManyByPublicKeyHashes(hashes, options = {}) {
+    try {
+      const identity = await this.storage.getDrive().fetchIdentitiesByPublicKeyHashes(
+        hashes,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        identity,
+        [],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          hashes,
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'fetchManyByPublicKeyHashes');
+      }
+    }
   }
 
   /**
    * Prove identities by multiple public key hashes
    *
-   * @param {Buffer[]} publicKeyHashes
+   * @param {Buffer[]} hashes
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    *
    * @return {Promise<StorageResult<Buffer>>}
    */
-  async proveManyByPublicKeyHashes(publicKeyHashes, options = {}) {
-    throw new Error('not implemented');
+  async proveManyByPublicKeyHashes(hashes, options = {}) {
+    try {
+      const proof = await this.storage.getDrive().proveIdentitiesByPublicKeyHashes(
+        hashes,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        proof,
+        [],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          hashes,
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'proveManyByPublicKeyHashes');
+      }
+    }
   }
 
   /**
@@ -290,7 +325,7 @@ class IdentityStoreRepository {
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    *
-   * @return {Promise<StorageResult<Buffer|null>>}
+   * @return {Promise<StorageResult<Buffer>>}
    * */
   async prove(id, options) {
     return this.proveMany([id], options);
@@ -306,7 +341,25 @@ class IdentityStoreRepository {
    * @return {Promise<StorageResult<Buffer>>}
    * */
   async proveMany(ids, options) {
-    throw new Error('No implemented');
+    try {
+      const proof = await this.storage.getDrive().proveIdentities(
+        ids,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        proof,
+        [],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          ids,
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'proveMany');
+      }
+    }
   }
 }
 

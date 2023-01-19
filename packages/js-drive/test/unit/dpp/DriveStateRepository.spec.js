@@ -289,7 +289,7 @@ describe('DriveStateRepository', () => {
         {
           blockInfo,
           dryRun: false,
-          useTransaction: false,
+          useTransaction: repositoryOptions.useTransaction,
         },
       );
 

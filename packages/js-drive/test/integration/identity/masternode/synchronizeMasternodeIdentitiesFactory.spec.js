@@ -263,8 +263,8 @@ function expectMasternodeIdentityFactory(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
 
-    const masternodeIdentityByPublicKeyHashResult = await identityPublicKeyRepository
-      .fetch(masternodePublicKey.hash(), { useTransaction: true });
+    const masternodeIdentityByPublicKeyHashResult = await identityRepository
+      .fetchManyByPublicKeyHashes([masternodePublicKey.hash()], { useTransaction: true });
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
 
@@ -369,7 +369,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = 'a5028839ad24dc2cd47bd6dab1f355cef9b2f46f476964a40fa0e8b3f563d268';
+    firstSyncAppHash = '76ddcc887935c6cf782c51c0a63078eddc48c4d514e7599c0c2c606388009bed';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
     container = await createTestDIContainer();
@@ -696,7 +696,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Nothing happened
 
-    await expectDeterministicAppHash('dd601dbbb4a19fcede9f5f619fce6b40ed1630ff6de875e1786b02c0ca62bef4');
+    await expectDeterministicAppHash('c83eabe6e97ba8aa0433fa61716920c674afb4a6c874c98a9f3168ef8b0890d7');
 
     // Core RPC should be called
 

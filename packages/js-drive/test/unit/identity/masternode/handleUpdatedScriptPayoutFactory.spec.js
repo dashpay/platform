@@ -28,12 +28,13 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(Buffer.alloc(20, '0'));
 
     identityRepositoryMock = {
-      update: this.sinon.stub(),
+      updateRevision: this.sinon.stub(),
       fetch: this.sinon.stub().resolves(new StorageResult(identity, [])),
     };
 
     identityPublicKeyRepositoryMock = {
-      store: this.sinon.stub(),
+      add: this.sinon.stub(),
+      disable: this.sinon.stub(),
     };
 
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
@@ -64,90 +65,93 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    expect(identityRepositoryMock.update).to.not.be.called();
-    expect(identityPublicKeyRepositoryMock.store).to.not.be.called();
+    expect(identityRepositoryMock.updateRevision).to.not.be.called();
+    expect(identityPublicKeyRepositoryMock.add).to.not.be.called();
+    expect(identityPublicKeyRepositoryMock.disable).to.not.be.called();
   });
 
-  it('should store updated identity with updated public keys', async () => {
+  it('should add a public key and disable an old one', async () => {
     const newPubKeyData = Buffer.alloc(20, '0');
-    const identityPublicKeys = identity.getPublicKeys();
 
     const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
+      blockInfo,
       identity.publicKeys[0].getData(),
     );
 
-    const identityToStore = new Identity(identity.toObject());
-
-    identityPublicKeys[0].disabledAt = blockInfo.timeMs;
-
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
       .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
       .setData(Buffer.from(newPubKeyData))
+      .setReadOnly(true)
       .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
-    identityPublicKeys.push(newWithdrawalIdentityPublicKey);
-    identityToStore.setPublicKeys(identityPublicKeys);
-
-    expect(identityRepositoryMock.update).to.be.calledOnceWithExactly(
-      identityToStore,
-      { useTransaction: true },
-    );
-
-    expect(identityPublicKeyRepositoryMock.store).to.be.calledOnceWithExactly(
-      newPubKeyData,
+    expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),
+      1,
+      blockInfo,
       { useTransaction: true },
     );
 
-    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWithExactly(
+      identity.getId(),
+      [newWithdrawalIdentityPublicKey],
+      blockInfo,
+      { useTransaction: true },
+    );
+
+    expect(result.createdEntities).to.have.lengthOf(1);
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(0);
 
+    expect(result.createdEntities[0]).to.be.instanceOf(IdentityPublicKey);
+    expect(result.createdEntities[0].toObject()).to.deep.equal(
+      newWithdrawalIdentityPublicKey.toObject(),
+    );
+
     expect(result.updatedEntities[0]).to.be.instanceOf(Identity);
-    expect(result.updatedEntities[0].toJSON()).to.deep.equal(identityToStore.toJSON());
+    expect(result.updatedEntities[0].toObject()).to.deep.equal(identity.toObject());
   });
 
-  it('should store add public keys to the stored identity', async () => {
+  it('should add public keys', async () => {
     const newPubKeyData = Buffer.alloc(20, '0');
-    const identityPublicKeys = identity.getPublicKeys();
 
     const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
+      blockInfo,
       new Script(),
     );
-
-    const identityToStore = new Identity(identity.toObject());
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
       .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
       .setData(Buffer.from(newPubKeyData))
+      .setReadOnly(true)
       .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
-    identityPublicKeys.push(newWithdrawalIdentityPublicKey);
-    identityToStore.setPublicKeys(identityPublicKeys);
-
-    expect(identityRepositoryMock.update).to.be.calledOnceWithExactly(
-      identityToStore,
-      { useTransaction: true },
-    );
-    expect(identityPublicKeyRepositoryMock.store).to.be.calledOnceWithExactly(
-      newPubKeyData,
+    expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),
+      1,
+      blockInfo,
       { useTransaction: true },
     );
 
-    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWithExactly(
+      identity.getId(),
+      [newWithdrawalIdentityPublicKey],
+      blockInfo,
+      { useTransaction: true },
+    );
+
+    expect(result.createdEntities).to.have.lengthOf(1);
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(0);
 
     expect(result.updatedEntities[0]).to.be.instanceOf(Identity);
-    expect(result.updatedEntities[0].toJSON()).to.deep.equal(identityToStore.toJSON());
+    expect(result.updatedEntities[0].toObject()).to.deep.equal(identity.toObject());
   });
 });
