@@ -72,7 +72,7 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=getOutPoint)]
     pub fn get_out_point(&self) -> Buffer {
-        Buffer::from_bytes(self.0.out_point().as_slice())
+        Buffer::from_bytes(self.0.out_point())
     }
 
     #[wasm_bindgen(js_name=setOutPoint)]

@@ -79,7 +79,7 @@ impl InstantAssetLockProofWasm {
     pub fn get_out_point(&self) -> Option<Buffer> {
         self.0
             .out_point()
-            .map(|out_point| Buffer::from_bytes(out_point.as_slice()))
+            .map(|out_point| Buffer::from_bytes(&out_point))
     }
 
     #[wasm_bindgen(js_name=getOutput)]
@@ -105,14 +105,14 @@ impl InstantAssetLockProofWasm {
     pub fn get_instant_lock(&self) -> Buffer {
         let instant_lock = self.0.instant_lock();
         let serialized_instant_lock = serialize(instant_lock);
-        Buffer::from_bytes(serialized_instant_lock.as_slice())
+        Buffer::from_bytes(&serialized_instant_lock)
     }
 
     #[wasm_bindgen(js_name=getTransaction)]
     pub fn get_transaction(&self) -> Buffer {
         let transaction = self.0.transaction();
         let serialized_transaction = serialize(transaction);
-        Buffer::from_bytes(serialized_transaction.as_slice())
+        Buffer::from_bytes(&serialized_transaction)
     }
 
     #[wasm_bindgen(js_name=toObject)]

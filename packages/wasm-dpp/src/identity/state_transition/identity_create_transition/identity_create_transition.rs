@@ -213,7 +213,7 @@ impl IdentityCreateTransitionWasm {
             let signature_value: JsValue = if signature.len() == 0 {
                 JsValue::undefined()
             } else {
-                Buffer::from_bytes(signature.as_slice()).into()
+                Buffer::from_bytes(&signature).into()
             };
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
@@ -355,6 +355,6 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes(self.0.get_signature().as_slice())
+        Buffer::from_bytes(&self.0.get_signature())
     }
 }

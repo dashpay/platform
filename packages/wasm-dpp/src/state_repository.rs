@@ -247,7 +247,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let hashes = public_key_hashes
             .iter()
-            .map(|hash| Buffer::from_bytes(hash.as_slice()))
+            .map(|hash| Buffer::from_bytes(hash))
             .collect();
 
         Ok(self
