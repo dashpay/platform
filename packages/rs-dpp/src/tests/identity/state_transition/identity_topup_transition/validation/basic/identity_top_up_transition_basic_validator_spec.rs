@@ -43,7 +43,7 @@ pub fn setup_test(
     (
         crate::tests::fixtures::identity_topup_transition_fixture_json(None),
         IdentityTopUpTransitionBasicValidator::new(
-            Arc::new(protocol_version_validator),
+            protocol_version_validator,
             asset_lock_proof_validator,
         )
         .unwrap(),

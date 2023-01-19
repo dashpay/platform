@@ -12,6 +12,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let stateTransition;
 
   let stateRepositoryMock;
+  let executionContext;
 
   let validateIdentityTopUpTransitionBasic;
 
@@ -20,11 +21,11 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let IdentityPublicKey;
   let UnsupportedProtocolVersionError;
   let InvalidInstantAssetLockProofSignatureError;
-  let validateIdentityTopUpTransitionBasicDPP;
+  let IdentityTopUpTransitionBasicValidator;
 
   before(async () => {
     ({
-      validateIdentityTopUpTransitionBasic: validateIdentityTopUpTransitionBasicDPP,
+      IdentityTopUpTransitionBasicValidator,
       IdentityTopUpTransition,
       StateTransitionExecutionContext,
       IdentityPublicKey,
@@ -37,12 +38,12 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.returns(true);
 
-    const executionContext = new StateTransitionExecutionContext();
+    executionContext = new StateTransitionExecutionContext();
 
-    validateIdentityTopUpTransitionBasic = (st) => validateIdentityTopUpTransitionBasicDPP(
-      stateRepositoryMock,
+    const validator = new IdentityTopUpTransitionBasicValidator(stateRepositoryMock);
+    validateIdentityTopUpTransitionBasic = (st, context) => validator.validate(
       st,
-      executionContext,
+      context,
     );
 
     const stateTransitionJS = getIdentityTopUpTransitionFixture();
@@ -62,7 +63,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.protocolVersion;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition, executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -76,7 +79,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.protocolVersion = '1';
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition, executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -89,7 +94,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be valid', async () => {
       rawStateTransition.protocolVersion = 1000;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition, executionContext,
+      );
 
       await expectValidationError(result, UnsupportedProtocolVersionError);
     });
@@ -99,7 +106,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.type;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition, executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -113,7 +122,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be equal to 3', async () => {
       rawStateTransition.type = 666;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition, executionContext,
+      );
 
       await expectJsonSchemaError(result);
 
@@ -131,6 +142,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -145,7 +157,9 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be an object', async () => {
       rawStateTransition.assetLockProof = 1;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition, executionContext,
+      );
 
       await expectJsonSchemaError(result, 1);
 
@@ -160,6 +174,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectValidationError(result);
@@ -176,6 +191,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -192,6 +208,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result, 32);
@@ -207,6 +224,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -222,6 +240,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -239,6 +258,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -255,6 +275,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result, 65);
@@ -270,6 +291,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -285,6 +307,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -299,6 +322,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   it('should return valid result', async () => {
     const result = await validateIdentityTopUpTransitionBasic(
       rawStateTransition,
+      executionContext,
     );
 
     expect(result.isValid()).to.be.true();

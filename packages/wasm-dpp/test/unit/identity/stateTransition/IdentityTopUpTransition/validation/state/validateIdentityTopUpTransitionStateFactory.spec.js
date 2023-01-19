@@ -9,13 +9,12 @@ describe('validateIdentityTopUpTransitionStateFactory', () => {
   let stateRepositoryMock;
 
   let IdentityTopUpTransition;
-
-  let validateIdentityTopUpTransitionStateDPP;
+  let IdentityTopUpTransitionStateValidator;
 
   before(async () => {
     ({
       IdentityTopUpTransition,
-      validateIdentityTopUpTransitionState: validateIdentityTopUpTransitionStateDPP,
+      IdentityTopUpTransitionStateValidator,
     } = await loadWasmDpp());
   });
 
@@ -26,8 +25,10 @@ describe('validateIdentityTopUpTransitionStateFactory', () => {
       getIdentityTopUpTransitionFixture().toObject(),
     );
 
-    validateIdentityTopUpTransitionState = (st) => validateIdentityTopUpTransitionStateDPP(
-      stateRepositoryMock, st,
+    const validator = new IdentityTopUpTransitionStateValidator(stateRepositoryMock);
+
+    validateIdentityTopUpTransitionState = (st) => validator.validate(
+      st,
     );
   });
 
