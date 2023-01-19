@@ -12,6 +12,6 @@ pub fn from_dpp_error_ref(e: &DPPError) -> JsValue {
         DPPError::AssetLockTransactionIsNotFoundError(e) => {
             AssetLockTransactionIsNotFoundErrorWasm::from(e).into()
         }
-        _ => JsValue::from(e.to_string()),
+        _ => unimplemented!(),
     }
 }

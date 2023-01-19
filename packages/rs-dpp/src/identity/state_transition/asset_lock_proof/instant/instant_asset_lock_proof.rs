@@ -104,14 +104,11 @@ impl InstantAssetLockProof {
     pub fn out_point(&self) -> Option<[u8; 36]> {
         let out_point_buffer = self.transaction.out_point_buffer(self.output_index());
 
-        // Change tx_id endianness to match js-dpp
-        if let Some(mut out_point_buffer) = out_point_buffer {
-            let (tx_id, _) = out_point_buffer.split_at_mut(32);
+        out_point_buffer.map(|mut buffer| {
+            let (tx_id, _) = buffer.split_at_mut(32);
             tx_id.reverse();
-            Some(out_point_buffer)
-        } else {
-            None
-        }
+            buffer
+        })
     }
 
     pub fn output(&self) -> Option<&TxOut> {
