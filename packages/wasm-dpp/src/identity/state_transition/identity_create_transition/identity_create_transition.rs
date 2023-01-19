@@ -193,7 +193,7 @@ impl IdentityCreateTransitionWasm {
             Default::default()
         };
 
-        let skip_signature = opts.skip_signature.clone();
+        let skip_signature = opts.skip_signature;
         let object = super::to_object::to_object_struct(&self.0, opts);
         let js_object = js_sys::Object::new();
 
@@ -210,7 +210,7 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         if let Some(signature) = object.signature {
-            let signature_value: JsValue = if signature.len() == 0 {
+            let signature_value: JsValue = if signature.is_empty() {
                 JsValue::undefined()
             } else {
                 Buffer::from_bytes(&signature).into()
@@ -264,7 +264,7 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         if let Some(signature) = object.signature {
-            let signature_value: JsValue = if signature.len() == 0 {
+            let signature_value: JsValue = if signature.is_empty() {
                 JsValue::undefined()
             } else {
                 string_encoding::encode(signature.as_slice(), Encoding::Base64).into()
@@ -355,6 +355,6 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes(&self.0.get_signature())
+        Buffer::from_bytes(self.0.get_signature())
     }
 }

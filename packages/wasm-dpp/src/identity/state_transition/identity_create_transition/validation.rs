@@ -88,7 +88,7 @@ pub async fn validate_identity_create_transition_basic_wasm(
 
         let chain_asset_lock_proof_validator = ChainAssetLockProofStructureValidator::new(
             state_repository_wrapper.clone(),
-            tx_validator.clone(),
+            tx_validator,
         )
         .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
 

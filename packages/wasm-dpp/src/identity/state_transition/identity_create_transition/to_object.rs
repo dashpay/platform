@@ -29,17 +29,18 @@ pub fn to_object_struct(
     transition: &IdentityCreateTransition,
     options: ToObjectOptions,
 ) -> ToObject {
-    let mut to_object = ToObject::default();
-    to_object.transition_type = transition.get_type() as u8;
-    to_object.protocol_version = transition.get_protocol_version();
+    let mut to_object = ToObject {
+        transition_type: transition.get_type() as u8,
+        protocol_version: transition.get_protocol_version(),
+        public_keys: transition.get_public_keys().to_owned(),
+        asset_lock_proof: transition.get_asset_lock_proof().to_owned(),
+        identity_id: transition.get_identity_id().to_owned(),
+        signature: None,
+    };
 
     if !options.skip_signature.unwrap_or(false) {
         to_object.signature = Some(transition.get_signature().to_owned());
     }
-
-    to_object.public_keys = transition.get_public_keys().to_owned();
-    to_object.asset_lock_proof = transition.get_asset_lock_proof().to_owned();
-    to_object.identity_id = transition.get_identity_id().to_owned();
 
     to_object
 }

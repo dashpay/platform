@@ -139,9 +139,9 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
 
     if ctor_name == class_name {
         let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("ptr"))?;
-        let ptr_u32: u32 = ptr
-            .as_f64()
-            .ok_or(JsValue::from("Invalid JS object pointer"))? as u32;
+        let ptr_u32: u32 =
+            ptr.as_f64()
+                .ok_or_else(|| JsValue::from("Invalid JS object pointer"))? as u32;
         let reference = unsafe { T::ref_from_abi(ptr_u32) };
         Ok(reference)
     } else {

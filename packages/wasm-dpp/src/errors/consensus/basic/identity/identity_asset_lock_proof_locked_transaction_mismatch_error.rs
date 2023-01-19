@@ -23,7 +23,7 @@ impl IdentityAssetLockProofLockedTransactionMismatchErrorWasm {
     #[wasm_bindgen(js_name=getInstantLockTransactionId)]
     pub fn instant_lock_transaction_id(&self) -> Buffer {
         let tx_id = self.inner.instant_lock_transaction_id();
-        Buffer::from_bytes(&tx_id.to_vec())
+        Buffer::from_bytes(&tx_id)
     }
 
     #[wasm_bindgen(js_name=getAssetLockTransactionId)]

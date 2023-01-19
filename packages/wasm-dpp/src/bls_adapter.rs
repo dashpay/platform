@@ -76,7 +76,7 @@ impl BlsModule for BlsAdapter {
                         let message: String = e
                             .message()
                             .as_string()
-                            .unwrap_or(String::from("Unknown error, can't sign"));
+                            .unwrap_or_else(|| String::from("Unknown error, can't sign"));
                         anyhow!(message).into()
                     }
                     Err(_) => anyhow!("Unknown error, can't sign").into(),

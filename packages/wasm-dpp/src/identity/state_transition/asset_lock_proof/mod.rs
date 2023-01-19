@@ -79,10 +79,10 @@ impl AssetLockProofWasm {
     pub fn create_identifier(&self) -> Result<IdentifierWrapper, JsValue> {
         match &self.0 {
             AssetLockProof::Instant(instant) => {
-                InstantAssetLockProofWasm::from(instant.to_owned().clone()).create_identifier()
+                InstantAssetLockProofWasm::from(instant.to_owned()).create_identifier()
             }
             AssetLockProof::Chain(chain) => {
-                ChainAssetLockProofWasm::from(chain.to_owned().clone()).create_identifier()
+                ChainAssetLockProofWasm::from(chain.to_owned()).create_identifier()
             }
         }
     }
@@ -91,23 +91,23 @@ impl AssetLockProofWasm {
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         match &self.0 {
             AssetLockProof::Instant(instant) => {
-                InstantAssetLockProofWasm::from(instant.to_owned().clone()).to_object()
+                InstantAssetLockProofWasm::from(instant.to_owned()).to_object()
             }
             AssetLockProof::Chain(chain) => {
-                ChainAssetLockProofWasm::from(chain.to_owned().clone()).to_object()
+                ChainAssetLockProofWasm::from(chain.to_owned()).to_object()
             }
         }
     }
 }
 
 fn get_lock_type(raw_asset_lock_proof: &JsValue) -> Result<AssetLockProofType, JsValue> {
-    (js_sys::Reflect::get(&raw_asset_lock_proof, &JsValue::from_str("type"))
+    (js_sys::Reflect::get(raw_asset_lock_proof, &JsValue::from_str("type"))
         .map_err(|_| {
             RustConversionError::Error(String::from("error getting type from raw asset lock"))
                 .to_js_value()
         })?
         .as_f64()
-        .ok_or(JsValue::from_str("asset lock type must be a number"))? as u64)
+        .ok_or_else(|| JsValue::from_str("asset lock type must be a number"))? as u64)
         .try_into()
         .map_err(|_| JsValue::from_str("unrecognized asset lock proof type"))
 }
@@ -135,12 +135,12 @@ pub fn create_asset_lock_proof_from_wasm_instance(
 
     let get_type_function: &js_sys::Function = get_type_value
         .dyn_ref::<js_sys::Function>()
-        .ok_or(default_error.clone())?;
+        .ok_or_else(|| default_error.clone())?;
 
     let raw_lock_type = get_type_function
-        .call0(&js_value)?
+        .call0(js_value)?
         .as_f64()
-        .ok_or(default_error.clone())? as u64;
+        .ok_or(default_error)? as u64;
 
     let lock_type: AssetLockProofType = raw_lock_type.try_into().map_err(|_| {
         UnknownAssetLockProofTypeErrorWasm::from(UnknownAssetLockProofTypeError::new(Some(

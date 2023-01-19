@@ -159,9 +159,9 @@ impl IdentityPublicKeyWasm {
             &JsValue::from(data_buffer),
         )?;
 
-        if skip_signatures.unwrap_or(false) != true {
+        if !skip_signatures.unwrap_or(false) {
             let signature = self.0.get_signature();
-            if signature.len() != 0 {
+            if !signature.is_empty() {
                 js_sys::Reflect::set(
                     &js_object,
                     &"signature".to_owned().into(),
