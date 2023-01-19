@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::digest::generic_array::functional::FunctionalSequence;
 
-use crate::identity::{identity_public_key, PartialIdentityInfo};
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::{identity_public_key, PartialIdentityInfo};
 use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
@@ -294,8 +294,12 @@ impl Identity {
 
     /// Convenience method to get Partial Identity Info
     pub fn into_partial_identity_info(self) -> PartialIdentityInfo {
-        let Identity  {
-            id, public_keys, balance, revision, ..
+        let Identity {
+            id,
+            public_keys,
+            balance,
+            revision,
+            ..
         } = self;
         PartialIdentityInfo {
             id,

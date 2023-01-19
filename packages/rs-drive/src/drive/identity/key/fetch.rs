@@ -281,9 +281,9 @@ impl IdentityKeysRequest {
     }
 
     /// Make a request for all current keys for the identity
-    pub fn new_all_keys_query(identity_id: [u8; 32]) -> Self {
+    pub fn new_all_keys_query(identity_id: &[u8; 32]) -> Self {
         IdentityKeysRequest {
-            identity_id,
+            identity_id: *identity_id,
             request_type: AllKeys,
             limit: None,
             offset: None,
@@ -442,7 +442,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
+        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id);
         self.fetch_identity_keys_operations(key_request, transaction, drive_operations)
     }
 

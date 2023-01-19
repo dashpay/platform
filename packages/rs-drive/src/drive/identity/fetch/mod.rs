@@ -32,11 +32,13 @@ use std::collections::BTreeMap;
 mod balance;
 mod fetch_by_public_key_hashes;
 mod full_identity;
+mod prove;
+mod queries;
 mod revision;
 
 impl Drive {
     /// The query for the identity revision
-    pub fn identity_revision_query(identity_id: [u8; 32]) -> PathQuery {
+    pub fn identity_revision_query(identity_id: &[u8; 32]) -> PathQuery {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let mut query = Query::new();
         query.insert_key(vec![IdentityTreeRevision as u8]);

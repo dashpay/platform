@@ -982,9 +982,123 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_fetch_identities_by_public_key_hashes(
-        mut cx: FunctionContext,
-    ) -> JsResult<JsUndefined> {
+    fn js_fetch_proved_identity(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .prove_full_identity(identity_id, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(identity_proof) => {
+                            let js_identity_proof =
+                                JsBuffer::external(&mut task_context, identity_proof);
+
+                            vec![task_context.null().upcast(), js_identity_proof.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_many_proved_identities(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_ids = cx.argument::<JsArray>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_ids = converter::js_array_of_buffers_to_identifiers(&mut cx, js_identity_ids)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .proved_full_identities(identity_ids, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(identities_proof) => {
+                            let js_identities_proof =
+                                JsBuffer::external(&mut task_context, identities_proof);
+
+                            vec![task_context.null().upcast(), js_identities_proof.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identities_by_public_key_hashes(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_public_key_hashes = cx.argument::<JsArray>(0)?;
         let js_using_transaction = cx.argument::<JsBoolean>(1)?;
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
@@ -2978,6 +3092,14 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         PlatformWrapper::js_insert_identity_cbor,
     )?;
     cx.export_function("driveFetchIdentity", PlatformWrapper::js_fetch_identity)?;
+    cx.export_function(
+        "driveFetchProvedIdentity",
+        PlatformWrapper::js_fetch_proved_identity,
+    )?;
+    cx.export_function(
+        "driveFetchManyProvedIdentities",
+        PlatformWrapper::js_fetch_many_proved_identity,
+    )?;
     cx.export_function(
         "driveFetchIdentityWithCosts",
         PlatformWrapper::js_fetch_identity_with_costs,

@@ -11,7 +11,7 @@ serde = { version = "1.0.132", features = ["derive"] }
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
 integer-encoding = "3.0.4"
 bs58 = "0.4.0"
-base64 = "0.20.0"
+base64 = "0.21.0"
 rand = { version = "0.8.4", features = ["small_rng"] }
 byteorder = "1.4.3"
 indexmap = "1.8.0"
@@ -37,15 +37,15 @@ lazy_static = "1.4.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/patchingEstimatedCosts"
+branch = "feat/PathQueryHelpers"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/patchingEstimatedCosts"
+branch = "feat/PathQueryHelpers"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/patchingEstimatedCosts"
+branch = "feat/PathQueryHelpers"
 
 [dev-dependencies]
 criterion = "0.3.5"

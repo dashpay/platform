@@ -72,6 +72,7 @@ pub mod query;
 mod system;
 #[cfg(test)]
 mod test_utils;
+mod verify;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};

@@ -106,7 +106,7 @@ impl Drive {
     }
 
     /// The query for the identity balance
-    pub fn identity_balance_query(identity_id: [u8; 32]) -> PathQuery {
+    pub fn identity_balance_query(identity_id: &[u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
         let mut query = Query::new();
         query.insert_key(identity_id.to_vec());
