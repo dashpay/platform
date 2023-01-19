@@ -157,7 +157,7 @@ impl IdentityTopUpTransitionWasm {
         )?;
 
         if let Some(signature) = object.signature {
-            let signature_value: JsValue = if signature.len() == 0 {
+            let signature_value: JsValue = if signature.is_empty() {
                 JsValue::undefined()
             } else {
                 Buffer::from_bytes(signature.as_slice()).into()
@@ -208,7 +208,7 @@ impl IdentityTopUpTransitionWasm {
         )?;
 
         if let Some(signature) = object.signature {
-            let signature_value: JsValue = if signature.len() == 0 {
+            let signature_value: JsValue = if signature.is_empty() {
                 JsValue::undefined()
             } else {
                 string_encoding::encode(signature.as_slice(), Encoding::Base64).into()
