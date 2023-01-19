@@ -121,7 +121,9 @@ describe('validatePublicKeySignaturesFactory', () => {
     rawIdentityCreateTransition = identityCreateTransition.toObject();
 
     const validator = new PublicKeysSignaturesValidator(blsAdapter);
-    validatePublicKeySignatures = (stateTransition, keys) => validator.validate(stateTransition, keys);
+    validatePublicKeySignatures = (
+      stateTransition, keys,
+    ) => validator.validate(stateTransition, keys);
   });
 
   it('should return InvalidIdentityKeySignatureError if signature is not valid', async () => {
