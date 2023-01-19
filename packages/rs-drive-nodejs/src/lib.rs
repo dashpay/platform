@@ -1053,7 +1053,9 @@ impl PlatformWrapper {
                                         },
                                     );
 
-                                    js_array.set(&mut task_context, i as u32, value)
+                                    js_array
+                                        .set(&mut task_context, i as u32, value)
+                                        .map(|result| ())
                                 },
                             )?;
 
