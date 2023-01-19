@@ -38,6 +38,7 @@ const {
   abciAfterFinalizeBlock,
   calculateStorageFeeDistributionAmountAndLeftovers,
   driveFetchIdentitiesByPublicKeyHashes,
+  driveProveIdentitiesByPublicKeyHashes,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -78,6 +79,9 @@ const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchId
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
 const driveFetchIdentitiesByPublicKeyHashesAsync = appendStackAsync(
   promisify(driveFetchIdentitiesByPublicKeyHashes),
+);
+const driveProveIdentitiesByPublicKeyHashesAsync = appendStackAsync(
+  promisify(driveProveIdentitiesByPublicKeyHashes),
 );
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
 const driveDisableIdentityKeysAsync = appendStackAsync(promisify(driveDisableIdentityKeys));
@@ -396,7 +400,7 @@ class Drive {
   }
 
   /**
-   * @param {Buffer|Identifier} id
+   * @param {Identifier} id
    * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<Buffer|null>}
@@ -410,7 +414,7 @@ class Drive {
   }
 
   /**
-   * @param {Buffer[]|Identifier} ids
+   * @param {Identifier[]} ids
    * @param {boolean} [useTransaction=false]
    *
    * @returns {Promise<Buffer|null>}
@@ -418,7 +422,7 @@ class Drive {
   async proveManyIdentities(ids, useTransaction = false) {
     return driveFetchManyProvedIdentitiesAsync.call(
       this.drive,
-      ids,
+      ids.map((id) => Buffer.from(id)),
       useTransaction,
     );
   }
@@ -551,6 +555,20 @@ class Drive {
         return new Identity(rawIdentity);
       });
     });
+  }
+
+  /**
+   * @param {Buffer[]} hashes
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Array<Identity|null>>}
+   */
+  async proveIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
+    return driveProveIdentitiesByPublicKeyHashesAsync.call(
+      this.drive,
+      hashes.map((h) => Buffer.from(h)),
+      useTransaction,
+    );
   }
 
   /**

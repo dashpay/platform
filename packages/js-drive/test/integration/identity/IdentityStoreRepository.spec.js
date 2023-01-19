@@ -510,7 +510,7 @@ describe('IdentityStoreRepository', () => {
     });
 
     it('should return proof', async () => {
-      await repository.create(identity);
+      await repository.create(identity, blockInfo);
 
       const result = await repository.proveManyByPublicKeyHashes(publicKeyHashes);
 
@@ -526,7 +526,7 @@ describe('IdentityStoreRepository', () => {
     it.skip('should return proof map using transaction', async () => {
       await store.startTransaction();
 
-      await repository.create(identity, { useTransaction: true });
+      await repository.create(identity, blockInfo, { useTransaction: true });
 
       // Should return proof of non-existence
       let result = await repository.proveManyByPublicKeyHashes(publicKeyHashes);
@@ -577,13 +577,7 @@ describe('IdentityStoreRepository', () => {
     });
 
     it('should return proof', async () => {
-      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
-
-      await store.put(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        identity.toBuffer(),
-      );
+      await repository.create(identity, blockInfo);
 
       const result = await repository.prove(identity.getId());
 
@@ -643,6 +637,10 @@ describe('IdentityStoreRepository', () => {
     let identity2;
 
     beforeEach(async () => {
+      // Set correct but unique public key data
+      const data = Buffer.from(identity.getPublicKeys()[0].getData());
+      data[data.length - 1] = 2;
+
       identity2 = new Identity({
         protocolVersion: 1,
         id: generateRandomIdentifier().toBuffer(),
@@ -653,25 +651,16 @@ describe('IdentityStoreRepository', () => {
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
             readOnly: false,
-            data: Buffer.alloc(48).fill(255),
+            data,
           },
         ],
         balance: 10,
         revision: 0,
       });
-
-      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
     });
 
     it('should return proof if identity does not exist', async () => {
-      // Create only first identity
-      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
-
-      await store.put(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        identity.toBuffer(),
-      );
+      await repository.create(identity, blockInfo);
 
       const result = await repository.proveMany([identity.getId(), identity2.getId()]);
 
@@ -685,13 +674,8 @@ describe('IdentityStoreRepository', () => {
     });
 
     it('should return proof', async () => {
-      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
-
-      await store.put(
-        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
-        IdentityStoreRepository.IDENTITY_KEY,
-        identity.toBuffer(),
-      );
+      await repository.create(identity, blockInfo);
+      await repository.create(identity2, blockInfo);
 
       const result = await repository.proveMany([identity.getId(), identity2.getId()]);
 

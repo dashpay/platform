@@ -327,8 +327,26 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<Buffer>>}
    * */
-  async prove(id, options) {
-    return this.proveMany([id], options);
+  async prove(id, options = {}) {
+    try {
+      const proof = await this.storage.getDrive().proveIdentity(
+        id,
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        proof,
+        [],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          id,
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'prove');
+      }
+    }
   }
 
   /**
@@ -340,9 +358,9 @@ class IdentityStoreRepository {
    *
    * @return {Promise<StorageResult<Buffer>>}
    * */
-  async proveMany(ids, options) {
+  async proveMany(ids, options = {}) {
     try {
-      const proof = await this.storage.getDrive().proveIdentities(
+      const proof = await this.storage.getDrive().proveManyIdentities(
         ids,
         Boolean(options.useTransaction),
       );

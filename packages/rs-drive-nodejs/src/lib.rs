@@ -1186,93 +1186,73 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
-    // fn js_prove_identities_by_public_key_hashes(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    //     let js_public_key_hashes = cx.argument::<JsArray>(0)?;
-    //     let js_using_transaction = cx.argument::<JsBoolean>(1)?;
-    //     let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
-    //
-    //     let drive = cx
-    //         .this()
-    //         .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-    //
-    //     let public_key_hashes: Vec<[u8; 20]> =
-    //         converter::js_array_of_buffers_to_vec(&mut cx, js_public_key_hashes)?
-    //             .into_iter()
-    //             .map(|hash| {
-    //                 hash.try_into()
-    //                     .or_else(|_| cx.throw_error("invalid hash size"))
-    //             })
-    //             .collect::<Result<_, _>>()?;
-    //
-    //     let using_transaction = js_using_transaction.value(&mut cx);
-    //
-    //     drive
-    //         .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-    //             let transaction_result = if using_transaction {
-    //                 if transaction.is_none() {
-    //                     Err("transaction is not started".to_string())
-    //                 } else {
-    //                     Ok(transaction)
-    //                 }
-    //             } else {
-    //                 Ok(None)
-    //             };
-    //
-    //             let result: Result<Vec<Option<Vec<u8>>>, String> =
-    //                 transaction_result.and_then(|transaction_arg| {
-    //                     platform
-    //                         .drive
-    //                         .fetch_proved_full_identity_by_unique_public_key_hash(
-    //                             public_key_hashes,
-    //                             transaction_arg,
-    //                         )
-    //                         .map_err(|err| err.to_string())
-    //                         .and_then(|hashes_to_identities| {
-    //                             hashes_to_identities
-    //                                 .into_values()
-    //                                 .map(|identity| identity.map(|i| i.to_buffer()).transpose())
-    //                                 .collect::<Result<_, _>>()
-    //                                 .map_err(|err| err.to_string())
-    //                         })
-    //                 });
-    //
-    //             channel.send(move |mut task_context| {
-    //                 let callback = js_callback.into_inner(&mut task_context);
-    //                 let this = task_context.undefined();
-    //
-    //                 let callback_arguments: Vec<Handle<JsValue>> = match result {
-    //                     Ok(hashes_to_identities) => {
-    //                         let js_array = task_context.empty_array();
-    //
-    //                         hashes_to_identities.into_iter().enumerate().try_for_each(
-    //                             |(i, identity_bytes)| {
-    //                                 let value: Handle<JsValue> = if let Some(bytes) = identity_bytes
-    //                                 {
-    //                                     JsBuffer::external(&mut task_context, bytes).upcast()
-    //                                 } else {
-    //                                     task_context.null().upcast()
-    //                                 };
-    //
-    //                                 js_array.set(&mut task_context, i as u32, value).map(|_| ())
-    //                             },
-    //                         )?;
-    //
-    //                         vec![task_context.null().upcast(), js_array.upcast()]
-    //                     }
-    //
-    //                     // Convert the error to a JavaScript exception on failure
-    //                     Err(err) => vec![task_context.error(err)?.upcast()],
-    //                 };
-    //
-    //                 callback.call(&mut task_context, this, callback_arguments)?;
-    //
-    //                 Ok(())
-    //             });
-    //         })
-    //         .or_else(|err| cx.throw_error(err.to_string()))?;
-    //
-    //     Ok(cx.undefined())
-    // }
+    fn js_prove_identities_by_public_key_hashes(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_public_key_hashes = cx.argument::<JsArray>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let public_key_hashes: Vec<[u8; 20]> =
+            converter::js_array_of_buffers_to_vec(&mut cx, js_public_key_hashes)?
+                .into_iter()
+                .map(|hash| {
+                    hash.try_into()
+                        .or_else(|_| cx.throw_error("invalid hash size"))
+                })
+                .collect::<Result<_, _>>()?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result: Result<Vec<u8>, String> =
+                    transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .prove_full_identities_by_unique_public_key_hashes(
+                                &public_key_hashes,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(proof) => {
+                            let js_proof = JsBuffer::external(&mut task_context, proof);
+
+                            vec![task_context.null().upcast(), js_proof.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
 
     fn js_fetch_identity_with_costs(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
@@ -3205,6 +3185,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveFetchIdentitiesByPublicKeyHashes",
         PlatformWrapper::js_fetch_identities_by_public_key_hashes,
+    )?;
+    cx.export_function(
+        "driveProveIdentitiesByPublicKeyHashes",
+        PlatformWrapper::js_prove_identities_by_public_key_hashes,
     )?;
     cx.export_function(
         "driveAddKeysToIdentity",
