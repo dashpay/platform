@@ -116,6 +116,34 @@ impl Drive {
         }
     }
 
+    /// Verifies the identity's balance with a identity id
+    pub fn verify_identity_balance_for_identity_id(
+        proof: &[u8],
+        identity_id: [u8; 32],
+    ) -> Result<(RootHash, Option<u64>), Error> {
+        let path_query = Self::identity_balance_query(&identity_id);
+        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        if proved_key_values.len() == 1 {
+            let value = &proved_key_values.get(0).unwrap().value;
+            let element = Element::deserialize(value)?;
+            let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
+            if signed_balance < 0 {
+                return Err(Error::Proof(ProofError::Overflow(
+                    "balance can't be negative",
+                )));
+            }
+            //todo there shouldn't be a some here
+            Ok((
+                root_hash,
+                Some(signed_balance as u64),
+            ))
+        } else {
+            Err(Error::Proof(ProofError::TooManyElements(
+                "expected one identity balance",
+            )))
+        }
+    }
+
     /// Verifies the identity id with a public key hash
     pub fn verify_identity_ids_by_public_key_hashes<
         T: FromIterator<([u8; 20], Option<[u8; 32]>)>,
