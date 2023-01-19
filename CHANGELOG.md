@@ -1,3 +1,33 @@
+### [0.23.2](https://github.com/dashpay/platform/compare/v0.23.0...v0.23.2) (2023-01-19)
+
+
+### Features
+
+* update Platform to Core v18.2.0-rc.4 ([#701](https://github.com/dashpay/platform/issues/701))
+
+
+### Bug Fixes
+
+* **dapi-client:** missing fetch-polyfill in npm installation ([#743](https://github.com/dashpay/platform/issues/743))
+* **dapi-grpc:** unsafe-eval errors in protobuf js files ([#713](https://github.com/dashpay/platform/issues/713))
+
+
+### Continuous Integration
+
+* fix incorrect github actions templating syntax ([#689](https://github.com/dashpay/platform/issues/689))
+* release dashmate packages ([#669](https://github.com/dashpay/platform/issues/669))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** replace axios with fetch ([#690](https://github.com/dashpay/platform/issues/690))
+* **dashmate:** update base config to core 18.2.0 ([#706](https://github.com/dashpay/platform/issues/706))
+* **release:** update changelog and bump version to 0.23.1 ([#727](https://github.com/dashpay/platform/issues/727))
+* replace grpc-web with @improbable-eng/grpc-web ([#628](https://github.com/dashpay/platform/issues/628))
+* set core in base config to v18.1.1 ([#720](https://github.com/dashpay/platform/issues/720))
+* update platform chain id ([#703](https://github.com/dashpay/platform/issues/703))
+* use core 18.2.0 on testnet ([#725](https://github.com/dashpay/platform/issues/725))
+
 ### [0.23.1](https://github.com/dashpay/platform/compare/v0.23.0...v0.23.1) (2023-01-13)
 
 
