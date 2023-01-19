@@ -355,14 +355,17 @@ fn js_object_to_query<'a, C: Context<'a>>(
         }
     }
 
-    let subquery_path = js_value_to_option::<JsArray, _>(cx, js_object.get(cx, "subqueryPath")?)?
+    let js_subquery_path = js_object.get(cx, "subqueryPath")?;
+    let subquery_path = js_value_to_option::<JsArray, _>(cx, js_subquery_path)?
         .map(|x| js_array_of_buffers_to_vec(cx, x))
         .transpose()?;
-    let subquery = js_value_to_option::<JsObject, _>(cx, js_object.get(cx, "subquery")?)?
+    let js_subquery = js_object.get(cx, "subquery")?;
+    let subquery = js_value_to_option::<JsObject, _>(cx, js_subquery)?
         .map(|x| js_object_to_query(cx, x))
         .transpose()?;
-    let left_to_right = js_value_to_option::<JsBoolean, _>(cx, js_object.get(cx, "leftToRight")?)?
-        .map(|x| x.value(cx));
+    let js_left_to_right = js_object.get(cx, "leftToRight")?;
+    let left_to_right =
+        js_value_to_option::<JsBoolean, _>(cx, js_left_to_right)?.map(|x| x.value(cx));
 
     query.default_subquery_branch.subquery_path = subquery_path;
     query.default_subquery_branch.subquery = subquery.map(Box::new);
@@ -378,13 +381,15 @@ fn js_object_to_sized_query<'a, C: Context<'a>>(
     let query: Handle<JsObject> = js_object.get(cx, "query")?;
     let query = js_object_to_query(cx, query)?;
 
-    let limit: Option<u16> = js_value_to_option::<JsNumber, _>(cx, js_object.get(cx, "limit")?)?
+    let js_limit = js_object.get(cx, "limit")?;
+    let limit: Option<u16> = js_value_to_option::<JsNumber, _>(cx, js_limit)?
         .map(|x| {
             u16::try_from(x.value(cx) as i64)
                 .or_else(|_| cx.throw_range_error("`limit` must fit in u16"))
         })
         .transpose()?;
-    let offset: Option<u16> = js_value_to_option::<JsNumber, _>(cx, js_object.get(cx, "offset")?)?
+    let js_offset = js_object.get(cx, "offset")?;
+    let offset: Option<u16> = js_value_to_option::<JsNumber, _>(cx, js_offset)?
         .map(|x| {
             u16::try_from(x.value(cx) as i64)
                 .or_else(|_| cx.throw_range_error("`offset` must fit in u16"))
@@ -398,8 +403,10 @@ pub fn js_path_query_to_path_query<'a, C: Context<'a>>(
     cx: &mut C,
     js_path_query: Handle<JsObject>,
 ) -> NeonResult<PathQuery> {
-    let path = js_array_of_buffers_to_vec(cx, js_path_query.get(cx, "path")?)?;
-    let query = js_object_to_sized_query(cx, js_path_query.get(cx, "query")?)?;
+    let js_path = js_path_query.get(cx, "path")?;
+    let path = js_array_of_buffers_to_vec(cx, js_path)?;
+    let js_query = js_path_query.get(cx, "query")?;
+    let query = js_object_to_sized_query(cx, js_query)?;
 
     Ok(PathQuery::new(path, query))
 }

@@ -478,7 +478,7 @@ describe('Drive', () => {
       expect(result).to.be.null();
     });
 
-    it('should return contract if contract is present', async () => {
+    it('should return identity if it is present', async () => {
       await drive.insertIdentity(identity, blockInfo);
 
       const result = await drive.fetchIdentity(identity.getId());
@@ -652,6 +652,31 @@ describe('Drive', () => {
       expect(fetchedIdentity.getBalance()).to.not.equals(
         identity.getBalance(),
       );
+    });
+  });
+
+  describe('#fetchIdentitiesByPublicKeyHashes', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentitiesByPublicKeyHashes([Buffer.alloc(20)]);
+
+      expect(result).to.be.instanceOf(Array);
+      expect(result).to.be.empty();
+    });
+
+    it('should return identities if it is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentitiesByPublicKeyHashes(
+        identity.getPublicKeys().map((k) => k.hash()),
+      );
+
+      expect(result).to.deep.equal(identity.getPublicKeys().map(() => identity));
     });
   });
 
@@ -955,7 +980,7 @@ describe('Drive', () => {
 
       const [amount, leftovers] = result;
 
-      expect(amount).to.equals(558);
+      expect(amount).to.equals(556);
       expect(leftovers).to.equals(440);
     });
   });

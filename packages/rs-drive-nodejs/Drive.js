@@ -35,6 +35,7 @@ const {
   abciBlockEnd,
   abciAfterFinalizeBlock,
   calculateStorageFeeDistributionAmountAndLeftovers,
+  driveFetchIdentitiesByPublicKeyHashes,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -69,6 +70,9 @@ const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity)
 const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
 const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityWithCosts));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
+const driveFetchIdentitiesByPublicKeyHashesAsync = appendStackAsync(
+  promisify(driveFetchIdentitiesByPublicKeyHashes),
+);
 const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
 const driveDisableIdentityKeysAsync = appendStackAsync(promisify(driveDisableIdentityKeys));
 const driveUpdateIdentityRevisionAsync = appendStackAsync(promisify(driveUpdateIdentityRevision));
@@ -485,6 +489,34 @@ class Drive {
       fees.inner,
       useTransaction,
     ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Buffer[]} hashes
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Array<Identity|null>>}
+   */
+  async fetchIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
+    return driveFetchIdentitiesByPublicKeyHashesAsync.call(
+      this.drive,
+      hashes.map((h) => Buffer.from(h)),
+      useTransaction,
+    ).then((encodedIdentities) => {
+      encodedIdentities.map((encodedIdentity) => {
+        if (encodedIdentity === null) {
+          return null;
+        }
+
+        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+          encodedIdentity,
+        );
+
+        rawIdentity.protocolVersion = protocolVersion;
+
+        return new Identity(rawIdentity);
+      });
+    });
   }
 
   /**

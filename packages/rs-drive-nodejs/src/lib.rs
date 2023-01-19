@@ -982,7 +982,7 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_fetch_many_identities_by_public_key_hashes(
+    fn js_fetch_identities_by_public_key_hashes(
         mut cx: FunctionContext,
     ) -> JsResult<JsUndefined> {
         let js_public_key_hashes = cx.argument::<JsArray>(0)?;
@@ -2994,6 +2994,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         "driveApplyFeesToIdentityBalance",
         PlatformWrapper::js_apply_fees_to_identity_balance,
     )?;
+    cx.export_function(
+        "driveFetchIdentitiesByPublicKeyHashes",
+        PlatformWrapper::js_fetch_identities_by_public_key_hashes,
+    );
     cx.export_function(
         "driveAddKeysToIdentity",
         PlatformWrapper::js_add_keys_to_identity,
