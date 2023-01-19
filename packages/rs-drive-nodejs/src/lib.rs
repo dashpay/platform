@@ -998,9 +998,9 @@ impl PlatformWrapper {
                 .into_iter()
                 .map(|hash| {
                     hash.try_into()
-                        .or_else(|hash| cx.throw_error("invalid hash size"))
+                        .or_else(|_| cx.throw_error("invalid hash size"))
                 })
-                .collect()?;
+                .collect::<Result<_, _>>()?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1028,7 +1028,7 @@ impl PlatformWrapper {
                             .and_then(|hashes_to_identities| {
                                 hashes_to_identities
                                     .into_iter()
-                                    .map(|(hash, identity)| {
+                                    .map(|(_, identity)| {
                                         identity.map(|i| i.to_buffer()).transpose()
                                     })
                                     .collect::<Result<_, _>>()
@@ -1045,17 +1045,15 @@ impl PlatformWrapper {
                             let js_array = task_context.empty_array();
 
                             hashes_to_identities.into_iter().enumerate().try_for_each(
-                                |(i, identity)| {
-                                    let value = identity.map_or_else(
-                                        || task_context.null().upcast(),
-                                        |bytes| {
-                                            JsBuffer::external(&mut task_context, bytes).upcast()
-                                        },
-                                    );
+                                |(i, identity_bytes)| {
+                                    let value: Handle<JsValue> = if let Some(bytes) = identity_bytes
+                                    {
+                                        JsBuffer::external(&mut task_context, bytes).upcast()
+                                    } else {
+                                        task_context.null().upcast()
+                                    };
 
-                                    js_array
-                                        .set(&mut task_context, i as u32, value)
-                                        .map(|result| ())
+                                    js_array.set(&mut task_context, i as u32, value).map(|_| ())
                                 },
                             )?;
 
