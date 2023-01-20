@@ -43,6 +43,7 @@ function processProposalFactory(
       time,
       proposerProTxHash,
       round,
+      quorumHash,
     } = request;
 
     contextLogger.info(`Processing a block proposal for height #${height} round #${round}`);
@@ -56,6 +57,7 @@ function processProposalFactory(
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
         round,
+        quorumHash,
       },
       contextLogger,
     );

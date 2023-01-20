@@ -53,6 +53,7 @@ function prepareProposalHandlerFactory(
       time,
       proposerProTxHash,
       round,
+      quorumHash,
     } = request;
 
     const contextLogger = createContextLogger(logger, {
@@ -78,6 +79,7 @@ function prepareProposalHandlerFactory(
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
         round,
+        quorumHash,
       },
       contextLogger,
     );
