@@ -1,5 +1,5 @@
 const { getConfig } = require("./manageConfig");
-const { SERVICES } = require("./constants");
+const { SERVICES } = require("./constants/services");
 
 async function removeVolumes(configName, dockerContainer) {
   const config = await getConfig(configName)
@@ -29,6 +29,7 @@ async function isGroupServicesRunning(isRunning, configFile, dockerContainer) {
       } else {
         result = await dockerContainer.isServiceRunning(config.toEnvs(), SERVICES[key]);
       }
+
       if (result !== isRunning) {
         throw new Error(`Running state for service ${key} should be ${isRunning}`)
       }
