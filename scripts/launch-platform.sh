@@ -2,7 +2,11 @@
 
 set -e
 
-mkdir -p /usr/local/bin /opt
+YARN_CACHE=/cache/yarn
+DOWNLOADS_CACHE=/cache/downloads
+CPUS=4
+DISK=50G
+MEM=8G
 
 function show_help {
     cat <<EOF
@@ -15,9 +19,9 @@ It uses:
 
 - ubuntu 22.04 (recommended)
 - multipass
-- 4 CPU cores
-- 8 GB RAM
-- 50 GB HDD
+- ${CPUS} CPU cores
+- ${MEM} GB RAM
+- ${DISK} GB HDD
 
 Usage:
 
@@ -26,7 +30,7 @@ $0 [--branch BRANCHNAME] [--debug] [--mode MODE] [--name VMNAME] [--repo /path/t
 where:
 
 * --branch, -b - name of Platform branch to use; defaults to 'master'
-* --cpus N - use N CPUs (defaults to 2)
+* --cpus N - use N CPUs (defaults to ${CPUS})
 * --cache DIR - use DIR to cache some files
 * --debug, -d - more verbose output
 * --mode - mode of operation:
@@ -35,16 +39,14 @@ where:
 * --name , -n - name of multipass instance to be created; defaults to 'dash'
 * --repo - path on the host machine to the Platform repository to use; if not set, repository will be checked out inside the VM
 
+Example:
+
+./launch-platform.sh --branch v0.24-dev --cache ./cache/ --name dash1
 
 EOF
 }
 
 
-YARN_CACHE=/cache/yarn
-DOWNLOADS_CACHE=/cache/downloads
-CPUS=4
-DISK=50G
-MEM=8G
 
 function start_multipass {
     if ! which multipass >/dev/null; then
@@ -145,6 +147,11 @@ function parse_args {
     fi
 
     VMNAME="${VMNAME:-dash}"
+    if [[ -n "${REPO}" ]] && [[ -n "${BRANCH}" ]] ; then
+      echo 'ERROR: --repo and --branch are mutually exclusive, please use only one of them.'
+      exit 1
+    fi
+
     BRANCH="${BRANCH:-master}"
     MODE="${MODE:-multipass}"
 
@@ -244,6 +251,8 @@ cleanup)
     cleanup_multipass
     ;;
 local)
+    mkdir -p /usr/local/bin /opt
+
     setup_cache
     install_deps
     install_rust
