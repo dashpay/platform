@@ -36,10 +36,10 @@ describe('IdentityCreateTransition', () => {
   });
 
   beforeEach(() => {
+    rawStateTransition = getIdentityCreateTransitionFixture().toObject();
     stateTransition = new IdentityCreateTransition(
-      getIdentityCreateTransitionFixture().toObject(),
+      rawStateTransition,
     );
-    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {
