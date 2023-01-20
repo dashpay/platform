@@ -20,10 +20,11 @@ describe('IdentityTopUpTransition', () => {
   });
 
   beforeEach(() => {
+    rawStateTransition = getIdentityTopUpTransitionFixture().toObject();
+
     stateTransition = new IdentityTopUpTransition(
-      getIdentityTopUpTransitionFixture().toObject(),
+      rawStateTransition,
     );
-    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {

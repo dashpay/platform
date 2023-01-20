@@ -14,6 +14,7 @@ use crate::state_transition::{
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;
+use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod property_names {
@@ -81,22 +82,35 @@ impl<'de> Deserialize<'de> for IdentityTopUpTransition {
 
 /// Main state transition functionality implementation
 impl IdentityTopUpTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, NonConsensusError> {
-        let mut state_transition = Self::default();
+    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, ProtocolError> {
+        Self::from_raw_object(raw_state_transition)
+    }
 
-        let transition_map = raw_state_transition.as_object().ok_or_else(|| {
-            SerdeParsingError::new("Expected raw identity transition to be a map")
-        })?;
+    pub fn from_raw_object(
+        raw_object: JsonValue,
+    ) -> Result<IdentityTopUpTransition, ProtocolError> {
+        let protocol_version = raw_object
+            .get_u64(property_names::PROTOCOL_VERSION)
+            .unwrap_or(LATEST_VERSION as u64) as u32;
+        let signature = raw_object
+            .get_bytes(property_names::SIGNATURE)
+            .unwrap_or_default();
+        let identity_id =
+            Identifier::from_bytes(&raw_object.get_bytes(property_names::IDENTITY_ID)?)?;
 
-        if let Some(proof) = transition_map.get(property_names::ASSET_LOCK_PROOF) {
-            state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
-        }
+        let raw_asset_lock_proof = raw_object
+            .get(property_names::ASSET_LOCK_PROOF)
+            .ok_or_else(|| ProtocolError::Generic("Asset lock proof is missing".to_string()))?;
+        let asset_lock_proof = AssetLockProof::try_from(raw_asset_lock_proof)?;
 
-        if let Some(protocol_version) = transition_map.get(property_names::PROTOCOL_VERSION) {
-            state_transition.protocol_version = protocol_version.as_u64().unwrap() as u32;
-        }
-
-        Ok(state_transition)
+        Ok(IdentityTopUpTransition {
+            protocol_version,
+            signature,
+            identity_id,
+            asset_lock_proof,
+            transition_type: StateTransitionType::IdentityTopUp,
+            execution_context: Default::default(),
+        })
     }
 
     /// Get State Transition type

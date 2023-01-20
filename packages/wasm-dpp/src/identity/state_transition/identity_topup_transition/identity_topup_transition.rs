@@ -1,12 +1,12 @@
+use crate::utils::ToSerdeJSONExt;
+use dpp::util::json_value::JsonValueExt;
+use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::default::Default;
-
-use serde::{Deserialize, Serialize};
 
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
-use crate::identity::state_transition::AssetLockProofWasm;
 
 use crate::{
     buffer::Buffer,
@@ -62,19 +62,20 @@ impl IdentityTopUpTransitionWasm {
     pub fn new(raw_parameters: JsValue) -> Result<IdentityTopUpTransitionWasm, JsValue> {
         let raw_asset_lock_proof =
             js_sys::Reflect::get(&raw_parameters, &"assetLockProof".to_owned().into())?;
+        let asset_lock_proof_json = raw_asset_lock_proof.with_serde_to_json_value()?;
 
         let parameters: IdentityTopUpTransitionParams =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
-        let raw_state_transition = with_js_error!(serde_json::to_value(&parameters))?;
+        let mut raw_state_transition = with_js_error!(serde_json::to_value(&parameters))?;
 
-        let mut identity_topup_transition = IdentityTopUpTransition::new(raw_state_transition)
-            .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
+        raw_state_transition
+            .insert("assetLockProof".to_string(), asset_lock_proof_json)
+            .map_err(|e| RustConversionError::Error(e.to_string()))?;
 
-        let asset_lock_proof = AssetLockProofWasm::new(raw_asset_lock_proof)?;
-        identity_topup_transition
-            .set_asset_lock_proof(asset_lock_proof.into())
-            .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
+        let mut identity_topup_transition =
+            IdentityTopUpTransition::from_raw_object(raw_state_transition)
+                .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         if let Some(signature) = parameters.signature {
             identity_topup_transition.set_signature(signature);
