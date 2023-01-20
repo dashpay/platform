@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
 use crate::data_contract::DataContract;
+use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
 
-use super::document_type::DocumentType;
 use super::errors::ContractError;
-use super::mutability;
-use super::root_tree::RootTree;
+use crate::data_contract::document_type::mutability;
 
 pub enum DriveEncoding {
     DriveCbor,
@@ -57,16 +56,6 @@ pub trait DriveContractExt {
         &self,
         document_type_name: &str,
     ) -> Result<&DocumentType, ContractError>;
-
-    fn root_path(&self) -> [&[u8]; 2];
-    fn documents_path(&self) -> [&[u8]; 3];
-    fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4];
-    fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5];
-    fn documents_with_history_primary_key_path<'a>(
-        &'a self,
-        document_type_name: &'a str,
-        id: &'a [u8],
-    ) -> [&'a [u8]; 6];
 }
 
 impl DriveContractExt for DataContract {
@@ -185,60 +174,11 @@ impl DriveContractExt for DataContract {
             ContractError::DocumentTypeNotFound("can not get document type from contract")
         })
     }
-
-    fn root_path(&self) -> [&[u8]; 2] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
-        ]
-    }
-
-    fn documents_path(&self) -> [&[u8]; 3] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
-            &[1],
-        ]
-    }
-
-    fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
-            &[1],
-            document_type_name.as_bytes(),
-        ]
-    }
-
-    fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
-            &[1],
-            document_type_name.as_bytes(),
-            &[0],
-        ]
-    }
-
-    fn documents_with_history_primary_key_path<'a>(
-        &'a self,
-        document_type_name: &'a str,
-        id: &'a [u8],
-    ) -> [&'a [u8]; 6] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
-            &[1],
-            document_type_name.as_bytes(),
-            &[0],
-            id,
-        ]
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use mutability::ContractConfig;
+    use crate::data_contract::document_type::mutability::ContractConfig;
 
     use crate::{
         data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,

@@ -122,10 +122,12 @@ impl Index {
 
         Some(d as u16)
     }
+}
 
-    pub fn from_cbor_value(
-        index_type_value_map: &[(CborValue, CborValue)],
-    ) -> Result<Self, ContractError> {
+impl TryFrom<&[(CborValue, CborValue)]> for Index {
+    type Error = ContractError;
+
+    fn try_from(index_type_value_map: &[(CborValue, CborValue)]) -> Result<Self, Self::Error> {
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false

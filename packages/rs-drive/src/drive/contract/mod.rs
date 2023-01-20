@@ -33,6 +33,7 @@
 //!
 
 mod estimation_costs;
+mod drive_ext;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

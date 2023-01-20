@@ -2,17 +2,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use anyhow::anyhow;
-
-use crate::{
-    consensus::basic::BasicError,
-    data_contract::extra::IndexProperty,
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        json_value::JsonValueExt,
-    },
-    validation::ValidationResult,
-    ProtocolError,
-};
+use crate::consensus::basic::BasicError;
+use crate::data_contract::document_type::IndexProperty;
+use crate::ProtocolError;
+use crate::tests::utils::SerdeTestExtension;
+use crate::util::json_schema::Index;
+use crate::validation::ValidationResult;
 
 type IndexName = String;
 type DocumentType = String;

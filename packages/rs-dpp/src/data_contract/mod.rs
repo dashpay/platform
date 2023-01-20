@@ -13,6 +13,7 @@ pub mod get_binary_properties_from_schema;
 pub mod get_property_definition_by_path;
 pub mod state_transition;
 pub mod validation;
+pub mod document_type;
 
 pub(self) mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";

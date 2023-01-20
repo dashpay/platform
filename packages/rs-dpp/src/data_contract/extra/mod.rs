@@ -2,39 +2,24 @@ use std::collections::BTreeMap;
 
 use ciborium::value::Value as CborValue;
 
-use crate::data_contract::extra::mutability::DEFAULT_CONTRACT_CAN_BE_DELETED;
-use mutability::{
-    DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+use crate::data_contract::document_type::mutability::{ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED};
+use crate::data_contract::document_type::mutability::{
+    DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY,
 };
-pub use {
-    array_field::ArrayFieldType,
-    document_field::{
-        encode_float, encode_signed_integer, encode_unsigned_integer, DocumentField,
-        DocumentFieldType,
-    },
-    document_type::{DocumentType, IndexLevel},
-    drive_api::{DriveContractExt, DriveEncoding},
-    errors::{ContractError, StructureError},
-    index::{Index, IndexProperty},
-    mutability::ContractConfig,
-    root_tree::RootTree,
-};
+use crate::data_contract::document_type::document_type::DocumentType;
+use crate::data_contract::document_type::mutability;
+use crate::data_contract::extra::common::cbor_map_to_btree_map;
+use crate::ProtocolError;
 
 pub mod common;
 
-mod array_field;
-mod document_field;
-mod document_type;
 mod drive_api;
 mod errors;
-mod index;
-mod mutability;
-mod root_tree;
 
 pub fn get_mutability(
     contract: &BTreeMap<String, CborValue>,
-) -> Result<ContractConfig, ContractError> {
+) -> Result<ContractConfig, ProtocolError> {
     let keeps_history: bool = common::bool_for_system_value_from_tree_map(
         contract,
         mutability::property::KEEPS_HISTORY,
@@ -76,7 +61,7 @@ pub fn get_document_types(
     definition_references: BTreeMap<String, &CborValue>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType>, ContractError> {
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
     let documents_cbor_value = contract
         .get("documents")
         .ok_or(ContractError::MissingRequiredKey("unable to get documents"))?;
@@ -88,28 +73,30 @@ pub fn get_document_types(
             ))?;
     let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
     for (type_key_value, document_type_value) in contract_document_types_raw {
-        if !type_key_value.is_text() {
+        let Some(type_key_str) = type_key_value.as_text() else {
             return Err(ContractError::InvalidContractStructure(
                 "document type name is not a string as expected",
             ));
-        }
+        };
 
         // Make sure the document_type_value is a map
-        if !document_type_value.is_map() {
+        let Some(document_type_raw_value_map) = document_type_value.as_map() else {
             return Err(ContractError::InvalidContractStructure(
                 "document type data is not a map as expected",
             ));
-        }
+        };
+
+        let document_type_value_map = cbor_map_to_btree_map(document_type_raw_value_map);
 
         let document_type = DocumentType::from_cbor_value(
-            type_key_value.as_text().expect("confirmed as text"),
-            document_type_value.as_map().expect("confirmed as map"),
+            type_key_str,
+            document_type_value_map,
             &definition_references,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
         )?;
         contract_document_types.insert(
-            String::from(type_key_value.as_text().expect("confirmed as text")),
+            type_key_str.to_string(),
             document_type,
         );
     }

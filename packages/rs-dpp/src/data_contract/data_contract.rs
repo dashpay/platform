@@ -96,7 +96,7 @@ pub struct DataContract {
     pub(crate) config: ContractConfig,
 
     #[serde(skip)]
-    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
+    pub document_types: BTreeMap<DocumentName, DocumentType>,
 }
 
 impl DataContract {

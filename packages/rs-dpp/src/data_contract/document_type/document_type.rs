@@ -1,11 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::TryInto;
 
-use crate::data_contract::extra::ArrayFieldType;
 use ciborium::value::Value;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-
-use super::common::*;
-use super::errors::ContractError;
+use crate::data_contract::document_type::{ArrayFieldType, property_names};
+use crate::data_contract::errors::DataContractError;
+use crate::data_contract::extra::common::{btree_map_inner_bool_value, btree_map_inner_btree_map, btree_map_inner_map_value, btree_map_inner_text_value, btree_map_inner_u16_value, bytes_for_system_value, cbor_inner_array_of_strings, cbor_inner_array_value, cbor_inner_btree_map, cbor_inner_text_value, cbor_map_to_btree_map};
+use crate::ProtocolError;
+use crate::util::cbor_value::CborBTreeMapHelper;
 use super::{
     document_field::{DocumentField, DocumentFieldType},
     index::{Index, IndexProperty},
@@ -136,14 +139,14 @@ impl DocumentType {
         &'a self,
         key: &str,
         value: &Value,
-    ) -> Result<Vec<u8>, ContractError> {
+    ) -> Result<Vec<u8>, DataContractError> {
         match key {
             "$ownerId" | "$id" => {
                 let bytes = bytes_for_system_value(value)?.ok_or({
-                    ContractError::FieldRequirementUnmet("expected system value to be deserialized")
+                    DataContractError::FieldRequirementUnmet("expected system value to be deserialized")
                 })?;
                 if bytes.len() != DEFAULT_HASH_SIZE {
-                    Err(ContractError::FieldRequirementUnmet(
+                    Err(DataContractError::FieldRequirementUnmet(
                         "expected system value to be 32 bytes long",
                     ))
                 } else {
@@ -152,11 +155,11 @@ impl DocumentType {
             }
             _ => {
                 let field_type = self.properties.get(key).ok_or({
-                    ContractError::DocumentTypeFieldNotFound("expected contract to have field")
+                    DataContractError::DocumentTypeFieldNotFound("expected contract to have field")
                 })?;
                 let bytes = field_type.document_type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {
-                    Err(ContractError::FieldRequirementUnmet(
+                    Err(DataContractError::FieldRequirementUnmet(
                         "value must be less than 256 bytes long",
                     ))
                 } else {
@@ -168,58 +171,33 @@ impl DocumentType {
 
     pub fn from_cbor_value(
         name: &str,
-        document_type_value_map: &[(Value, Value)],
+        document_type_value_map: BTreeMap<String, &Value>,
         definition_references: &BTreeMap<String, &Value>,
         default_keeps_history: bool,
         default_mutability: bool,
-    ) -> Result<Self, ContractError> {
+    ) -> Result<Self, ProtocolError> {
         let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
 
         // Do documents of this type keep history? (Overrides contract value)
-        let documents_keep_history: bool = cbor_inner_bool_value_with_default(
-            document_type_value_map,
-            "documentsKeepHistory",
-            default_keeps_history,
-        );
+        let documents_keep_history = document_type_value_map.get_optional_bool(property_names::DOCUMENTS_KEEP_HISTORY)?.unwrap_or(default_keeps_history);
+
 
         // Are documents of this type mutable? (Overrides contract value)
-        let documents_mutable: bool = cbor_inner_bool_value_with_default(
-            document_type_value_map,
-            "documentsMutable",
-            default_mutability,
-        );
+        let documents_mutable = document_type_value_map.get_optional_bool(property_names::DOCUMENTS_MUTABLE)?.unwrap_or(default_mutability);
 
-        let index_values = cbor_inner_array_value(document_type_value_map, "indices");
-        let indices: Vec<Index> = match index_values {
-            None => {
-                vec![]
-            }
-            Some(index_values) => {
-                let mut m_indexes = Vec::with_capacity(index_values.len());
-                for index_value in index_values {
-                    if !index_value.is_map() {
-                        return Err(ContractError::InvalidContractStructure(
-                            "table document is not a map as expected",
-                        ));
-                    }
-                    let index =
-                        Index::from_cbor_value(index_value.as_map().expect("confirmed as map"))?;
-                    m_indexes.push(index);
-                }
-                m_indexes
-            }
-        };
+        let index_values = document_type_value_map.get_optional_inner_value_array(property_names::INDICES)?;
+        let indices = index_values.map(|index_values| {
+            index_values.iter().map(|index_value| {
+                index_value.as_map().try_into().ok_or(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                    "table document is not a map as expected",
+                )))
+            }).collect()
+        }
+        ).unwrap_or_default();
 
-        // Extract the properties
-        let property_values =
-            cbor_inner_btree_map(document_type_value_map, "properties").ok_or({
-                ContractError::InvalidContractStructure(
-                    "unable to get document properties from the contract",
-                )
-            })?;
+        let property_values = document_type_value_map.get_inner_string_value_map(property_names::PROPERTIES)?;
 
-        let mut required_fields =
-            cbor_inner_array_of_strings(document_type_value_map, "required").unwrap_or_default();
+        let mut required_fields = document_type_value_map.get_inner_string_array(property_names::REQUIRED)?;
 
         fn insert_values(
             document_properties: &mut BTreeMap<String, DocumentField>,
@@ -228,14 +206,14 @@ impl DocumentType {
             property_key: String,
             property_value: &Value,
             definition_references: &BTreeMap<String, &Value>,
-        ) -> Result<(), ContractError> {
+        ) -> Result<(), DataContractError> {
             let prefixed_property_key = match prefix {
                 None => property_key,
                 Some(prefix) => [prefix, property_key.as_str()].join("."),
             };
 
             if !property_value.is_map() {
-                return Err(ContractError::InvalidContractStructure(
+                return Err(DataContractError::InvalidContractStructure(
                     "document property is not a map as expected",
                 ));
             }
@@ -244,27 +222,27 @@ impl DocumentType {
             let base_inner_properties = cbor_map_to_btree_map(inner_property_values);
 
             let type_value = cbor_inner_text_value(inner_property_values, "type");
-            let result: Result<(&str, BTreeMap<String, &Value>), ContractError> = match type_value {
+            let result: Result<(&str, BTreeMap<String, &Value>), DataContractError> = match type_value {
                 None => {
                     let ref_value = btree_map_inner_text_value(&base_inner_properties, "$ref")
                         .ok_or({
-                            ContractError::InvalidContractStructure("cannot find type property")
+                            DataContractError::InvalidContractStructure("cannot find type property")
                         })?;
                     if !ref_value.starts_with("#/$defs/") {
-                        return Err(ContractError::InvalidContractStructure(
+                        return Err(DataContractError::InvalidContractStructure(
                             "malformed reference",
                         ));
                     }
                     let ref_value = ref_value.split_at(8).1;
                     let inner_properties_map =
                         btree_map_inner_map_value(definition_references, ref_value).ok_or({
-                            ContractError::ReferenceDefinitionNotFound(
+                            DataContractError::ReferenceDefinitionNotFound(
                                 "document reference not found",
                             )
                         })?;
                     let type_value =
                         cbor_inner_text_value(inner_properties_map, "type").ok_or({
-                            ContractError::InvalidContractStructure(
+                            DataContractError::InvalidContractStructure(
                                 "cannot find type property on reference",
                             )
                         })?;
@@ -292,7 +270,7 @@ impl DocumentType {
                                     btree_map_inner_u16_value(&inner_properties, "maxItems"),
                                 )
                             } else {
-                                return Err(ContractError::InvalidContractStructure(
+                                return Err(DataContractError::InvalidContractStructure(
                                     "byteArray should always be true if defined",
                                 ));
                             }
@@ -315,7 +293,7 @@ impl DocumentType {
                 "object" => {
                     let properties = btree_map_inner_btree_map(&inner_properties, "properties")
                         .ok_or({
-                            ContractError::InvalidContractStructure("object must have properties")
+                            DataContractError::InvalidContractStructure("object must have properties")
                         })?;
                     for (object_property_key, object_property_value) in properties.into_iter() {
                         insert_values(
@@ -343,7 +321,7 @@ impl DocumentType {
                 }
                 _ => {
                     field_type = string_to_field_type(type_value)
-                        .ok_or(ContractError::ValueWrongType("invalid type"))?;
+                        .ok_or(DataContractError::ValueWrongType("invalid type"))?;
                     document_properties.insert(
                         prefixed_property_key,
                         DocumentField {

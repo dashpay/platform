@@ -9,10 +9,10 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use crate::data_contract::extra::common::{cbor_map_to_btree_map, cbor_owned_map_to_btree_map};
+use crate::data_contract::extra::ContractError;
 
 use super::array_field::ArrayFieldType;
-use super::common::*;
-use super::errors::ContractError;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentField {
