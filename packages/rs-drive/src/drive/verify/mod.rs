@@ -1,6 +1,8 @@
+use crate::drive::balances::{balance_path, balance_path_vec};
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::Drive;
+use crate::drive::identity::{identity_key_tree_path, identity_path};
+use crate::drive::{identity_tree_path, unique_key_hashes_tree_path_vec, Drive};
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -8,6 +10,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identity, Revision};
 use grovedb::operations::proof::verify::ProvedKeyValue;
+use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{Element, GroveDb};
 use std::collections::BTreeMap;
 
@@ -41,33 +44,67 @@ impl Drive {
         let mut balance = None;
         let mut revision = None;
         let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
+        let balance_path = balance_path();
+        let identity_path = identity_path(identity_id.as_slice());
+        let identity_keys_path = identity_key_tree_path(identity_id.as_slice());
         for proved_key_value in proved_key_values {
-            let ProvedKeyValue { key, value, .. } = proved_key_value;
-            let element = Element::deserialize(&value)?;
-
-            if key == identity_id {
-                //this is the balance
-                let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
-                if signed_balance < 0 {
-                    return Err(Error::Proof(ProofError::Overflow(
-                        "balance can't be negative",
+            let (path, key, maybe_element) = proved_key_value;
+            if path == balance_path {
+                if key == identity_id {
+                    if let Some(element) = maybe_element {
+                        //this is the balance
+                        let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
+                        if signed_balance < 0 {
+                            return Err(Error::Proof(ProofError::Overflow(
+                                "balance can't be negative",
+                            )));
+                        }
+                        balance = Some(signed_balance as u64);
+                        continue;
+                    } else {
+                        return Err(Error::Proof(ProofError::IncompleteProof(
+                            "balance wasn't provided for the identity requested",
+                        )));
+                    }
+                } else {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "balance wasn't for the identity requested",
                     )));
                 }
-                balance = Some(signed_balance as u64);
-                continue;
+            } else {
+                if path == identity_path && key == vec![IdentityTreeRevision as u8] {
+                    if let Some(element) = maybe_element {
+                        let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                        //this is the revision
+                        revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
+                            |_| {
+                                Error::Proof(ProofError::IncorrectValueSize(
+                                    "revision should be 8 bytes",
+                                ))
+                            },
+                        )?));
+                        continue;
+                    } else {
+                        return Err(Error::Proof(ProofError::IncompleteProof(
+                            "revision wasn't provided for the identity requested",
+                        )));
+                    }
+                } else if path == identity_keys_path {
+                    if let Some(element) = maybe_element {
+                        let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                        let key = IdentityPublicKey::deserialize(&item_bytes)?;
+                        keys.insert(key.id, key);
+                    } else {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "we received an absence proof for a key but didn't request one",
+                        )));
+                    }
+                } else {
+                    return Err(Error::Proof(ProofError::TooManyElements(
+                        "we got back items that we did not request",
+                    )));
+                }
             }
-            let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
-
-            if key == vec![IdentityTreeRevision as u8] && item_bytes.len() == 8 {
-                //this is the revision
-                revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
-                    |_| Error::Proof(ProofError::IncorrectValueSize("revision should be 8 bytes")),
-                )?));
-                continue;
-            }
-
-            let key = IdentityPublicKey::deserialize(&item_bytes)?;
-            keys.insert(key.id, key);
         }
         let maybe_identity = if balance.is_none() && revision.is_none() && keys.is_empty() {
             Ok(None)
@@ -99,16 +136,29 @@ impl Drive {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
         let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
         if proved_key_values.len() == 1 {
-            let value = &proved_key_values.get(0).unwrap().value;
-            let element = Element::deserialize(value)?;
-            let identity_id = element.into_item_bytes().map_err(Error::GroveDB)?;
-            //todo there shouldn't be a some here
-            Ok((
-                root_hash,
-                Some(identity_id.try_into().map_err(|_| {
-                    Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
-                })?),
-            ))
+            let (path, key, maybe_element) = proved_key_values.remove(0);
+            if path != unique_key_hashes_tree_path_vec() {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "we did not get back an element for the correct path in unique key hashes",
+                )));
+            }
+            if key != public_key_hash {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "we did not get back an element for the correct key in unique key hashes",
+                )));
+            }
+            let identity_id = maybe_element
+                .map(|element| {
+                    element
+                        .into_item_bytes()
+                        .map_err(Error::GroveDB)?
+                        .try_into()
+                        .map_err(|_| {
+                            Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
+                        })
+                })
+                .transpose()?;
+            Ok((root_hash, identity_id))
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one identity id",
@@ -124,19 +174,31 @@ impl Drive {
         let path_query = Self::identity_balance_query(&identity_id);
         let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
         if proved_key_values.len() == 1 {
-            let value = &proved_key_values.get(0).unwrap().value;
-            let element = Element::deserialize(value)?;
-            let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
-            if signed_balance < 0 {
-                return Err(Error::Proof(ProofError::Overflow(
-                    "balance can't be negative",
+            let (path, key, maybe_element) = &proved_key_values.remove(0);
+            if path != &balance_path() {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "we did not get back an element for the correct path in balances",
                 )));
             }
-            //todo there shouldn't be a some here
-            Ok((
-                root_hash,
-                Some(signed_balance as u64),
-            ))
+            if key != &identity_id {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "we did not get back an element for the correct key in balances",
+                )));
+            }
+
+            let signed_balance = maybe_element
+                .as_ref()
+                .map(|element| {
+                    element
+                        .as_sum_item_value()
+                        .map_err(Error::GroveDB)?
+                        .try_into()
+                        .map_err(|_| {
+                            Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
+                        })
+                })
+                .transpose()?;
+            Ok((root_hash, signed_balance))
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one identity balance",
@@ -156,20 +218,25 @@ impl Drive {
         if proved_key_values.len() == public_key_hashes.len() {
             let values = proved_key_values
                 .into_iter()
-                .map(|proved_key_value| {
-                    let key: [u8; 20] = proved_key_value
-                        .key
+                .map(|(_, key, maybe_element)| {
+                    let key: [u8; 20] = key
                         .try_into()
                         .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("value size")))?;
-                    let element = Element::deserialize(proved_key_value.value.as_slice())?;
-                    let identity_id = element
-                        .into_item_bytes()
-                        .map_err(Error::GroveDB)?
-                        .try_into()
-                        .map_err(|_| {
-                            Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
-                        })?;
-                    Ok((key, Some(identity_id)))
+                    let maybe_identity_id = maybe_element
+                        .map(|element| {
+                            element
+                                .into_item_bytes()
+                                .map_err(Error::GroveDB)?
+                                .try_into()
+                                .map_err(|_| {
+                                    Error::Proof(ProofError::IncorrectValueSize(
+                                        "value size is incorrect",
+                                    ))
+                                })
+                        })
+                        .transpose()?;
+
+                    Ok((key, maybe_identity_id))
                 })
                 .collect::<Result<T, Error>>()?;
             Ok((root_hash, values))

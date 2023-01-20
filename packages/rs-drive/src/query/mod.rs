@@ -1270,15 +1270,16 @@ impl<'a> DriveQuery<'a> {
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
         let mut values = vec![];
-        for proved_key_value in key_value_elements.into_iter() {
-            let element = Element::deserialize(proved_key_value.value.as_slice()).unwrap();
-            match element {
-                Element::Item(val, _) => values.push(val),
-                Element::SumItem(val, _) => values.push(val.encode_var_vec()),
-                Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                    return Err(Error::GroveDB(GroveError::InvalidQuery(
-                        "path query should only point to items: got trees",
-                    )));
+        for (_, _, maybe_element) in key_value_elements.into_iter() {
+            if let Some(element) = maybe_element {
+                match element {
+                    Element::Item(val, _) => values.push(val),
+                    Element::SumItem(val, _) => values.push(val.encode_var_vec()),
+                    Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
+                        return Err(Error::GroveDB(GroveError::InvalidQuery(
+                            "path query should only point to items: got trees",
+                        )));
+                    }
                 }
             }
         }

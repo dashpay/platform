@@ -30,21 +30,19 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drive::identity::fetch::full_identity::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::drive::block_info::BlockInfo;
+    use crate::drive::identity::fetch::full_identity::*;
+    use dpp::identity::Identity;
     use grovedb::query_result_type::QueryResultType;
+    use grovedb::GroveDb;
     use grovedb::QueryItem;
     use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::ops::RangeFull;
-    use dpp::identity::Identity;
-    use grovedb::GroveDb;
-    use crate::drive::block_info::BlockInfo;
 
     mod fetch_proved_full_identities {
         use super::*;
-
-
 
         #[test]
         fn test_proved_two_full_identities_query_no_tx() {

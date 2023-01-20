@@ -15,6 +15,10 @@ pub enum ProofError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    /// Corrupted error
+    #[error("corrupted error: {0}")]
+    CorruptedProof(&'static str),
+
     /// Incomplete proof error
     #[error("incomplete proof error: {0}")]
     IncompleteProof(&'static str),
