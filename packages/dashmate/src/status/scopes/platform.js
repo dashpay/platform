@@ -76,10 +76,13 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
         dockerStatus: tenderdashDockerStatus,
         serviceStatus: tenderdashServiceStatus,
         version: null,
+        listening: null,
         catchingUp: null,
+        lastBlockHash: null,
         lastBlockHeight: null,
         latestAppHash: null,
         peers: null,
+        moniker: null,
         network: null,
       },
       drive: {
@@ -112,18 +115,23 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
         platform.gRPCPortState = gRPCPortState;
         platform.p2pPortState = p2pPortState;
 
-        const { version, network } = tenderdashStatus.node_info;
+        const { version, network, moniker } = tenderdashStatus.node_info;
 
         const catchingUp = tenderdashStatus.sync_info.catching_up;
         const lastBlockHeight = tenderdashStatus.sync_info.latest_block_height;
+        const lastBlockHash = tenderdashStatus.sync_info.latest_block_hash;
         const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
 
         const platformPeers = tenderdashNetInfo.n_peers;
+        const listening = tenderdashNetInfo.listening;
 
         platform.tenderdash.version = version;
+        platform.tenderdash.listening = listening;
         platform.tenderdash.lastBlockHeight = lastBlockHeight;
+        platform.tenderdash.lastBlockHash = lastBlockHash;
         platform.tenderdash.catchingUp = catchingUp;
         platform.tenderdash.peers = platformPeers;
+        platform.tenderdash.moniker = moniker;
         platform.tenderdash.network = network;
         platform.tenderdash.latestAppHash = latestAppHash;
       } catch (e) {

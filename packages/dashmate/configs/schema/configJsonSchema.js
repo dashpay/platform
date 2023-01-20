@@ -491,6 +491,9 @@ module.exports = {
                 nodeKey: {
                   type: 'object',
                 },
+                moniker: {
+                  type: 'string',
+                },
                 genesis: {
                   type: 'object',
                 },
@@ -499,7 +502,7 @@ module.exports = {
                 },
               },
               required: ['docker', 'p2p', 'rpc', 'consensus', 'nodeKey', 'genesis', 'nodeId'],
-              additionalProperties: false,
+              additionalProperties: true,
             },
           },
           required: ['abci', 'tenderdash'],

@@ -43,60 +43,64 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       throw new Error('Platform status is not available until core sync is complete!');
     }
 
-    const {
-      httpService,
-      httpPort,
-      httpPortState,
-      gRPCService,
-      gRPCPort,
-      gRPCPortState,
-      p2pService,
-      p2pPort,
-      p2pPortState,
-      rpcService,
-      tenderdash,
-      drive
-    } = scope;
-
-    const plain = {
-      'HTTP service': httpService,
-      'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
-      'GRPC service': gRPCService,
-      'GRPC port': `${gRPCPort} ${colors.portState(gRPCPortState)(gRPCPortState)}`,
-      'P2P service': p2pService,
-      'P2P port': `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}`,
-      'RPC service': rpcService,
-    };
-
-    const {dockerStatus: tenderdashDockerStatus} = tenderdash
-    const {serviceStatus: tenderdashServiceStatus} = tenderdash
-
-    const {dockerStatus: driveDockerStatus} = drive
-    const {serviceStatus: driveServiceStatus} = drive
-
-    plain['Tenderdash Docker Status'] = colors.docker(tenderdashDockerStatus)(tenderdashDockerStatus);
-    plain['Tenderdash Service Status'] = colors.status(tenderdashServiceStatus)(tenderdashServiceStatus);
-
-    plain['Drive Docker Status'] = colors.docker(driveDockerStatus)(driveDockerStatus);
-    plain['Drive Service Status'] = colors.status(driveServiceStatus)(driveServiceStatus);
-
-    if (tenderdash.version) {
+    if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
-        version: tenderdashVersion,
-        lastBlockHeight: platformBlockHeight,
-        latestAppHash: platformLatestAppHash,
-        peers: platformPeers,
-        network: tenderdashNetwork,
-      } = tenderdash;
+        httpService,
+        httpPort,
+        httpPortState,
+        gRPCService,
+        gRPCPort,
+        gRPCPortState,
+        p2pService,
+        p2pPort,
+        p2pPortState,
+        rpcService,
+        tenderdash,
+        drive
+      } = scope;
 
-      plain['Network'] = tenderdashNetwork;
-      plain['Tenderdash Version'] = tenderdashVersion;
-      plain['Block height'] = platformBlockHeight;
-      plain['Peer count'] = platformPeers;
-      plain['App hash'] = platformLatestAppHash;
+      const plain = {
+        'HTTP service': httpService,
+        'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
+        'GRPC service': gRPCService,
+        'GRPC port': `${gRPCPort} ${colors.portState(gRPCPortState)(gRPCPortState)}`,
+        'P2P service': p2pService,
+        'P2P port': `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}`,
+        'RPC service': rpcService,
+      };
+
+      const {dockerStatus: tenderdashDockerStatus} = tenderdash
+      const {serviceStatus: tenderdashServiceStatus} = tenderdash
+
+      const {dockerStatus: driveDockerStatus} = drive
+      const {serviceStatus: driveServiceStatus} = drive
+
+      plain['Tenderdash Docker Status'] = colors.docker(tenderdashDockerStatus)(tenderdashDockerStatus);
+      plain['Tenderdash Service Status'] = colors.status(tenderdashServiceStatus)(tenderdashServiceStatus);
+
+      plain['Drive Docker Status'] = colors.docker(driveDockerStatus)(driveDockerStatus);
+      plain['Drive Service Status'] = colors.status(driveServiceStatus)(driveServiceStatus);
+
+      if (tenderdash.version) {
+        const {
+          version: tenderdashVersion,
+          lastBlockHeight: platformBlockHeight,
+          latestAppHash: platformLatestAppHash,
+          peers: platformPeers,
+          network: tenderdashNetwork,
+        } = tenderdash;
+
+        plain['Network'] = tenderdashNetwork;
+        plain['Tenderdash Version'] = tenderdashVersion;
+        plain['Block height'] = platformBlockHeight;
+        plain['Peer count'] = platformPeers;
+        plain['App hash'] = platformLatestAppHash;
+      }
+
+      return printObject(plain, flags.format);
     }
 
-    return printObject(plain, flags.format);
+    return printObject(scope, flags.format);
   }
 }
 
