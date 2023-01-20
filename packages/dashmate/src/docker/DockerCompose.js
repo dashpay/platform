@@ -415,12 +415,12 @@ class DockerCompose {
    * @return {Promise<string>}
    */
   async getContainerIp(envs, serviceName) {
-    const containerInfo = await this.inspectService(envs, serviceName)
+    const containerInfo = await this.inspectService(envs, serviceName);
 
-    const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks)
-    const {IPAddress: containerIP} = containerInfo.NetworkSettings.Networks[firstNetwork]
+    const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks);
+    const { IPAddress: containerIP } = containerInfo.NetworkSettings.Networks[firstNetwork];
 
-    return containerIP
+    return containerIP;
   }
 }
 

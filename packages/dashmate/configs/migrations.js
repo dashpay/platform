@@ -412,7 +412,7 @@ module.exports = {
         ];
 
         if (config.platform) {
-          config.platform.drive.tenderdash.log.level = 'debug'
+          config.platform.drive.tenderdash.log.level = 'debug';
         }
       });
 

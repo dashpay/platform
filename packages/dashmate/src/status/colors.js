@@ -1,7 +1,7 @@
 const chalk = require('chalk');
 const PortStateEnum = require('../enums/portState');
 const ServiceStatusEnum = require('../enums/serviceStatus');
-const DockerStatusEnum = require("../enums/dockerStatus");
+const DockerStatusEnum = require('../enums/dockerStatus');
 
 module.exports = {
 
