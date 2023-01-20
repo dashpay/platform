@@ -27,6 +27,7 @@ extern "C" {
     fn log(a: &str);
 }
 
+#[derive(Clone)]
 #[wasm_bindgen(js_name=Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,
@@ -35,6 +36,12 @@ pub struct IdentifierWrapper {
 impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
     fn from(s: identifier::Identifier) -> Self {
         IdentifierWrapper { wrapped: s }
+    }
+}
+
+impl std::convert::From<IdentifierWrapper> for Identifier {
+    fn from(s: IdentifierWrapper) -> Self {
+        s.wrapped
     }
 }
 
