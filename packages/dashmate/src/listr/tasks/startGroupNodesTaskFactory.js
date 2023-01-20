@@ -2,6 +2,7 @@ const { Listr } = require('listr2');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 const { NETWORK_LOCAL } = require('../../constants');
+const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  *
@@ -68,6 +69,7 @@ function startGroupNodesTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
+                host: await getConnectionHost(dockerCompose, config, 'core'),
               });
 
               await waitForCorePeersConnected(rpcClient);

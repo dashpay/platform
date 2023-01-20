@@ -1,4 +1,5 @@
 const CoreService = require('./CoreService');
+const getConnectionHost = require('../util/getConnectionHost');
 
 /**
  * @param {createRpcClient} createRpcClient
@@ -70,6 +71,7 @@ function startCoreFactory(
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
+        host: await getConnectionHost(dockerCompose, config, 'core'),
       },
     );
 

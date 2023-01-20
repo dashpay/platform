@@ -2,6 +2,7 @@ const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueueP
 const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
+const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  * @returns {getMasternodeScopeFactory}
@@ -21,6 +22,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient) {
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
+      host: await getConnectionHost(dockerCompose, config, 'core'),
     });
 
     const mnsyncStatus = await rpcClient.mnsync('status');

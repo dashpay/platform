@@ -1,6 +1,7 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 const CoreService = require('../../core/CoreService');
+const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -94,6 +95,7 @@ function reindexNodeTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
+                host: await getConnectionHost(dockerCompose, config, 'core'),
               },
             ),
             docker.getContainer(containerId),
