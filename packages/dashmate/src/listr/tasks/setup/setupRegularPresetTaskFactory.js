@@ -148,7 +148,7 @@ function setupRegularPresetTaskFactory(
       },
       {
         title: 'Initialize Tenderdash',
-        enabled: (ctx) => ctx.preset !== PRESET_MAINNET,
+        enabled: () => false,
         task: (ctx) => tenderdashInitTask(ctx.config),
       },
       {
