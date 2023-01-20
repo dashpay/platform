@@ -122,7 +122,7 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
         const lastBlockHash = tenderdashStatus.sync_info.latest_block_hash;
         const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
 
-        const platformPeers = tenderdashNetInfo.n_peers;
+        const platformPeers = parseInt(tenderdashNetInfo.n_peers);
         const listening = tenderdashNetInfo.listening;
 
         platform.tenderdash.version = version;
