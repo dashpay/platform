@@ -77,7 +77,8 @@
   },
   "files": [
     "docs",
-    "lib"
+    "lib",
+    "polyfills"
   ],
   "scripts": {
     "build:web": "webpack",
