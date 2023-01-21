@@ -1,6 +1,7 @@
 use crate::data_contract::errors::StructureError;
 use crate::ProtocolError;
 use ciborium::Value;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 // use std::collections::{BTreeMap, BTreeSet};
@@ -14,12 +15,12 @@ use std::convert::TryInto;
 //
 // use super::errors::StructureError;
 //
-// pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
-//     cbor_map
-//         .iter()
-//         .filter_map(|(key, value)| key.as_text().map(|key| (key.to_string(), value)))
-//         .collect::<BTreeMap<String, &Value>>()
-// }
+pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
+    cbor_map
+        .iter()
+        .filter_map(|(key, value)| key.as_text().map(|key| (key.to_string(), value)))
+        .collect::<BTreeMap<String, &Value>>()
+}
 //
 // pub fn cbor_owned_map_to_btree_map(cbor_map: Vec<(Value, Value)>) -> BTreeMap<String, Value> {
 //     cbor_map

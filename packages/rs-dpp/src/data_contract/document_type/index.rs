@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Index {
-    pub name: String,
+    pub name: Option<String>,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
 }
@@ -163,14 +163,10 @@ impl Index {
     }
 }
 
-impl TryFrom<(String, &[(CborValue, CborValue)])> for Index {
+impl TryFrom<&[(CborValue, CborValue)]> for Index {
     type Error = ProtocolError;
 
-    fn try_from(
-        name_and_index_type_value_map: (String, &[(CborValue, CborValue)]),
-    ) -> Result<Self, Self::Error> {
-        let (name, index_type_value_map) = name_and_index_type_value_map;
-
+    fn try_from(index_type_value_map: &[(CborValue, CborValue)]) -> Result<Self, Self::Error> {
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false
@@ -178,6 +174,7 @@ impl TryFrom<(String, &[(CborValue, CborValue)])> for Index {
         // For properties, we iterate each and move it to IndexProperty
 
         let mut unique = false;
+        let mut name = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
@@ -185,32 +182,47 @@ impl TryFrom<(String, &[(CborValue, CborValue)])> for Index {
                 DataContractError::KeyWrongType("key should be of type text"),
             ))?;
 
-            if key == "unique" {
-                if value_value.is_bool() {
-                    unique = value_value.as_bool().expect("confirmed as bool");
-                }
-            } else if key == "properties" {
-                let properties = value_value.as_array().ok_or({
-                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                        "property value should be an array",
-                    ))
-                })?;
-
-                // Iterate over this and get the index properties
-                for property in properties {
-                    if !property.is_map() {
-                        return Err(ProtocolError::DataContractError(
+            match key {
+                "name" => {
+                    name = Some(value_value.as_text().to_owned().ok_or({
+                        ProtocolError::DataContractError(
                             DataContractError::InvalidContractStructure(
-                                "table document is not a map as expected",
+                                "index name should be a string",
                             ),
-                        ));
-                    }
-
-                    let index_property = IndexProperty::from_cbor_value(
-                        property.as_map().expect("confirmed as map"),
-                    )?;
-                    index_properties.push(index_property);
+                        )
+                    })?);
                 }
+                "unique" => {
+                    if value_value.is_bool() {
+                        unique = value_value.as_bool().expect("confirmed as bool");
+                    }
+                }
+                "properties" => {
+                    let properties = value_value.as_array().ok_or({
+                        ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(
+                                "property value should be an array",
+                            ),
+                        )
+                    })?;
+
+                    // Iterate over this and get the index properties
+                    for property in properties {
+                        if !property.is_map() {
+                            return Err(ProtocolError::DataContractError(
+                                DataContractError::InvalidContractStructure(
+                                    "table document is not a map as expected",
+                                ),
+                            ));
+                        }
+
+                        let index_property = IndexProperty::from_cbor_value(
+                            property.as_map().expect("confirmed as map"),
+                        )?;
+                        index_properties.push(index_property);
+                    }
+                }
+                _ => {}
             }
         }
 

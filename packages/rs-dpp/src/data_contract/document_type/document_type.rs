@@ -202,14 +202,19 @@ impl DocumentType {
                 index_values
                     .into_iter()
                     .map(|index_value| {
-                        index_value.as_map().ok_or(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "table document is not a map as expected",
-                            ),
-                        ))
+                        index_value
+                            .as_map()
+                            .ok_or(ProtocolError::DataContractError(
+                                DataContractError::InvalidContractStructure(
+                                    "table document is not a map as expected",
+                                ),
+                            ))?
+                            .as_slice()
+                            .try_into()
                     })
-                    .collect()
+                    .collect::<Result<Vec<Index>, ProtocolError>>()
             })
+            .transpose()?
             .unwrap_or_default();
 
         let property_values =
@@ -370,7 +375,7 @@ impl DocumentType {
         }
 
         // Based on the property name, determine the type
-        for (property_key, property_value) in property_values {
+        for (property_key, property_value) in inner_property_values {
             insert_values(
                 &mut document_properties,
                 &mut required_fields,
@@ -382,9 +387,9 @@ impl DocumentType {
         }
 
         // Add system properties
-        if required_fields.contains("$createdAt") {
+        if required_fields.contains(property_names::CREATED_AT) {
             document_properties.insert(
-                String::from("$createdAt"),
+                String::from(property_names::CREATED_AT),
                 DocumentField {
                     document_type: DocumentFieldType::Date,
                     required: true,
@@ -392,9 +397,9 @@ impl DocumentType {
             );
         }
 
-        if required_fields.contains("$updatedAt") {
+        if required_fields.contains(property_names::UPDATED_AT) {
             document_properties.insert(
-                String::from("$updatedAt"),
+                String::from(property_names::UPDATED_AT),
                 DocumentField {
                     document_type: DocumentFieldType::Date,
                     required: true,

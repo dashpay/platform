@@ -13,6 +13,7 @@ use crate::data_contract::contract_config::{
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
+use crate::data_contract::extra::common::cbor_map_to_btree_map;
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
@@ -540,7 +541,7 @@ pub fn get_document_types(
             )));
         };
 
-        let document_type_value_map = document_type_raw_value_map.into_iter().collect();
+        let document_type_value_map = cbor_map_to_btree_map(document_type_raw_value_map);
 
         let document_type = DocumentType::from_cbor_value(
             type_key_str,
