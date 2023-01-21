@@ -49,8 +49,8 @@ use grovedb::TransactionArg;
 
 use crate::contract::Contract;
 use crate::drive::Drive;
-use crate::error::structure::StructureError;
 use crate::error::Error;
+use dpp::data_contract::errors::structure::StructureError;
 
 use crate::drive::block_info::BlockInfo;
 use dpp::data_contract::extra::DriveContractExt;
@@ -172,18 +172,6 @@ pub fn cbor_owned_map_to_btree_map(cbor_map: Vec<(Value, Value)>) -> BTreeMap<St
             }
         })
         .collect::<BTreeMap<String, Value>>()
-}
-
-/// Retrieves the value of a key from a CBOR map if it's an array.
-pub fn cbor_inner_array_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<&'a Vec<Value>> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Array(key_value) = key_value {
-        return Some(key_value);
-    }
-    None
 }
 
 /// Retrieves the value of a key from a CBOR map if it's an array of strings.

@@ -2,8 +2,6 @@ use std::convert::TryFrom;
 
 use anyhow::{anyhow, bail};
 
-use crate::errors::ProtocolError;
-
 /// JsonPath represents a deserialized [JsonPathLiteral]. The JsonPath is made
 /// of [JsonPathStep]. [JsonPath] can be created from string
 /// ## Example

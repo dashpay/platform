@@ -1,5 +1,4 @@
 use ciborium::value::Value as CborValue;
-use futures::FutureExt;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -8,11 +7,10 @@ use std::{collections::BTreeMap, convert::TryInto};
 use crate::util::cbor_value::value_to_hash;
 use crate::ProtocolError;
 
-use super::value_to_bytes;
-
 pub trait CborBTreeMapHelper {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, ProtocolError>;
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], ProtocolError>;
+    fn get_optional_string(&self, key: &str) -> Result<Option<String>, ProtocolError>;
     fn get_string(&self, key: &str) -> Result<String, ProtocolError>;
     fn get_optional_integer<T: TryFrom<i128>>(&self, key: &str)
         -> Result<Option<T>, ProtocolError>;
@@ -67,14 +65,20 @@ where
             .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
     }
 
+    fn get_optional_string(&self, key: &str) -> Result<Option<String>, ProtocolError> {
+        self.get(key)
+            .map(|v| {
+                v.borrow()
+                    .as_text()
+                    .map(|str| str.to_string())
+                    .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be a string")))
+            })
+            .transpose()
+    }
+
     fn get_string(&self, key: &str) -> Result<String, ProtocolError> {
-        Ok(self
-            .get(key)
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get {key}")))?
-            .borrow()
-            .as_text()
-            .ok_or_else(|| ProtocolError::DecodingError(format!("expect {key} to be a string")))?
-            .to_string())
+        self.get_optional_string(key)?
+            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
     }
 
     fn get_optional_integer<T: TryFrom<i128>>(
@@ -147,7 +151,7 @@ where
                     .map(|inner| {
                         inner
                             .iter()
-                            .map(|(v)| {
+                            .map(|v| {
                                 let Some(str) = v.as_text() else {
                         return Err(ProtocolError::DecodingError(format!("{key} must be an string")))
                     };

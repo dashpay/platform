@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap};
+use std::iter::FromIterator;
 
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::IndexProperty;
-use crate::tests::utils::SerdeTestExtension;
 use crate::util::json_schema::Index;
 use crate::util::json_schema::JsonSchemaExt;
 use crate::util::json_value::JsonValueExt;
@@ -24,17 +24,13 @@ pub fn validate_indices_are_backward_compatible<'a>(
         new_documents.into_iter().collect();
 
     for (document_type, existing_schema) in existing_documents.into_iter() {
-        let name_new_index_map = to_index_by_name(
-            new_documents_by_type
-                .get(document_type)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "the document '{}' type doesn't exist in new definitions",
-                        document_type
-                    )
-                })?
-                .get_indices()?,
-        );
+        let new_documents_schema = *new_documents_by_type.get(document_type).ok_or_else(|| {
+            anyhow!(
+                "the document '{}' type doesn't exist in new definitions",
+                document_type
+            )
+        })?;
+        let name_new_index_map = new_documents_schema.get_indices()?;
 
         let old_properties_set: HashSet<&str> = existing_schema
             .get_schema_properties()?
@@ -116,7 +112,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
 // Returns the first unique index that has changed when comparing to the `new_indices`
 fn get_changed_old_unique_index<'a>(
     existing_indices: &'a [Index],
-    new_indices: &'a HashMap<IndexName, Index>,
+    new_indices: &'a BTreeMap<IndexName, Index>,
 ) -> Option<&'a Index> {
     existing_indices
         .iter()
@@ -242,15 +238,6 @@ fn get_wrongly_updated_non_unique_index<'a>(
         }
     }
     None
-}
-
-fn to_index_by_name(indices: Vec<Index>) -> HashMap<String, Index> {
-    let mut indices_by_name: HashMap<String, Index> = HashMap::new();
-    for index in indices.into_iter() {
-        // There is an assumption that the index name must be unique
-        indices_by_name.insert(index.name.clone(), index);
-    }
-    indices_by_name
 }
 
 #[cfg(test)]

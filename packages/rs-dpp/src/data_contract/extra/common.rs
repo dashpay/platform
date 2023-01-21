@@ -1,3 +1,8 @@
+use crate::data_contract::errors::StructureError;
+use crate::ProtocolError;
+use ciborium::Value;
+use std::convert::TryInto;
+
 // use std::collections::{BTreeMap, BTreeSet};
 // use std::convert::TryInto;
 // use std::fs::File;
@@ -234,30 +239,34 @@
 //     cbor_inner_bool_value(document_type, key).unwrap_or(default)
 // }
 //
-// pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, StructureError> {
-//     match value {
-//         Value::Bytes(bytes) => Ok(Some(bytes.clone())),
-//         Value::Text(text) => match bs58::decode(text).into_vec() {
-//             Ok(data) => Ok(Some(data)),
-//             Err(_) => Ok(None),
-//         },
-//         Value::Array(array) => array
-//             .iter()
-//             .map(|byte| match byte {
-//                 Value::Integer(int) => {
-//                     let value_as_u8: u8 = (*int)
-//                         .try_into()
-//                         .map_err(|_| StructureError::ValueWrongType("expected u8 value"))?;
-//                     Ok(Some(value_as_u8))
-//                 }
-//                 _ => Err(StructureError::ValueWrongType("not an array of integers")),
-//             })
-//             .collect::<Result<Option<Vec<u8>>, StructureError>>(),
-//         _ => Err(StructureError::ValueWrongType(
-//             "system value is incorrect type",
-//         )),
-//     }
-// }
+pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, ProtocolError> {
+    match value {
+        Value::Bytes(bytes) => Ok(Some(bytes.clone())),
+        Value::Text(text) => match bs58::decode(text).into_vec() {
+            Ok(data) => Ok(Some(data)),
+            Err(_) => Ok(None),
+        },
+        Value::Array(array) => array
+            .iter()
+            .map(|byte| match byte {
+                Value::Integer(int) => {
+                    let value_as_u8: u8 = (*int).try_into().map_err(|_| {
+                        ProtocolError::StructureError(StructureError::ValueWrongType(
+                            "expected u8 value",
+                        ))
+                    })?;
+                    Ok(Some(value_as_u8))
+                }
+                _ => Err(ProtocolError::StructureError(
+                    StructureError::ValueWrongType("not an array of integers"),
+                )),
+            })
+            .collect::<Result<Option<Vec<u8>>, ProtocolError>>(),
+        _ => Err(ProtocolError::StructureError(
+            StructureError::ValueWrongType("system value is incorrect type"),
+        )),
+    }
+}
 //
 // pub fn bytes_for_system_value_from_tree_map(
 //     document: &BTreeMap<String, Value>,

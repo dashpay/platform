@@ -1,3 +1,5 @@
+use crate::data_contract::errors::DataContractError;
+use crate::ProtocolError;
 use anyhow::bail;
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
@@ -6,7 +8,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Index {
-    pub name: Option<String>,
+    pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
 }
@@ -17,6 +19,7 @@ pub struct IndexProperty {
     pub ascending: bool,
 }
 
+//todo: remove this intermediate structure that serves no purpose
 // The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct IndexWithRawProperties {
@@ -55,19 +58,20 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
     }
 }
 
-impl TryFrom<IndexWithRawProperties> for Index {
+impl TryFrom<(String, IndexWithRawProperties)> for Index {
     type Error = anyhow::Error;
 
-    fn try_from(raw_index: IndexWithRawProperties) -> Result<Self, Self::Error> {
-        let properties = raw_index
+    fn try_from(tuple: (String, IndexWithRawProperties)) -> Result<Self, Self::Error> {
+        let properties = tuple
+            .1
             .properties
             .into_iter()
             .map(IndexProperty::try_from)
             .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
 
         Ok(Self {
-            name: Some(raw_index.name),
-            unique: raw_index.unique,
+            name: tuple.0,
+            unique: tuple.1.unique,
             properties,
         })
     }
@@ -159,10 +163,14 @@ impl Index {
     }
 }
 
-impl TryFrom<&[(CborValue, CborValue)]> for Index {
-    type Error = ContractError;
+impl TryFrom<(String, &[(CborValue, CborValue)])> for Index {
+    type Error = ProtocolError;
 
-    fn try_from(index_type_value_map: &[(CborValue, CborValue)]) -> Result<Self, Self::Error> {
+    fn try_from(
+        name_and_index_type_value_map: (String, &[(CborValue, CborValue)]),
+    ) -> Result<Self, Self::Error> {
+        let (name, index_type_value_map) = name_and_index_type_value_map;
+
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false
@@ -173,9 +181,9 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            let key = key_value
-                .as_text()
-                .ok_or(ContractError::KeyWrongType("key should be of type text"))?;
+            let key = key_value.as_text().ok_or(ProtocolError::DataContractError(
+                DataContractError::KeyWrongType("key should be of type text"),
+            ))?;
 
             if key == "unique" {
                 if value_value.is_bool() {
@@ -183,14 +191,18 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
                 }
             } else if key == "properties" {
                 let properties = value_value.as_array().ok_or({
-                    ContractError::InvalidContractStructure("property value should be an array")
+                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                        "property value should be an array",
+                    ))
                 })?;
 
                 // Iterate over this and get the index properties
                 for property in properties {
                     if !property.is_map() {
-                        return Err(ContractError::InvalidContractStructure(
-                            "table document is not a map as expected",
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(
+                                "table document is not a map as expected",
+                            ),
                         ));
                     }
 
@@ -203,7 +215,7 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
         }
 
         Ok(Index {
-            name: None,
+            name,
             properties: index_properties,
             unique,
         })
@@ -213,18 +225,20 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
 impl IndexProperty {
     pub fn from_cbor_value(
         index_property_map: &[(CborValue, CborValue)],
-    ) -> Result<Self, ContractError> {
+    ) -> Result<Self, ProtocolError> {
         let property = &index_property_map[0];
 
         let key = property
             .0 // key
             .as_text()
-            .ok_or(ContractError::KeyWrongType("key should be of type string"))?;
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::KeyWrongType("key should be of type string"),
+            ))?;
         let value = property
             .1 // value
             .as_text()
-            .ok_or(ContractError::ValueWrongType(
-                "value should be of type string",
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::ValueWrongType("value should be of type string"),
             ))?;
 
         let ascending = value == "asc";

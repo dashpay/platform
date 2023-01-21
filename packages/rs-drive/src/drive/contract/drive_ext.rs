@@ -2,7 +2,7 @@ use crate::drive::RootTree;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 
-trait ContractPaths {
+pub trait ContractPaths {
     fn root_path(&self) -> [&[u8]; 2];
     fn documents_path(&self) -> [&[u8]; 3];
     fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4];

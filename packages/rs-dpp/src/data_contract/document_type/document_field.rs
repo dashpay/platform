@@ -514,7 +514,7 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Object(inner_fields) => {
                 if let Value::Map(map) = value {
-                    let mut value_map = cbor_owned_map_to_btree_map(map);
+                    let mut value_map = map.into_iter().collect::<BTreeMap<String, Value>>();
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
@@ -696,6 +696,10 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Object(inner_fields) => {
+                let Some(value_map) = value.as_map() else {
+                    get_field_type_matching_error()
+                };
+                let value_map = map.into_iter().collect::<BTreeMap<String, Value>>();
                 let value_map = cbor_map_to_btree_map(
                     value.as_map().ok_or_else(get_field_type_matching_error)?,
                 );
@@ -944,7 +948,7 @@ impl DocumentFieldType {
     }
 }
 
-fn get_field_type_matching_error() -> ContractError {
+fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
         "document field type doesn't match document value",
     ))

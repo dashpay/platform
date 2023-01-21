@@ -5,7 +5,6 @@ use dpp::data_contract::extra::ContractError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
-use structure::StructureError;
 
 /// Document module
 pub mod document;
@@ -19,8 +18,6 @@ pub mod identity;
 pub mod query;
 /// Storage flags module
 pub mod storage_flags;
-/// Structure module
-pub mod structure;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
@@ -43,9 +40,6 @@ pub enum Error {
     /// Identity error
     #[error("identity: {0}")]
     Identity(#[from] IdentityError),
-    /// Structure error
-    #[error("structure: {0}")]
-    Structure(#[from] StructureError),
     /// Fee error
     #[error("fee: {0}")]
     Fee(#[from] FeeError),

@@ -342,23 +342,27 @@ impl DataContract {
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        let document =
-            self.documents
-                .get(doc_type)
-                .ok_or(DataContractError::InvalidDocumentTypeError {
+        let document = self
+            .documents
+            .get(doc_type)
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::InvalidDocumentTypeError {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
-                })?;
+                },
+            ))?;
         Ok(document)
     }
 
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
         if !self.is_document_defined(doc_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: doc_type.to_owned(),
-                data_contract: self.clone(),
-            }
-            .into());
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidDocumentTypeError {
+                    doc_type: doc_type.to_owned(),
+                    data_contract: self.clone(),
+                }
+                .into(),
+            ));
         };
 
         Ok(format!(
@@ -377,11 +381,13 @@ impl DataContract {
         doc_type: &str,
     ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
         if !self.is_document_defined(doc_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: doc_type.to_owned(),
-                data_contract: self.clone(),
-            }
-            .into());
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidDocumentTypeError {
+                    doc_type: doc_type.to_owned(),
+                    data_contract: self.clone(),
+                }
+                .into(),
+            ));
         }
 
         // The rust implementation doesn't set the value if it is not present in `binary_properties`. The difference is caused by
@@ -507,31 +513,34 @@ pub fn get_document_types(
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-    let documents_cbor_value = contract
-        .get("documents")
-        .ok_or(ContractError::MissingRequiredKey("unable to get documents"))?;
+    let documents_cbor_value =
+        contract
+            .get("documents")
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey("unable to get documents"),
+            ))?;
     let contract_document_types_raw =
         documents_cbor_value
             .as_map()
-            .ok_or(ContractError::InvalidContractStructure(
-                "documents must be a map",
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure("documents must be a map"),
             ))?;
     let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
     for (type_key_value, document_type_value) in contract_document_types_raw {
         let Some(type_key_str) = type_key_value.as_text() else {
-            return Err(ContractError::InvalidContractStructure(
+            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
                 "document type name is not a string as expected",
-            ));
+            )));
         };
 
         // Make sure the document_type_value is a map
         let Some(document_type_raw_value_map) = document_type_value.as_map() else {
-            return Err(ContractError::InvalidContractStructure(
+            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
                 "document type data is not a map as expected",
-            ));
+            )));
         };
 
-        let document_type_value_map = cbor_map_to_btree_map(document_type_raw_value_map);
+        let document_type_value_map = document_type_raw_value_map.into_iter().collect();
 
         let document_type = DocumentType::from_cbor_value(
             type_key_str,

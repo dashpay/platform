@@ -22,4 +22,10 @@ pub(self) mod property_names {
     pub const PROPERTIES: &str = "properties";
     pub const REQUIRED: &str = "required";
     pub const TYPE: &str = "type";
+    pub const REF: &str = "$REF";
+    pub const MIN_ITEMS: &str = "minItems";
+    pub const MAX_ITEMS: &str = "maxItems";
+    pub const MIN_LENGTH: &str = "minLength";
+    pub const MAX_LENGTH: &str = "maxLength";
+    pub const BYTE_ARRAY: &str = "byteArray";
 }

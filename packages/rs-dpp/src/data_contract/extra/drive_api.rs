@@ -5,6 +5,7 @@ use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
 use crate::data_contract::contract_config;
+use crate::data_contract::errors::DataContractError;
 
 pub enum DriveEncoding {
     DriveCbor,
@@ -38,23 +39,23 @@ pub trait DriveContractExt {
         serialized_contract: &[u8],
         contract_id: Option<[u8; 32]>,
         encoding: DriveEncoding,
-    ) -> Result<Self, ContractError>
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 
     fn from_cbor(
         contract_cbor: &[u8],
         contract_id: Option<[u8; 32]>,
-    ) -> Result<Self, ContractError>
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 
-    fn to_cbor(&self) -> Result<Vec<u8>, ContractError>;
+    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;
 
     fn document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Result<&DocumentType, ContractError>;
+    ) -> Result<&DocumentType, ProtocolError>;
 }
 
 impl DriveContractExt for DataContract {
@@ -111,7 +112,7 @@ impl DriveContractExt for DataContract {
         serialized_contract: &[u8],
         contract_id: Option<[u8; 32]>,
         encoding: DriveEncoding,
-    ) -> Result<Self, ContractError>
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
@@ -127,7 +128,7 @@ impl DriveContractExt for DataContract {
         Ok(data_contract)
     }
 
-    fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, ContractError>
+    fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
@@ -141,7 +142,7 @@ impl DriveContractExt for DataContract {
 
     /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
     /// from [`super::Mutability`].
-    fn to_cbor(&self) -> Result<Vec<u8>, ContractError> {
+    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = self.protocol_version().to_le_bytes().to_vec();
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
@@ -171,9 +172,11 @@ impl DriveContractExt for DataContract {
     fn document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Result<&DocumentType, ContractError> {
+    ) -> Result<&DocumentType, ProtocolError> {
         self.document_types.get(document_type_name).ok_or({
-            ContractError::DocumentTypeNotFound("can not get document type from contract")
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract",
+            ))
         })
     }
 }

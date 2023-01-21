@@ -48,8 +48,8 @@ use crate::drive::Drive;
 use dpp::data_contract::extra::{ContractError, DocumentType};
 
 use crate::error::drive::DriveError;
-use crate::error::structure::StructureError;
 use crate::error::Error;
+use dpp::data_contract::errors::structure::StructureError;
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

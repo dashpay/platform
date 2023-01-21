@@ -50,6 +50,7 @@ use sqlparser::parser::Parser;
 use conditions::WhereOperator::{Equal, In};
 /// Import conditions
 pub use conditions::{WhereClause, WhereOperator};
+use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
 /// Import ordering
 pub use ordering::OrderClause;
 
@@ -57,14 +58,15 @@ use crate::common::bytes_for_system_value;
 use crate::contract::{document::Document, Contract};
 use crate::drive::block_info::BlockInfo;
 
+use crate::drive::contract::drive_ext::ContractPaths;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QueryError;
-use crate::error::structure::StructureError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
+use dpp::data_contract::errors::structure::StructureError;
 use dpp::data_contract::extra::DocumentType;
 
 pub mod conditions;
@@ -240,7 +242,11 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
         let mut query_document: BTreeMap<String, Value> = ciborium::de::from_reader(query_cbor)
-            .map_err(|_| Error::Structure(StructureError::InvalidCBOR("unable to decode query")))?;
+            .map_err(|_| {
+                Error::Query(QueryError::DeserializationError(
+                    "unable to decode query from cbor",
+                ))
+            })?;
 
         let limit: u16 = query_document
             .remove("limit")
@@ -1326,6 +1332,7 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::data_contract::extra::DocumentType;
     //noinspection RsUnusedImport
+    use dpp::data_contract::document_type::DocumentType;
     use serde_json::Value::Null;
 
     use crate::drive::block_info::BlockInfo;

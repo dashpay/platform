@@ -2,10 +2,9 @@ pub use crate::data_contract::document_type::Index;
 use anyhow::{anyhow, bail};
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
+use std::iter::FromIterator;
 
 use crate::identifier;
-
-use super::index::IndexWithRawProperties;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -21,7 +20,7 @@ pub trait JsonSchemaExt {
     /// returns the required fields of Json Schema object
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
     /// returns the indexes from Json Schema
-    fn get_indices(&self) -> Result<Vec<Index>, anyhow::Error>;
+    fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error>;
     /// returns true if json value contains property `contentMediaType` and it equals to Identifier
     fn is_type_of_identifier(&self) -> bool;
 }
@@ -90,7 +89,7 @@ impl JsonSchemaExt for JsonValue {
         bail!("the {:?} isn't an map", self);
     }
 
-    fn get_indices(&self) -> Result<Vec<Index>, anyhow::Error> {
+    fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
         match self.get("indices") {
             Some(raw_indices) => {
                 let indices_with_raw_properties: Vec<IndexWithRawProperties> =
@@ -99,7 +98,7 @@ impl JsonSchemaExt for JsonValue {
                 indices_with_raw_properties
                     .into_iter()
                     .map(Index::try_from)
-                    .collect::<Result<Vec<Index>, anyhow::Error>>()
+                    .collect::<Result<I, anyhow::Error>>()
             }
 
             None => Ok(vec![]),
