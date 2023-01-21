@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
-use crate::data_contract::DataContract;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
-use super::errors::ContractError;
-use crate::data_contract::document_type::mutability;
+use crate::data_contract::contract_config;
 
 pub enum DriveEncoding {
     DriveCbor,
@@ -147,14 +146,17 @@ impl DriveContractExt for DataContract {
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
-        contract_cbor_map.insert(mutability::property::READONLY, self.readonly());
-        contract_cbor_map.insert(mutability::property::KEEPS_HISTORY, self.keeps_history());
+        contract_cbor_map.insert(contract_config::property::READONLY, self.readonly());
         contract_cbor_map.insert(
-            mutability::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
+            contract_config::property::KEEPS_HISTORY,
+            self.keeps_history(),
+        );
+        contract_cbor_map.insert(
+            contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
             self.documents_keep_history_contract_default(),
         );
         contract_cbor_map.insert(
-            mutability::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
+            contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
             self.documents_mutable_contract_default(),
         );
 
@@ -178,7 +180,7 @@ impl DriveContractExt for DataContract {
 
 #[cfg(test)]
 mod test {
-    use crate::data_contract::document_type::mutability::ContractConfig;
+    use crate::data_contract::contract_config::ContractConfig;
 
     use crate::{
         data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,

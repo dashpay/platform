@@ -318,7 +318,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
                 let (identifier_properties, binary_properties) = transition
                     .base()
                     .data_contract
-                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type);
+                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type)?;
 
                 if transition.get_updated_at().is_none() {
                     cbor_transition.remove("$updatedAt");

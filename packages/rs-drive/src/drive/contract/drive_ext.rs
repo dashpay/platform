@@ -1,6 +1,6 @@
-use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::DocumentType;
 use crate::drive::RootTree;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::DataContract;
 
 trait ContractPaths {
     fn root_path(&self) -> [&[u8]; 2];

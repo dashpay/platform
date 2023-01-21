@@ -318,12 +318,6 @@ mod tests {
     use crate::drive::Drive;
 
     #[test]
-    fn store_document_1() {
-        let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir, None);
-    }
-
-    #[test]
     fn test_cbor_deserialization() {
         let serialized_document = json_document_to_cbor("simple.json", Some(1));
         let (version, read_serialized_document) = serialized_document.split_at(4);
@@ -331,7 +325,5 @@ mod tests {
         let document: HashMap<String, ciborium::value::Value> =
             ciborium::de::from_reader(read_serialized_document).expect("cannot deserialize cbor");
         assert!(document.get("a").is_some());
-        let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir, None);
     }
 }

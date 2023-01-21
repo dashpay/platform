@@ -1,10 +1,10 @@
+pub use crate::data_contract::document_type::Index;
 use anyhow::{anyhow, bail};
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
 
 use crate::identifier;
 
-pub use super::index::Index;
 use super::index::IndexWithRawProperties;
 
 pub trait JsonSchemaExt {

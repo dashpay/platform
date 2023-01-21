@@ -32,8 +32,8 @@
 //! This module defines functions pertinent to Contracts stored in Drive.
 //!
 
+pub mod drive_ext;
 mod estimation_costs;
-mod drive_ext;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

@@ -1,12 +1,12 @@
-use std::{collections::BTreeMap, convert::TryFrom};
-
-use super::errors::ContractError;
 use anyhow::bail;
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, convert::TryFrom};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+// Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Index {
+    pub name: Option<String>,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
 }
@@ -15,6 +15,15 @@ pub struct Index {
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
+}
+
+// The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub(super) struct IndexWithRawProperties {
+    pub name: String,
+    pub properties: Vec<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub unique: bool,
 }
 
 impl TryFrom<BTreeMap<String, String>> for IndexProperty {
@@ -44,6 +53,32 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
             ascending,
         })
     }
+}
+
+impl TryFrom<IndexWithRawProperties> for Index {
+    type Error = anyhow::Error;
+
+    fn try_from(raw_index: IndexWithRawProperties) -> Result<Self, Self::Error> {
+        let properties = raw_index
+            .properties
+            .into_iter()
+            .map(IndexProperty::try_from)
+            .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
+
+        Ok(Self {
+            name: Some(raw_index.name),
+            unique: raw_index.unique,
+            properties,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
+pub enum OrderBy {
+    #[serde(rename = "asc")]
+    Asc,
+    #[serde(rename = "desc")]
+    Desc,
 }
 
 impl Index {
@@ -168,6 +203,7 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
         }
 
         Ok(Index {
+            name: None,
             properties: index_properties,
             unique,
         })

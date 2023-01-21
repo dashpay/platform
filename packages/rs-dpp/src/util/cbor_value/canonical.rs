@@ -395,13 +395,19 @@ pub fn value_to_bytes(value: &CborValue) -> Result<Option<Vec<u8>>, ProtocolErro
     }
 }
 
-
-pub fn value_to_hash(value: &CborValue) -> Result<[u8;32], ProtocolError> {
+pub fn value_to_hash(value: &CborValue) -> Result<[u8; 32], ProtocolError> {
     match value {
-        CborValue::Bytes(bytes) => bytes.clone().try_into().map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+        CborValue::Bytes(bytes) => bytes
+            .clone()
+            .try_into()
+            .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
         CborValue::Text(text) => match bs58::decode(text).into_vec() {
-            Ok(bytes) => bytes.try_into().map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
-            Err(_) => Err(ProtocolError::DecodingError("expected 32 bytes".to_string())),
+            Ok(bytes) => bytes
+                .try_into()
+                .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+            Err(_) => Err(ProtocolError::DecodingError(
+                "expected 32 bytes".to_string(),
+            )),
         },
         CborValue::Array(array) => array
             .iter()
@@ -417,7 +423,8 @@ pub fn value_to_hash(value: &CborValue) -> Result<[u8;32], ProtocolError> {
                 ))),
             })
             .collect::<Result<Vec<u8>, ProtocolError>>()?
-            .try_into().map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+            .try_into()
+            .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
         _ => Err(ProtocolError::DecodingError(String::from(
             "system value is incorrect type",
         ))),

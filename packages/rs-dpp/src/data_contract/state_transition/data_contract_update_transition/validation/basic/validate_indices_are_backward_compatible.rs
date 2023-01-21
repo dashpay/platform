@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use anyhow::anyhow;
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::IndexProperty;
-use crate::ProtocolError;
 use crate::tests::utils::SerdeTestExtension;
 use crate::util::json_schema::Index;
+use crate::util::json_schema::JsonSchemaExt;
+use crate::util::json_value::JsonValueExt;
 use crate::validation::ValidationResult;
+use crate::ProtocolError;
+use anyhow::anyhow;
 
 type IndexName = String;
 type DocumentType = String;

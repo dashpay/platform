@@ -1,9 +1,9 @@
 use std::convert::TryInto;
 
+use super::*;
 use ciborium::value::Value;
 use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
-use super::*;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ArrayFieldType {
@@ -31,9 +31,9 @@ impl ArrayFieldType {
             ArrayFieldType::Date => {
                 let value_as_f64 = match value {
                     Value::Integer(value_as_integer) => {
-                        let value_as_i128: i128 = value_as_integer
-                            .try_into()
-                            .map_err(|_| DataContractError::ValueWrongType("expected integer value"))?;
+                        let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
+                            DataContractError::ValueWrongType("expected integer value")
+                        })?;
                         let value_as_f64: f64 = value_as_i128 as f64;
                         Ok(value_as_f64)
                     }
@@ -89,7 +89,9 @@ impl ArrayFieldType {
                                 })?;
                                 Ok(value_as_u8)
                             }
-                            _ => Err(DataContractError::ValueWrongType("not an array of integers")),
+                            _ => Err(DataContractError::ValueWrongType(
+                                "not an array of integers",
+                            )),
                         })
                         .collect::<Result<Vec<u8>, DataContractError>>(),
                     _ => Err(get_field_type_matching_error()),
@@ -122,9 +124,9 @@ impl ArrayFieldType {
             ArrayFieldType::Date => {
                 let value_as_f64 = match *value {
                     Value::Integer(value_as_integer) => {
-                        let value_as_i128: i128 = value_as_integer
-                            .try_into()
-                            .map_err(|_| DataContractError::ValueWrongType("expected integer value"))?;
+                        let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
+                            DataContractError::ValueWrongType("expected integer value")
+                        })?;
                         let value_as_f64: f64 = value_as_i128 as f64;
                         Ok(value_as_f64)
                     }
@@ -180,7 +182,9 @@ impl ArrayFieldType {
                                 })?;
                                 Ok(value_as_u8)
                             }
-                            _ => Err(DataContractError::ValueWrongType("not an array of integers")),
+                            _ => Err(DataContractError::ValueWrongType(
+                                "not an array of integers",
+                            )),
                         })
                         .collect::<Result<Vec<u8>, DataContractError>>(),
                     _ => Err(get_field_type_matching_error()),
