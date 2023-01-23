@@ -330,7 +330,7 @@ mod test {
                 .get_document_schema(expect.document_name)
                 .unwrap();
 
-            let document_indices = document.get_indices().unwrap_or_default();
+            let document_indices = document.get_indices::<Vec<_>>().unwrap_or_default();
             assert_eq!(expect.indexes.len(), document_indices.len());
         }
     }
@@ -338,7 +338,8 @@ mod test {
     #[test]
     fn should_drive_api_methods_contain_contract_data() {
         let dashpay_cbor =
-            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1));
+            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
+                .expect("expected to get cbor document");
         let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         assert!(contract.documents_mutable_contract_default());

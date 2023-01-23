@@ -148,7 +148,7 @@ mod test {
         },
         prelude::Identity,
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransition, StateTransitionConvert, StateTransitionLike},
+        state_transition::{StateTransition, StateTransitionLike},
         tests::{
             fixtures::{
                 identity_create_transition_fixture_json, identity_topup_transition_fixture_json,

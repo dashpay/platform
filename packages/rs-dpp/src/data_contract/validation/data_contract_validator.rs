@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::anyhow;
@@ -134,7 +135,7 @@ impl DataContractValidator {
             .filter(|(_, value)| value.get("indices").is_some())
         {
             trace!("validating indices in {}", document_type);
-            let indices = document_schema.get_indices()?;
+            let indices = document_schema.get_indices::<Vec<_>>()?;
 
             trace!("\t validating duplicates");
             let validation_result = validate_index_naming_duplicates(&indices, document_type);

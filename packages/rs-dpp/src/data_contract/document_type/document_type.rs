@@ -6,7 +6,7 @@ use super::{
     index::{Index, IndexProperty},
 };
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common;
 use crate::data_contract::extra::common::bytes_for_system_value;
 use crate::util::cbor_value::CborBTreeMapHelper;
@@ -329,20 +329,26 @@ impl DocumentType {
                 }
                 "object" => {
                     let properties = inner_properties
-                        .get_optional_inner_borrowed_str_value_iter::<BTreeMap<_, _>>(
-                            property_names::PROPERTIES,
-                        )?
-                        .ok_or({
-                            DataContractError::InvalidContractStructure(
-                                "object must have properties",
-                            )
-                        })?;
+                        .get(property_names::PROPERTIES)
+                        .ok_or(ProtocolError::StructureError(
+                            StructureError::KeyValueMustExist("object must have properties"),
+                        ))?
+                        .as_map()
+                        .ok_or(ProtocolError::StructureError(
+                            StructureError::ValueWrongType("properties must be a map"),
+                        ))?;
                     for (object_property_key, object_property_value) in properties.into_iter() {
+                        let object_property_string = object_property_key
+                            .as_text()
+                            .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
+                                "property key must be a string",
+                            )))?
+                            .to_string();
                         insert_values(
                             document_properties,
                             known_required,
                             Some(&prefixed_property_key),
-                            object_property_key,
+                            object_property_string,
                             object_property_value,
                             definition_references,
                         )?

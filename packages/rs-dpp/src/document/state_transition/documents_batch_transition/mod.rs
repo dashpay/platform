@@ -418,7 +418,6 @@ mod test {
             document_factory::DocumentFactory,
             fetch_and_validate_data_contract::DataContractFetcherAndValidator,
         },
-        mocks,
         state_repository::MockStateRepositoryLike,
         tests::fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,

@@ -96,8 +96,6 @@ fn try_parse_indexed_field(step: &str) -> Result<(String, usize), anyhow::Error>
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
-
     use super::*;
 
     #[test]

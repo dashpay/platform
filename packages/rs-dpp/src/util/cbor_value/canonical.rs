@@ -439,7 +439,6 @@ mod test {
 
     use super::{CborValue, FieldType};
     use ciborium::cbor;
-    use serde::{Deserialize, Serialize};
 
     use super::CborCanonicalMap;
 
