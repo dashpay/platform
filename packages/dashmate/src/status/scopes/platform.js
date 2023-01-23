@@ -49,16 +49,16 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
     const driveDockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
 
     const tenderdashServiceStatus = determineStatus.platform(tenderdashDockerStatus, coreIsSynced);
-    const driveServiceStatus = determineStatus.platform(driveDockerStatus, coreIsSynced);
-    //
-    // const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
-    //   'drive_abci', 'yarn workspace @dashevo/drive echo')
-    //
-    // if (driveEchoResult.exitCode !== 0) {
-    //   console.warn(driveEchoResult.out)
-    //
-    //   driveServiceStatus = ServiceStatusEnum.error;
-    // }
+    let driveServiceStatus = determineStatus.platform(driveDockerStatus, coreIsSynced);
+
+    const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
+      'drive_abci', 'yarn workspace @dashevo/drive echo');
+
+    if (driveEchoResult.exitCode !== 0) {
+      console.warn(driveEchoResult.out);
+
+      driveServiceStatus = ServiceStatusEnum.error;
+    }
 
     const platform = {
       coreIsSynced,

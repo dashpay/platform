@@ -147,11 +147,6 @@ function setupRegularPresetTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Initialize Tenderdash',
-        enabled: () => false,
-        task: (ctx) => tenderdashInitTask(ctx.config),
-      },
-      {
         title: 'Set default config',
         task: (ctx, task) => {
           configFile.setDefaultConfigName(ctx.preset);
