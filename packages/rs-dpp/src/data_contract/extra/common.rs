@@ -15,6 +15,23 @@ use std::convert::TryInto;
 //
 // use super::errors::StructureError;
 //
+
+pub fn cbor_map_into_btree_map(
+    cbor_map: Vec<(Value, Value)>,
+) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    cbor_map
+        .into_iter()
+        .map(|(key, value)| {
+            let key = key.into_text().map_err(|_| {
+                ProtocolError::StructureError(StructureError::KeyWrongType(
+                    "expected key to be string",
+                ))
+            })?;
+            (key, value)
+        })
+        .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()
+}
+
 pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
     cbor_map
         .iter()
