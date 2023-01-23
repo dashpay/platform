@@ -15,6 +15,7 @@ describe('getPlatformScopeFactory', () => {
     let mockDetermineDockerStatus;
     let mockMNOWatchProvider;
     let mockFetch;
+    let mockDockerCompose;
 
     let config;
     let getPlatformScope;
@@ -25,18 +26,23 @@ describe('getPlatformScopeFactory', () => {
         getBlockchainInfo: this.sinon.stub(),
         masternode: this.sinon.stub(),
       };
+      mockDockerCompose = {
+        execCommand: this.sinon.stub(),
+        getContainerIp: this.sinon.stub(),
+      };
       mockCreateRpcClient = () => mockRpcClient;
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockFetch = this.sinon.stub(fetch, 'Promise');
 
       config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
-      getPlatformScope = getPlatformScopeFactory(null, mockCreateRpcClient);
+      getPlatformScope = getPlatformScopeFactory(mockDockerCompose, mockCreateRpcClient);
     });
 
     it('should just work', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
+      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''})
 
       const externalIp = '192.168.0.1';
 
@@ -107,6 +113,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
       mockFetch.returns(Promise.reject(new FetchError()));
+      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''})
 
       const scope = await getPlatformScope(config);
 
