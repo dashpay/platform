@@ -194,11 +194,8 @@ function install_deps {
 
 function install_rust {
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain none -y
-    #bash -l -c "rustup install stable" # nightly
-    #bash -l -c "rustup target add wasm32-unknown-unknown"
-#    sudo apt-get --yes install rustc cargo
-#    sudo apt-get --yes install --no-install-recommends librust-cargo+openssl-dev
-echo .
+    bash -l -c "rustup install stable"
+    bash -l -c "rustup target add wasm32-unknown-unknown"
 }
 
 function install_docker {
