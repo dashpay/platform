@@ -1,4 +1,4 @@
 pub mod common;
 
-mod drive_api;
+pub mod drive_api;
 mod errors;

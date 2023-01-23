@@ -31,7 +31,6 @@ use std::collections::BTreeMap;
 use std::ops::BitXor;
 
 use ciborium::value::Value;
-use dpp::data_contract::extra::ContractError;
 
 use dpp::data_contract::extra::{encode_float, Index, IndexProperty};
 /// Import grovedb
@@ -51,6 +50,7 @@ use conditions::WhereOperator::{Equal, In};
 /// Import conditions
 pub use conditions::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+use dpp::data_contract::DriveContractExt;
 /// Import ordering
 pub use ordering::OrderClause;
 
@@ -1333,6 +1333,7 @@ mod tests {
     use dpp::data_contract::extra::DocumentType;
     //noinspection RsUnusedImport
     use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::DriveContractExt;
     use serde_json::Value::Null;
 
     use crate::drive::block_info::BlockInfo;

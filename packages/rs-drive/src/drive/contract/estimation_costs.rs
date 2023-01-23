@@ -7,7 +7,7 @@ use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;

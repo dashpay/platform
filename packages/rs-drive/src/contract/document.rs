@@ -40,6 +40,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 
 use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::DriveContractExt;
 use serde::{Deserialize, Serialize};
 
 use crate::common::get_key_from_cbor_map;
@@ -404,6 +405,7 @@ mod tests {
     use super::*;
     use crate::common::json_document_to_cbor;
     use crate::contract::CreateRandomDocument;
+    use dpp::data_contract::DriveContractExt;
 
     #[test]
     fn test_drive_serialization() {
