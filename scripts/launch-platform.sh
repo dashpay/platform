@@ -54,7 +54,7 @@ function start_multipass {
         exit 1
     fi
 
-    multipass launch --cpus "${CPUS}" --disk "${DISK}" --mem "${MEM}" --name "${VMNAME}" 22.04
+    multipass launch --cpus "${CPUS}" --disk "${DISK}" --memory "${MEM}" --name "${VMNAME}" 22.04
 
     if [[ -n "${CACHE}" ]]; then
         mkdir -p "${CACHE}"
