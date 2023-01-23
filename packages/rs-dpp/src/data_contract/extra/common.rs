@@ -27,7 +27,7 @@ pub fn cbor_map_into_btree_map(
                     "expected key to be string",
                 ))
             })?;
-            (key, value)
+            Ok((key, value))
         })
         .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()
 }

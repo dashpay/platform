@@ -70,7 +70,7 @@ impl TryFrom<IndexWithRawProperties> for Index {
 
         Ok(Self {
             name: Some(index.name),
-            unique: tuple.1.unique,
+            unique: index.unique,
             properties,
         })
     }
@@ -183,13 +183,13 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
 
             match key {
                 "name" => {
-                    name = Some(value_value.as_text().to_owned().ok_or({
+                    name = Some(value_value.as_text().ok_or({
                         ProtocolError::DataContractError(
                             DataContractError::InvalidContractStructure(
                                 "index name should be a string",
                             ),
                         )
-                    })?);
+                    })?.to_owned());
                 }
                 "unique" => {
                     if value_value.is_bool() {
