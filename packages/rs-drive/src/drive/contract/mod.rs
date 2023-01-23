@@ -40,7 +40,6 @@ use std::sync::Arc;
 
 use crate::common::encode::encode_unsigned_integer;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use dpp::data_contract::extra::DriveContractExt;
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;

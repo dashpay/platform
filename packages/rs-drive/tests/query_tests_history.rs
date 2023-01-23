@@ -52,7 +52,6 @@ use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
 
-use dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;
 
 #[derive(Serialize, Deserialize)]

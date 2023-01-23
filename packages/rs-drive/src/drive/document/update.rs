@@ -71,7 +71,6 @@ use crate::drive::grove_operations::{
     QueryType,
 };
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.

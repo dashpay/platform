@@ -34,7 +34,7 @@
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::data_contract::extra::common::json_document_to_cbor;
-use dpp::data_contract::extra::DriveContractExt;
+
 use drive::common::json_document_to_cbor;
 use drive::contract::document::Document;
 use drive::contract::Contract;

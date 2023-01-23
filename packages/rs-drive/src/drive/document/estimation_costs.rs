@@ -11,7 +11,7 @@ use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use dpp::data_contract::extra::DriveContractExt;
+
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};

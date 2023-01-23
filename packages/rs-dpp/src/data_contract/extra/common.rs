@@ -43,19 +43,6 @@ pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &V
         .collect::<BTreeMap<String, &Value>>()
 }
 //
-// pub fn cbor_owned_map_to_btree_map(cbor_map: Vec<(Value, Value)>) -> BTreeMap<String, Value> {
-//     cbor_map
-//         .into_iter()
-//         .filter_map(|(key, value)| {
-//             if let Value::Text(key) = key {
-//                 Some((key, value))
-//             } else {
-//                 None
-//             }
-//         })
-//         .collect::<BTreeMap<String, Value>>()
-// }
-//
 // pub fn cbor_inner_array_value<'a>(
 //     document_type: &'a [(Value, Value)],
 //     key: &'a str,
@@ -169,107 +156,40 @@ pub fn cbor_inner_text_value<'a>(
     }
 }
 
-//
-// pub fn btree_map_inner_text_value<'a>(
-//     document_type: &'a BTreeMap<String, &'a Value>,
-//     key: &'a str,
-// ) -> Option<&'a str> {
-//     let key_value = document_type.get(key)?;
-//     if let Value::Text(string_value) = key_value {
-//         return Some(string_value);
-//     }
-//     None
-// }
-//
-// pub fn cbor_inner_bytes_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<Vec<u8>> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     match key_value {
-//         Value::Bytes(bytes) => Some(bytes.clone()),
-//         Value::Array(array) => {
-//             match array
-//                 .iter()
-//                 .map(|byte| match byte {
-//                     Value::Integer(int) => {
-//                         let value_as_u8: u8 = (*int)
-//                             .try_into()
-//                             .map_err(|_| StructureError::ValueWrongType("expected u8 value"))?;
-//                         Ok(value_as_u8)
-//                     }
-//                     _ => Err(StructureError::ValueWrongType("not an array of integers")),
-//                 })
-//                 .collect::<Result<Vec<u8>, StructureError>>()
-//             {
-//                 Ok(bytes) => Some(bytes),
-//                 Err(_) => None,
-//             }
-//         }
-//         _ => None,
-//     }
-// }
-//
-// pub fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<bool> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Bool(bool_value) = key_value {
-//         return Some(*bool_value);
-//     }
-//     None
-// }
-//
-// pub fn btree_map_inner_bool_value(
-//     document_type: &BTreeMap<String, &Value>,
-//     key: &str,
-// ) -> Option<bool> {
-//     let key_value = document_type.get(key)?;
-//     if let Value::Bool(bool_value) = key_value {
-//         return Some(*bool_value);
-//     }
-//     None
-// }
-//
-// pub fn cbor_inner_size_value(document_type: &[(Value, Value)], key: &str) -> Option<usize> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Integer(integer) = key_value {
-//         let value_as_usize: Result<usize, StructureError> = (*integer)
-//             .try_into()
-//             .map_err(|_| StructureError::ValueWrongType("expected u8 value"));
-//         match value_as_usize {
-//             Ok(size) => Some(size),
-//             Err(_) => None,
-//         }
-//     } else {
-//         None
-//     }
-// }
-//
-// pub fn btree_map_inner_u16_value(
-//     document_type: &BTreeMap<String, &Value>,
-//     key: &str,
-// ) -> Option<u16> {
-//     let key_value = document_type.get(key)?;
-//     if let Value::Integer(integer) = key_value {
-//         let value_as_usize: Result<u16, StructureError> = (*integer)
-//             .try_into()
-//             .map_err(|_| StructureError::ValueWrongType("expected u8 value"));
-//         match value_as_usize {
-//             Ok(size) => Some(size),
-//             Err(_) => None,
-//         }
-//     } else {
-//         None
-//     }
-// }
-//
-// pub fn cbor_inner_bool_value_with_default(
-//     document_type: &[(Value, Value)],
-//     key: &str,
-//     default: bool,
-// ) -> bool {
-//     cbor_inner_bool_value(document_type, key).unwrap_or(default)
-// }
-//
+/// Retrieves the value of a key from a CBOR map if it's a byte array.
+pub fn cbor_inner_bytes_value<'a>(
+    document_type: &'a [(Value, Value)],
+    key: &'a str,
+) -> Result<Option<Vec<u8>>, ProtocolError> {
+    match get_key_from_cbor_map(document_type, key) {
+        None => Ok(None),
+        Some(key_value) => match key_value {
+            Value::Bytes(bytes) => Ok(Some(bytes.clone())),
+            Value::Array(array) => array
+                .iter()
+                .map(|byte| match byte {
+                    Value::Integer(int) => {
+                        let value_as_u8: u8 = (*int).try_into().map_err(|_| {
+                            ProtocolError::StructureError(StructureError::ValueWrongType(
+                                "expected u8 value",
+                            ))
+                        })?;
+                        Ok(value_as_u8)
+                    }
+                    _ => Err(ProtocolError::StructureError(
+                        StructureError::ValueWrongType("not an array of integers"),
+                    )),
+                })
+                .collect::<Result<Vec<u8>, ProtocolError>>()
+                .map(|v| Some(v)),
+            _ => Err(ProtocolError::StructureError(
+                StructureError::ValueWrongType("value should be a byte array"),
+            )),
+        },
+    }
+}
+
+/// Takes a value (should be a system value) and returns it as a byte array if possible.
 pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, ProtocolError> {
     match value {
         Value::Bytes(bytes) => Ok(Some(bytes.clone())),
@@ -298,82 +218,18 @@ pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, Protocol
         )),
     }
 }
-//
-// pub fn bytes_for_system_value_from_tree_map(
-//     document: &BTreeMap<String, Value>,
-//     key: &str,
-// ) -> Result<Option<Vec<u8>>, StructureError> {
-//     let value = document.get(key);
-//     if let Some(value) = value {
-//         bytes_for_system_value(value)
-//     } else {
-//         Ok(None)
-//     }
-// }
-//
-// pub fn bool_for_system_value_from_tree_map(
-//     document: &BTreeMap<String, Value>,
-//     key: &str,
-//     default: bool,
-// ) -> Result<bool, StructureError> {
-//     let value = document.get(key);
-//     if let Some(value) = value {
-//         if let Value::Bool(bool_value) = value {
-//             Ok(*bool_value)
-//         } else {
-//             Err(StructureError::ValueWrongType(
-//                 "value is expected to be a boolean",
-//             ))
-//         }
-//     } else {
-//         Ok(default)
-//     }
-// }
-//
-// pub(crate) fn cbor_inner_u64_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<u64> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Integer(integer_value) = key_value {
-//         return Some(i128::from(*integer_value) as u64);
-//     }
-//     None
-// }
-//
-// pub(crate) fn cbor_inner_u32_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<u32> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Integer(integer_value) = key_value {
-//         return Some(i128::from(*integer_value) as u32);
-//     }
-//     None
-// }
-//
-// pub(crate) fn cbor_inner_u16_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<u16> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Integer(integer_value) = key_value {
-//         return Some(i128::from(*integer_value) as u16);
-//     }
-//     None
-// }
-//
-// pub(crate) fn cbor_inner_u8_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<u8> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Integer(integer_value) = key_value {
-//         return Some(i128::from(*integer_value) as u8);
-//     }
-//     None
-// }
-//
+
+pub fn bytes_for_system_value_from_tree_map(
+    document: &BTreeMap<String, Value>,
+    key: &str,
+) -> Result<Option<Vec<u8>>, ProtocolError> {
+    let value = document.get(key);
+    if let Some(value) = value {
+        bytes_for_system_value(value)
+    } else {
+        Ok(None)
+    }
+}
 
 /// Reads a JSON file and converts it to CBOR.
 pub fn json_document_to_cbor(

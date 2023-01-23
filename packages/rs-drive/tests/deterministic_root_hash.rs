@@ -48,7 +48,6 @@ use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::{Drive, RootTree};
 
-use dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;
 
 /// Contains the unique ID for a Dash identity.

@@ -32,7 +32,7 @@ use std::ops::BitXor;
 
 use ciborium::value::Value;
 use dpp::data_contract::extra::ContractError;
-use dpp::data_contract::extra::DriveContractExt;
+
 use dpp::data_contract::extra::{encode_float, Index, IndexProperty};
 /// Import grovedb
 pub use grovedb::{
@@ -1336,7 +1336,6 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::drive::block_info::BlockInfo;
-    use dpp::data_contract::extra::DriveContractExt;
 
     fn setup_family_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();

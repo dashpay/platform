@@ -38,10 +38,11 @@ use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
-use dpp::data_contract::extra::DriveContractExt;
+
+use dpp::data_contract::document_type::DocumentType;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{bytes_for_system_value_from_tree_map, get_key_from_cbor_map};
+use crate::common::get_key_from_cbor_map;
 use crate::contract::{reduced_value_string_representation, Contract};
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::Drive;
@@ -50,6 +51,7 @@ use dpp::data_contract::extra::{ContractError, DocumentType};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::errors::structure::StructureError;
+use dpp::data_contract::extra::common::bytes_for_system_value_from_tree_map;
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -402,7 +404,6 @@ mod tests {
     use super::*;
     use crate::common::json_document_to_cbor;
     use crate::contract::CreateRandomDocument;
-    use dpp::data_contract::extra::DriveContractExt;
 
     #[test]
     fn test_drive_serialization() {

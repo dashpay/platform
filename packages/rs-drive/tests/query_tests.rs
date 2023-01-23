@@ -37,6 +37,7 @@ use std::io::{self, BufRead};
 use std::option::Option::None;
 use std::sync::Arc;
 
+use dpp::data_contract::extra::common::cbor_inner_bytes_value;
 use dpp::data_contract::DataContractFactory;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -46,7 +47,7 @@ use tempfile::TempDir;
 
 use drive::common;
 use drive::common::helpers::setup::setup_drive;
-use drive::common::{cbor_inner_bytes_value, setup_contract};
+use drive::common::setup_contract;
 use drive::contract::{document::Document, Contract};
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -58,7 +59,6 @@ use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
 
-use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 
 use dpp::prelude::DataContract;
@@ -2779,6 +2779,7 @@ fn test_dpns_query() {
             let map_records_value = records_value.as_map().expect("this should be a map");
             let record_dash_unique_identity_id =
                 cbor_inner_bytes_value(map_records_value, "dashUniqueIdentityId")
+                    .unwrap()
                     .expect("there should be a dashUniqueIdentityId");
             base64::encode(record_dash_unique_identity_id)
         })

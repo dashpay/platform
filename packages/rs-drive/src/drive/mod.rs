@@ -76,7 +76,6 @@ use crate::drive::cache::{DataContractCache, DriveCache};
 use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-use dpp::data_contract::extra::DriveContractExt;
 
 /// Drive struct
 pub struct Drive {
