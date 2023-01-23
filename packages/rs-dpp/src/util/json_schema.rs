@@ -92,19 +92,16 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
-        match self.get("indices") {
-            Some(raw_indices) => {
-                let indices_with_raw_properties: Vec<IndexWithRawProperties> =
-                    serde_json::from_value(raw_indices.to_owned())?;
+        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
+            Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
 
-                indices_with_raw_properties
-                    .into_iter()
-                    .map(Index::try_from)
-                    .collect::<Result<I, anyhow::Error>>()
-            }
+            None => vec![],
+        };
 
-            None => Ok(vec![]),
-        }
+        indices_with_raw_properties
+            .into_iter()
+            .map(Index::try_from)
+            .collect::<Result<I, anyhow::Error>>()
     }
 
     fn is_type_of_identifier(&self) -> bool {
@@ -117,19 +114,19 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, Error> {
-        match self.get("indices") {
-            Some(raw_indices) => {
-                let indices_with_raw_properties: Vec<IndexWithRawProperties> =
-                    serde_json::from_value(raw_indices.to_owned())?;
+        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
+            Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
 
-                indices_with_raw_properties
-                    .into_iter()
-                    .map(Index::try_from)
-                    .collect::<Result<I, anyhow::Error>>()
-            }
+            None => vec![],
+        };
 
-            None => Ok(vec![]),
-        }
+        indices_with_raw_properties
+            .into_iter()
+            .map(|r| {
+                let index = Index::try_from(r)?;
+                Ok((index.name.clone(), index))
+            })
+            .collect::<Result<I, anyhow::Error>>()
     }
 }
 
@@ -168,7 +165,7 @@ mod test {
              ]
         });
 
-        let indices_result = input.get_indices();
+        let indices_result = input.get_indices::<Vec<_>>();
         let indices = indices_result.unwrap();
 
         assert_eq!(indices.len(), 2);

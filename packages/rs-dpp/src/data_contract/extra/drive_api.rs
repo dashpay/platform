@@ -399,7 +399,8 @@ mod test {
     #[test]
     fn mutability_properties_should_be_stored_and_restored_during_serialization() {
         let dashpay_cbor =
-            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1));
+            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
+                .expect("expected to get a cbor document");
         let mut contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         assert!(!contract.readonly());
