@@ -1,5 +1,4 @@
 use ciborium::value::Value as CborValue;
-use ciborium::Value;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -13,6 +12,8 @@ pub trait CborBTreeMapHelper {
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], ProtocolError>;
     fn get_optional_string(&self, key: &str) -> Result<Option<String>, ProtocolError>;
     fn get_string(&self, key: &str) -> Result<String, ProtocolError>;
+    fn get_optional_str(&self, key: &str) -> Result<Option<&str>, ProtocolError>;
+    fn get_str(&self, key: &str) -> Result<&str, ProtocolError>;
     fn get_optional_integer<T: TryFrom<i128>>(&self, key: &str)
         -> Result<Option<T>, ProtocolError>;
     fn get_integer<T: TryFrom<i128>>(&self, key: &str) -> Result<T, ProtocolError>;
@@ -35,6 +36,10 @@ pub trait CborBTreeMapHelper {
         key: &str,
     ) -> Result<I, ProtocolError>;
     fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a CborValue)>>(
+        &self,
+        key: &str,
+    ) -> Result<Option<I>, ProtocolError>;
+    fn get_optional_inner_borrowed_str_value_iter<I: IntoIterator>(
         &self,
         key: &str,
     ) -> Result<Option<I>, ProtocolError>;
@@ -79,6 +84,21 @@ where
 
     fn get_string(&self, key: &str) -> Result<String, ProtocolError> {
         self.get_optional_string(key)?
+            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+    }
+
+    fn get_optional_str(&self, key: &str) -> Result<Option<&str>, ProtocolError> {
+        self.get(key)
+            .map(|v| {
+                v.borrow()
+                    .as_text()
+                    .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be a string")))
+            })
+            .transpose()
+    }
+
+    fn get_str(&self, key: &str) -> Result<&str, ProtocolError> {
+        self.get_optional_str(key)?
             .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
     }
 
@@ -192,6 +212,31 @@ where
                                 let Some(str) = k.as_text() else {
                         return Err(ProtocolError::DecodingError(format!("{key} must be an string")))
                     };
+                                Ok((str.to_string(), v))
+                            })
+                            .collect::<Result<I, ProtocolError>>()
+                    })
+                    .transpose()?
+                    .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be a bool")))
+            })
+            .transpose()
+    }
+
+    fn get_optional_inner_borrowed_str_value_iter<I: IntoIterator>(
+        &self,
+        key: &str,
+    ) -> Result<Option<I>, ProtocolError> {
+        self.get(key)
+            .map(|v| {
+                v.borrow()
+                    .as_map()
+                    .map(|inner| {
+                        inner
+                            .iter()
+                            .map(|(k, v)| {
+                                let Some(str) = k.as_text() else {
+                                    return Err(ProtocolError::DecodingError(format!("{key} must be an string")))
+                                };
                                 Ok((str.to_string(), v))
                             })
                             .collect::<Result<I, ProtocolError>>()

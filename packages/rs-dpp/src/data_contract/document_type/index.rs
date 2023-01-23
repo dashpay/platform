@@ -58,19 +58,18 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
     }
 }
 
-impl TryFrom<(String, IndexWithRawProperties)> for Index {
+impl TryFrom<IndexWithRawProperties> for Index {
     type Error = anyhow::Error;
 
-    fn try_from(tuple: (String, IndexWithRawProperties)) -> Result<Self, Self::Error> {
-        let properties = tuple
-            .1
+    fn try_from(index: IndexWithRawProperties) -> Result<Self, Self::Error> {
+        let properties = index
             .properties
             .into_iter()
             .map(IndexProperty::try_from)
             .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
 
         Ok(Self {
-            name: tuple.0,
+            name: Some(index.name),
             unique: tuple.1.unique,
             properties,
         })

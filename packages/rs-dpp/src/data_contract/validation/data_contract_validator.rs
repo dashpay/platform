@@ -137,7 +137,7 @@ impl DataContractValidator {
             let indices = document_schema.get_indices()?;
 
             trace!("\t validating duplicates");
-            let validation_result = validate_index_duplicates(&indices, document_type);
+            let validation_result = validate_index_naming_duplicates(&indices, document_type);
             result.merge(validation_result);
 
             trace!("\t validating uniqueness");
@@ -391,7 +391,10 @@ fn validate_not_defined_properties(
 }
 
 /// checks if names of indices are not duplicated
-fn validate_index_duplicates(indices: &[Index], document_type: &str) -> ValidationResult<()> {
+fn validate_index_naming_duplicates(
+    indices: &[Index],
+    document_type: &str,
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     for duplicate_index in indices.iter().map(|i| &i.name).duplicates() {
         result.add_error(BasicError::DuplicateIndexNameError {

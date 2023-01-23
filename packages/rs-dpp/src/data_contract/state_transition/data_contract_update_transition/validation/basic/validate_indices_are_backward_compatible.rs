@@ -30,7 +30,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
                 document_type
             )
         })?;
-        let name_new_index_map = new_documents_schema.get_indices()?;
+        let name_new_index_map = new_documents_schema.get_indices_map::<BTreeMap<_, _>>()?;
 
         let old_properties_set: HashSet<&str> = existing_schema
             .get_schema_properties()?
@@ -61,7 +61,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
 
         let added_properties = new_properties_set.difference(&old_properties_set);
 
-        let existing_schema_indices = existing_schema.get_indices().unwrap_or_default();
+        let existing_schema_indices = existing_schema.get_indices::<Vec<_>>().unwrap_or_default();
 
         let maybe_changed_unique_existing_index =
             get_changed_old_unique_index(&existing_schema_indices, &name_new_index_map);

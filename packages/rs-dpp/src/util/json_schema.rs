@@ -21,6 +21,8 @@ pub trait JsonSchemaExt {
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
     /// returns the indexes from Json Schema
     fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error>;
+    /// returns the indexes from Json Schema
+    fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, anyhow::Error>;
     /// returns true if json value contains property `contentMediaType` and it equals to Identifier
     fn is_type_of_identifier(&self) -> bool;
 }

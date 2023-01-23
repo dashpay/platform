@@ -562,7 +562,7 @@ pub fn get_definitions(contract: &BTreeMap<String, CborValue>) -> BTreeMap<Strin
             let definition_map = definition_value.as_map();
             match definition_map {
                 None => BTreeMap::new(),
-                Some(key_value) => common::cbor_map_to_btree_map(key_value),
+                Some(key_value) => cbor_map_to_btree_map(key_value),
             }
         }
     };

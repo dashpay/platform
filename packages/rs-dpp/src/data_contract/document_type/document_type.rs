@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
-use std::vec::IntoIter;
 
 use super::{
     document_field::{DocumentField, DocumentFieldType},
@@ -8,6 +7,7 @@ use super::{
 };
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::extra::common;
 use crate::data_contract::extra::common::bytes_for_system_value;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
@@ -217,8 +217,8 @@ impl DocumentType {
             .transpose()?
             .unwrap_or_default();
 
-        let property_values =
-            document_type_value_map.get_inner_borrowed_str_value_map(property_names::PROPERTIES)?;
+        let property_values = document_type_value_map
+            .get_inner_borrowed_str_value_map::<BTreeMap<_, _>>(property_names::PROPERTIES)?;
 
         let mut required_fields =
             document_type_value_map.get_inner_string_array(property_names::REQUIRED)?;
@@ -242,28 +242,27 @@ impl DocumentType {
                 )));
             };
 
-            let base_inner_properties = inner_property_values.into_iter().collect();
+            let base_inner_properties = common::cbor_map_to_btree_map(inner_property_values);
 
-            let type_value = base_inner_properties.get_optional_string(property_names::TYPE);
+            let type_value = base_inner_properties.get_optional_str(property_names::TYPE)?;
 
             let result: Result<(&str, BTreeMap<String, &Value>), DataContractError> =
                 match type_value {
                     None => {
                         let ref_value = base_inner_properties
-                            .get_optional_string(property_names::TYPE)
+                            .get_optional_string(property_names::TYPE)?
                             .ok_or({
                                 DataContractError::InvalidContractStructure(
                                     "cannot find type property",
                                 )
                             })?;
-                        if !ref_value.starts_with("#/$defs/") {
+                        let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                             return Err(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure("malformed reference"),
                             ));
-                        }
-                        let ref_value = ref_value.split_at(8).1;
+                        };
                         let inner_properties = definition_references
-                            .get_optional_inner_borrowed_str_value_map(ref_value)?
+                            .get_optional_inner_borrowed_str_value_map::<BTreeMap<_, _>>(ref_value)?
                             .ok_or({
                                 ProtocolError::DataContractError(
                                     DataContractError::ReferenceDefinitionNotFound(
@@ -271,14 +270,15 @@ impl DocumentType {
                                     ),
                                 )
                             })?;
-                        let type_value =
-                            inner_properties.get_optional(property_names::TYPE).ok_or({
-                                ProtocolError::DataContractError(
-                                    DataContractError::InvalidContractStructure(
-                                        "cannot find type property on reference",
-                                    ),
-                                )
-                            })?;
+                        let type_value = inner_properties
+                            .get_optional_str(property_names::TYPE)?
+                            .ok_or({
+                            ProtocolError::DataContractError(
+                                DataContractError::InvalidContractStructure(
+                                    "cannot find type property on reference",
+                                ),
+                            )
+                        })?;
                         Ok((type_value, inner_properties))
                     }
                     Some(type_value) => Ok((type_value, base_inner_properties)),
@@ -329,7 +329,9 @@ impl DocumentType {
                 }
                 "object" => {
                     let properties = inner_properties
-                        .get_optional_inner_borrowed_str_value_map(property_names::PROPERTIES)?
+                        .get_optional_inner_borrowed_str_value_iter::<BTreeMap<_, _>>(
+                            property_names::PROPERTIES,
+                        )?
                         .ok_or({
                             DataContractError::InvalidContractStructure(
                                 "object must have properties",
@@ -375,7 +377,7 @@ impl DocumentType {
         }
 
         // Based on the property name, determine the type
-        for (property_key, property_value) in inner_property_values {
+        for (property_key, property_value) in property_values {
             insert_values(
                 &mut document_properties,
                 &mut required_fields,

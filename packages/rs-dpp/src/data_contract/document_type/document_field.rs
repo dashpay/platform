@@ -3,6 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::extra::common::cbor_map_to_btree_map;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use ciborium::value::{Integer, Value};
@@ -699,10 +700,7 @@ impl DocumentFieldType {
                 let Some(value_map) = value.as_map() else {
                     get_field_type_matching_error()
                 };
-                let value_map = map.into_iter().collect::<BTreeMap<String, Value>>();
-                let value_map = cbor_map_to_btree_map(
-                    value.as_map().ok_or_else(get_field_type_matching_error)?,
-                );
+                let value_map = cbor_map_to_btree_map(value_map);
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
                     if let Some(value) = value_map.get(key) {
