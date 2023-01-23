@@ -51,6 +51,7 @@ use crate::contract::Contract;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::data_contract::errors::structure::StructureError;
+use dpp::data_contract::extra::common::json_document_to_cbor;
 
 use crate::drive::block_info::BlockInfo;
 use dpp::data_contract::extra::DriveContractExt;
@@ -62,7 +63,8 @@ pub fn setup_contract(
     contract_id: Option<[u8; 32]>,
     transaction: TransactionArg,
 ) -> Contract {
-    let contract_cbor = json_document_to_cbor(path, Some(crate::drive::defaults::PROTOCOL_VERSION));
+    let contract_cbor = json_document_to_cbor(path, Some(crate::drive::defaults::PROTOCOL_VERSION))
+        .expect("expected to get cbor contract");
     let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)
         .expect("contract should be deserialized");
     let contract_cbor =
@@ -101,14 +103,6 @@ pub fn setup_contract_from_hex(
         )
         .expect("contract should be applied");
     contract
-}
-
-/// Reads a JSON file and converts it to CBOR.
-pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {
-    let file = File::open(path).expect("file not found");
-    let reader = BufReader::new(file);
-    let json: serde_json::Value = serde_json::from_reader(reader).expect("expected a valid json");
-    value_to_cbor(json, protocol_version)
 }
 
 /// Serializes a JSON value to CBOR.

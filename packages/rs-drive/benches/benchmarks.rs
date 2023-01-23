@@ -33,6 +33,7 @@
 //!
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use dpp::data_contract::extra::common::json_document_to_cbor;
 use dpp::data_contract::extra::DriveContractExt;
 use drive::common::json_document_to_cbor;
 use drive::contract::document::Document;
@@ -50,7 +51,8 @@ fn test_drive_10_serialization(c: &mut Criterion) {
     let dashpay_cbor = json_document_to_cbor(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",
         Some(1),
-    );
+    )
+    .expect("expected to get cbor contract");
     let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
     let document_type = contract
@@ -104,7 +106,8 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
     let dashpay_cbor = json_document_to_cbor(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",
         Some(1),
-    );
+    )
+    .expect("expected to get cbor contract");
     let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
     let document_type = contract

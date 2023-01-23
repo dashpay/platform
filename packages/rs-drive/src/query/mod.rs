@@ -1349,7 +1349,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
@@ -1380,7 +1381,8 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-with-birthday.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         let storage_flags = Some(StorageFlags::SingleEpoch(0));

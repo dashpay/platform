@@ -1,8 +1,12 @@
 use crate::data_contract::errors::StructureError;
+use crate::util::serializer::value_to_cbor;
 use crate::ProtocolError;
 use ciborium::Value;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
 
 // use std::collections::{BTreeMap, BTreeSet};
 // use std::convert::TryInto;
@@ -361,12 +365,17 @@ pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, Protocol
 //     None
 // }
 //
-// pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {
-//     let file = File::open(path).expect("file not found");
-//     let reader = BufReader::new(file);
-//     let json: serde_json::Value = serde_json::from_reader(reader).expect("expected a valid json");
-//     value_to_cbor(json, protocol_version)
-// }
+
+/// Reads a JSON file and converts it to CBOR.
+pub fn json_document_to_cbor(
+    path: impl AsRef<Path>,
+    protocol_version: Option<u32>,
+) -> Result<Vec<u8>, ProtocolError> {
+    let file = File::open(path).expect("file not found");
+    let reader = BufReader::new(file);
+    let json: serde_json::Value = serde_json::from_reader(reader).expect("expected a valid json");
+    value_to_cbor(json, protocol_version)
+}
 //
 // pub fn value_to_cbor(value: serde_json::Value, protocol_version: Option<u32>) -> Vec<u8> {
 //     let mut buffer: Vec<u8> = Vec::new();

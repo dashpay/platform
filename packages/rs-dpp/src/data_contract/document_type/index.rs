@@ -1,4 +1,4 @@
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
 use anyhow::bail;
 use ciborium::value::Value as CborValue;
@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Index {
-    pub name: Option<String>,
+    pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
 }
@@ -69,7 +69,7 @@ impl TryFrom<IndexWithRawProperties> for Index {
             .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
 
         Ok(Self {
-            name: Some(index.name),
+            name: index.name,
             unique: index.unique,
             properties,
         })
@@ -183,13 +183,18 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
 
             match key {
                 "name" => {
-                    name = Some(value_value.as_text().ok_or({
-                        ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "index name should be a string",
-                            ),
-                        )
-                    })?.to_owned());
+                    name = Some(
+                        value_value
+                            .as_text()
+                            .ok_or({
+                                ProtocolError::DataContractError(
+                                    DataContractError::InvalidContractStructure(
+                                        "index name should be a string",
+                                    ),
+                                )
+                            })?
+                            .to_owned(),
+                    );
                 }
                 "unique" => {
                     if value_value.is_bool() {
@@ -197,33 +202,34 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
                     }
                 }
                 "properties" => {
-                    let properties = value_value.as_array().ok_or({
-                        ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "property value should be an array",
-                            ),
-                        )
-                    })?;
+                    let properties =
+                        value_value.as_array().ok_or(ProtocolError::StructureError(
+                            StructureError::ValueWrongType("properties value should be an array"),
+                        ))?;
 
                     // Iterate over this and get the index properties
                     for property in properties {
-                        if !property.is_map() {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(
-                                    "table document is not a map as expected",
-                                ),
-                            ));
-                        }
-
-                        let index_property = IndexProperty::from_cbor_value(
-                            property.as_map().expect("confirmed as map"),
+                        let property_map = property.as_map().ok_or(
+                            ProtocolError::StructureError(StructureError::ValueWrongType(
+                                "each property of an index should be a map",
+                            )),
                         )?;
+
+                        let index_property = IndexProperty::from_cbor_value(property_map)?;
                         index_properties.push(index_property);
                     }
                 }
                 _ => {}
             }
         }
+
+        let Some(name) = name else {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure(
+                    "table document is not a map as expected",
+                ),
+            ));
+        };
 
         Ok(Index {
             name,

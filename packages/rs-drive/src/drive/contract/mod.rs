@@ -1059,7 +1059,8 @@ mod tests {
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1087,7 +1088,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1230,7 +1232,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1258,7 +1261,8 @@ mod tests {
             "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1285,7 +1289,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
@@ -1420,7 +1425,8 @@ mod tests {
 
             // Create a deep placed contract
             let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
-            let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+            let contract_cbor = json_document_to_cbor(contract_path, Some(1))
+                .expect("expected to get cbor document");
             let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
                 .expect("expected to deserialize the contract");
             drive

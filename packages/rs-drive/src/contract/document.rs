@@ -409,7 +409,8 @@ mod tests {
         let dashpay_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
         let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract
@@ -441,7 +442,8 @@ mod tests {
         let dashpay_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
         let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract
@@ -462,7 +464,8 @@ mod tests {
         let dashpay_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
         let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract

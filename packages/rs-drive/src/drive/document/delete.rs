@@ -779,7 +779,8 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -876,7 +877,8 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -989,7 +991,8 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1027,7 +1030,8 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person1.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1174,7 +1178,8 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1212,7 +1217,8 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person2-no-middle-name.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1386,7 +1392,8 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1444,7 +1451,8 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
@@ -1519,7 +1527,8 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);

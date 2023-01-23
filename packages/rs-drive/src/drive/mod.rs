@@ -319,7 +319,8 @@ mod tests {
 
     #[test]
     fn test_cbor_deserialization() {
-        let serialized_document = json_document_to_cbor("simple.json", Some(1));
+        let serialized_document =
+            json_document_to_cbor("simple.json", Some(1)).expect("expected to get cbor contract");
         let (version, read_serialized_document) = serialized_document.split_at(4);
         assert!(Drive::check_protocol_version_bytes(version));
         let document: HashMap<String, ciborium::value::Value> =

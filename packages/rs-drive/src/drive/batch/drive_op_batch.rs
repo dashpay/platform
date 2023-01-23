@@ -707,7 +707,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(crate::drive::defaults::PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor contract");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
         let serialized_contract =
@@ -726,7 +727,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -797,7 +799,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(crate::drive::defaults::PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor contract");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
         let serialized_contract =
@@ -816,7 +819,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -832,7 +836,8 @@ mod tests {
         let dashpay_cr_serialized_document2 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
 
         drive_operations.push(DocumentOperation(AddSerializedDocumentForContract {
             serialized_document: dashpay_cr_serialized_document2.as_slice(),
@@ -875,7 +880,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(crate::drive::defaults::PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor contract");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
         let serialized_contract =
@@ -894,12 +900,14 @@ mod tests {
         let dashpay_cr_serialized_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
 
         let dashpay_cr_serialized_document1 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor contract");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1033,12 +1041,14 @@ mod tests {
         let person_serialized_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let person_serialized_document1 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person3.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1162,12 +1172,14 @@ mod tests {
         let person_serialized_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let person_serialized_document1 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person3.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1243,12 +1255,14 @@ mod tests {
         let person_serialized_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0-older.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let person_serialized_document1 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person3-older.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let mut operations = vec![];
 
@@ -1398,12 +1412,14 @@ mod tests {
         let person_serialized_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let person_serialized_document1 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person3-older.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1479,12 +1495,14 @@ mod tests {
         let person_serialized_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0-older.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let person_serialized_document1 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person3.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let mut operations = vec![];
 

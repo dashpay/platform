@@ -1199,7 +1199,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1266,7 +1267,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1333,7 +1335,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1381,7 +1384,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1429,7 +1433,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1479,7 +1484,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let fees = drive
@@ -1534,7 +1540,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
@@ -1628,7 +1635,8 @@ mod tests {
         );
 
         let dpns_domain_serialized_document =
-            json_document_to_cbor("tests/supporting_files/contract/dpns/domain0.json", Some(1));
+            json_document_to_cbor("tests/supporting_files/contract/dpns/domain0.json", Some(1))
+                .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1688,17 +1696,20 @@ mod tests {
         let dashpay_cr_serialized_document_0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_cr_serialized_document_1 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_cr_serialized_document_2 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request2.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1749,12 +1760,14 @@ mod tests {
         let dashpay_cr_serialized_document_0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_cr_serialized_document_0_dup = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
