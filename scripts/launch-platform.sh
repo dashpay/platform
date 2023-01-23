@@ -194,10 +194,11 @@ function install_deps {
 
 function install_rust {
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain none -y
-    bash -l -c "rustup install stable" # nightly
-    bash -l -c "rustup target add wasm32-unknown-unknown"
+    #bash -l -c "rustup install stable" # nightly
+    #bash -l -c "rustup target add wasm32-unknown-unknown"
 #    sudo apt-get --yes install rustc cargo
 #    sudo apt-get --yes install --no-install-recommends librust-cargo+openssl-dev
+echo .
 }
 
 function install_docker {
@@ -224,11 +225,12 @@ function install_platform {
     fi
     cd /home/ubuntu/platform
     # sudo to ensure our group membership is updated to include `docker` group
-    sudo -u "$USER" bash -l -c "yarn install"
-    sudo -u "$USER" bash -l -c "yarn build"
+    # sudo -u "$USER" bash -l -c "yarn install"
+    # sudo -u "$USER" bash -l -c "yarn build"
 }
 
 function start_platform {
+    # sudo to ensure our group membership is updated to include `docker` group
     sudo -u "$USER" bash -l -c "yarn setup"
     sudo -u "$USER" bash -l -c "yarn start"
 }
