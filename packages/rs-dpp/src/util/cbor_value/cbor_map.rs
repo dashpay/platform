@@ -20,11 +20,11 @@ pub trait CborBTreeMapHelper {
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, ProtocolError>;
     fn get_bool(&self, key: &str) -> Result<bool, ProtocolError>;
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<Option<I>, ProtocolError>;
     fn get_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<I, ProtocolError>;
     fn get_optional_inner_string_array<I: FromIterator<String>>(
@@ -36,11 +36,11 @@ pub trait CborBTreeMapHelper {
         key: &str,
     ) -> Result<I, ProtocolError>;
     fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a CborValue)>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<Option<I>, ProtocolError>;
     fn get_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a CborValue)>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<I, ProtocolError>;
 }
@@ -136,7 +136,7 @@ where
     }
 
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<Option<I>, ProtocolError> {
         self.get(key)
@@ -150,7 +150,7 @@ where
     }
 
     fn get_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<I, ProtocolError> {
         self.get_optional_inner_value_array(key)?
@@ -194,7 +194,7 @@ where
         'a,
         I: FromIterator<(String, &'a ciborium::Value)>,
     >(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<Option<I>, ProtocolError> {
         self.get(key)
@@ -219,7 +219,7 @@ where
     }
 
     fn get_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a ciborium::Value)>>(
-        &self,
+        &'a self,
         key: &str,
     ) -> Result<I, ProtocolError> {
         self.get_optional_inner_borrowed_str_value_map(key)?

@@ -210,7 +210,7 @@ fn get_new_unique_index<'a>(
 
 fn get_wrongly_updated_non_unique_index<'a>(
     existing_schema_indices: &'a [Index],
-    new_indices: &'a HashMap<IndexName, Index>,
+    new_indices: &'a BTreeMap<IndexName, Index>,
     existing_schema: &'a JsonSchema,
 ) -> Option<&'a Index> {
     // Checking every existing non-unique index, and it's respective new index

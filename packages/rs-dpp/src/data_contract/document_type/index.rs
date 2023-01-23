@@ -22,7 +22,7 @@ pub struct IndexProperty {
 //todo: remove this intermediate structure that serves no purpose
 // The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) struct IndexWithRawProperties {
+pub struct IndexWithRawProperties {
     pub name: String,
     pub properties: Vec<BTreeMap<String, String>>,
     #[serde(default)]

@@ -67,21 +67,21 @@ pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &V
 //     None
 // }
 //
-// pub fn get_key_from_cbor_map<'a>(
-//     cbor_map: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<&'a Value> {
-//     for (cbor_key, cbor_value) in cbor_map.iter() {
-//         if !cbor_key.is_text() {
-//             continue;
-//         }
-//
-//         if cbor_key.as_text().expect("confirmed as text") == key {
-//             return Some(cbor_value);
-//         }
-//     }
-//     None
-// }
+pub fn get_key_from_cbor_map<'a>(
+    cbor_map: &'a [(Value, Value)],
+    key: &'a str,
+) -> Option<&'a Value> {
+    for (cbor_key, cbor_value) in cbor_map.iter() {
+        if !cbor_key.is_text() {
+            continue;
+        }
+
+        if cbor_key.as_text().expect("confirmed as text") == key {
+            return Some(cbor_value);
+        }
+    }
+    None
+}
 //
 // pub fn cbor_inner_array_of_strings<'a>(
 //     document_type: &'a [(Value, Value)],
@@ -150,16 +150,25 @@ pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &V
 //     None
 // }
 //
-// pub fn cbor_inner_text_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<&'a str> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Text(string_value) = key_value {
-//         return Some(string_value);
-//     }
-//     None
-// }
+
+pub fn cbor_inner_text_value<'a>(
+    document_type: &'a [(Value, Value)],
+    key: &'a str,
+) -> Result<Option<&'a str>, ProtocolError> {
+    match get_key_from_cbor_map(document_type, key) {
+        None => Ok(None),
+        Some(key_value) => {
+            if let Value::Text(string_value) = key_value {
+                Ok(Some(string_value))
+            } else {
+                Err(ProtocolError::StructureError(
+                    StructureError::ValueWrongType("expected a string for the value"),
+                ))
+            }
+        }
+    }
+}
+
 //
 // pub fn btree_map_inner_text_value<'a>(
 //     document_type: &'a BTreeMap<String, &'a Value>,

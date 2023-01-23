@@ -246,7 +246,7 @@ impl DocumentType {
 
             let type_value = base_inner_properties.get_optional_str(property_names::TYPE)?;
 
-            let result: Result<(&str, BTreeMap<String, &Value>), DataContractError> =
+            let result: Result<(String, BTreeMap<String, &Value>), DataContractError> =
                 match type_value {
                     None => {
                         let ref_value = base_inner_properties
@@ -270,6 +270,7 @@ impl DocumentType {
                                     ),
                                 )
                             })?;
+
                         let type_value = inner_properties
                             .get_optional_str(property_names::TYPE)?
                             .ok_or({
@@ -279,18 +280,18 @@ impl DocumentType {
                                 ),
                             )
                         })?;
-                        Ok((type_value, inner_properties))
+                        Ok((type_value.to_string(), inner_properties))
                     }
-                    Some(type_value) => Ok((type_value, base_inner_properties)),
+                    Some(type_value) => Ok((type_value.to_string(), base_inner_properties)),
                 };
 
             let (type_value, inner_properties) = result?;
 
-            let required = known_required.contains(&type_value.to_string());
+            let required = known_required.contains(&type_value);
 
             let field_type: DocumentFieldType;
 
-            match type_value {
+            match type_value.as_str() {
                 "array" => {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
@@ -368,7 +369,7 @@ impl DocumentType {
                     );
                 }
                 _ => {
-                    field_type = string_to_field_type(type_value)
+                    field_type = string_to_field_type(type_value.as_str())
                         .ok_or(DataContractError::ValueWrongType("invalid type"))?;
                     document_properties.insert(
                         prefixed_property_key,
