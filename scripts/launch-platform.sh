@@ -222,13 +222,11 @@ function install_platform {
     fi
     cd /home/ubuntu/platform
     # sudo to ensure our group membership is updated to include `docker` group
-    # sudo -u "$USER" bash -l -c "yarn install"
-    # sudo -u "$USER" bash -l -c "yarn build"
+    sudo -u "$USER" bash -l -c "yarn setup"
 }
 
 function start_platform {
     # sudo to ensure our group membership is updated to include `docker` group
-    sudo -u "$USER" bash -l -c "yarn setup"
     sudo -u "$USER" bash -l -c "yarn start"
 }
 
