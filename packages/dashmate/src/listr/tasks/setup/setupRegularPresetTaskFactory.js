@@ -1,11 +1,11 @@
-const {Listr} = require('listr2');
+const { Listr } = require('listr2');
 const fs = require('fs');
 
 const publicIp = require('public-ip');
 
 const BlsSignatures = require('bls-signatures');
 
-const {PrivateKey} = require('@dashevo/dashcore-lib');
+const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const {
   SSL_PROVIDERS,
@@ -72,7 +72,7 @@ function setupRegularPresetTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Selected ${ctx.nodeType} type\n`;
         },
-        options: {persistentOutput: true},
+        options: { persistentOutput: true },
       },
       {
         title: 'Configure external IP address',
@@ -92,14 +92,14 @@ function setupRegularPresetTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `${ctx.externalIp} is set\n`;
         },
-        options: {persistentOutput: true},
+        options: { persistentOutput: true },
       },
       {
         title: 'Set masternode operator private key',
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
           if (ctx.operatorBlsPrivateKey === undefined) {
-            const {privateKey: generatedPrivateKeyHex} = await generateBlsKeys();
+            const { privateKey: generatedPrivateKeyHex } = await generateBlsKeys();
 
             ctx.operatorBlsPrivateKey = await task.prompt([
               {
@@ -113,7 +113,7 @@ function setupRegularPresetTaskFactory(
           const operatorBlsPrivateKeyBuffer = Buffer.from(ctx.operatorBlsPrivateKey, 'hex');
 
           const blsSignatures = await BlsSignatures();
-          const {PrivateKey: BlsPrivateKey} = blsSignatures;
+          const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
           const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
           const publicKey = privateKey.getPublicKey();
@@ -128,7 +128,7 @@ function setupRegularPresetTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `BLS public key: ${publicKeyHex}\nBLS private key: ${ctx.operatorBlsPrivateKey}`;
         },
-        options: {persistentOutput: true},
+        options: { persistentOutput: true },
       },
       {
         title: 'Register masternode',
@@ -150,7 +150,7 @@ function setupRegularPresetTaskFactory(
 
           return registerMasternodeTask(ctx.config);
         },
-        options: {persistentOutput: true},
+        options: { persistentOutput: true },
       },
       {
         title: 'Set default config',
