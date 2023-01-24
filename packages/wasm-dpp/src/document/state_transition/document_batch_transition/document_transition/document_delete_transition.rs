@@ -21,6 +21,12 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
     }
 }
 
+impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
+    fn from(v: DocumentDeleteTransitionWasm) -> Self {
+        v.inner
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name=getAction)]

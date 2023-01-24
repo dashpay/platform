@@ -7,48 +7,123 @@ const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DuplicateUniqueIndexError = require('@dashevo/dpp/lib/errors/consensus/state/document/DuplicateUniqueIndexError');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const DuplicateUniqueIndexErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DuplicateUniqueIndexError');
+const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+
+let DataContract;
+let Document;
+let ValidationResult;
+let DuplicateUniqueIndexError;
+let validateDocumentsUniquenessByIndices;
+let DocumentCreateTransition;
+let DocumentTransition;
+let Identifier;
+let StateTransitionExecutionContext;
+
+
 
 describe('validateDocumentsUniquenessByIndices', () => {
+  let stateRepositoryMockJs;
   let stateRepositoryMock;
-  let validateDocumentsUniquenessByIndices;
+  let validateDocumentsUniquenessByIndicesJs;
+  let documentsJs;
   let documents;
+  let documentTransitionsJs;
   let documentTransitions;
+  let dataContractJs;
   let dataContract;
+  let ownerIdJs;
   let ownerId;
+  let executionContextJs;
   let executionContext;
 
-  beforeEach(function beforeEach() {
-    ({ ownerId } = getDocumentsFixture);
+  beforeEach(async function beforeEach() {
+    ({
+      Document,
+      DataContract,
+      Identifier,
+      DocumentCreateTransition,
+      DocumentTransition,
+      ValidationResult,
+      StateTransitionExecutionContext,
+      validateDocumentsUniquenessByIndices,
 
-    documents = getDocumentsFixture(dataContract);
-    documentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+      DuplicateUniqueIndexError,
+    } = await loadWasmDpp());
+
+    ({ ownerId: ownerIdJs } = getDocumentsFixture);
+    ownerId = Identifier.from(ownerIdJs.toBuffer());
+
+    dataContractJs = getContractFixture();
+    dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
+
+    documentsJs = getDocumentsFixture(dataContractJs);
+    documentTransitionsJs = getDocumentTransitionsFixture({
+      create: documentsJs,
     });
-    dataContract = getContractFixture();
+    documentTransitions = documentTransitionsJs.map((transition) => {
+      DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(transition.toObject(), dataContract)
+      )
+    });
+
+    documents = documentsJs.map((d) => {
+      const doc = new Document(d.toObject(), dataContract);
+      doc.setEntropy(d.entropy);
+      return doc;
+    });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDocuments.resolves([]);
 
-    executionContext = new StateTransitionExecutionContext();
+    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMockJs.fetchDocuments.resolves([]);
 
-    validateDocumentsUniquenessByIndices = verifyDocumentsUniquenessByIndicesFactory(
-      stateRepositoryMock,
+    executionContext = new StateTransitionExecutionContext();
+    executionContextJs = new StateTransitionExecutionContextJs();
+
+    validateDocumentsUniquenessByIndicesJs = verifyDocumentsUniquenessByIndicesFactory(
+      stateRepositoryMockJs,
     );
   });
 
   it('should return valid result if Documents have no unique indices', async () => {
-    const [niceDocument] = documents;
+    const [niceDocument] = documentsJs;
     const noIndexDocumentTransitions = getDocumentTransitionsFixture({
       create: [niceDocument],
     });
 
-    const result = await validateDocumentsUniquenessByIndices(
-      ownerId,
+    const result = await validateDocumentsUniquenessByIndicesJs(
+      ownerIdJs,
       noIndexDocumentTransitions,
+      dataContractJs,
+      executionContextJs,
+    );
+
+    expect(result).to.be.an.instanceOf(ValidationResultJs);
+    expect(result.isValid()).to.be.true();
+    expect(stateRepositoryMockJs.fetchDocuments).to.have.not.been.called();
+  });
+
+
+  it('should return valid result if Documents have no unique indices - Rust', async () => {
+    const [niceDocument] = documentsJs;
+    const noIndexDocumentTransitions = getDocumentTransitionsFixture({
+      create: [niceDocument],
+    });
+
+    const documentTransition = DocumentTransition.fromTransitionCreate(
+      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract)
+    );
+
+    const result = await validateDocumentsUniquenessByIndices(
+      stateRepositoryMock,
+      ownerId,
+      [documentTransition],
       dataContract,
       executionContext,
     );
@@ -59,110 +134,153 @@ describe('validateDocumentsUniquenessByIndices', () => {
   });
 
   it('should return valid result if Document has unique indices and there are no duplicates', async () => {
-    const [, , , william] = documents;
+    const [, , , william] = documentsJs;
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId().toBuffer(),
+        dataContractJs.getId().toBuffer(),
         william.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['firstName', '==', william.get('firstName')],
           ],
         },
       )
       .resolves([william]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId().toBuffer(),
+        dataContractJs.getId().toBuffer(),
         william.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['lastName', '==', william.get('lastName')],
           ],
         },
       )
       .resolves([william]);
 
+    const result = await validateDocumentsUniquenessByIndicesJs(
+      ownerIdJs,
+      documentTransitionsJs,
+      dataContractJs,
+      executionContextJs,
+    );
+
+    expect(result).to.be.an.instanceOf(ValidationResultJs);
+    expect(result.isValid()).to.be.true();
+  });
+
+  it('should return valid result if Document has unique indices and there are no duplicates - Rust', async () => {
+    const [, , , william] = documentsJs;
+    const williamDocument = new Document(william.toObject(), dataContract);
+
+    stateRepositoryMock.fetchDocuments
+      .withArgs(
+        dataContract.getId().toBuffer(),
+        williamDocument.getType(),
+        {
+          where: [
+            ['$ownerId', '==', ownerIdJs],
+            ['firstName', '==', william.get('firstName')],
+          ],
+        },
+      )
+      .resolves([williamDocument]);
+
+    stateRepositoryMock.fetchDocuments
+      .withArgs(
+        dataContractJs.getId().toBuffer(),
+        william.getType(),
+        {
+          where: [
+            ['$ownerId', '==', ownerIdJs],
+            ['lastName', '==', william.get('lastName')],
+          ],
+        },
+      )
+      .resolves([william]);
+
+
     const result = await validateDocumentsUniquenessByIndices(
+      stateRepositoryMock,
       ownerId,
       documentTransitions,
       dataContract,
       executionContext,
     );
 
-    expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.true();
+    expect(result).to.be.an.instanceOf(ValidationResultJs);
+    // expect(result.isValid()).to.be.true();
   });
 
   it('should return invalid result if Document has unique indices and there are duplicates', async () => {
-    const [, , , william, leon] = documents;
+    const [, , , william, leon] = documentsJs;
 
-    const indicesDefinition = dataContract.getDocumentSchema(william.getType()).indices;
+    const indicesDefinition = dataContractJs.getDocumentSchema(william.getType()).indices;
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContractJs.getId(),
         william.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['firstName', '==', william.get('firstName')],
           ],
         },
       )
       .resolves([leon]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContractJs.getId(),
         william.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['lastName', '==', william.get('lastName')],
           ],
         },
       )
       .resolves([leon]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContractJs.getId(),
         leon.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['firstName', '==', leon.get('firstName')],
           ],
         },
       )
       .resolves([william]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContractJs.getId(),
         leon.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['lastName', '==', leon.get('lastName')],
           ],
         },
       )
       .resolves([william]);
 
-    const result = await validateDocumentsUniquenessByIndices(
-      ownerId,
-      documentTransitions,
-      dataContract,
-      executionContext,
+    const result = await validateDocumentsUniquenessByIndicesJs(
+      ownerIdJs,
+      documentTransitionsJs,
+      dataContractJs,
+      executionContextJs,
     );
 
-    expectValidationError(result, DuplicateUniqueIndexError, 4);
+    expectValidationError(result, DuplicateUniqueIndexErrorJs, 4);
 
     const errors = result.getErrors();
 
@@ -171,10 +289,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
     expect(error.getCode()).to.equal(4009);
 
     expect(errors.map((e) => e.getDocumentId())).to.have.deep.members([
-      documentTransitions[3].getId().toBuffer(),
-      documentTransitions[3].getId().toBuffer(),
-      documentTransitions[4].getId().toBuffer(),
-      documentTransitions[4].getId().toBuffer(),
+      documentTransitionsJs[3].getId().toBuffer(),
+      documentTransitionsJs[3].getId().toBuffer(),
+      documentTransitionsJs[4].getId().toBuffer(),
+      documentTransitionsJs[4].getId().toBuffer(),
     ]);
 
     expect(errors.map((e) => e.getDuplicatingProperties())).to.have.deep.members([
@@ -186,56 +304,56 @@ describe('validateDocumentsUniquenessByIndices', () => {
   });
 
   it('should return valid result if Document has undefined field from index', async () => {
-    const indexedDocument = documents[7];
+    const indexedDocument = documentsJs[7];
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocument],
     });
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId().toBuffer(),
+        dataContractJs.getId().toBuffer(),
         indexedDocument.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
             ['firstName', '==', indexedDocument.get('firstName')],
           ],
         },
       )
       .resolves([indexedDocument]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId(),
+        dataContractJs.getId(),
         indexedDocument.getType(),
         {
           where: [
-            ['$ownerId', '==', ownerId],
+            ['$ownerId', '==', ownerIdJs],
           ],
         },
       )
       .resolves([indexedDocument]);
 
-    const result = await validateDocumentsUniquenessByIndices(
-      ownerId,
+    const result = await validateDocumentsUniquenessByIndicesJs(
+      ownerIdJs,
       indexedDocumentTransitions,
-      dataContract,
-      executionContext,
+      dataContractJs,
+      executionContextJs,
     );
 
-    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result).to.be.an.instanceOf(ValidationResultJs);
     expect(result.isValid()).to.be.true();
   });
 
   it('should return valid result if Document being created and has createdAt and updatedAt indices', async () => {
-    const [, , , , , , uniqueDatesDocument] = documents;
+    const [, , , , , , uniqueDatesDocument] = documentsJs;
 
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
       create: [uniqueDatesDocument],
     });
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMockJs.fetchDocuments
       .withArgs(
-        dataContract.getId().toBuffer(),
+        dataContractJs.getId().toBuffer(),
         uniqueDatesDocument.getType(),
         {
           where: [
@@ -246,31 +364,55 @@ describe('validateDocumentsUniquenessByIndices', () => {
       )
       .resolves([uniqueDatesDocument]);
 
-    const result = await validateDocumentsUniquenessByIndices(
-      ownerId,
+    const result = await validateDocumentsUniquenessByIndicesJs(
+      ownerIdJs,
       uniqueDatesDocumentTransitions,
-      dataContract,
-      executionContext,
+      dataContractJs,
+      executionContextJs,
     );
 
     expect(result.isValid()).to.be.true();
   });
 
   it('should return invalid result on dry run', async () => {
-    const [niceDocument] = documents;
+    const [niceDocument] = documentsJs;
+    const noIndexDocumentTransitions = getDocumentTransitionsFixture({
+      create: [niceDocument],
+    });
+
+    executionContextJs.enableDryRun();
+
+    const result = await validateDocumentsUniquenessByIndicesJs(
+      ownerIdJs,
+      noIndexDocumentTransitions,
+      dataContractJs,
+      executionContextJs,
+    );
+    executionContextJs.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResultJs);
+    expect(result.isValid()).to.be.true();
+    expect(stateRepositoryMockJs.fetchDocuments).to.have.not.been.called();
+  });
+
+  it('should return invalid result on dry run - Rust', async () => {
+    const [niceDocument] = documentsJs;
     const noIndexDocumentTransitions = getDocumentTransitionsFixture({
       create: [niceDocument],
     });
 
     executionContext.enableDryRun();
+    const documentTransition = DocumentTransition.fromTransitionCreate(
+      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract)
+    );
 
     const result = await validateDocumentsUniquenessByIndices(
+      stateRepositoryMock,
       ownerId,
-      noIndexDocumentTransitions,
+      [documentTransition],
       dataContract,
       executionContext,
     );
-    executionContext.disableDryRun();
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

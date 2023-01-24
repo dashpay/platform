@@ -38,6 +38,12 @@ impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
     }
 }
 
+impl std::convert::From<&IdentifierWrapper> for identifier::Identifier {
+    fn from(s: &IdentifierWrapper) -> Self {
+        s.wrapped.clone()
+    }
+}
+
 #[wasm_bindgen(js_class=Identifier)]
 impl IdentifierWrapper {
     #[wasm_bindgen(constructor)]

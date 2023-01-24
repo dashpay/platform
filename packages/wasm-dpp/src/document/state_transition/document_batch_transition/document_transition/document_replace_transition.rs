@@ -38,6 +38,12 @@ impl From<DocumentReplaceTransition> for DocumentReplaceTransitionWasm {
     }
 }
 
+impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
+    fn from(v: DocumentReplaceTransitionWasm) -> Self {
+        v.inner
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentReplaceTransition)]
 impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(constructor)]
