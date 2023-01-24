@@ -14,7 +14,7 @@ pub enum DataContractError {
         raw_data_contract: DataContract,
     },
 
-    #[error("Data Contract doesn't define document with typ {doc_type}")]
+    #[error("Data Contract doesn't define document with type {doc_type}")]
     InvalidDocumentTypeError {
         doc_type: String,
         data_contract: DataContract,
