@@ -40,7 +40,8 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type)?;
+            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
+            .with_js_error()?;
 
         for path in identifiers_paths
             .into_iter()

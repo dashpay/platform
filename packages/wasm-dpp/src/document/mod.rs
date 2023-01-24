@@ -59,7 +59,8 @@ impl DocumentWasm {
 
         let (identifier_paths, _) = js_data_contract
             .inner()
-            .get_identifiers_and_binary_paths(document_type)?;
+            .get_identifiers_and_binary_paths(document_type)
+            .with_js_error()?;
 
         // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
         // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
