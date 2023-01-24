@@ -16,6 +16,7 @@ describe('getPlatformScopeFactory', () => {
     let mockMNOWatchProvider;
     let mockFetch;
     let mockDockerCompose;
+    let mockGetConnectionHost;
 
     let config;
     let getPlatformScope;
@@ -34,9 +35,11 @@ describe('getPlatformScopeFactory', () => {
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockFetch = this.sinon.stub(fetch, 'Promise');
+      mockGetConnectionHost = this.sinon.stub();
 
       config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
-      getPlatformScope = getPlatformScopeFactory(mockDockerCompose, mockCreateRpcClient);
+      getPlatformScope = getPlatformScopeFactory(mockDockerCompose,
+        mockCreateRpcClient, mockGetConnectionHost);
     });
 
     it('should just work', async () => {
