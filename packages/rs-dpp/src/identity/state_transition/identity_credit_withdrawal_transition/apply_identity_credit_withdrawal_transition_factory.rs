@@ -8,9 +8,8 @@ use crate::{
     data_contract::DataContract,
     document::Document,
     identity::state_transition::identity_credit_withdrawal_transition::Pooling,
+   state_repository::StateRepositoryLike,
     prelude::Identifier,
-    prelude::Identity,
-    state_repository::StateRepositoryLike,
     state_transition::StateTransitionConvert,
     state_transition::StateTransitionLike,
     util::{entropy_generator::generate, json_value::JsonValueExt, string_encoding::Encoding},
@@ -109,13 +108,16 @@ where
             )
             .await?;
 
-        let maybe_existing_identity: Option<Identity> = self
+        let maybe_existing_identity = self
             .state_repository
             .fetch_identity(
                 &state_transition.identity_id,
                 state_transition.get_execution_context(),
             )
-            .await?;
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
 
         let mut existing_identity =
             maybe_existing_identity.ok_or_else(|| anyhow!("Identity not found"))?;

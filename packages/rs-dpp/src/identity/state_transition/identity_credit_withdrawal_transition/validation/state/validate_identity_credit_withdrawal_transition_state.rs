@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -5,7 +6,6 @@ use anyhow::Result;
 use crate::{
     consensus::basic::{identity::IdentityInsufficientBalanceError, BasicError},
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::ValidationResult,
@@ -33,14 +33,17 @@ where
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result: ValidationResult<()> = ValidationResult::default();
 
-        let maybe_existing_identity: Option<Identity> = self
+        let maybe_existing_identity = self
             .state_repository
             .fetch_identity(
                 &state_transition.identity_id,
                 state_transition.get_execution_context(),
             )
-            .await
-            .map_err(|err| NonConsensusError::StateRepositoryFetchError(err.to_string()))?;
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)
+            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
         let existing_identity = match maybe_existing_identity {
             None => {

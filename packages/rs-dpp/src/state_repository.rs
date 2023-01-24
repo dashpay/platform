@@ -1,11 +1,10 @@
-use std::convert::{Infallible, TryInto};
-
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
 #[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
+use std::convert::{Infallible, TryInto};
 
 use crate::{
     prelude::*,
@@ -18,12 +17,25 @@ impl From<Infallible> for ProtocolError {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct FetchTransactionResponse {
+    pub height: Option<u32>,
+    pub data: Option<Vec<u8>>,
+}
+
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(feature = "fixtures-and-mocks", automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
+#[cfg_attr(any(test, feature="fixtures-and-mocks"), automock(
+    type ConversionError=Infallible;
+    type FetchDataContract=DataContract;
+    type FetchIdentity=Identity;
+    type FetchTransaction=FetchTransactionResponse;
+))]
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
+    type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;
+    type FetchTransaction: TryInto<FetchTransactionResponse, Error = Self::ConversionError>;
 
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
@@ -77,23 +89,19 @@ pub trait StateRepositoryLike: Send + Sync {
 
     /// Fetch the Transaction
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Transaction`] should be also possible
-    async fn fetch_transaction<T>(
+    async fn fetch_transaction(
         &self,
         id: &str,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Self::FetchTransaction>;
 
     /// Fetch Identity by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
-    async fn fetch_identity<T>(
+    async fn fetch_identity(
         &self,
         id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Option<Self::FetchIdentity>>;
 
     /// Store Public Key hashes and Identity id pair
     async fn store_identity_public_key_hashes(
@@ -160,6 +168,9 @@ pub trait StateRepositoryLike: Send + Sync {
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_withdrawal_transaction_index(&self) -> AnyResult<u64>;
+
+    // Get latest (in a queue) withdrawal transaction index
+    async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
 
     // Enqueue withdrawal transaction
     async fn enqueue_withdrawal_transaction(

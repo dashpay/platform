@@ -38,10 +38,8 @@ impl IdentityFacadeWasm {
         let identity_json = serde_wasm_bindgen::from_value(raw_identity_object)
             .expect("unable to serialize identity");
         // TODO: handle the case when
-        self.0
-            .validate(&identity_json)
-            .map(|res| res.into())
-            .map_err(|err| err.into())
+        let validation_result = self.0.validate(&identity_json)?;
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }
 

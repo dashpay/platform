@@ -169,6 +169,7 @@ module.exports = {
 
         },
         nodeId: null,
+        moniker: null,
       },
     },
     dpns: {

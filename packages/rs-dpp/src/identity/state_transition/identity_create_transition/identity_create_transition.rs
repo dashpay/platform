@@ -104,11 +104,15 @@ impl IdentityCreateTransition {
                 .iter()
                 .map(|val| serde_json::from_value(val.clone()))
                 .collect::<Result<Vec<IdentityPublicKey>, serde_json::Error>>()?;
-            state_transition = state_transition.set_public_keys(keys);
+            state_transition.set_public_keys(keys);
         }
 
         if let Some(proof) = transition_map.get(property_names::ASSET_LOCK_PROOF) {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
+        }
+
+        if let Some(protocol_version) = transition_map.get(property_names::PROTOCOL_VERSION) {
+            state_transition.protocol_version = protocol_version.as_u64().unwrap() as u32;
         }
 
         Ok(state_transition)
@@ -142,14 +146,14 @@ impl IdentityCreateTransition {
     }
 
     /// Replaces existing set of public keys with a new one
-    pub fn set_public_keys(mut self, public_keys: Vec<IdentityPublicKey>) -> Self {
+    pub fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKey>) -> &mut Self {
         self.public_keys = public_keys;
 
         self
     }
 
     /// Adds public keys to the existing public keys array
-    pub fn add_public_keys(mut self, public_keys: &mut Vec<IdentityPublicKey>) -> Self {
+    pub fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKey>) -> &mut Self {
         self.public_keys.append(public_keys);
 
         self
@@ -171,6 +175,11 @@ impl IdentityCreateTransition {
         options: SerializationOptions,
     ) -> Result<JsonValue, SerdeParsingError> {
         let mut json_map = JsonValue::Object(Default::default());
+
+        json_map.insert(
+            property_names::TRANSITION_TYPE.to_string(),
+            serde_json::Value::from(Self::get_type() as u8),
+        )?;
 
         if !options.skip_signature {
             let sig = self.signature.iter().map(|num| JsonValue::from(*num));
@@ -250,6 +259,16 @@ impl StateTransitionConvert for IdentityCreateTransition {
             }
         }
 
+        let mut public_keys: Vec<JsonValue> = vec![];
+        for key in self.public_keys.iter() {
+            public_keys.push(key.to_raw_json_object(skip_signature)?);
+        }
+
+        json_value.insert(
+            property_names::PUBLIC_KEYS.to_owned(),
+            JsonValue::Array(public_keys),
+        )?;
+
         Ok(json_value)
     }
 
@@ -257,6 +276,11 @@ impl StateTransitionConvert for IdentityCreateTransition {
         let mut json = serde_json::Value::Object(Default::default());
 
         // TODO: super.toJSON()
+
+        json.insert(
+            property_names::TRANSITION_TYPE.to_string(),
+            serde_json::Value::from(Self::get_type() as u8),
+        )?;
 
         json.insert(
             property_names::ASSET_LOCK_PROOF.to_string(),
@@ -292,7 +316,7 @@ impl StateTransitionLike for IdentityCreateTransition {
     }
     /// returns the type of State Transition
     fn get_type(&self) -> StateTransitionType {
-        StateTransitionType::IdentityTopUp
+        StateTransitionType::IdentityCreate
     }
     /// returns the signature as a byte-array
     fn get_signature(&self) -> &Vec<u8> {

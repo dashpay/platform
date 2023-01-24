@@ -1,5 +1,6 @@
 use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
 use dpp::consensus::ConsensusError;
+use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -22,13 +23,16 @@ impl IdentityAssetLockProofLockedTransactionMismatchErrorWasm {
     #[wasm_bindgen(js_name=getInstantLockTransactionId)]
     pub fn instant_lock_transaction_id(&self) -> Buffer {
         let tx_id = self.inner.instant_lock_transaction_id();
-        Buffer::from_bytes(tx_id.to_vec().as_ref())
+        Buffer::from_bytes(&tx_id)
     }
 
     #[wasm_bindgen(js_name=getAssetLockTransactionId)]
     pub fn asset_lock_transaction_id(&self) -> Buffer {
         let tx_id = self.inner.asset_lock_transaction_id();
-        Buffer::from_bytes(tx_id.to_vec().as_ref())
+        let mut hash_bytes = tx_id.as_hash().into_inner();
+        hash_bytes.reverse();
+
+        Buffer::from_bytes(&hash_bytes)
     }
 
     #[wasm_bindgen(js_name=getCode)]
