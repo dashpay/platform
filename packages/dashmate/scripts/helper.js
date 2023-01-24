@@ -29,7 +29,7 @@ const createDIContainer = require('../src/createDIContainer');
 
   // Register config collection in the container
   container.register({
-    configFile: asValue(configFile),
+    isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
   });
 
   const config = configFile.getConfig(configName);

@@ -44,7 +44,13 @@ function setupRegularPresetTaskFactory(
     return new Listr([
       {
         task: (ctx) => {
-          ctx.config = configFile.getConfig(ctx.preset);
+          const config = configFile.getConfig(ctx.preset);
+
+          if (config.platform) {
+            config.platform.drive.tenderdash.moniker = config.name;
+          }
+
+          ctx.config = config;
         },
       },
       {

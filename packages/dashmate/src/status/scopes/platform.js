@@ -2,14 +2,15 @@ const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
 const providers = require('../providers');
-const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  * @returns {getPlatformScopeFactory}
  * @param dockerCompose {DockerCompose}
  * @param createRpcClient {createRpcClient}
+ * @param getConnectionHost {getConnectionHost}
  */
-function getPlatformScopeFactory(dockerCompose, createRpcClient) {
+function getPlatformScopeFactory(dockerCompose,
+  createRpcClient, getConnectionHost) {
   /**
    * Get platform status scope
    *
@@ -19,9 +20,9 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
    */
   async function getPlatformScope(config) {
     const hosts = {
-      core: await getConnectionHost(dockerCompose, config, 'core'),
+      core: await getConnectionHost(config, 'core'),
       drive: await dockerCompose.getContainerIp(config.toEnvs(), 'drive_abci'),
-      tenderdash: await getConnectionHost(dockerCompose, config, 'drive_tenderdash'),
+      tenderdash: await getConnectionHost(config, 'drive_tenderdash'),
     };
 
     const rpcClient = createRpcClient({
@@ -55,7 +56,8 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
       'drive_abci', 'yarn workspace @dashevo/drive echo');
 
     if (driveEchoResult.exitCode !== 0) {
-      console.warn(driveEchoResult.out);
+      // eslint-disable-next-line no-console
+      console.error(driveEchoResult.out);
 
       driveServiceStatus = ServiceStatusEnum.error;
     }

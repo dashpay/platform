@@ -1,7 +1,6 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 const CoreService = require('../../core/CoreService');
-const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -14,6 +13,7 @@ const getConnectionHost = require('../../util/getConnectionHost');
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {configFileRepository} configFileRepository
  * @param {configFile} configFile
+ * @param {getConnectionHost} getConnectionHost
  * @return {reindexNodeTask}
  */
 function reindexNodeTaskFactory(
@@ -27,6 +27,7 @@ function reindexNodeTaskFactory(
   writeServiceConfigs,
   configFileRepository,
   configFile,
+  getConnectionHost,
 ) {
   /**
    * @typedef {reindexNodeTask}
@@ -95,7 +96,7 @@ function reindexNodeTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
-                host: await getConnectionHost(dockerCompose, config, 'core'),
+                host: await getConnectionHost(config, 'core'),
               },
             ),
             docker.getContainer(containerId),

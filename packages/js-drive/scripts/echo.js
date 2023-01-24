@@ -25,8 +25,10 @@ async function sendEcho(ip) {
 }
 
 sendEcho('127.0.0.1')
+  // eslint-disable-next-line no-console
   .then(console.log)
   .catch((e) => {
+    // eslint-disable-next-line no-console
     console.error(e);
     process.exit(1);
   });

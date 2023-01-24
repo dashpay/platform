@@ -5,7 +5,6 @@ const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
 const { NETWORK_LOCAL } = require('../../constants');
-const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  *
@@ -14,6 +13,7 @@ const getConnectionHost = require('../../util/getConnectionHost');
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
+ * @param getConnectionHost {getConnectionHost}
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -22,6 +22,7 @@ function startNodeTaskFactory(
   waitForMasternodesSync,
   createRpcClient,
   buildServicesTask,
+  getConnectionHost,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -107,7 +108,7 @@ function startNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(dockerCompose, config, 'core'),
+            host: await getConnectionHost(config, 'core'),
           });
 
           return new Observable(async (observer) => {

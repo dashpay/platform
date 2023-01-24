@@ -1,14 +1,15 @@
 const { Listr } = require('listr2');
-const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  * @param {DockerCompose} dockerCompose
  * @param {createRpcClient} createRpcClient
+ * @param {getConnectionHost} getConnectionHost
  * @return {stopNodeTask}
  */
 function stopNodeTaskFactory(
   dockerCompose,
   createRpcClient,
+  getConnectionHost,
 ) {
   /**
    * Stop node
@@ -37,7 +38,7 @@ function stopNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(dockerCompose, config, 'core'),
+            host: await getConnectionHost(config, 'core'),
           });
 
           const { result: { mediantime } } = await rpcClient.getBlockchainInfo();

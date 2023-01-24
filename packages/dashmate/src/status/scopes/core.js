@@ -5,14 +5,15 @@ const providers = require('../providers');
 const extractCoreVersion = require('../../core/extractCoreVersion');
 const ServiceStatusEnum = require('../../enums/serviceStatus');
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
-const getConnectionHost = require('../../util/getConnectionHost');
 
 /**
  * @returns {getCoreScopeFactory}
  * @param dockerCompose {DockerCompose}
  * @param createRpcClient {createRpcClient}
+ * @param getConnectionHost {getConnectionHost}
  */
-function getCoreScopeFactory(dockerCompose, createRpcClient) {
+function getCoreScopeFactory(dockerCompose,
+  createRpcClient, getConnectionHost) {
   /**
    * Get core status scope
    *
@@ -33,7 +34,7 @@ function getCoreScopeFactory(dockerCompose, createRpcClient) {
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(dockerCompose, config, 'core'),
+      host: await getConnectionHost(config, 'core'),
     });
 
     const core = {
