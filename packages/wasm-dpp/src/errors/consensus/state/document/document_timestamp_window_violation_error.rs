@@ -1,4 +1,4 @@
-use crate::buffer::Buffer;
+use crate::{buffer::Buffer, console_log};
 use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;
 
@@ -26,23 +26,23 @@ impl DocumentTimestampWindowViolationErrorWasm {
 
     #[wasm_bindgen(js_name=getTimestamp)]
     pub fn timestamp(&self) -> js_sys::Date {
-        // TODO: Figure out how to match rust timestamps with JS timestamps
-        let timestamp = JsValue::from(self.timestamp as u32);
-        js_sys::Date::new(&timestamp)
+        let date = js_sys::Date::new_0();
+        date.set_time(self.timestamp as f64);
+        date
     }
 
     #[wasm_bindgen(js_name=getTimeWindowStart)]
     pub fn time_window_start(&self) -> js_sys::Date {
-        // TODO: Figure out how to match rust timestamps with JS timestamps
-        let timestamp = JsValue::from(self.time_window_start as u32);
-        js_sys::Date::new(&timestamp)
+        let date = js_sys::Date::new_0();
+        date.set_time(self.time_window_start as f64);
+        date
     }
 
     #[wasm_bindgen(js_name=getTimeWindowEnd)]
     pub fn time_window_end(&self) -> js_sys::Date {
-        // TODO: Figure out how to match rust timestamps with JS timestamps
-        let timestamp = JsValue::from(self.time_window_end as u32);
-        js_sys::Date::new(&timestamp)
+        let date = js_sys::Date::new_0();
+        date.set_time(self.time_window_end as f64);
+        date
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -288,6 +288,11 @@ impl DataContractWasm {
         let data_contract = DataContract::from_cbor(b).with_js_error()?;
         Ok(data_contract.into())
     }
+
+    #[wasm_bindgen(js_name=clone)]
+    pub fn deep_clone(&self) -> Self {
+        self.clone()
+    }
 }
 
 #[wasm_bindgen(js_name=DataContractDefaults)]

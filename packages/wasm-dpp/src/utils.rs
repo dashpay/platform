@@ -1,3 +1,6 @@
+use std::{any, convert::TryInto};
+
+use anyhow::{anyhow, bail};
 use dpp::{
     dashcore::{anyhow, anyhow::Context},
     ProtocolError,
@@ -8,7 +11,10 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
-use crate::errors::{from_dpp_err, RustConversionError};
+use crate::{
+    bail_js,
+    errors::{from_dpp_err, RustConversionError},
+};
 
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> Result<Value, JsValue>;
@@ -164,4 +170,40 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
         );
         Err(JsValue::from(&error_string))
     }
+}
+
+pub fn try_to_u64(value: JsValue) -> Result<u64, JsValue> {
+    let result = if value.is_bigint() {
+        js_sys::BigInt::new(&value)?
+            .try_into()
+            .map_err(|e| anyhow!("conversion of BigInt to u64 failed: {:#}", e))
+            .with_js_error()?
+    } else if value.as_f64().is_some() {
+        let number = js_sys::Number::from(value);
+        convert_number_to_u64(number).with_js_error()?
+    } else {
+        bail_js!("setCreatedAt supports numbers or bigint")
+    };
+
+    Ok(result)
+}
+
+pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
+    if let Some(float_number) = js_number.as_f64() {
+        if float_number.is_nan() || float_number.is_infinite() {
+            bail!("received an invalid timestamp: the number is either NaN or Inf")
+        }
+        if float_number < 0. {
+            bail!("received an invalid timestamp: the number is negative");
+        }
+        if float_number.fract() != 0. {
+            bail!("received an invalid timestamp: the number is fractional")
+        }
+        if float_number > u64::MAX as f64 {
+            bail!("received an invalid timestamp: the number is > u64::max")
+        }
+
+        return Ok(float_number as u64);
+    }
+    bail!("the value is not a number")
 }

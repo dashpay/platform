@@ -2,6 +2,9 @@ mod document_create_transition;
 mod document_delete_transition;
 mod document_replace_transition;
 
+use std::convert::TryInto;
+
+use anyhow::anyhow;
 pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
@@ -16,11 +19,13 @@ use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
+    bail_js,
     buffer::Buffer,
+    console_log,
     conversion::ConversionOptions,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{convert_number_to_u64, try_to_u64, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, DataContractWasm,
 };
 
@@ -64,13 +69,47 @@ impl DocumentTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn get_updated_at(&self) -> JsValue {
-        if let Some(revision) = self.0.get_updated_at() {
-            revision.into()
+    #[wasm_bindgen(js_name=getCreatedAt)]
+    pub fn get_created_at(&self) -> JsValue {
+        if let Some(created_at) = self.0.get_created_at() {
+            created_at.into()
         } else {
             JsValue::NULL
         }
+    }
+    #[wasm_bindgen(js_name=getUpdatedAt)]
+    pub fn get_updated_at(&self) -> JsValue {
+        if let Some(updated_at) = self.0.get_updated_at() {
+            updated_at.into()
+        } else {
+            JsValue::NULL
+        }
+    }
+
+    #[wasm_bindgen(js_name=setUpdatedAt)]
+    pub fn set_updated_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
+        if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
+            self.0.set_updated_at(None);
+            return Ok(());
+        }
+        let timestamp_millis = try_to_u64(js_timestamp_millis)?;
+        // TODO we should store timestamps as u64 in DocumentTransitions
+        self.0.set_updated_at(Some(timestamp_millis as i64));
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name=setCreatedAt)]
+    pub fn set_created_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
+        if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
+            self.0.set_created_at(None);
+            return Ok(());
+        }
+        let timestamp_millis = try_to_u64(js_timestamp_millis)?;
+        // TODO we should store timestamps as u64 in DocumentTransitions
+        self.0.set_created_at(Some(timestamp_millis as i64));
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getData)]
@@ -166,6 +205,12 @@ impl DocumentTransitionWasm {
 impl From<DocumentTransition> for DocumentTransitionWasm {
     fn from(v: DocumentTransition) -> Self {
         DocumentTransitionWasm(v)
+    }
+}
+
+impl From<DocumentTransitionWasm> for DocumentTransition {
+    fn from(v: DocumentTransitionWasm) -> Self {
+        v.0
     }
 }
 

@@ -3,7 +3,6 @@ use std::convert::TryInto;
 use dashcore::BlockHeader;
 use futures::future::join_all;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
@@ -27,11 +26,6 @@ use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HeaderTime {
-    pub seconds: usize,
-}
 
 pub async fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,
@@ -94,10 +88,7 @@ pub async fn validate_document_transitions(
         fetch_documents(state_repository, &transitions, execution_context).await?;
 
     // Calculate time window for timestamp
-    let block_header: BlockHeader = state_repository
-        .fetch_latest_platform_block_header()
-        .await?;
-    let last_header_time_millis = block_header.time as u64 * 1000;
+    let last_header_time_millis = state_repository.fetch_latest_platform_block_time().await?;
 
     if !execution_context.is_dry_run() {
         for transition in transitions.iter() {

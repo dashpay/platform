@@ -28,6 +28,10 @@ pub trait DocumentTransitionExt {
     fn get_created_at(&self) -> Option<i64>;
     /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
     fn get_updated_at(&self) -> Option<i64>;
+    /// set the created_at (in milliseconds) if it exists
+    fn set_created_at(&mut self, timestamp_millis: Option<i64>);
+    /// set the updated_at (in milliseconds) if it exists
+    fn set_updated_at(&mut self, timestamp_millis: Option<i64>);
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
@@ -206,11 +210,28 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
+    fn set_updated_at(&mut self, timestamp_millis: Option<i64>) {
+        match self {
+            DocumentTransition::Create(ref mut t) => t.updated_at = timestamp_millis,
+            DocumentTransition::Replace(ref mut t) => t.updated_at = timestamp_millis,
+            DocumentTransition::Delete(_) => {}
+        }
+    }
+
     fn get_created_at(&self) -> Option<i64> {
+        // this is  the problem ... how we can divide things into the chunks
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn set_created_at(&mut self, timestamp_millis: Option<i64>) {
+        match self {
+            DocumentTransition::Create(ref mut t) => t.created_at = timestamp_millis,
+            DocumentTransition::Replace(_) => {}
+            DocumentTransition::Delete(_) => {}
         }
     }
 

@@ -4,7 +4,7 @@ use dpp::{
         state_transition::documents_batch_transition::{self, property_names},
         DocumentsBatchTransition,
     },
-    prelude::{DataContract, Document, Identifier},
+    prelude::{DataContract, Document, DocumentTransition, Identifier},
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
@@ -22,7 +22,7 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DocumentWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
@@ -150,6 +150,21 @@ impl DocumentsBatchTransitionWASM {
         }
 
         array
+    }
+
+    #[wasm_bindgen(js_name=setTransitions)]
+    pub fn set_transitions(&mut self, js_transitions: Array) -> Result<(), JsValue> {
+        let mut transitions = vec![];
+        for js_transition in js_transitions.iter() {
+            let transition: DocumentTransition = js_transition
+                .to_wasm::<DocumentTransitionWasm>("DocumentTransitionWasm")?
+                .to_owned()
+                .into();
+            transitions.push(transition)
+        }
+
+        self.0.transitions = transitions;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=toJSON)]

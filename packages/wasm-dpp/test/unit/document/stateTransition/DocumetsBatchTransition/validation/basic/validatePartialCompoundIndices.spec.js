@@ -8,19 +8,15 @@ const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
 const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-// const { InconsistentCompoundIndexDataError } = require('../../../../../../../dist/wasm/wasm_dpp');
-// const { Document } = require('../../../../../../../dist/wasm/wasm_dpp');
-// const { DataContract, Identifier } = require('../../../../../../../dist/wasm/wasm_dpp');
+
 let DataContract;
 let Identifier;
-let Document;
 let validatePartialCompoundIndices;
 let InconsistentCompoundIndexDataError;
 let ValidationResult;
 
 describe('validatePartialCompoundIndices', () => {
   let documentsJs;
-  let documents;
   let rawDocumentTransitions;
   let dataContractJs;
   let dataContract;

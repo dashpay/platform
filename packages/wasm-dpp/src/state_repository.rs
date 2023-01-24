@@ -1,17 +1,13 @@
 //! Bindings for state repository -like objects coming from JS.
 
-use std::{
-    convert::{Infallible, TryInto},
-    pin::Pin,
-    sync::Mutex,
-};
+use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
-    document::{errors::DocumentError, Document},
+    document::Document,
     prelude::{Identifier, Identity},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -152,7 +148,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 .map_err(|e| anyhow!("{e:#?}"))?;
             documents.push(document.to_owned());
         }
-        console_log!("returned {} documents", documents.len());
         Ok(documents)
     }
 
@@ -330,6 +325,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 bail!("received an invalid timestamp: the number is > u64::max")
             }
 
+            console_log!("returning the latest platform block time: {}", float_number);
             return Ok(float_number as u64);
         }
 

@@ -22,7 +22,7 @@ pub struct DocumentReplaceTransition {
     pub base: DocumentBaseTransition,
     #[serde(rename = "$revision")]
     pub revision: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
     pub updated_at: Option<i64>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<JsonValue>,

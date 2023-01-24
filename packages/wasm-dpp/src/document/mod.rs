@@ -343,8 +343,13 @@ impl DocumentWasm {
         Ok(Buffer::from_bytes(&bytes))
     }
 
+    #[wasm_bindgen(js_name=ass)]
+    pub fn ass(&self) {
+        console_log!("this is an an ass")
+    }
+
     #[wasm_bindgen(js_name=clone)]
-    pub fn deep_clone(&self) -> Self {
+    pub fn deep_clone(&self) -> DocumentWasm {
         self.clone()
     }
 }

@@ -70,9 +70,13 @@ fn setup_test() -> TestData {
         .expect_fetch_data_contract()
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
+    // state_repository_mock
+    //     .expect_fetch_latest_platform_block_header::<BlockHeader>()
+    //     .returning(|| Ok(new_block_header(Some(Utc::now().timestamp() as u32))));
+
     state_repository_mock
-        .expect_fetch_latest_platform_block_header::<BlockHeader>()
-        .returning(|| Ok(new_block_header(Some(Utc::now().timestamp() as u32))));
+        .expect_fetch_latest_platform_block_time()
+        .returning(|| Ok(Utc::now().timestamp() as u64));
 
     TestData {
         owner_id,
