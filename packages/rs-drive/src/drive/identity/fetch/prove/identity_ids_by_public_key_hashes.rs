@@ -19,7 +19,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![])
+        self.grove_get_proved_path_query(&path_query, false, transaction, &mut vec![])
     }
 
     /// Proves identity ids against public key hashes.
@@ -29,7 +29,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
-        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![])
+        self.grove_get_proved_path_query(&path_query, false, transaction, &mut vec![])
     }
 }
 
@@ -67,9 +67,12 @@ mod tests {
                 .prove_identity_id_by_unique_public_key_hash(first_key_hash, None)
                 .expect("should not error when proving an identity");
 
-            let (_, proved_identity_id) =
-                Drive::verify_identity_id_by_public_key_hash(proof.as_slice(), first_key_hash)
-                    .expect("expect that this be verified");
+            let (_, proved_identity_id) = Drive::verify_identity_id_by_public_key_hash(
+                proof.as_slice(),
+                false,
+                first_key_hash,
+            )
+            .expect("expect that this be verified");
 
             assert_eq!(proved_identity_id, Some(identity_id));
         }
@@ -119,8 +122,12 @@ mod tests {
                 .expect("should not error when proving an identity");
 
             let (_, proved_identity_id): ([u8; 32], BTreeMap<[u8; 20], Option<[u8; 32]>>) =
-                Drive::verify_identity_ids_by_public_key_hashes(proof.as_slice(), &key_hashes)
-                    .expect("expect that this be verified");
+                Drive::verify_identity_ids_by_public_key_hashes(
+                    proof.as_slice(),
+                    false,
+                    &key_hashes,
+                )
+                .expect("expect that this be verified");
 
             assert_eq!(proved_identity_id, key_hashes_to_identity_ids);
         }

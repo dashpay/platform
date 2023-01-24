@@ -26,11 +26,11 @@ impl Drive {
         if let Some(identity_id) = identity_id {
             let query =
                 Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)?;
-            self.grove_get_proved_path_query(&query, transaction, &mut vec![])
+            self.grove_get_proved_path_query(&query, true, transaction, &mut vec![])
         } else {
             // We only prove the absence of the public key hash
             let query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-            self.grove_get_proved_path_query(&query, transaction, &mut vec![])
+            self.grove_get_proved_path_query(&query, false, transaction, &mut vec![])
         }
     }
 
@@ -55,9 +55,9 @@ impl Drive {
             })
             .collect::<Result<Vec<PathQuery>, Error>>()?;
 
-        let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
-
-        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![])
+        let mut path_query =
+            PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+        self.grove_get_proved_path_query(&path_query, true, transaction, &mut vec![])
     }
 }
 
@@ -95,11 +95,11 @@ mod tests {
                 .prove_full_identity_by_unique_public_key_hash(first_key_hash, None)
                 .expect("should not error when proving an identity");
 
-            let (_, proved_identity_id) =
-                Drive::verify_identity_id_by_public_key_hash(proof.as_slice(), first_key_hash)
+            let (_, proved_identity) =
+                Drive::verify_full_identity_by_public_key_hash(proof.as_slice(), first_key_hash)
                     .expect("expect that this be verified");
 
-            assert_eq!(proved_identity_id, Some(identity_id));
+            assert_eq!(proved_identity, Some(identity));
         }
 
         #[test]
@@ -117,6 +117,25 @@ mod tests {
                     .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                     .expect("expected to add an identity");
             }
+
+            let key_hashes_to_identities = identities
+                .values()
+                .into_iter()
+                .map(|identity| {
+                    (
+                        identity
+                            .public_keys
+                            .first_key_value()
+                            .expect("expected a key")
+                            .1
+                            .hash()
+                            .expect("expected to hash first_key")
+                            .try_into()
+                            .expect("expected to be 20 bytes"),
+                        Some(identity.clone()),
+                    )
+                })
+                .collect::<BTreeMap<[u8; 20], Option<Identity>>>();
 
             let key_hashes_to_identity_ids = identities
                 .values()
@@ -146,11 +165,11 @@ mod tests {
                 .prove_full_identities_by_unique_public_key_hashes(&key_hashes, None)
                 .expect("should not error when proving an identity");
 
-            let (_, proved_identity_id): ([u8; 32], BTreeMap<[u8; 20], Option<[u8; 32]>>) =
-                Drive::verify_identity_ids_by_public_key_hashes(proof.as_slice(), &key_hashes)
+            let (_, proved_identity_ids): ([u8; 32], BTreeMap<[u8; 20], Option<Identity>>) =
+                Drive::verify_full_identities_by_public_key_hashes(proof.as_slice(), &key_hashes)
                     .expect("expect that this be verified");
 
-            assert_eq!(proved_identity_id, key_hashes_to_identity_ids);
+            assert_eq!(proved_identity_ids, key_hashes_to_identities);
         }
     }
 }

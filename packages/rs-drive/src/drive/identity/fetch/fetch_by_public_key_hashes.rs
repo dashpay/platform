@@ -90,7 +90,12 @@ impl Drive {
                 .map(|key_hash| key_hash.to_vec())
                 .collect(),
         );
-        let path_query = PathQuery::new_unsized(unique_key_hashes, query);
+        let sized_query = SizedQuery {
+            query,
+            limit: Some(public_key_hashes.len() as u16),
+            offset: None,
+        };
+        let path_query = PathQuery::new(unique_key_hashes, sized_query);
         self.grove_get_raw_path_query_with_optional(&path_query, transaction, drive_operations)?
             .into_iter()
             .map(|(_, key, element)| {

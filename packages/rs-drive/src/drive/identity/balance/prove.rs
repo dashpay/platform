@@ -12,7 +12,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balance_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![])
+        self.grove_get_proved_path_query(&balance_query, false, transaction, &mut vec![])
     }
 }
 

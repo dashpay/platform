@@ -79,9 +79,9 @@ checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 
 [[package]]
 name = "async-trait"
-version = "0.1.61"
+version = "0.1.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "705339e0e4a9690e2908d2b3d049d85682cf19fbd5782494498fbf7003a6a282"
+checksum = "eff18d764974428cf3a9328e23fc5c986f5fbed46e6cd4cdf42544df5d297ec1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -587,7 +587,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#d2c9c0a8d5facc66738dd0daae23cdb597699fe1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/proof-subset-verification#a264ea2335d99eaf88959e7d4e00aa55a8ced14b"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -762,9 +762,9 @@ dependencies = [
 
 [[package]]
 name = "cxx"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d1075c37807dcf850c379432f0df05ba52cc30f279c5cfc43cc221ce7f8579"
+checksum = "b61a7545f753a88bcbe0a70de1fcc0221e10bfc752f576754fa91e663db1622e"
 dependencies = [
  "cc",
  "cxxbridge-flags",
@@ -774,9 +774,9 @@ dependencies = [
 
 [[package]]
 name = "cxx-build"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5044281f61b27bc598f2f6647d480aed48d2bf52d6eb0b627d84c0361b17aa70"
+checksum = "f464457d494b5ed6905c63b0c4704842aba319084a0a3561cdc1359536b53200"
 dependencies = [
  "cc",
  "codespan-reporting",
@@ -789,15 +789,15 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-flags"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61b50bc93ba22c27b0d31128d2d130a0a6b3d267ae27ef7e4fae2167dfe8781c"
+checksum = "43c7119ce3a3701ed81aca8410b9acf6fc399d2629d057b87e2efa4e63a3aaea"
 
 [[package]]
 name = "cxxbridge-macro"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39e61fda7e62115119469c7b3591fd913ecca96fb766cfd3f2e2502ab7bc87a5"
+checksum = "65e07508b90551e610910fa648a1878991d367064997a596135b86df30daf07e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1262,9 +1262,9 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.27.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dec7af912d60cdbd3677c1af9352ebae6fb8394d165568a2234df0fa00f87793"
+checksum = "221996f774192f0f718773def8201c4ae31f02616a54ccfc2d358bb0e5cefdec"
 
 [[package]]
 name = "glob"
@@ -1286,7 +1286,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#d2c9c0a8d5facc66738dd0daae23cdb597699fe1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/proof-subset-verification#a264ea2335d99eaf88959e7d4e00aa55a8ced14b"
 dependencies = [
  "bincode",
  "costs",
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "0.10.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#d2c9c0a8d5facc66738dd0daae23cdb597699fe1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/proof-subset-verification#a264ea2335d99eaf88959e7d4e00aa55a8ced14b"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1874,6 +1874,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom8"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae01545c9c7fc4486ab7debaf2aad7003ac19431791868fb2e8066df97fad2f8"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "normalize-line-endings"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1900,7 +1909,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43db66d1170d347f9a065114077f7dccb00c1b9478c89384490a3425279a4606"
 dependencies = [
  "num-bigint 0.4.3",
- "num-complex 0.4.2",
+ "num-complex 0.4.3",
  "num-integer",
  "num-iter",
  "num-rational 0.4.1",
@@ -1947,9 +1956,9 @@ dependencies = [
 
 [[package]]
 name = "num-complex"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ae39348c8bc5fbd7f40c727a9925f03517afd2ab27d46702108b6a7e5414c19"
+checksum = "02e0d21255c828d6f128a1e41534206671e8c3ea0c62f32291e808dc82cff17d"
 dependencies = [
  "num-traits",
 ]
@@ -2034,7 +2043,7 @@ version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b0498641e53dd6ac1a4f22547548caa6864cc4933784319cd1775271c5a46ce"
 dependencies = [
- "proc-macro-crate 1.2.1",
+ "proc-macro-crate 1.3.0",
  "proc-macro2",
  "quote",
  "syn",
@@ -2042,9 +2051,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.30.2"
+version = "0.30.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b8c786513eb403643f2a88c244c2aaa270ef2153f55094587d0c48a3cf22a83"
+checksum = "ea86265d3d3dcb6a27fc51bd29a4bf387fae9d2986b823079d4986af253eb439"
 dependencies = [
  "memchr",
 ]
@@ -2225,13 +2234,12 @@ dependencies = [
 
 [[package]]
 name = "proc-macro-crate"
-version = "1.2.1"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eda0fc3b0fb7c975631757e14d9049da17374063edb6ebbcbc54d880d4fe94e9"
+checksum = "66618389e4ec1c7afe67d51a9bf34ff9236480f8d51e7489b7d5ab0303c13f34"
 dependencies = [
  "once_cell",
- "thiserror",
- "toml",
+ "toml_edit",
 ]
 
 [[package]]
@@ -2390,9 +2398,9 @@ dependencies = [
 
 [[package]]
 name = "rayon-core"
-version = "1.10.1"
+version = "1.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cac410af5d00ab6884528b4ab69d1e8e146e8d471201800fa1b4524126de6ad3"
+checksum = "356a0625f1954f730c0201cdab48611198dc6ce21f4acff55089b5a78e6e835b"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",
@@ -2487,9 +2495,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.27.0"
+version = "1.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33c321ee4e17d2b7abe12b5d20c1231db708dd36185c8a21e9de5fed6da4dbe9"
+checksum = "7fe32e8c89834541077a5c5bbe5691aa69324361e27e6aeb3552a737db4a70c8"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -2505,9 +2513,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal_macros"
-version = "1.27.0"
+version = "1.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a7e2dba1342e9f1166786a4329ba0d6d6b8d9db7e81d702ec9ba3b39591ddff"
+checksum = "d71a78314ee3b7e684f34f1574fe0935cac8eb453217974473be82f032d9b4ee"
 dependencies = [
  "quote",
  "rust_decimal",
@@ -2782,7 +2790,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#d2c9c0a8d5facc66738dd0daae23cdb597699fe1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/proof-subset-verification#a264ea2335d99eaf88959e7d4e00aa55a8ced14b"
 dependencies = [
  "blake3",
  "costs",
@@ -3046,11 +3054,28 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.5.10"
+version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1333c76748e868a4d9d1017b5ab53171dfd095f70c712fdb4653a406547f598f"
+checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4553f467ac8e3d374bc9a177a26801e5d0f9b211aa1673fb137a403afd1c9cf5"
+
+[[package]]
+name = "toml_edit"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "729bfd096e40da9c001f778f5cdecbd2957929a24e10e5883d9392220a751581"
+dependencies = [
+ "indexmap",
+ "nom8",
+ "toml_datetime",
 ]
 
 [[package]]
@@ -3085,9 +3110,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-bidi"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0046be40136ef78dc325e0edefccf84ccddacd0afcc1ca54103fa3c61bbdab1d"
+checksum = "d54675592c1dbefd78cbd98db9bacd89886e1ca50692a0692baefffdeb92dd58"
 
 [[package]]
 name = "unicode-ident"
@@ -3169,7 +3194,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=develop#d2c9c0a8d5facc66738dd0daae23cdb597699fe1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/proof-subset-verification#a264ea2335d99eaf88959e7d4e00aa55a8ced14b"
 dependencies = [
  "hex",
  "itertools",

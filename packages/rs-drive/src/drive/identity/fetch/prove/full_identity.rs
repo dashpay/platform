@@ -12,7 +12,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let query = Self::full_identity_query(&identity_id)?;
-        self.grove_get_proved_path_query(&query, transaction, &mut drive_operations)
+        self.grove_get_proved_path_query(&query, false, transaction, &mut drive_operations)
     }
 
     /// Proves identities with all its information from an identity ids.
@@ -23,7 +23,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let query = Self::full_identities_query(identity_ids)?;
-        self.grove_get_proved_path_query(&query, transaction, &mut drive_operations)
+        self.grove_get_proved_path_query(&query, false, transaction, &mut drive_operations)
     }
 }
 

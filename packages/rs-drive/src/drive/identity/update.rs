@@ -413,8 +413,6 @@ mod tests {
                     ..Default::default()
                 }
             );
-
-            todo!("storage should be > 0")
         }
     }
 

@@ -1229,7 +1229,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Vec<u8>, Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)
+        drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
     /// Executes a query with proof and returns the root hash, items, and fee.
@@ -1265,24 +1265,28 @@ impl<'a> DriveQuery<'a> {
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
 
         let proof =
-            drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
+            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
         let (root_hash, mut key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
-        let mut values = vec![];
-        for (_, _, maybe_element) in key_value_elements.into_iter() {
-            if let Some(element) = maybe_element {
+        let values = key_value_elements
+            .into_iter()
+            .filter_map(|proved_key_value| {
+                let Some(element) = proved_key_value.2 else {
+                return None;
+            };
+
                 match element {
-                    Element::Item(val, _) => values.push(val),
-                    Element::SumItem(val, _) => values.push(val.encode_var_vec()),
+                    Element::Item(val, _) => Some(Ok(val)),
+                    Element::SumItem(val, _) => Some(Ok(val.encode_var_vec())),
                     Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                        return Err(Error::GroveDB(GroveError::InvalidQuery(
+                        Some(Err(Error::GroveDB(GroveError::InvalidQuery(
                             "path query should only point to items: got trees",
-                        )));
+                        ))))
                     }
                 }
-            }
-        }
+            })
+            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
         Ok((root_hash, values))
     }
