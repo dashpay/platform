@@ -1,5 +1,4 @@
 use dpp::identity::state_transition::identity_update_transition::apply_identity_update_transition::apply_identity_update_transition;
-use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::{

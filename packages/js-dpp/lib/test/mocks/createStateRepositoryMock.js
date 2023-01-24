@@ -52,6 +52,7 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     fetchLatestWithdrawalTransactionIndex: sinonSandbox.stub(),
     enqueueWithdrawalTransaction: sinonSandbox.stub(),
     fetchLatestPlatformBlockTime: sinonSandbox.stub(),
+    fetchLatestPlatformBlockHeader: sinonSandbox.stub(),
     calculateStorageFeeDistributionAmountAndLeftovers: sinonSandbox.stub(),
   };
 };

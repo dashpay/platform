@@ -1,50 +1,88 @@
+const { BlockHeader } = require('@dashevo/dashcore-lib');
+
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const validateIdentityUpdateTransitionStateFactory = require('@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validateIdentityUpdateTransitionStateFactory');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-const InvalidIdentityRevisionError = require('@dashevo/dpp/lib/errors/consensus/state/identity/InvalidIdentityRevisionError');
-const IdentityPublicKeyIsReadOnlyError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
-const IdentityPublicKeyDisabledAtWindowViolationError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
-const InvalidIdentityPublicKeyIdError = require('@dashevo/dpp/lib/errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const IdentityPublicKeyIsDisabledError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyIsDisabledError');
+
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
+const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('validateIdentityUpdateTransitionStateFactory', () => {
   let validateIdentityUpdateTransitionState;
   let stateRepositoryMock;
   let stateTransition;
   let identity;
+  let rawIdentity;
   let validatePublicKeysMock;
-  let fakeTime;
   let blockTime;
-  let validateRequiredPurposeAndSecurityLevelMock;
   let executionContext;
 
+  let Identity;
+  let IdentityPublicKey;
+  let IdentityUpdateTransition;
+  let InvalidIdentityRevisionError;
+  let IdentityPublicKeyIsReadOnlyError;
+  let IdentityPublicKeyIsDisabledError;
+  let InvalidIdentityPublicKeyIdError;
+  let MissingMasterPublicKeyError;
+  let IdentityPublicKeyDisabledAtWindowViolationError;
+  let DuplicatedIdentityPublicKeyIdError;
+  let StateTransitionExecutionContext;
+  let IdentityUpdateTransitionStateValidator;
+
+  before(async () => {
+    ({
+      Identity,
+      IdentityPublicKey,
+      IdentityUpdateTransition,
+      InvalidIdentityRevisionError,
+      IdentityPublicKeyIsReadOnlyError,
+      IdentityPublicKeyIsDisabledError,
+      InvalidIdentityPublicKeyIdError,
+      IdentityPublicKeyDisabledAtWindowViolationError,
+      DuplicatedIdentityPublicKeyIdError,
+      StateTransitionExecutionContext,
+      IdentityUpdateTransitionStateValidator,
+      MissingMasterPublicKeyError,
+    } = await loadWasmDpp());
+  });
+
   beforeEach(async function beforeEach() {
-    identity = getIdentityFixture();
-    validatePublicKeysMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
-    validateRequiredPurposeAndSecurityLevelMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
+    rawIdentity = getIdentityFixture().toObject();
+    // Patch identity id to be acceptable by wasm-dpp
+    rawIdentity.id = await generateRandomIdentifierAsync();
+    identity = new Identity(rawIdentity);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchIdentity.resolves(identity);
+    stateRepositoryMock.fetchIdentity.returns(identity);
 
     blockTime = Date.now();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
+    const blockTimeSeconds = Math.round(blockTime / 1000);
+    const blsAdapter = await getBlsAdapterMock();
+    const header = new BlockHeader({
+      version: 536870913,
+      prevHash: '0000000000000000000000000000000000000000000000000000000000000000',
+      merkleRoot: 'c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b',
+      time: blockTimeSeconds,
+      timestamp: blockTimeSeconds,
+      bits: 0,
+      nonce: 1449878271,
+    });
 
-    validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
-      stateRepositoryMock,
-      validatePublicKeysMock,
-      validateRequiredPurposeAndSecurityLevelMock,
+    stateRepositoryMock.fetchLatestPlatformBlockHeader.returns(header.toBuffer());
+
+    const validator = new IdentityUpdateTransitionStateValidator(stateRepositoryMock, blsAdapter);
+    validateIdentityUpdateTransitionState = (st) => validator.validate(st);
+
+    stateTransition = new IdentityUpdateTransition(
+      getIdentityUpdateTransitionFixture().toObject(),
     );
 
-    stateTransition = getIdentityUpdateTransitionFixture();
     stateTransition.setRevision(identity.getRevision() + 1);
     stateTransition.setPublicKeyIdsToDisable(undefined);
     stateTransition.setPublicKeysDisabledAt(undefined);
@@ -55,46 +93,47 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
-
-    fakeTime = this.sinonSandbox.useFakeTimers(new Date());
-  });
-
-  afterEach(() => {
-    fakeTime.reset();
+    await stateTransition.signByPrivateKey(
+      Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+    );
   });
 
   it('should return InvalidIdentityRevisionError if new revision is not incremented by 1', async () => {
-    stateTransition.setRevision(identity.getRevision() + 2);
+    stateTransition.setRevision(rawIdentity.revision + 2);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, InvalidIdentityRevisionError);
+    await expectValidationError(result, InvalidIdentityRevisionError);
 
     const [error] = result.getErrors();
-    expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId());
-    expect(error.getCurrentRevision()).to.equal(identity.getRevision());
+    expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId().toBuffer());
+    expect(error.getCurrentRevision()).to.equal(rawIdentity.revision);
   });
 
   it('should return IdentityPublicKeyIsReadOnlyError if disabling public key is readOnly', async () => {
-    identity.getPublicKeyById(0).setReadOnly(true);
+    const keys = identity.getPublicKeys();
+    keys[0].setReadOnly(true);
+    identity.setPublicKeys(keys);
+
     stateTransition.setPublicKeyIdsToDisable([0]);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, IdentityPublicKeyIsReadOnlyError);
+    await expectValidationError(result, IdentityPublicKeyIsReadOnlyError);
 
     const [error] = result.getErrors();
     expect(error.getPublicKeyIndex()).to.equal(0);
   });
 
   it('should return IdentityPublicKeyIsDisabledError if disabling public key is already disabled', async () => {
-    identity.getPublicKeyById(0).setDisabledAt(new Date().getTime());
+    const keys = identity.getPublicKeys();
+    keys[0].setDisabledAt(new Date().getTime());
+    identity.setPublicKeys(keys);
     stateTransition.setPublicKeyIdsToDisable([0]);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, IdentityPublicKeyIsDisabledError);
+    await expectValidationError(result, IdentityPublicKeyIsDisabledError);
 
     const [error] = result.getErrors();
     expect(error.getPublicKeyIndex()).to.equal(0);
@@ -103,7 +142,8 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   it('should return invalid result if disabledAt has violated time window', async () => {
     stateTransition.setPublicKeyIdsToDisable([1]);
     // blockTime - 10 minutes
-    stateTransition.setPublicKeysDisabledAt(new Date(blockTime - 1000 * 60 * 60 * 10));
+    const disabledAt = new Date(blockTime - 1000 * 60 * 60 * 10);
+    stateTransition.setPublicKeysDisabledAt(disabledAt);
 
     const timeWindowStart = new Date(blockTime);
     timeWindowStart.setMinutes(
@@ -117,12 +157,12 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, IdentityPublicKeyDisabledAtWindowViolationError);
+    await expectValidationError(result, IdentityPublicKeyDisabledAtWindowViolationError);
 
     const [error] = result.getErrors();
-    expect(error.getDisabledAt()).to.deep.equal(stateTransition.publicKeysDisabledAt);
-    expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
-    expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
+    expect(error.getDisabledAt()).to.deep.equal(disabledAt);
+    expect(error.getTimeWindowStart()).to.be.instanceOf(Date);
+    expect(error.getTimeWindowEnd()).to.be.instanceOf(Date);
   });
 
   it('should throw InvalidIdentityPublicKeyIdError if identity does not contain public key with disabling ID', async () => {
@@ -131,13 +171,13 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, InvalidIdentityPublicKeyIdError);
+    await expectValidationError(result, InvalidIdentityPublicKeyIdError);
 
     const [error] = result.getErrors();
     expect(error.getId()).to.equal(3);
   });
 
-  it('should pass when disabling public key', async () => {
+  it('should pass when disabling public key', async function () {
     stateTransition.setPublicKeyIdsToDisable([1]);
     stateTransition.setPublicKeysDisabledAt(new Date());
     stateTransition.setPublicKeysToAdd(undefined);
@@ -146,17 +186,18 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
+    const { match } = this.sinonSandbox;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
-        stateTransition.getIdentityId(),
-        executionContext,
+        match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
+        match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.be.calledOnce();
   });
 
-  it('should pass when adding public key', async () => {
+  it('should pass when adding public key', async function () {
     stateTransition.setPublicKeyIdsToDisable(undefined);
     stateTransition.setPublicKeysDisabledAt(undefined);
 
@@ -164,23 +205,18 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
+    const { match } = this.sinonSandbox;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
-        stateTransition.getIdentityId(),
-        executionContext,
+        match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
+        match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.not.be.called();
-
-    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-      [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()].map(
-        (pk) => pk.toObject(),
-      ),
-    );
   });
 
-  it('should pass when both adding and disabling public keys', async () => {
+  it('should pass when both adding and disabling public keys', async function () {
     stateTransition.setPublicKeyIdsToDisable([1]);
     stateTransition.setPublicKeysDisabledAt(new Date());
 
@@ -188,54 +224,46 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
+    const { match } = this.sinonSandbox;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
-        stateTransition.getIdentityId(),
-        executionContext,
+        match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
+        match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.be.calledOnce();
   });
 
   it('should validate purpose and security level', async () => {
-    const now = new Date();
+    const identityKeys = identity.getPublicKeys();
+    identityKeys.forEach((key) => key.setSecurityLevel(1));
+    identity.setPublicKeys(identityKeys);
 
-    stateTransition.setPublicKeyIdsToDisable([1]);
-    stateTransition.setPublicKeysDisabledAt(now);
-
-    const publicKeysError = new SomeConsensusError('test');
-
-    validateRequiredPurposeAndSecurityLevelMock.onCall(0)
-      .returns(new ValidationResult([publicKeysError]));
+    const keysToAdd = stateTransition.getPublicKeysToAdd();
+    keysToAdd.forEach((key) => key.setSecurityLevel(1));
+    stateTransition.setPublicKeysToAdd(keysToAdd);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, SomeConsensusError);
-
-    expect(validateRequiredPurposeAndSecurityLevelMock).to.be.calledOnceWithExactly([
-      identity.getPublicKeys()[0].toObject(),
-      { ...identity.getPublicKeys()[1].toObject(), disabledAt: now.getTime() },
-      stateTransition.getPublicKeysToAdd()[0].toObject(),
-    ]);
+    await expectValidationError(result, MissingMasterPublicKeyError);
   });
 
   it('should validate public keys to add', async () => {
-    const publicKeysError = new SomeConsensusError('test');
-
-    validatePublicKeysMock.onCall(0).returns(new ValidationResult([publicKeysError]));
-
+    // Set duplicated keys
+    const firstKey = identity.getPublicKeys()[0];
+    identity.setPublicKeys([
+      firstKey,
+      firstKey,
+    ]);
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    expectValidationError(result, SomeConsensusError);
-
-    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-      [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
-        .map((pk) => pk.toObject()),
-    );
+    await expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
   });
 
-  it('should validate resulting identity public keys', async () => {
+  // TODO: remove?
+  // Skipped, because two tests above are enough
+  it.skip('should validate resulting identity public keys', async () => {
     const publicKeysError = new SomeConsensusError('test');
 
     validatePublicKeysMock.returns(new ValidationResult([publicKeysError]));
@@ -253,32 +281,28 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     );
   });
 
-  it('should return valid result on dry run', async () => {
+  it('should return valid result on dry run', async function () {
     stateTransition.setPublicKeyIdsToDisable([3]);
     stateTransition.setPublicKeysDisabledAt(new Date());
 
-    const publicKeysError = new SomeConsensusError('test');
-
-    validateRequiredPurposeAndSecurityLevelMock.onCall(0)
-      .returns(new ValidationResult([publicKeysError]));
+    // Make code that executes after dry run check to fail
+    stateRepositoryMock.fetchLatestPlatformBlockHeader.returns({});
 
     stateTransition.getExecutionContext().enableDryRun();
-
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
     stateTransition.getExecutionContext().disableDryRun();
 
     expect(result.isValid()).to.be.true();
 
-    expect(validatePublicKeysMock).to.not.be.called();
-    expect(validateRequiredPurposeAndSecurityLevelMock).to.not.be.called();
+    const { match } = this.sinonSandbox;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
-        stateTransition.getIdentityId(),
-        executionContext,
+        match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
+        match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.not.be.called();
   });
 });

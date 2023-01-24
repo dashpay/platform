@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail};
+use dashcore::{consensus, BlockHeader};
 use serde_json::Value as JsonValue;
 
 use crate::{
@@ -41,13 +42,15 @@ where
 
     let core_height_created_at = data.get_i64(PROPERTY_CORE_HEIGHT_CREATED_AT)?;
 
-    let latest_block_header: JsonValue = context
+    let latest_block_header_bytes = context
         .state_repository
         .fetch_latest_platform_block_header()
         .await?;
 
-    let core_chain_locked_height =
-        latest_block_header.get_i64(PROPERTY_CORE_CHAIN_LOCKED_HEIGHT)?;
+    let latest_block_header: BlockHeader =
+        consensus::deserialize(&latest_block_header_bytes).map_err(|e| anyhow!(e.to_string()))?;
+
+    let core_chain_locked_height = latest_block_header.time as i64;
 
     let height_window_start = core_chain_locked_height - BLOCKS_SIZE_WINDOW;
     let height_window_end = core_chain_locked_height + BLOCKS_SIZE_WINDOW;

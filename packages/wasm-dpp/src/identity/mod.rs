@@ -65,9 +65,6 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=setPublicKeys)]
     pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
         let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
-        if raw_public_keys.is_empty() {
-            return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());
-        }
 
         let public_keys = raw_public_keys
             .into_iter()

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
-use dpp::dashcore::consensus;
+use dpp::dashcore::{consensus, BlockHeader};
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
@@ -101,6 +101,9 @@ extern "C" {
         this: &ExternalStateRepositoryLike,
         out_point_buffer: Buffer,
     );
+
+    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockHeader)]
+    pub fn fetch_latest_platform_block_header(this: &ExternalStateRepositoryLike) -> Vec<u8>;
 
     // TODO add missing declarations
 }
@@ -278,11 +281,12 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 
-    async fn fetch_latest_platform_block_header<T>(&self) -> anyhow::Result<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
-        todo!()
+    async fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_latest_platform_block_header())
     }
 
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
