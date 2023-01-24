@@ -79,6 +79,13 @@ function resetNodeTaskFactory(
           }
         },
       },
+      {
+        title: 'Initialize Tenderdash',
+        enabled: (ctx) => (
+          !ctx.isHardReset && !ctx.skipPlatformInitialization && config.has('platform')
+        ),
+        task: () => tenderdashInitTask(config),
+      },
     ]);
   }
 
