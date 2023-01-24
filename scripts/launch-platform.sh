@@ -189,6 +189,7 @@ function install_deps {
         gnupg \
         lsb-release \
         libssl-dev \
+        libzmq3-dev \
         clang
 }
 
