@@ -492,7 +492,7 @@ module.exports = {
                   type: 'object',
                 },
                 moniker: {
-                  type: 'string',
+                  type: ['string', 'null'],
                 },
                 genesis: {
                   type: 'object',
