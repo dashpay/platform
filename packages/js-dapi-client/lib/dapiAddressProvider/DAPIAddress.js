@@ -163,7 +163,7 @@ class DAPIAddress {
   }
 
   toString() {
-    return `${this.getProtocol()}://${this.getHost()}:${this.getPort()}}`;
+    return `${this.getProtocol()}://${this.getHost()}:${this.getPort()}`;
   }
 }
 

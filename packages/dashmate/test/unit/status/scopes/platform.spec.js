@@ -40,8 +40,7 @@ describe('getPlatformScopeFactory', () => {
 
       const externalIp = '192.168.0.1';
 
-      config.get.withArgs('platform.dapi.envoy.http.port').returns('8100');
-      config.get.withArgs('platform.dapi.envoy.grpc.port').returns('8101');
+      config.get.withArgs('platform.dapi.envoy.port').returns('8100');
       config.get.withArgs('platform.drive.tenderdash.p2p.port').returns('8200');
       config.get.withArgs('platform.drive.tenderdash.rpc.port').returns('8201');
       config.get.withArgs('externalIp').returns(externalIp);
