@@ -27,7 +27,7 @@ class DAPIAddress {
 
     this.protocol = address.protocol || DAPIAddress.DEFAULT_PROTOCOL;
     this.host = address.host;
-    this.port = address.httpPort || DAPIAddress.DEFAULT_PORT;
+    this.port = address.port || DAPIAddress.DEFAULT_PORT;
     this.proRegTxHash = address.proRegTxHash;
     this.allowSelfSignedCertificate = address.allowSelfSignedCertificate || false;
 

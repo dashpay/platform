@@ -24,10 +24,8 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
       pass: config.get('core.rpc.password'),
     });
 
-    const httpPort = config.get('platform.dapi.envoy.http.port');
-    const httpService = `${config.get('externalIp')}:${httpPort}`;
-    const gRPCPort = config.get('platform.dapi.envoy.grpc.port');
-    const gRPCService = `${config.get('externalIp')}:${gRPCPort}`;
+    const dapiPort = config.get('platform.dapi.envoy.port');
+    const dapiService = `${config.get('externalIp')}:${dapiPort}`;
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
     const p2pService = `${config.get('externalIp')}:${p2pPort}`;
     const rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
@@ -48,15 +46,12 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
 
     const platform = {
       coreIsSynced,
-      httpPort,
-      httpService,
+      dapiPort,
+      dapiService,
       p2pPort,
       p2pService,
-      gRPCPort,
-      gRPCService,
       rpcService,
-      httpPortState: null,
-      gRPCPortState: null,
+      dapiPortState: null,
       p2pPortState: null,
       tenderdash: {
         dockerStatus,
@@ -78,9 +73,8 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
           fetch(`http://localhost:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
         ]);
 
-        const [httpPortState, gRPCPortState, p2pPortState] = await Promise.all([
-          providers.mnowatch.checkPortStatus(httpPort),
-          providers.mnowatch.checkPortStatus(gRPCPort),
+        const [dapiPortState, p2pPortState] = await Promise.all([
+          providers.mnowatch.checkPortStatus(dapiPort),
           providers.mnowatch.checkPortStatus(p2pPort),
         ]);
 
@@ -89,8 +83,7 @@ function getPlatformScopeFactory(dockerCompose, createRpcClient) {
           tenderdashNetInfoResponse.json(),
         ]);
 
-        platform.httpPortState = httpPortState;
-        platform.gRPCPortState = gRPCPortState;
+        platform.dapiPortState = dapiPortState;
         platform.p2pPortState = p2pPortState;
 
         const { version, network } = tenderdashStatus.node_info;

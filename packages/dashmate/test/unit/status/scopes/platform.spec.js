@@ -69,12 +69,10 @@ describe('getPlatformScopeFactory', () => {
 
       expect(scope.coreIsSynced).to.be.equal(true);
 
-      expect(scope.httpService).to.be.equal(`${externalIp}:8100`);
-      expect(scope.gRPCService).to.be.equal(`${externalIp}:8101`);
+      expect(scope.dapiService).to.be.equal(`${externalIp}:8100`);
       expect(scope.p2pService).to.be.equal(`${externalIp}:8200`);
       expect(scope.rpcService).to.be.equal('127.0.0.1:8201');
-      expect(scope.httpPortState).to.be.equal('OPEN');
-      expect(scope.gRPCPortState).to.be.equal('OPEN');
+      expect(scope.dapiPortState).to.be.equal('OPEN');
       expect(scope.p2pPortState).to.be.equal('OPEN');
     });
 
@@ -111,8 +109,7 @@ describe('getPlatformScopeFactory', () => {
       const scope = await getPlatformScope(config);
 
       expect(scope.coreIsSynced).to.be.equal(true);
-      expect(scope.httpPortState).to.be.equal(null);
-      expect(scope.gRPCPortState).to.be.equal(null);
+      expect(scope.dapiPortState).to.be.equal(null);
       expect(scope.p2pPortState).to.be.equal(null);
       expect(scope.tenderdash.dockerStatus).to.be.equal(DockerStatusEnum.running);
       expect(scope.tenderdash.serviceStatus).to.be.equal(ServiceStatusEnum.error);
