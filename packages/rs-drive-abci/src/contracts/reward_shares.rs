@@ -40,13 +40,14 @@
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::common::value_to_cbor;
-use drive::contract::document_stub::DocumentStub;
 use drive::contract::Contract;
 use drive::dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::grovedb::TransactionArg;
 use serde_json::json;
+use drive::dpp::data_contract::DriveContractExt;
+use drive::dpp::document::document_stub::DocumentStub;
 
 /// Masternode reward shares contract ID
 pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [

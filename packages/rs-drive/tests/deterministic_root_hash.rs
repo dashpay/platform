@@ -32,9 +32,10 @@
 
 use std::option::Option::None;
 
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_stub::DocumentStub;
 use drive::common;
 use drive::common::setup_contract;
-use drive::contract::document_stub::DocumentStub;
 use drive::contract::Contract;
 use grovedb::{Element, Transaction, TransactionArg};
 use rand::seq::SliceRandom;

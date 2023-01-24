@@ -4,6 +4,7 @@ use anyhow::bail;
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::TryFrom};
+use rand::distributions::{Alphanumeric, DistString};
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -223,13 +224,10 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
             }
         }
 
-        let Some(name) = name else {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidContractStructure(
-                    "table document is not a map as expected",
-                ),
-            ));
-        };
+        // if the index didn't have a name let's make one
+        let name = name.unwrap_or(
+            Alphanumeric.sample_string(&mut rand::thread_rng(), 24)
+        );
 
         Ok(Index {
             name,

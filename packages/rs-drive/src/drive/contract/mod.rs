@@ -32,9 +32,9 @@
 //! This module defines functions pertinent to Contracts stored in Drive.
 //!
 
+mod estimation_costs;
 /// Various paths for contract operations
 pub(crate) mod paths;
-mod estimation_costs;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

@@ -38,7 +38,7 @@ use std::option::Option::None;
 use std::sync::Arc;
 
 use dpp::data_contract::extra::common::cbor_inner_bytes_value;
-use dpp::data_contract::DataContractFactory;
+use dpp::data_contract::{DataContractFactory, DriveContractExt};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,6 @@ use tempfile::TempDir;
 use drive::common;
 use drive::common::helpers::setup::setup_drive;
 use drive::common::setup_contract;
-use drive::contract::{document_stub::DocumentStub, Contract};
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
@@ -60,9 +59,11 @@ use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
 
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
+use dpp::document::document_stub::DocumentStub;
 
 use dpp::prelude::DataContract;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
+use drive::contract::Contract;
 use drive::drive::block_info::BlockInfo;
 
 #[derive(Serialize, Deserialize)]

@@ -9,9 +9,9 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, Potentia
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
+use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
 
 impl Drive {
     pub(crate) fn add_estimation_costs_for_levels_up_to_contract(

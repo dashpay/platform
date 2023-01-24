@@ -38,7 +38,6 @@ use ciborium::value::Value;
 use drive::dpp::identity::Identity;
 
 use drive::common::helpers::identities::create_test_identity;
-use drive::contract::document_stub::DocumentStub;
 use drive::contract::Contract;
 use drive::dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;

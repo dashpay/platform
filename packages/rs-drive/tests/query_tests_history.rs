@@ -34,6 +34,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::option::Option::None;
 
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_stub::DocumentStub;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -41,7 +43,7 @@ use serde_json::json;
 
 use drive::common;
 use drive::common::helpers::setup::setup_drive;
-use drive::contract::{document_stub::DocumentStub, Contract};
+use drive::contract::Contract;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
