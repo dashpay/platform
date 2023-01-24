@@ -9,3 +9,5 @@ pub mod protocol_error;
 mod public_key_validation_error;
 
 pub use public_key_validation_error::*;
+
+pub mod dpp_error;

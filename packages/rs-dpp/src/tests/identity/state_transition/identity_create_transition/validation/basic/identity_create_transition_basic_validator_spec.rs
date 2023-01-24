@@ -68,7 +68,7 @@ pub fn setup_test(
     (
         crate::tests::fixtures::identity_create_transition_fixture_json(None),
         IdentityCreateTransitionBasicValidator::new(
-            Arc::new(protocol_version_validator),
+            protocol_version_validator,
             public_keys_validator,
             public_keys_transition_validator,
             asset_lock_proof_validator,
