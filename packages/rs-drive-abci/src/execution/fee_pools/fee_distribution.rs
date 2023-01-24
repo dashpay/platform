@@ -524,7 +524,7 @@ mod tests {
                 proposer_payouts,
                 Some(ProposersPayouts {
                     proposers_paid_count: 50,
-                    paid_epoch_index: 0
+                    paid_epoch_index: 0,
                 })
             ));
         }
@@ -611,7 +611,7 @@ mod tests {
                 proposer_payouts,
                 Some(ProposersPayouts {
                     proposers_paid_count: 100,
-                    paid_epoch_index: 0
+                    paid_epoch_index: 0,
                 })
             ));
         }
@@ -713,7 +713,7 @@ mod tests {
                 proposer_payouts,
                 Some(ProposersPayouts {
                     proposers_paid_count: 150,
-                    paid_epoch_index: 0
+                    paid_epoch_index: 0,
                 })
             ));
         }
@@ -875,7 +875,7 @@ mod tests {
                 proposer_payouts,
                 Some(ProposersPayouts {
                     proposers_paid_count: proposers_count,
-                    paid_epoch_index: 0
+                    paid_epoch_index: 0,
                 })
             ));
 

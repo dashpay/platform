@@ -139,7 +139,7 @@ impl DataContract {
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
         let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
         let schema = data_contract_map.get_string(property_names::SCHEMA)?;
-        let version = data_contract_map.get_u32(property_names::VERSION)?;
+        let version = data_contract_map.get_integer(property_names::VERSION)?;
 
         // Defs
         let defs = data_contract_map

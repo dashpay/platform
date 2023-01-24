@@ -14,14 +14,14 @@ function rotateAndCreateValidatorSetUpdateFactory(
    * @param {number} height
    * @param {number} coreChainLockedHeight
    * @param {number} round
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<ValidatorSetUpdate>}
    */
   async function rotateAndCreateValidatorSetUpdate(
     height,
     coreChainLockedHeight,
     round,
-    consensusLogger,
+    contextLogger,
   ) {
     const lastCommitInfo = proposalBlockExecutionContext.getLastCommitInfo();
 
@@ -34,7 +34,7 @@ function rotateAndCreateValidatorSetUpdateFactory(
 
       const { quorumHash } = validatorSet.getQuorum();
 
-      consensusLogger.debug(
+      contextLogger.debug(
         {
           quorumHash,
         },
