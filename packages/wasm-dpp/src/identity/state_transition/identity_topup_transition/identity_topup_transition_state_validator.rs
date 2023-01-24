@@ -20,7 +20,7 @@ impl IdentityTopUpTransitionStateValidator {
         }
     }
 
-    #[wasm_bindgen(js_name = validate)]
+    #[wasm_bindgen]
     pub async fn validate(
         &self,
         state_transition: &IdentityTopUpTransitionWasm,

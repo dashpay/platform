@@ -83,7 +83,7 @@ impl IdentityTopUpTransitionBasicValidatorWasm {
         Ok(validator.into())
     }
 
-    #[wasm_bindgen(js_name=validate)]
+    #[wasm_bindgen]
     pub async fn validate(
         mut self,
         raw_state_transition: JsValue,
