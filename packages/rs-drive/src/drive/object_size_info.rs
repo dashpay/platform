@@ -47,12 +47,12 @@ use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
 use PathKeyElementInfo::{PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize};
 use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
-use crate::contract::document_stub::DocumentStub;
 use crate::contract::Contract;
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
 use crate::error::fee::FeeError;

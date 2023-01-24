@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::collections::{BTreeMap, HashMap};
-use std::iter::FromIterator;
 
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::IndexProperty;

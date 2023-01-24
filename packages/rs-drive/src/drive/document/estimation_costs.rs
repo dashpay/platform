@@ -12,6 +12,7 @@ use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};

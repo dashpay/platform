@@ -76,7 +76,6 @@ use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
 use crate::common::encode::encode_unsigned_integer;
-use crate::contract::document_stub::DocumentStub;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -84,6 +83,7 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
+use dpp::document::document_stub::DocumentStub;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -1180,11 +1180,11 @@ mod tests {
     use std::option::Option::None;
 
     use super::*;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use rand::Rng;
     use tempfile::TempDir;
 
-    use crate::common::{json_document_to_cbor, setup_contract};
-    use crate::contract::document_stub::DocumentStub;
+    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -1192,6 +1192,7 @@ mod tests {
     use crate::drive::Drive;
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::fee::op::DriveOperation;
+    use dpp::document::document_stub::DocumentStub;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {

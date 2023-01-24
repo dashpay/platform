@@ -45,6 +45,7 @@ use sqlparser::ast::{OrderByExpr, Select, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+use crate::drive::block_info::BlockInfo;
 use conditions::WhereOperator::{Equal, In};
 /// Import conditions
 pub use conditions::{WhereClause, WhereOperator};
@@ -53,11 +54,8 @@ use dpp::data_contract::DriveContractExt;
 /// Import ordering
 pub use ordering::OrderClause;
 
-use crate::common::bytes_for_system_value;
-use crate::contract::{document_stub::DocumentStub, Contract};
-use crate::drive::block_info::BlockInfo;
-
 use crate::common::encode::encode_float;
+use crate::contract::Contract;
 use crate::drive::contract::drive_ext::ContractPaths;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
@@ -67,6 +65,8 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use dpp::data_contract::errors::StructureError;
+use dpp::data_contract::extra::common::bytes_for_system_value;
+use dpp::document::document_stub::DocumentStub;
 use dpp::ProtocolError;
 
 pub mod conditions;
@@ -1326,12 +1326,12 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::common;
-    use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::DriveContractExt;
     use serde_json::Value::Null;
 

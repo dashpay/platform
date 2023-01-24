@@ -27,7 +27,6 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::contract::document_stub::DocumentStub;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
@@ -42,6 +41,7 @@ use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
+use dpp::document::document_stub::DocumentStub;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -677,11 +677,12 @@ mod tests {
 
     use super::*;
     use crate::common;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use rand::Rng;
     use serde_json::json;
     use tempfile::TempDir;
 
-    use crate::common::{json_document_to_cbor, setup_contract};
+    use crate::common::setup_contract;
     use crate::drive::batch::drive_op_batch::DocumentOperation::{AddOperation, UpdateOperation};
     use crate::drive::batch::ContractOperationType::ApplyContractWithSerialization;
     use crate::drive::batch::DocumentOperationType::{

@@ -40,7 +40,6 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-use crate::contract::document_stub::DocumentStub;
 use crate::contract::Contract;
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{
@@ -52,6 +51,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::{
@@ -647,6 +647,7 @@ mod tests {
     use std::option::Option::None;
     use std::sync::Arc;
 
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
@@ -660,7 +661,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::contract::{document_stub::DocumentStub, Contract};
     use crate::drive::config::{DriveConfig, DriveEncoding};
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -670,7 +670,7 @@ mod tests {
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::query::DriveQuery;
     use crate::{
-        common::{json_document_to_cbor, setup_contract, value_to_cbor},
+        common::{setup_contract, value_to_cbor},
         drive::test_utils::TestEntropyGenerator,
     };
 

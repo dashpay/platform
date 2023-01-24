@@ -33,11 +33,11 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
-use crate::contract::document_stub::DocumentStub;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
 use dpp::data_contract::document_type::DocumentType;
+use dpp::document::document_stub::DocumentStub;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
@@ -205,10 +205,10 @@ pub(crate) mod tests {
 
     use tempfile::TempDir;
 
-    use crate::common::json_document_to_cbor;
     use crate::drive::block_info::BlockInfo;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {

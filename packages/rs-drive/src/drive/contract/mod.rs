@@ -867,7 +867,7 @@ impl Drive {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
                     <Contract as DriveContractExt>::from_cbor(&stored_contract_bytes, None,)
-                        .map_err(Error::Contract)
+                        .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
@@ -1038,13 +1038,13 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
 
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 

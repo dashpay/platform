@@ -40,13 +40,15 @@ use std::io::{BufReader, Read};
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 
+use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
+    bytes_for_system_value_from_tree_map, check_protocol_version_bytes, get_key_from_cbor_map,
+    reduced_value_string_representation,
 };
 use crate::ProtocolError;
 
@@ -162,7 +164,7 @@ impl DocumentStub {
                     Err(e) => Some(Err(e)),
                 }
             })
-            .collect::<Result<BTreeMap<String, Value>, ContractError>>()?;
+            .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
         Ok(DocumentStub {
             id,
             properties,
@@ -178,7 +180,7 @@ impl DocumentStub {
         owner_id: Option<[u8; 32]>,
     ) -> Result<Self, ProtocolError> {
         let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !Drive::check_protocol_version_bytes(version) {
+        if !check_protocol_version_bytes(version) {
             return Err(ProtocolError::StructureError(
                 StructureError::InvalidProtocolVersion("invalid protocol version"),
             ));
@@ -261,7 +263,7 @@ impl DocumentStub {
         }
 
         let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !Drive::check_protocol_version_bytes(version) {
+        if !check_protocol_version_bytes(version) {
             return Err(ProtocolError::StructureError(
                 StructureError::InvalidProtocolVersion("invalid protocol version"),
             ));
@@ -370,7 +372,7 @@ impl DocumentStub {
         &'a self,
         key: &str,
         document_type_name: &str,
-        contract: &Contract,
+        contract: &DataContract,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         let document_type = contract.document_types().get(document_type_name).ok_or({

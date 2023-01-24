@@ -12,7 +12,6 @@ use crate::data_contract::extra::common::bytes_for_system_value;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
 use ciborium::value::Value;
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;

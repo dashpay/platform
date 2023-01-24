@@ -44,7 +44,6 @@ use dpp::data_contract::DriveContractExt;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::contract::document_stub::DocumentStub;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::{
@@ -60,6 +59,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
@@ -740,17 +740,14 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use rand::Rng;
     use serde_json::json;
     use std::option::Option::None;
     use tempfile::TempDir;
 
     use super::*;
-    use crate::common::{
-        cbor_from_hex, json_document_to_cbor, setup_contract, setup_contract_from_hex,
-        value_to_cbor,
-    };
-    use crate::contract::document_stub::DocumentStub;
+    use crate::common::{cbor_from_hex, setup_contract, setup_contract_from_hex, value_to_cbor};
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -760,6 +757,7 @@ mod tests {
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
+    use dpp::document::document_stub::DocumentStub;
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {

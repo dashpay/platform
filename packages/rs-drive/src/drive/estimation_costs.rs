@@ -4,7 +4,7 @@ use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TY
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
 
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;

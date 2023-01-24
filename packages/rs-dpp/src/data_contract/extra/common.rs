@@ -253,21 +253,52 @@ pub fn json_document_to_cbor(
 //     buffer
 // }
 //
-// // TODO we probably have this function in dpp
-// fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
-//     if version_bytes.len() != 4 {
-//         false
-//     } else {
-//         let version_set_bytes: [u8; 4] = version_bytes
-//             .try_into()
-//             .expect("slice with incorrect length");
-//         let version = u32::from_be_bytes(version_set_bytes);
-//         // todo despite the const this will be use as dynamic content
-//         check_protocol_version(version)
-//     }
-// }
-//
-// const fn check_protocol_version(_version: u32) -> bool {
-//     // Temporary disabled due protocol version is dynamic and goes from consensus params
-//     true
-// }
+
+/// Make sure the protocol version is correct.
+pub const fn check_protocol_version(_version: u32) -> bool {
+    // Temporary disabled due protocol version is dynamic and goes from consensus params
+    true
+}
+
+/// Makes sure the protocol version is correct given the version as a u8.
+pub fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
+    if version_bytes.len() != 4 {
+        false
+    } else {
+        let version_set_bytes: [u8; 4] = version_bytes
+            .try_into()
+            .expect("slice with incorrect length");
+        let version = u32::from_be_bytes(version_set_bytes);
+        check_protocol_version(version)
+    }
+}
+
+pub fn reduced_value_string_representation(value: &Value) -> String {
+    match value {
+        Value::Integer(integer) => {
+            let i: i128 = (*integer).try_into().unwrap();
+            format!("{}", i)
+        }
+        Value::Bytes(bytes) => hex::encode(bytes),
+        Value::Float(float) => {
+            format!("{}", float)
+        }
+        Value::Text(text) => {
+            let len = text.len();
+            if len > 20 {
+                let first_text = text.split_at(20).0.to_string();
+                format!("{}[...({})]", first_text, len)
+            } else {
+                text.clone()
+            }
+        }
+        Value::Bool(b) => {
+            format!("{}", b)
+        }
+        Value::Null => "None".to_string(),
+        Value::Tag(_, _) => "Tag".to_string(),
+        Value::Array(_) => "Array".to_string(),
+        Value::Map(_) => "Map".to_string(),
+        _ => "".to_string(),
+    }
+}

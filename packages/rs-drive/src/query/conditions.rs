@@ -41,10 +41,10 @@ use WhereOperator::{
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 
-use crate::contract::document_stub::DocumentStub;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentType;
+use dpp::document::document_stub::DocumentStub;
 
 /// Converts SQL values to CBOR.
 fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
