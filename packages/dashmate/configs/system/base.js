@@ -87,7 +87,9 @@ module.exports = {
         docker: {
           image: 'dashpay/envoy:0.24-dev',
         },
-        port: 3000,
+        http: {
+          port: 3000,
+        },
         rateLimiter: {
           maxTokens: 300,
           tokensPerFill: 150,

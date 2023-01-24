@@ -32,8 +32,8 @@ function getPlatformScopeFactory(dockerCompose,
       host: hosts.core,
     });
 
-    const dapiPort = config.get('platform.dapi.envoy.port');
-    const dapiService = `${config.get('externalIp')}:${dapiPort}`;
+    const httpPort = config.get('platform.dapi.envoy.http.port');
+    const httpService = `${config.get('externalIp')}:${httpPort}`;
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
     const p2pService = `${config.get('externalIp')}:${p2pPort}`;
     const rpcService = `127.0.0.1:${config.get('platform.drive.tenderdash.rpc.port')}`;
@@ -59,12 +59,12 @@ function getPlatformScopeFactory(dockerCompose,
 
     const platform = {
       coreIsSynced,
-      dapiPort,
-      dapiService,
+      httpPort,
+      httpService,
       p2pPort,
       p2pService,
       rpcService,
-      dapiPortState: null,
+      httpPortState: null,
       p2pPortState: null,
       tenderdash: {
         dockerStatus: tenderdashDockerStatus,
@@ -93,8 +93,8 @@ function getPlatformScopeFactory(dockerCompose,
           fetch(`http://${hosts.tenderdash}:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
         ]);
 
-        const [dapiPortState, p2pPortState] = await Promise.all([
-          providers.mnowatch.checkPortStatus(dapiPort),
+        const [httpPortState, p2pPortState] = await Promise.all([
+          providers.mnowatch.checkPortStatus(httpPort),
           providers.mnowatch.checkPortStatus(p2pPort),
         ]);
 
@@ -103,7 +103,7 @@ function getPlatformScopeFactory(dockerCompose,
           tenderdashNetInfoResponse.json(),
         ]);
 
-        platform.dapiPortState = dapiPortState;
+        platform.httpPortState = httpPortState;
         platform.p2pPortState = p2pPortState;
 
         const { version, network, moniker } = tenderdashStatus.node_info;

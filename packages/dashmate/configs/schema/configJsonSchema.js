@@ -279,8 +279,15 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
-                port: {
-                  $ref: '#/definitions/port',
+                http: {
+                  type: 'object',
+                  properties: {
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  required: ['port'],
+                  additionalProperties: false,
                 },
                 rateLimiter: {
                   type: 'object',
@@ -339,7 +346,7 @@ module.exports = {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'port', 'rateLimiter', 'ssl'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {

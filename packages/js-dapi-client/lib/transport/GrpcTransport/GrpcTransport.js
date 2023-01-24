@@ -67,6 +67,8 @@ class GrpcTransport {
       );
     }
 
+    const nodeTlsRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
     try {
       if (address.isSelfSignedCertificateAllowed()) {
         process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
@@ -116,7 +118,7 @@ class GrpcTransport {
       );
     } finally {
       if (address.isSelfSignedCertificateAllowed()) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = 1;
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = nodeTlsRejectUnauthorized;
       }
     }
   }
