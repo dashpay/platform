@@ -1142,6 +1142,7 @@ impl PlatformWrapper {
                             .and_then(|hashes_to_identities| {
                                 hashes_to_identities
                                     .into_values()
+                                    .filter(|identity| identity.is_some())
                                     .map(|identity| identity.map(|i| i.to_buffer()).transpose())
                                     .collect::<Result<_, _>>()
                                     .map_err(|err| err.to_string())

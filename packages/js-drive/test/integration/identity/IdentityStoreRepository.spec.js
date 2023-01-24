@@ -481,18 +481,12 @@ describe('IdentityStoreRepository', () => {
 
       const fetchedIdentities = result.getValue();
 
-      expect(fetchedIdentities).to.have.lengthOf(identity.getPublicKeys().length + 1);
-
       for (let i = 0; i < identity.getPublicKeys().length; i++) {
         const fetchedIdentity = fetchedIdentities[i];
 
         expect(fetchedIdentity).to.be.instanceOf(Identity);
         expect(fetchedIdentity).to.deep.equal(identity.toObject());
       }
-
-      const lastFetchedIdentity = fetchedIdentities[identity.getPublicKeys().length];
-
-      expect(lastFetchedIdentity).to.be.null();
     });
   });
 

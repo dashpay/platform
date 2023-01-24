@@ -540,12 +540,8 @@ class Drive {
       this.drive,
       hashes.map((h) => Buffer.from(h)),
       useTransaction,
-    ).then((encodedIdentities) => {
+    ).then((encodedIdentities) => (
       encodedIdentities.map((encodedIdentity) => {
-        if (encodedIdentity === null) {
-          return null;
-        }
-
         const [protocolVersion, rawIdentity] = decodeProtocolEntity(
           encodedIdentity,
         );
@@ -553,8 +549,8 @@ class Drive {
         rawIdentity.protocolVersion = protocolVersion;
 
         return new Identity(rawIdentity);
-      });
-    });
+      })
+    ));
   }
 
   /**

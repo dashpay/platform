@@ -662,7 +662,7 @@ describe('Drive', () => {
       initialRootHash = await drive.getGroveDB().getRootHash();
     });
 
-    it('should return null if identity not exists', async () => {
+    it('should return empty array if identity not exists', async () => {
       const result = await drive.fetchIdentitiesByPublicKeyHashes([Buffer.alloc(20)]);
 
       expect(result).to.be.instanceOf(Array);

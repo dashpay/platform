@@ -56,23 +56,54 @@ class IdentityStoreRepository {
   }
 
   /**
+   * Fetch identity by public key hash
+   *
+   * @param {Buffer} hash
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<Identity|null>>}
+   */
+  async fetchByPublicKeyHash(hash, options = {}) {
+    try {
+      const [identity] = await this.storage.getDrive().fetchIdentitiesByPublicKeyHashes(
+        [hash],
+        Boolean(options.useTransaction),
+      );
+
+      return new StorageResult(
+        identity,
+        [],
+      );
+    } finally {
+      if (this.logger) {
+        this.logger.trace({
+          hash,
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'fetchManyByPublicKeyHashes');
+      }
+    }
+  }
+
+  /**
    * Fetch many identities by public key hashes
    *
    * @param {Buffer[]} hashes
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    *
-   * @return {Promise<StorageResult<Array<Identity|null>>>}
+   * @return {Promise<StorageResult<Array<Identity>>>}
    */
   async fetchManyByPublicKeyHashes(hashes, options = {}) {
     try {
-      const identity = await this.storage.getDrive().fetchIdentitiesByPublicKeyHashes(
+      const identities = await this.storage.getDrive().fetchIdentitiesByPublicKeyHashes(
         hashes,
         Boolean(options.useTransaction),
       );
 
       return new StorageResult(
-        identity,
+        identities,
         [],
       );
     } finally {
