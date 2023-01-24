@@ -279,25 +279,8 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
-                http: {
-                  type: 'object',
-                  properties: {
-                    port: {
-                      $ref: '#/definitions/port',
-                    },
-                  },
-                  required: ['port'],
-                  additionalProperties: false,
-                },
-                grpc: {
-                  type: 'object',
-                  properties: {
-                    port: {
-                      $ref: '#/definitions/port',
-                    },
-                  },
-                  required: ['port'],
-                  additionalProperties: false,
+                port: {
+                  $ref: '#/definitions/port',
                 },
                 rateLimiter: {
                   type: 'object',
@@ -356,7 +339,7 @@ module.exports = {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'grpc', 'rateLimiter', 'ssl'],
+              required: ['docker', 'port', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
