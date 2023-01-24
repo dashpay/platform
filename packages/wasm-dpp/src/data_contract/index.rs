@@ -1,8 +1,5 @@
 use dpp::{data_contract::extra::IndexProperty, util::json_schema::Index};
-use serde::{
-    ser::{SerializeMap, SerializeSeq},
-    Serialize, Serializer,
-};
+use serde::{ser::SerializeMap, Serialize, Serializer};
 use wasm_bindgen::prelude::*;
 
 use crate::{errors::RustConversionError, with_js_error};
