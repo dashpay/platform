@@ -4,7 +4,7 @@ const lodashGet = require('lodash/get');
 
 const systemConfigs = require('./system');
 
-const {NETWORK_TESTNET} = require('../src/constants');
+const { NETWORK_TESTNET } = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -413,20 +413,6 @@ module.exports = {
 
         if (config.platform) {
           config.platform.drive.tenderdash.log.level = 'debug';
-        }
-      });
-
-    return configFile;
-  },
-  '0.24.0-dev.13': (configFile) => {
-    Object.entries(configFile.configs)
-      .forEach(([, config]) => {
-        if (config.platform) {
-          if (config.group === 'local') {
-            config.platform.drive.tenderdash.moniker = config.name;
-          } else {
-            config.platform.drive.tenderdash.moniker = null;
-          }
         }
       });
 

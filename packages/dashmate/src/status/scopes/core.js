@@ -10,10 +10,8 @@ const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunnin
  * @returns {getCoreScopeFactory}
  * @param dockerCompose {DockerCompose}
  * @param createRpcClient {createRpcClient}
- * @param getConnectionHost {getConnectionHost}
  */
-function getCoreScopeFactory(dockerCompose,
-  createRpcClient, getConnectionHost) {
+function getCoreScopeFactory(dockerCompose, createRpcClient) {
   /**
    * Get core status scope
    *
@@ -34,7 +32,6 @@ function getCoreScopeFactory(dockerCompose,
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
     });
 
     const core = {

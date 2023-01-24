@@ -5,7 +5,6 @@ const CoreService = require('./CoreService');
  * @param {waitForCoreStart} waitForCoreStart
  * @param {waitForCoreSync} waitForCoreSync
  * @param {DockerCompose} dockerCompose
- * @param {getConnectionHost} getConnectionHost
  * @return {startCore}
  */
 function startCoreFactory(
@@ -13,7 +12,6 @@ function startCoreFactory(
   waitForCoreStart,
   waitForCoreSync,
   dockerCompose,
-  getConnectionHost,
 ) {
   /**
    * @typedef startCore
@@ -72,7 +70,6 @@ function startCoreFactory(
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
-        host: await getConnectionHost(config, 'core'),
       },
     );
 
