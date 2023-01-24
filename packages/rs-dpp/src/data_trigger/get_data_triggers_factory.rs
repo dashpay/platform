@@ -3,6 +3,7 @@ use std::vec;
 use crate::{
     contracts::{
         dashpay_contract, dpns_contract, feature_flags_contract, masternode_reward_shares_contract,
+        withdrawals_contract,
     },
     document::document_transition::Action,
     errors::ProtocolError,
@@ -51,6 +52,14 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
     )?;
     let master_node_reward_shares_contract_id = Identifier::from_string(
         &masternode_reward_shares_contract::system_ids().contract_id,
+        Encoding::Base58,
+    )?;
+    let withdrawals_owner_id = Identifier::from_string(
+        &withdrawals_contract::system_ids().owner_id,
+        Encoding::Base58,
+    )?;
+    let withdrawals_contract_id = Identifier::from_string(
+        &withdrawals_contract::system_ids().contract_id,
         Encoding::Base58,
     )?;
 
@@ -144,6 +153,20 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
+            top_level_identity: None,
+        },
+        DataTrigger {
+            data_contract_id: withdrawals_contract_id.clone(),
+            document_type: withdrawals_contract::types::WITHDRAWAL.to_string(),
+            transition_action: Action::Create,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
+            top_level_identity: None,
+        },
+        DataTrigger {
+            data_contract_id: withdrawals_contract_id,
+            document_type: withdrawals_contract::types::WITHDRAWAL.to_string(),
+            transition_action: Action::Replace,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
     ];

@@ -22,6 +22,7 @@ pub mod dpns_triggers;
 pub mod feature_flags_data_triggers;
 pub mod get_data_triggers_factory;
 pub mod reward_share_data_triggers;
+pub mod withdrawals_data_triggers;
 
 mod data_trigger_execution_result;
 mod reject_data_trigger;
