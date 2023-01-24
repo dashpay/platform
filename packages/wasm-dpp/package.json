@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.24.0-dev.11",
+  "version": "0.24.0-dev.12",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/lib/index.d.ts",
@@ -30,7 +30,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@dashevo/bls": "~1.0.0-beta.2"
+    "@dashevo/bls": "~1.0.0-beta.2",
+    "lodash": "^4.17.21"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
@@ -73,6 +74,7 @@
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",
     "string_decoder": "^1.3.0",
+    "terser-webpack-plugin": "^5.3.1",
     "ts-loader": "^8.0.2",
     "typescript": "^3.9.5",
     "url": "^0.11.0",

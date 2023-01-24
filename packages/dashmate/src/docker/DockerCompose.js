@@ -1,6 +1,8 @@
 const path = require('path');
 const { Observable } = require('rxjs');
 
+const isWsl = require('is-wsl');
+
 const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
@@ -400,6 +402,13 @@ class DockerCompose {
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
     };
+
+    if (isWsl) {
+      // Solving issue under WSL when after restart container volume is not being mounted properly
+      // https://github.com/docker/for-win/issues/4812
+      // Following fix forces container recreation
+      env.WSL2_FIX = (new Date()).getTime();
+    }
 
     return {
       cwd: path.join(__dirname, '..', '..'),

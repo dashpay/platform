@@ -1,3 +1,4 @@
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 pub use document_already_exists_error::*;
@@ -24,32 +25,35 @@ mod no_documents_supplied_error;
 
 pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
-        DocumentError::DocumentAlreadyExists {
+        DocumentError::DocumentAlreadyExistsError {
             document_transition,
         } => DocumentAlreadyExistsError::new(document_transition).into(),
-        DocumentError::DocumentNotProvided {
+        DocumentError::DocumentNotProvidedError {
             document_transition,
         } => DocumentNotProvidedError::new(document_transition).into(),
 
-        DocumentError::InvalidActionName { actions } => {
+        DocumentError::InvalidActionNameError { actions } => {
             InvalidActionNameError::new(to_vec_js(actions)).into()
         }
-        DocumentError::InvalidDocument { errors, document } => InvalidDocumentError::new(
-            (*document).into(),
+        DocumentError::InvalidDocumentError {
+            errors,
+            raw_document,
+        } => InvalidDocumentError::new(
+            raw_document
+                .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .expect("Raw Document should be serializable into JsValue"),
             errors.into_iter().map(from_consensus_error).collect(),
         )
         .into(),
-        DocumentError::InvalidDocumentAction {
+        DocumentError::InvalidDocumentActionError {
             document_transition,
         } => InvalidDocumentActionError::new(document_transition).into(),
-        DocumentError::InvalidInitialRevision { document } => {
+        DocumentError::InvalidInitialRevisionError { document } => {
             InvalidInitialRevisionError::new((*document).into()).into()
         }
-        DocumentError::MismatchOwnersIds { documents } => {
-            let documents_wasm: Vec<DocumentWasm> =
-                documents.into_iter().map(DocumentWasm::from).collect();
-            MismatchOwnersIdsError::new(to_vec_js(documents_wasm)).into()
+        DocumentError::MismatchOwnerIdsError { documents } => {
+            MismatchOwnerIdsError::from_documents(documents).into()
         }
-        DocumentError::NotDocumentsSupplied => NotDocumentsSuppliedError::new().into(),
+        DocumentError::NoDocumentsSuppliedError => NoDocumentsSuppliedError::new().into(),
     }
 }

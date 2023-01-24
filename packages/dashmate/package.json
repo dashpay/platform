@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.0-dev.11",
+  "version": "0.24.0-dev.12",
   "description": "Distribution package for Dash Masternode installation",
   "scripts": {
     "lint": "eslint .",
@@ -72,6 +72,7 @@
     "enquirer": "^2.3.6",
     "glob": "^7.1.6",
     "hasbin": "^1.2.3",
+    "is-wsl": "2.2.0",
     "jayson": "^3.3.4",
     "listr2": "3.5.0",
     "lodash": "^4.17.21",

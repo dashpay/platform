@@ -180,8 +180,8 @@ impl Identity {
             })?;
 
         let identity_id = identity_map.get_identifier("id")?;
-        let revision = identity_map.get_u64("revision")?;
-        let balance: u64 = identity_map.get_u64("balance")?;
+        let revision = identity_map.get_integer("revision")?;
+        let balance: u64 = identity_map.get_integer("balance")?;
 
         let keys_cbor_value = identity_map.get("publicKeys").ok_or_else(|| {
             ProtocolError::DecodingError(String::from(
