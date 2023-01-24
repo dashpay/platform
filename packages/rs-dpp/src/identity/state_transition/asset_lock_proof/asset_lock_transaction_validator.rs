@@ -83,7 +83,9 @@ where
                     }
 
                     let out_point = OutPoint::new(transaction.txid(), output_index as u32);
-                    let out_point_buf = consensus::serialize(&out_point);
+                    let mut out_point_buf = consensus::serialize(&out_point);
+                    let (tx_id, _) = out_point_buf.split_at_mut(32);
+                    tx_id.reverse();
 
                     let is_out_point_used = self
                         .state_repository

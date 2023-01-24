@@ -6,7 +6,7 @@ class DataContractInvalidIndexDefinitionUpdateError extends AbstractBasicError {
    * @param {string} indexName
    */
   constructor(documentType, indexName) {
-    super(`Document with type ${documentType} has badly constructed index "${indexName}". Existing properties in the indices should be defined in the beginning of it.`);
+    super(`Document with type ${documentType} has badly constructed index "${indexName}". Already indexed properties should be defined in the beginning of index.`);
 
     this.documentType = documentType;
     this.indexName = indexName;

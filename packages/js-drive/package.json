@@ -30,6 +30,7 @@
   ],
   "scripts": {
     "abci": "node scripts/abci",
+    "echo": "node scripts/echo",
     "lint": "eslint .",
     "test": "yarn run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=90 yarn run mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
@@ -66,7 +67,7 @@
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashpay/js-abci#10cec4765e54c8e248be966d9116550e2d254908",
+    "@dashevo/abci": "github:dashpay/js-abci#0ed8258034f3e7521a110053570f5c5c024eab67",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.19.44",
     "@dashevo/dashd-rpc": "^18.2.0",
