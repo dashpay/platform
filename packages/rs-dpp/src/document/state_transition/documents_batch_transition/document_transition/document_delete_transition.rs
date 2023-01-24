@@ -1,9 +1,11 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-
 use crate::{data_contract::DataContract, errors::ProtocolError};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
+use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
+
+/// Identifier fields in [`DocumentDeleteTransition`]
+pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DocumentDeleteTransition {
@@ -12,28 +14,31 @@ pub struct DocumentDeleteTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentDeleteTransition {
-    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
-        let mut base = DocumentBaseTransition::from_json_str(json_str, data_contract)?;
-        base.action = Action::Delete;
-        Ok(DocumentDeleteTransition { base })
-    }
-
-    fn from_raw_document(
-        raw_transition: JsonValue,
+    fn from_json_object(
+        json_value: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let mut base = DocumentBaseTransition::from_raw_document(raw_transition, data_contract)?;
-        base.action = Action::Delete;
+        let mut document: DocumentDeleteTransition = serde_json::from_value(json_value)?;
+        document.base.data_contract = data_contract;
+
+        Ok(document)
+    }
+
+    fn from_raw_object(
+        raw_transition: Value,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError> {
+        let mut base = DocumentBaseTransition::from_raw_object(raw_transition, data_contract)?;
+
         Ok(DocumentDeleteTransition { base })
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
         self.base.to_object()
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(&self)?;
-        Ok(value)
+    fn to_json(&self) -> Result<Value, ProtocolError> {
+        self.base.to_json()
     }
 }
 

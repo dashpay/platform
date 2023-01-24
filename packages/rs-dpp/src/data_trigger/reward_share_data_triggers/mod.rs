@@ -44,7 +44,7 @@ where
         )
     })?;
 
-    let pay_to_id = data.get_string(PROPERTY_PAY_TO_ID)?;
+    let pay_to_id_bytes = data.get_bytes(PROPERTY_PAY_TO_ID)?;
     let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
@@ -69,7 +69,7 @@ where
     }
 
     // payToId identity exists
-    let pay_to_identifier = Identifier::from_string(pay_to_id, Encoding::Base58)?;
+    let pay_to_identifier = Identifier::from_bytes(&pay_to_id_bytes)?;
     let maybe_identifier: Option<Vec<u8>> = context
         .state_repository
         .fetch_identity(
@@ -82,7 +82,7 @@ where
         let err = create_error(
             context,
             dt_create,
-            format!("Identity '{}' doesn't exist", pay_to_id),
+            format!("Identity '{}' doesn't exist", pay_to_identifier),
         );
         result.add_error(err.into())
     }
@@ -136,6 +136,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use itertools::Itertools;
     use serde_json::json;
 
     use crate::{
@@ -307,11 +308,15 @@ mod test {
                 .await;
 
         let error = get_data_trigger_error(&result, 0);
-        let pay_to_id = document_transition
-            .get_dynamic_property("payToId")
+        let pay_to_id_bytes: Vec<u8> = document_transition
+            .get_dynamic_property(PROPERTY_PAY_TO_ID)
             .expect("payToId should exist")
-            .as_str()
-            .unwrap();
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect_vec();
+        let pay_to_id = Identifier::from_bytes(&pay_to_id_bytes).unwrap();
 
         assert_eq!(
             format!("Identity '{}' doesn't exist", pay_to_id),

@@ -1,4 +1,4 @@
-const axios = require('axios');
+const fetch = require('node-fetch');
 const qs = require('qs');
 
 /**
@@ -15,28 +15,31 @@ async function createCertificate(
   externalIp,
   apiKey,
 ) {
-  const data = qs.stringify({
+  const body = qs.stringify({
     certificate_domains: externalIp,
     certificate_validity_days: '90',
     certificate_csr: csr,
   });
 
-  const request = {
-    method: 'post',
-    url: `https://api.zerossl.com/certificates?access_key=${apiKey}`,
+  const url = `https://api.zerossl.com/certificates?access_key=${apiKey}`;
+
+  const requestOptions = {
+    method: 'POST',
+    body,
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    data,
   };
 
-  const response = await axios(request);
+  const response = await fetch(url, requestOptions);
 
-  if (response.data.error) {
-    throw new Error(JSON.stringify(response.data.error));
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(JSON.stringify(data.error));
   }
 
-  return response.data;
+  return data;
 }
 
 module.exports = createCertificate;

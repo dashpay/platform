@@ -56,6 +56,10 @@ impl<TData: Clone> ValidationResult<TData> {
         self.data.as_ref()
     }
 
+    pub fn take_data(&mut self) -> Option<TData> {
+        self.data.take()
+    }
+
     pub fn into_result_without_data(self) -> ValidationResult<()> {
         ValidationResult {
             errors: self.errors,

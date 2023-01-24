@@ -1,3 +1,5 @@
+require('../../polyfills/fetch-polyfill');
+
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');

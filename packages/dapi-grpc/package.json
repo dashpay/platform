@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.24.0-dev.11",
+  "version": "0.24.0-dev.12",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "browser.js",
   "main": "node.js",
   "scripts": {
-    "build": "yarn exec scripts/build.sh",
+    "build": "yarn exec scripts/build.sh && yarn exec scripts/patch-protobuf-js.sh",
     "lint": "eslint .",
     "prepublishOnly": "yarn run build",
     "test": "yarn run test:unit",

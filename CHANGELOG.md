@@ -1,3 +1,87 @@
+### [0.23.2](https://github.com/dashpay/platform/compare/v0.23.0...v0.23.2) (2023-01-19)
+
+
+### Bug Fixes
+
+* **dapi-client:** missing fetch-polyfill in npm installation ([#743](https://github.com/dashpay/platform/issues/743))
+* **dapi-grpc:** unsafe-eval errors in protobuf js files ([#713](https://github.com/dashpay/platform/issues/713))
+
+
+### [0.23.1](https://github.com/dashpay/platform/compare/v0.23.0...v0.23.1) (2023-01-13)
+
+
+### Features
+
+* update Platform to Core v18.2.0-rc.4 ([#701](https://github.com/dashpay/platform/issues/701))
+
+
+### Continuous Integration
+
+* fix incorrect github actions templating syntax ([#689](https://github.com/dashpay/platform/issues/689))
+* release dashmate packages ([#669](https://github.com/dashpay/platform/issues/669))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** replace axios with fetch ([#690](https://github.com/dashpay/platform/issues/690))
+* **dashmate:** update base config to core 18.2.0 ([#706](https://github.com/dashpay/platform/issues/706))
+* replace grpc-web with @improbable-eng/grpc-web ([#628](https://github.com/dashpay/platform/issues/628))
+* set core in base config to v18.1.1 ([#720](https://github.com/dashpay/platform/issues/720))
+* update platform chain id ([#703](https://github.com/dashpay/platform/issues/703))
+* use core 18.2.0 on testnet ([#725](https://github.com/dashpay/platform/issues/725))
+
+
+
+## [0.24.0-dev.12](https://github.com/dashpay/platform/compare/v0.24.0-dev.11...v0.24.0-dev.12) (2023-01-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* AbstractStateTransition#calculateFees removed
+* State transition fees are calculated differently so previous block data is not valid anymore
+* Added new tree to initial structure so previous state is not valid anymore
+
+### Features
+
+* credit refunds ([#662](https://github.com/dashpay/platform/issues/662))
+* **dashmate:** additional dashd options ([#692](https://github.com/dashpay/platform/issues/692))
+* **dashmate:** pass ZeroSSL as command line parameter ([#651](https://github.com/dashpay/platform/issues/651))
+* **dashmate:** remove axios from zerossl requests
+* **dashmate:** remove axios from zerossl requests
+* **dpp:** AbstractConsensusError tests and extensions ([#670](https://github.com/dashpay/platform/issues/670))
+* **dpp:** Data Contract Update Transition wasm binding ([#696](https://github.com/dashpay/platform/issues/696))
+* **drive:** do not switch to validator quorum which will be removed soon ([#616](https://github.com/dashpay/platform/issues/616))
+* multiple documents changes per batch and support for GroveDB 0.9 ([#699](https://github.com/dashpay/platform/issues/699))
+* update Platform to Core v18.2.0-rc.4 ([#701](https://github.com/dashpay/platform/issues/701))
+
+
+### Bug Fixes
+
+* **dashmate:** ZeroSSL certificate cannot be downloaded ([#718](https://github.com/dashpay/platform/issues/718))
+* **drive:** merk caching in contract caching (irony) ([#710](https://github.com/dashpay/platform/issues/710))
+* find_duplicates_by_id.rs not compiling ([#702](https://github.com/dashpay/platform/issues/702))
+* Starcounter-Jack JSON-Patch Prototype Pollution vulnerability ([#708](https://github.com/dashpay/platform/issues/708))
+
+
+### Code Refactoring
+
+* **dashmate:** status command ([#660](https://github.com/dashpay/platform/issues/660))
+
+
+### Continuous Integration
+
+* fix incorrect github actions templating syntax ([#689](https://github.com/dashpay/platform/issues/689))
+* increase cache-max-size ([#704](https://github.com/dashpay/platform/issues/704))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** replace axios with fetch ([#690](https://github.com/dashpay/platform/issues/690))
+* **dashmate:** update base config to core 18.2.0 ([#706](https://github.com/dashpay/platform/issues/706))
+* **dpp:** wasm dpp data contract test error types ([#684](https://github.com/dashpay/platform/issues/684))
+* **drive:** log synchronize identities properly ([#686](https://github.com/dashpay/platform/issues/686))
+* set core in base config to v18.1.1 ([#720](https://github.com/dashpay/platform/issues/720))
+
 ## [0.24.0-dev.11](https://github.com/dashpay/platform/compare/v0.24.0-dev.10...v0.24.0-dev.11) (2022-12-20)
 
 

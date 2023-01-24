@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
+use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -11,13 +12,13 @@ use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, Cbor
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
-use crate::Convertible;
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
     metadata::Metadata,
     util::{hash::hash, serializer},
 };
+use crate::{identifier, Convertible};
 
 use super::errors::*;
 use super::extra::DocumentType;
@@ -33,10 +34,11 @@ type PropertyPath = String;
 pub const SCHEMA_URI: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
 pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OWNER_ID];
+pub const BINARY_FIELDS: [&str; 1] = [property_names::ENTROPY];
 
 impl Convertible for DataContract {
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
         }
@@ -83,9 +85,10 @@ pub struct DataContract {
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
     #[serde(skip)]
-    pub metadata: Option<Metadata>,
-    #[serde(skip)]
     pub entropy: [u8; 32],
+
+    #[serde(skip)]
+    pub metadata: Option<Metadata>,
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 
@@ -111,6 +114,15 @@ impl DataContract {
         Ok(data_contract)
     }
 
+    pub fn from_json_object(mut json_value: JsonValue) -> Result<DataContract, ProtocolError> {
+        json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
+
+        let mut data_contract: DataContract = serde_json::from_value(json_value)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
+    }
+
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         Self::from_cbor(b)
     }
@@ -127,7 +139,7 @@ impl DataContract {
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
         let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
         let schema = data_contract_map.get_string(property_names::SCHEMA)?;
-        let version = data_contract_map.get_u32(property_names::VERSION)?;
+        let version = data_contract_map.get_integer(property_names::VERSION)?;
 
         // Defs
         let defs = data_contract_map
@@ -211,7 +223,7 @@ impl DataContract {
     }
 
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
         }
@@ -224,7 +236,7 @@ impl DataContract {
 
     /// Returns Data Contract as a JSON Value
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
@@ -388,22 +400,53 @@ impl DataContract {
             .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
             .collect();
     }
+
+    pub fn get_identifiers_and_binary_paths(&self, document_type: &str) -> (Vec<&str>, Vec<&str>) {
+        let maybe_binary_properties = self.get_binary_properties(document_type);
+        let mut binary_paths: Vec<&str> = vec![];
+        let mut identifiers_paths: Vec<&str> = vec![];
+
+        // At this point we don't bother about returned error from `get_binary_properties`.
+        // If document of given type isn't found, then empty vectors will be returned.
+        if let Ok(binary_properties) = maybe_binary_properties {
+            (binary_paths, identifiers_paths) =
+                binary_properties.iter().partition_map(|(path, v)| {
+                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                        if content_type == identifier::MEDIA_TYPE {
+                            Either::Right(path.as_str())
+                        } else {
+                            return Either::Left(path.as_str());
+                        }
+                    } else {
+                        Either::Left(path.as_str())
+                    }
+                });
+        }
+        (identifiers_paths, binary_paths)
+    }
 }
 
 impl TryFrom<JsonValue> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
         let mut v = v;
-        // TODO add binary_properties regeneration
+
         v.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-        Ok(serde_json::from_value(v)?)
+
+        let mut data_contract: Self = serde_json::from_value(v)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
     }
 }
 
 impl TryFrom<&str> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: &str) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_str(v)?)
+        let mut data_contract: DataContract = serde_json::from_str(v)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
     }
 }
 
