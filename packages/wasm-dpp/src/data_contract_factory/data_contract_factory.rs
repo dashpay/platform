@@ -42,16 +42,14 @@ impl DataContractValidatorWasm {
         DataContractValidator::new(std::sync::Arc::new(ProtocolVersionValidator::default())).into()
     }
 
-    #[wasm_bindgen(js_name=validate)]
+    #[wasm_bindgen]
     pub fn validate(&self, raw_data_contract: JsValue) -> Result<ValidationResultWasm, JsValue> {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_data_contract))?;
         let json_object = serde_json::to_value(parameters).expect("Implements Serialize");
+        let validation_result = self.0.validate(&json_object).map_err(from_protocol_error)?;
 
-        self.0
-            .validate(&json_object)
-            .map(Into::into)
-            .map_err(from_protocol_error)
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }
 

@@ -22,6 +22,18 @@ impl<'a> From<&'a StateTransitionExecutionContextWasm> for StateTransitionExecut
     }
 }
 
+impl<'a> From<&'a StateTransitionExecutionContextWasm> for &'a StateTransitionExecutionContext {
+    fn from(wa: &'a StateTransitionExecutionContextWasm) -> Self {
+        &wa.0
+    }
+}
+
+impl<'a> From<&'a StateTransitionExecutionContext> for StateTransitionExecutionContextWasm {
+    fn from(rs: &'a StateTransitionExecutionContext) -> Self {
+        Self(rs.clone())
+    }
+}
+
 #[wasm_bindgen(js_class=StateTransitionExecutionContext)]
 impl StateTransitionExecutionContextWasm {
     #[wasm_bindgen(constructor)]

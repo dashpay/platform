@@ -79,7 +79,7 @@ impl IdentifierWrapper {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Buffer {
-        Buffer::from_bytes(self.wrapped.buffer.as_slice())
+        Buffer::from_bytes(&self.wrapped.buffer)
     }
 
     #[wasm_bindgen(js_name=toJSON)]

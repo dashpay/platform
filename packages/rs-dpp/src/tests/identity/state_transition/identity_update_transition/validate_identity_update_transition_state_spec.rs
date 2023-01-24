@@ -397,7 +397,7 @@ async fn should_return_valid_result_on_dry_run() {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_identity::<Identity>()
+        .expect_fetch_identity()
         .return_once(|_, _| Ok(None));
 
     let validator = IdentityUpdateTransitionStateValidator::new(
