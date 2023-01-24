@@ -5,7 +5,6 @@
   "scripts": {
     "lint": "eslint .",
     "postpack": "rm -f oclif.manifest.json",
-    "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
     "test": "yarn run test:unit",
